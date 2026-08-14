@@ -12,7 +12,7 @@ The backend stores users, sessions, email tokens, designs (JSON documents), and 
 - **PostgreSQL 16** in Docker (docker-compose service).
 - **Drizzle ORM** with SQL migration files under `db/migrations/` (reviewable, versioned SQL).
 - Design documents stored as `jsonb`; `updated_at` indexed for sync queries.
-- Email stored with `citext` + unique index on `lower(email)` to make addresses case-insensitive.
+- Email stored as `text` with a **unique index on `lower(email)`** (case-insensitive uniqueness; application normalizes email to lowercase before insert). No `citext` extension: PGlite (test runtime) does not ship it.
 - Connection pooling via `pg` with a small pool (single instance).
 
 ## Consequences

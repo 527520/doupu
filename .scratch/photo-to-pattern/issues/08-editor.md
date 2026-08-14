@@ -1,6 +1,13 @@
 # 08: 像素编辑器
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/editor/`：ops.ts（brushBounds/applyBrush/applyErase/floodFill/replaceByCode/clearAll，全部快照式、格子对象只整槽替换；油漆桶按「同状态」四连通泛洪 E22；替换按色号幂等 E23）、history.ts（EditHistory 快照栈，100 步丢最旧、新操作清重做栈 E21）、state.ts（createEditorState 拷贝 cells、commitSnapshots、refreshStats 复用引擎 computeStats、undo/redo 联动统计）。
+- `src/components/editor/`：EditorToolbar（工具/尺寸/撤销重做/替换/清除，aria-pressed）、PixelEditorCanvas（ref 式命令编辑 + 版本重绘；触屏点按落笔/500ms 长按吸色；鼠标按下即绘、拖动画线成单历史条目；B/E/G/I 与 Ctrl+Z/Y、方向键光标、回车落笔；替换面板含「排除颜色」与命中/未命中提示）。
+- `src/messages/zh-CN.ts` 追加 editor 命名空间（定点编辑）。
+- 测试：ops 14 例（含 200×200 泛洪 <50ms）、history 7 例（100 步丢最旧链式快照验证）、state 7 例（E21/E23/E24、统计联动、五操作性能探针）、EditorToolbar 6 例、PixelEditorCanvas 9 例（含触屏长按/点按、快捷键、替换、清除撤销）。typecheck/lint 全绿（vitest 由父代理运行）。
 - Blocked by: 06
 
 ## 目标

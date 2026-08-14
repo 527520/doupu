@@ -1,6 +1,14 @@
 # 06: 参数面板与图纸预览渲染
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/render/layout.ts`（纯布局：contrastColor/labelVisible(≥12px)/fitCellSize/boardSeamPositions(29 格)/clampZoom(50–1600%)/pointToCell）+ `draw.ts`（色块/网格/板缝/色号/外部格浅灰）。
+- `src/components/params/GenerationParamsPanel.tsx`：核心三参数 + 高级折叠（模式/亮度/对比度/背景去除+容差/品牌选择，自定义色板槽位待 T18）；数字输入非法值回退、300ms 防抖上抛。
+- `src/components/preview/PatternPreview.tsx`：DPR 高清渲染、缩放钳制、容器滚动平移、悬停/长按格子信息、三开关。
+- 测试 20 例：layout 纯函数（含 12px 标注边界、板缝位置、Infinity 钳制）+ 面板交互（防抖 299/300ms 边界、非法输入回退、品牌切换、高级面板显隐）+ 预览（钳制、悬停坐标换算、透明格信息）。
+- 工程修复：vitest globals（RTL cleanup）、tests/setup.ts jsdom canvas 桩、查询去歧义（滑杆/数字输入）。
 - Blocked by: 05
 
 ## 目标

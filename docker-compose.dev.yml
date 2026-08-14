@@ -1,0 +1,21 @@
+# 开发/测试数据库（ticket 13；生产 compose 属 T21）
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: doupu-postgres
+    environment:
+      POSTGRES_DB: doupu
+      POSTGRES_USER: doupu
+      POSTGRES_PASSWORD: doupu
+    ports:
+      - '5432:5432'
+    volumes:
+      - doupu-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U doupu -d doupu']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  doupu-pgdata:

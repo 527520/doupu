@@ -1,6 +1,14 @@
 # 09: PNG 图纸导出
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/export/layout.ts`：contentBounds（含端点包围盒，忽略透明/外部）、clampCellPx（8–48，NaN 回退 24，四舍五入）、sanitizeFilename（规则锁定：trim→空=未命名设计→非法字符/控制符→'-'→折叠连续'-'→去首尾'-'→再空回退）、pngFileName（豆谱-<名>-<W>x<H>.png）、图例布局（条目高 max(16,cellPx+6)、每列条目数、列数、列宽、条目文本）。
+- `src/lib/export/png.ts`：exportPngBlob —— 空图纸在创建 canvas 前返回 EMPTY_PATTERN（E10/E24）；裁剪至内容（默认）、图例（默认关、按列排布、computeStats 确定性顺序）、网格/板缝（按内容坐标系换算）/≥12px 色号标注/外部格透明；toBlob + toDataURL 兜底；ENCODE_FAILED 分支。
+- 组件 `src/components/export/PngExportButton.tsx`：空图纸禁用、下载（objectURL+anchor+释放）、失败可重试提示。
+- 测试：layout 30 例（包围盒 5 种形态、钳制边界、文件名清洗全矩阵含 100 字符/控制符/全非法、图例 1/10/291 色列数）；png.test 5 例（Node 环境空图纸分支）；按钮 jsdom 5 例（禁用、下载链路、toBlob null 失败文案、download 文件名断言）。
+- typecheck/lint 对本票文件零错误（当前 tsc 报错均来自 db/* 属 T13 未装依赖，与本票无关）。测试运行由父代理执行。
 - Blocked by: 06
 
 ## 目标

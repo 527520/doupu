@@ -1,6 +1,15 @@
 # 11: 项目文件导入/导出
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/project/serialize.ts`：serializeProject（2 空格缩进、updatedAt=now、format/version 补全）+ projectFileName（非法字符替换、空名回退「未命名设计」）。
+- `src/lib/project/parse.ts`：importProjectFile（复用 schemas.parseProjectFile：5MB 上限/BOM/严格 schema）+ conflictName（`名称 (2)` 序列、100 字符截断、后缀唯一性）。
+- `src/components/export/ProjectFileButtons.tsx`：导出（Blob 下载、正确文件名）、导入（文件选择、5MB 预检、字段级错误列表、名称冲突自动后缀后 onImport、input 值重置可重复选择）。
+- 文案：zh-CN 新增 `project:` 命名空间（定点编辑）。
+- 测试：`project.test.ts` 16 例（round-trip 逐字段、坏文件矩阵含 version=99/未知 brand/W=300/非法 hex/5MB+1B/BOM 端到端、conflictName 矩阵、文件名清洗）+ `ProjectFileButtons.test.tsx` 8 例（下载锚点、导入成功/冲突后缀/损坏 JSON/未知 brand/超限/错误清除/disabled）。
+- 注：未运行 vitest（沙箱禁止子进程且本会话禁 escalation）；lint ✓；typecheck 仅剩 db/schema.ts 报错（T13 进行中，drizzle-orm 未安装），本票文件零错误。
 - Blocked by: 02, 06
 
 ## 目标

@@ -1,6 +1,12 @@
 # 05: 生成引擎（量化管线）
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/engine/`：color.ts（Oklab 移植上游常量 + 预计算平方距离）、brightness.ts、downscale.ts（盒式降采样，每格最多 8×8 源像素，性能关键）、lut.ts（15-bit LUT + 色板级缓存 + clearLutCache）、dither.ts（蛇形 FS 扩散、透明跳过、Float64 累加）、sample.ts（主色平票取先出现/平均色/透明）、merge.ts（频率降序 + 二分最小 θ∈[0,60]）、background.ts（边界洪泛 + 缓存）、generate.ts（管线编排 + computeStats）。
+- 测试 42 例：E14–E19 全部、50 组属性测试（尺寸/色板内/统计自洽）、确定性 deep-equal、性能 200×200 = 756ms（预算 2s）、误差守恒、不可整除格边界、1×1→200×200 不除零、θ=60 不可达分支。
+- 过程中修复：LUT 未缓存导致每次生成 ~1.5s（现缓存+Oklab 预计算）；测试设计两处修正（Oklab 纯黑附近灰阶距离拉伸、merge 存活格 code 语义）。
 - Blocked by: 02, 03
 
 ## 目标

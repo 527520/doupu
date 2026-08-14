@@ -12,12 +12,18 @@
         "test:e2e": "playwright test"
     },
     "dependencies": {
+        "argon2": "^0.45.1",
+        "drizzle-orm": "^0.45.2",
         "next": "15.3.6",
+        "nodemailer": "^9.0.5",
+        "pdf-lib": "^1.17.1",
+        "pg": "^8.23.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {
+        "@electric-sql/pglite": "^0.5.5",
         "@eslint/eslintrc": "^3",
         "@playwright/test": "^1.62.1",
         "@tailwindcss/postcss": "^4",
@@ -25,9 +31,12 @@
         "@testing-library/react": "^16.3.2",
         "@testing-library/user-event": "^14.6.4",
         "@types/node": "^20",
+        "@types/nodemailer": "^8.0.1",
+        "@types/pg": "^8.21.0",
         "@types/react": "^19",
         "@types/react-dom": "^19",
         "@vitejs/plugin-react": "^6.0.5",
+        "drizzle-kit": "^0.31.10",
         "eslint": "^9",
         "eslint-config-next": "15.3.6",
         "jsdom": "^30.0.1",
