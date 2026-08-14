@@ -49,11 +49,12 @@ export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
   bgTolerance: 8,
 };
 
-/** 图纸单元格：透明格 hex/code 均为 null；非透明格 hex 必填。 */
+/** 图纸单元格：透明格 hex/code 均为 null；非透明格 hex 必填。external 为背景去除标记（默认 false）。 */
 export interface PatternCell {
   hex: string | null;
   code: string | null;
   transparent: boolean;
+  external?: boolean;
 }
 
 /** 图纸（row-major cells）。 */

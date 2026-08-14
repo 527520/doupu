@@ -74,6 +74,7 @@ export const patternCellSchema = z
     hex: hexSchema.nullable(),
     code: z.string().max(20).nullable(),
     transparent: z.boolean(),
+    external: z.boolean().optional(),
   })
   .superRefine((cell, ctx) => {
     if (cell.transparent) {

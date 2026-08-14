@@ -119,6 +119,14 @@ describe('hex 与单元格', () => {
     expect(patternCellSchema.safeParse(cell('#123456', 'A'.repeat(21))).success).toBe(false);
   });
 
+  it('单元格：external 背景标记为可选项，默认可省略并在解析后保留', () => {
+    expect(patternCellSchema.safeParse({ ...cell('#123456', null), external: true }).success).toBe(true);
+    const parsed = patternCellSchema.parse({ ...cell('#123456', null), external: true });
+    expect(parsed.external).toBe(true);
+    expect(patternCellSchema.parse(cell('#123456', null)).external).toBeUndefined();
+    expect(patternCellSchema.safeParse({ ...cell('#123456', null), external: 'yes' }).success).toBe(false);
+  });
+
   it('图纸：cells 数量必须与宽高一致；1×1 与 200×200 合法，201 非法（E7/E14）', () => {
     expect(
       patternSchema.safeParse({ width: 1, height: 1, cells: [cell('#000000', null)] }).success,
