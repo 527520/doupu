@@ -60,6 +60,17 @@ export default async function globalSetup(): Promise<void> {
   process.env.E2E_SERVER_PID = String(server.pid);
 
   await waitForServer();
+
+  // 预热：逐个请求关键路由，触发 webpack 编译，避免测试期首次编译争用
+  const warmRoutes = ['/', '/app', '/register', '/login', '/verify-email', '/forgot-password', '/designs', '/palettes', '/help', '/about'];
+  for (const route of warmRoutes) {
+    try {
+      await fetch(`http://127.0.0.1:${PORT}${route}`, { method: 'GET' });
+    } catch {
+      // 忽略预热失败（路由缺失等）
+    }
+  }
+  console.log('[e2e] dev server ready and warmed');
 }
 
 export function getServerProcess(): ChildProcess | null {

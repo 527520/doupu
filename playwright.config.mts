@@ -5,7 +5,7 @@ export default defineConfig({
   // 串行执行：dev 服务器首编译较慢，且各用例共享服务器日志（邮件钩子），并行会互相干扰
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://127.0.0.1:3100',
@@ -22,6 +22,6 @@ export default defineConfig({
   globalSetup: './tests/e2e/globalSetup.ts',
   globalTeardown: './tests/e2e/globalTeardown.ts',
   workers: process.env.CI ? 2 : 1,
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
+  timeout: 120_000,
+  expect: { timeout: 15_000 },
 });
