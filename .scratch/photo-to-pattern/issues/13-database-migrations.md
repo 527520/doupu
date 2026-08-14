@@ -1,6 +1,14 @@
 # 13: 数据库 Schema 与迁移
 
-- Status: claimed
+- Status: resolved
+
+## 父代理验证记录（阻塞已解除）
+
+- 依赖已全部安装（drizzle-orm/pg/argon2/nodemailer + drizzle-kit/@electric-sql/pglite/@types/*）。
+- **实现修正**：PGlite 不内置 citext 扩展 → schema 改为 `text` + `uniqueIndex('users_email_lower_unique').on(sql\`lower(email)\`)`（应用层 email 已由 zod 统一小写）；ADR-0003 同步更新。
+- **迁移重建**：`drizzle-kit generate`（drizzle.config.ts 改为相对路径 `./db/schema.ts`）→ `db/migrations/0000_init.sql` + `meta/`（journal 去 BOM，tag=0000_init）；gen_random_uuid() 走 PG13+ 内置函数，无需 pgcrypto。
+- **修复**：db/client.ts `rateLimits.window_start`→`windowStart`；drizzle 0.45 联合类型下 `.returning()` 需无参（全行返回）；vitest include 增加 `db/**/*.test.ts`。
+- **验收**：`db/models.test.ts` 7/7 通过（PGlite 进程内，迁移幂等/大小写唯一/级联/限流/token 唯一/客户端 UUID 违约全部断言）；全量 289/289 绿、lint 绿、build 绿。
 
 ## 完成记录
 
