@@ -58,8 +58,8 @@
 
 ## 待定 Open
 
-- 无。需求共识已确认（Q33），进入规格与开发阶段。
-- 规格：`.scratch/photo-to-pattern/spec.md`；开发任务：`.scratch/photo-to-pattern/issues/`。
+- 无。全部 21 张任务票已解决；开源仓库 https://github.com/527520/doupu 已发布。
+- 剩余仅用户侧操作：`deploy/CHECKLIST.md`（购机/域名/备案/DNS/SES/COS/部署）。
 
 ## 代理负责的工程决策（写入 ADR，用户可反驳）
 
