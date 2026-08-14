@@ -4,11 +4,13 @@
  * 数据库：不设置 DATABASE_URL → 服务启动钩子初始化进程内 PGlite（每轮测试全新库）。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, writeFileSync, createWriteStream } from 'node:fs';
-import { resolve } from 'node:path';
+import { writeFileSync, createWriteStream } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const PORT = 3100;
-const LOG_PATH = resolve(process.cwd(), 'tests/e2e/.tmp/dev.log');
+// 日志放系统临时目录：dev 服务器监听项目内文件，日志写入会触发 Fast Refresh 全量重载
+const LOG_PATH = join(tmpdir(), 'doupu-e2e-dev.log');
 const READY_URL = `http://127.0.0.1:${PORT}/api/auth/me`;
 
 let server: ChildProcess | null = null;
@@ -29,7 +31,6 @@ async function waitForServer(): Promise<void> {
 }
 
 export default async function globalSetup(): Promise<void> {
-  mkdirSync(resolve(process.cwd(), 'tests/e2e/.tmp'), { recursive: true });
   writeFileSync(LOG_PATH, '', 'utf8'); // 清空旧日志（每次运行全新会话）
 
   const logStream = createWriteStream(LOG_PATH, { flags: 'a' });

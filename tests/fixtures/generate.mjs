@@ -163,6 +163,12 @@ write('static.webp', riff([webpChunk('VP8L', Buffer.from([0x2f, 0x00, 0x00, 0x00
 
 write('empty.bin', Buffer.alloc(0));
 write('text-as-photo.jpg', Buffer.from('这不是图片，只是文本', 'utf8'));
+// 损坏 JPEG：魔数合法（通过嗅探）但内容必然解码失败（浏览器对截断 PNG 较宽容，JPEG 更严格）
+{
+  const junk = Buffer.alloc(2048);
+  for (let i = 0; i < junk.length; i++) junk[i] = (i * 31) % 256;
+  write('corrupt.jpg', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), junk]));
+}
 // E2E 用彩色渐变照片（64×64，覆盖多色相）
 {
   const size = 64;

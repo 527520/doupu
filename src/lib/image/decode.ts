@@ -57,11 +57,24 @@ export async function decodeImageFile(bytes: Uint8Array, type: ImageType): Promi
       imageOrientation: 'from-image',
     });
   } catch {
-    return { ok: false, code: type === 'heic' ? 'HEIC_UNSUPPORTED' : 'DECODE_FAILED' };
+    // 部分 WebKit/Safari 不支持 imageOrientation 选项（会直接抛错）：
+    // 降级为不带选项的解码，保证跨浏览器可用（EXIF 方向由浏览器默认行为处理）
+    try {
+      bitmap = await createImageBitmap(new Blob([bytes.slice()], { type: MIME[type] }));
+    } catch {
+      return { ok: false, code: type === 'heic' ? 'HEIC_UNSUPPORTED' : 'DECODE_FAILED' };
+    }
   }
 
   try {
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    // WebKit 部分构建不支持 OffscreenCanvas：回退到常规 canvas（仅浏览器环境）
+    const canvas =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(bitmap.width, bitmap.height)
+        : Object.assign(document.createElement('canvas'), {
+            width: bitmap.width,
+            height: bitmap.height,
+          });
     const ctx = canvas.getContext('2d');
     if (!ctx) return { ok: false, code: 'DECODE_FAILED' };
     ctx.drawImage(bitmap, 0, 0);

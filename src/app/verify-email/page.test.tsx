@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-
-vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams('token=abc123'),
-}));
 
 import VerifyEmailPage from './page';
 import { zhCN } from '@/messages/zh-CN';
@@ -15,6 +11,12 @@ vi.stubGlobal('fetch', fetchMock);
 describe('verify-email 页', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    // 页面直接读取 window.location.search（dev 下 useSearchParams 可能挂起）
+    window.history.pushState({}, '', '/verify-email?token=abc123');
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/verify-email');
   });
 
   it('令牌有效 → 成功态并携带登录入口', async () => {

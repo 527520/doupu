@@ -13,9 +13,22 @@ import type * as schema from '@/../db/schema';
 
 export type Database = ProdDatabase | PgliteDatabase<typeof schema>;
 
+/**
+ * 回退库挂到 globalThis：webpack 会把 instrumentation 与各路由打包成
+ * 互相独立的模块副本，模块级变量不共享；globalThis 是唯一可靠的跨副本通道。
+ */
+const globalFallbackKey = '__doupu_fallback_db__';
+
 let prodDb: ProdDatabase | null = null;
 let testDb: PgliteDatabase<typeof schema> | null = null;
-let fallbackDb: PgliteDatabase<typeof schema> | null = null;
+
+function readGlobalFallback(): PgliteDatabase<typeof schema> | null {
+  return (globalThis as Record<string, unknown>)[globalFallbackKey] as PgliteDatabase<typeof schema> | undefined ?? null;
+}
+
+function writeGlobalFallback(db: PgliteDatabase<typeof schema>): void {
+  (globalThis as Record<string, unknown>)[globalFallbackKey] = db;
+}
 
 /** 是否走进程内 PGlite（开发/E2E）。 */
 export function usesPgliteFallback(): boolean {
@@ -24,22 +37,37 @@ export function usesPgliteFallback(): boolean {
 }
 
 async function initFallbackDb(): Promise<PgliteDatabase<typeof schema>> {
-  const [{ PGlite }, { drizzle }, { migrate }, schemaModule] = await Promise.all([
-    import('@electric-sql/pglite'),
-    import('drizzle-orm/pglite'),
-    import('drizzle-orm/pglite/migrator'),
-    import('@/../db/schema'),
-  ]);
+  const [{ PGlite }, { drizzle }, schemaModule, { readdirSync, readFileSync }, { join }] =
+    await Promise.all([
+      import('@electric-sql/pglite'),
+      import('drizzle-orm/pglite'),
+      import('@/../db/schema'),
+      import('node:fs'),
+      import('node:path'),
+    ]);
   const client = new PGlite();
   const db = drizzle(client, { schema: schemaModule });
-  await migrate(db, { migrationsFolder: resolve(process.cwd(), 'db/migrations') });
+  // 直接按文件名顺序执行迁移 SQL（drizzle migrator 在 webpack 打包环境存在
+  // URL 类型问题；测试环境的 db/testClient 仍走 migrator 并已由测试覆盖）。
+  // 注意：drizzle 生成的迁移文件含 `--> statement-breakpoint` 注释行，非合法 SQL，需剔除。
+  const dir = resolve(process.cwd(), 'db/migrations');
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  for (const file of files) {
+    const sqlText = readFileSync(join(dir, file), 'utf8')
+      .split(/\r?\n/)
+      .filter((line) => !line.trim().startsWith('-->'))
+      .join('\n');
+    await client.exec(sqlText);
+  }
   return db;
 }
 
 /** 服务启动钩子（instrumentation.ts）调用：初始化进程内 PGlite 回退库。 */
 export async function ensureFallbackDb(): Promise<void> {
-  if (usesPgliteFallback() && !fallbackDb) {
-    fallbackDb = await initFallbackDb();
+  if (usesPgliteFallback() && !readGlobalFallback()) {
+    writeGlobalFallback(await initFallbackDb());
   }
 }
 
@@ -51,6 +79,7 @@ export function getDb(): Database {
     prodDb = createProdClient(url);
     return prodDb;
   }
+  const fallbackDb = readGlobalFallback();
   if (!fallbackDb) throw new Error('database is not ready (PGlite initializing)');
   return fallbackDb;
 }

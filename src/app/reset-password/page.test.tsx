@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-
-vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams('token=reset-token'),
-}));
 
 import ResetPasswordPage from './page';
 import { zhCN } from '@/messages/zh-CN';
@@ -20,6 +16,12 @@ function fill(password: string, confirm: string): void {
 describe('reset-password 页', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    // 页面直接读取 window.location.search（dev 下 useSearchParams 可能挂起）
+    window.history.pushState({}, '', '/reset-password?token=reset-token');
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/reset-password');
   });
 
   it('密码不一致本地拦截', async () => {

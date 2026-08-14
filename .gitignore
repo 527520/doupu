@@ -47,6 +47,7 @@ next-env.d.ts
 # playwright
 /test-results
 /playwright-report
+/tests/e2e/.tmp
 
 # upstream reference clones (AGPL source kept out of this repo)
 .scratch/photo-to-pattern/upstream/

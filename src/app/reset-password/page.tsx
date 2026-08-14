@@ -1,18 +1,22 @@
 'use client';
 
 /** 重置密码页（spec §F9、边界 E32）：令牌一次性，成功后提示旧会话失效。 */
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { passwordSchema } from '@/lib/schemas';
 
+/** 直接读 window.location.search（dev 下 useSearchParams 可能因路由器未就绪而挂起）。 */
+function tokenFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('token');
+}
+
 function ResetInner() {
   const t = zhCN.authPages;
-  const params = useSearchParams();
-  const token = params.get('token');
+  const token = tokenFromLocation();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -109,15 +113,5 @@ function ResetInner() {
 }
 
 export default function ResetPasswordPage() {
-  return (
-    <Suspense
-      fallback={
-        <AuthShell title={zhCN.authPages.resetTitle}>
-          <p className="text-center text-gray-500">{zhCN.authPages.verifyLoading}</p>
-        </AuthShell>
-      }
-    >
-      <ResetInner />
-    </Suspense>
-  );
+  return <ResetInner />;
 }

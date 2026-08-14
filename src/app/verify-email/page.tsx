@@ -1,19 +1,23 @@
 'use client';
 
 /** 邮箱验证页（spec §F9、边界 E30）：读取 ?token=，POST 验证；失败统一文案 + 重发入口（60s 冷却）。 */
-import { Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 
 type State = 'loading' | 'success' | 'error';
 
+/** 直接读 window.location.search（dev 下 useSearchParams 可能因路由器未就绪而挂起）。 */
+function tokenFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('token');
+}
+
 function VerifyInner() {
   const t = zhCN.authPages;
-  const params = useSearchParams();
-  const token = params.get('token');
+  const token = tokenFromLocation();
   const [state, setState] = useState<State>('loading');
   const [resendEmail, setResendEmail] = useState('');
   const [resendPending, setResendPending] = useState(false);
@@ -121,9 +125,5 @@ function VerifyInner() {
 }
 
 export default function VerifyEmailPage() {
-  return (
-    <Suspense fallback={<AuthShell title={zhCN.authPages.verifyTitle}><p className="text-center text-gray-500">{zhCN.authPages.verifyLoading}</p></AuthShell>}>
-      <VerifyInner />
-    </Suspense>
-  );
+  return <VerifyInner />;
 }

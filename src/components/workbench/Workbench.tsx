@@ -69,6 +69,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [tab, setTab] = useState<Tab>('preview');
 
@@ -412,7 +413,12 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
               </button>
             </div>
             {tab === 'preview' ? (
-              <PatternPreview pattern={pattern} />
+              <PatternPreview
+                pattern={pattern}
+                onCellHover={(info) =>
+                  setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)
+                }
+              />
             ) : (
               <PixelEditorCanvas
                 pattern={pattern}
@@ -420,6 +426,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
                 onStatsChange={handleStatsChange}
                 onPatternChange={handlePatternChange}
               />
+            )}
+            {hoverInfo && tab === 'preview' && (
+              <p role="status" className="rounded bg-gray-800 px-2 py-1 text-xs text-white">
+                {hoverInfo}
+              </p>
             )}
             <p className="text-xs text-gray-400">{t.editorHint}</p>
           </section>
