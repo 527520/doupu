@@ -10,6 +10,8 @@ export default defineConfig({
     },
   },
   test: {
+    globals: true, // 注册 testing-library 自动 cleanup 等全局钩子
+    setupFiles: ['tests/setup.ts'], // jsdom canvas stub
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'tests/unit/**/*.test.{ts,tsx}'],
     // worker threads avoid child-process spawning (sandbox/CI friendly)
