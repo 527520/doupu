@@ -1,0 +1,24 @@
+/**
+ * 密码哈希与校验（ADR-0004）：argon2id，memoryCost 19456 KiB、timeCost 2、parallelism 1。
+ */
+import argon2 from 'argon2';
+
+const ARGON2_OPTIONS = {
+  type: argon2.argon2id,
+  memoryCost: 19456,
+  timeCost: 2,
+  parallelism: 1,
+} as const;
+
+export async function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password, ARGON2_OPTIONS);
+}
+
+/** 校验密码；任何异常（含格式错误的哈希）返回 false。 */
+export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  try {
+    return await argon2.verify(hash, password);
+  } catch {
+    return false;
+  }
+}

@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import { generatePatternPdf } from '@/lib/export/pdf';
+import { loadPdfCjkFont } from '@/lib/export/pdfFont';
 import { buildExportFilename, computePdfLayout } from '@/lib/export/pdfLayout';
 
 export interface PdfExportButtonProps {
@@ -52,7 +53,8 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
     setBusy(true);
     setError(null);
     try {
-      const bytes = await generatePatternPdf({ name, pattern, stats });
+      const fontBytes = await loadPdfCjkFont();
+      const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);
     } catch {

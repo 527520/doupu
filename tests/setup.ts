@@ -31,4 +31,9 @@ if (typeof HTMLCanvasElement !== 'undefined') {
   };
   HTMLCanvasElement.prototype.getContext =
     getContextStub as unknown as typeof HTMLCanvasElement.prototype.getContext;
+
+  // jsdom 不实现 toDataURL：返回最小 PNG data URL（renderThumbnail 等依赖）
+  HTMLCanvasElement.prototype.toDataURL = function toDataURL() {
+    return 'data:image/png;base64,';
+  };
 }

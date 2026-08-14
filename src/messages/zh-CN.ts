@@ -149,6 +149,49 @@ export const zhCN = {
     failedError: '导出失败，请重试',
     untitled: '未命名设计',
   },
+  workbench: {
+    title: '工作台',
+    stepUpload: '上传图片',
+    stepCrop: '裁剪图片',
+    stepWorkspace: '图纸工作台',
+    designName: '设计名称',
+    save: '保存',
+    saving: '保存中…',
+    saved: '已保存',
+    saveFailed: '保存失败',
+    localOnly: '未登录：设计仅保存在本机浏览器，注册后可云端同步',
+    unavailable: '本地存储不可用（可能处于隐私模式），设计将无法保存',
+    quotaError: '本地存储空间不足，请导出项目文件备份后清理浏览器数据',
+    generateFailed: '图纸生成失败，请重试。',
+    decoding: '正在解码图片…',
+    previewTab: '预览',
+    editTab: '编辑',
+    statsTotal: (total: number) => `共 ${total} 粒`,
+    colorCount: (count: number) => `${count} 种颜色`,
+    confirmLeave: '有未保存的修改，确定离开吗？',
+    restart: '重新上传',
+    editorHint: '编辑后将自动保存到本机',
+    customPaletteLabel: '自定义色板',
+  },
+  auth: {
+    emailTaken: '该邮箱已注册，请直接登录或找回密码。',
+    invalidCredentials: '邮箱或密码错误。',
+    loginRequired: '请先登录。',
+    emailUnverified: '邮箱未验证，请查收验证邮件。',
+    linkInvalid: '链接无效或已过期，请重新获取。',
+    currentPasswordWrong: '当前密码不正确。',
+    tooManyRequests: '操作过于频繁，请稍后再试。',
+    verifySubject: '验证你的豆谱账号',
+    verifyText: (link: string) =>
+      `感谢注册豆谱！请点击以下链接完成邮箱验证（24 小时内有效）：\n${link}\n如果这不是你的操作，请忽略本邮件。`,
+    verifyHtml: (link: string) =>
+      `<p>感谢注册豆谱！</p><p>请点击以下链接完成邮箱验证（24 小时内有效）：</p><p><a href="${link}">${link}</a></p><p>如果这不是你的操作，请忽略本邮件。</p>`,
+    resetSubject: '重置你的豆谱密码',
+    resetText: (link: string) =>
+      `你请求了重置豆谱密码。请点击以下链接设置新密码（1 小时内有效）：\n${link}\n如果这不是你的操作，请忽略本邮件。`,
+    resetHtml: (link: string) =>
+      `<p>你请求了重置豆谱密码。</p><p>请点击以下链接设置新密码（1 小时内有效）：</p><p><a href="${link}">${link}</a></p><p>如果这不是你的操作，请忽略本邮件。</p>`,
+  },
 } as const;
 
 export type Messages = typeof zhCN;

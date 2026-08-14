@@ -25,6 +25,13 @@
 
 第三方 npm 依赖的许可证以各自包声明为准（Next.js/MIT、React/MIT、Tailwind CSS/MIT、pdf-lib/MIT、Drizzle ORM/Apache-2.0、argon2/MIT 等）。
 
+## 字体
+
+PDF 导出嵌入 **Noto Sans CJK SC**（OFL-1.1，SIL Open Font License）：
+- 来源：https://github.com/notofonts/noto-cjk（Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf）
+- 字体文件：`public/fonts/NotoSansCJKsc-Regular.otf`；许可全文：`public/fonts/OFL.txt`
+- 用途：打印版 PDF 的中文页眉、图例与清单文本（pdf-lib + fontkit 子集嵌入）。
+
 ## 本项目许可
 
 豆谱整体以 AGPL-3.0 发布，详见 `LICENSE`。

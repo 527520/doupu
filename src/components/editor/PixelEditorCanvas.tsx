@@ -33,6 +33,11 @@ interface Props {
   defaultCellPx?: number;
   onStatsChange?: (stats: PatternStatsItem[], total: number) => void;
   onColorChange?: (color: PaletteColor | null) => void;
+  /**
+   * 编辑提交/撤销/重做后回调最新图纸（工作台保存/导出所需，T12 接入）。
+   * 注意：cells 为副本，调用方不应原地修改。
+   */
+  onPatternChange?: (pattern: Pattern) => void;
 }
 
 export default function PixelEditorCanvas({
@@ -41,11 +46,14 @@ export default function PixelEditorCanvas({
   defaultCellPx,
   onStatsChange,
   onColorChange,
+  onPatternChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(createEditorState(pattern));
   const historyRef = useRef(new EditHistory());
+  const onPatternChangeRef = useRef(onPatternChange);
+  onPatternChangeRef.current = onPatternChange;
 
   const [tool, setToolState] = useState<ToolId>('brush');
   const [brushSize, setBrushSizeState] = useState<BrushSize>(1);
@@ -85,7 +93,8 @@ export default function PixelEditorCanvas({
     setCanRedo(historyRef.current.canRedo);
     setVersion((v) => v + 1);
     if (stats && total !== undefined && onStatsChange) onStatsChange(stats, total);
-  }, [onStatsChange]);
+    onPatternChangeRef.current?.({ width: W, height: H, cells: stateRef.current.cells.map((c) => ({ ...c })) });
+  }, [onStatsChange, W, H]);
 
   const commit = useCallback(
     (label: ToolId, snapshots: EditSnapshot[]): number => {

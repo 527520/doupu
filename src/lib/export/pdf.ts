@@ -1,12 +1,14 @@
 /**
  * 打印版 PDF 生成（spec §F7 PDF 部分）。
  * 依赖 pdf-lib；布局计算全部委托 pdfLayout.ts。
- * 文本说明：当前使用 StandardFonts.Helvetica（WinAnsi），非 ASCII 字符经 toWinAnsi 替换；
- * 升级路径：嵌入 CJK 字体后移除 toWinAnsi 并直接使用中文页眉（见 pdfLayout.ts 注释）。
+ * 文本：传入 CJK 字体字节（Noto Sans SC，OFL）时嵌入子集并输出中文；
+ * 未传入时回退 Helvetica + WinAnsi（非 ASCII 替换为 '?'，仅用于测试/降级路径）。
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { hexToRgb } from '@/lib/engine/color';
 import { contrastColor } from '@/lib/render/layout';
+import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import {
   A4_HEIGHT_MM,
@@ -31,6 +33,11 @@ export interface PdfExportInput {
   stats: PatternStatsItem[];
 }
 
+export interface PdfExportOptions {
+  /** Noto Sans SC 字体字节；null/undefined 时走 ASCII 降级路径 */
+  fontBytes?: Uint8Array | null;
+}
+
 const PAGE_W_PT = A4_WIDTH_MM * MM_TO_PT;
 const PAGE_H_PT = A4_HEIGHT_MM * MM_TO_PT;
 const MARGIN_PT = PDF_MARGIN_MM * MM_TO_PT;
@@ -42,14 +49,18 @@ function drawLegend(
   font: PDFFont,
   name: string,
   stats: PatternStatsItem[],
+  cjk: boolean,
 ): void {
+  const t = zhCN.export;
   const top = PAGE_H_PT - MARGIN_PT;
-  const title = truncateTextToWidth(name.trim() || 'Pattern', 12, PAGE_W_PT - 2 * MARGIN_PT, '...');
-  page.drawText(`Legend · ${toWinAnsi(title)}`, { x: MARGIN_PT, y: top - 14, size: 12, font });
+  const rawTitle = cjk ? `${t.legendTitle} · ${name.trim()}` : `Legend · ${name.trim()}`;
+  const title = truncateTextToWidth(rawTitle || 'Pattern', 12, PAGE_W_PT - 2 * MARGIN_PT, '...');
+  page.drawText(cjk ? title : toWinAnsi(title), { x: MARGIN_PT, y: top - 14, size: 12, font });
 
   const items = sortStatsForLegend(stats);
   const total = items.reduce((sum, item) => sum + item.count, 0);
-  page.drawText(`Total: ${total} beads`, { x: MARGIN_PT, y: top - 28, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
+  const totalText = cjk ? `总计：${total} ${t.countUnit}` : `Total: ${total} beads`;
+  page.drawText(totalText, { x: MARGIN_PT, y: top - 28, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
   if (items.length === 0) return;
 
   const usableMm = A4_WIDTH_MM - 2 * PDF_MARGIN_MM;
@@ -77,13 +88,16 @@ function drawLegend(
       });
     }
     const code = truncateTextToWidth(item.code, 8, maxTextWidth, '...');
-    const text = `${toWinAnsi(code)} x${item.count}`;
+    const text = `${cjk ? code : toWinAnsi(code)} x${item.count}`;
     page.drawText(text, { x: x + 12, y: y - 7, size: 8, font });
   });
 }
 
 /** 生成分页拼图 PDF；返回 PDF 字节。 */
-export async function generatePatternPdf(input: PdfExportInput): Promise<Uint8Array> {
+export async function generatePatternPdf(
+  input: PdfExportInput,
+  options: PdfExportOptions = {},
+): Promise<Uint8Array> {
   const { name, pattern, stats } = input;
   const { width: W, height: H, cells } = pattern;
   const layout = computePdfLayout(W, H);
@@ -92,8 +106,17 @@ export async function generatePatternPdf(input: PdfExportInput): Promise<Uint8Ar
   }
 
   const doc = await PDFDocument.create();
-  doc.setTitle(name.trim() || 'Pattern');
-  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.setTitle(name.trim() || '豆谱图纸');
+
+  let font: PDFFont;
+  let cjk = false;
+  if (options.fontBytes && options.fontBytes.length > 0) {
+    doc.registerFontkit(fontkit);
+    font = await doc.embedFont(options.fontBytes, { subset: true });
+    cjk = true;
+  } else {
+    font = await doc.embedFont(StandardFonts.Helvetica);
+  }
 
   for (const page of layout.gridPages) {
     const pdfPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
@@ -103,7 +126,8 @@ export async function generatePatternPdf(input: PdfExportInput): Promise<Uint8Ar
     const gridBottom = gridTop - gridH;
 
     // 页眉（第 x/y 页 · 行列区间）
-    pdfPage.drawText(toWinAnsi(pageHeaderText(page)), {
+    const header = pageHeaderText(page);
+    pdfPage.drawText(cjk ? header : toWinAnsi(header), {
       x: MARGIN_PT,
       y: gridTop + 4,
       size: 9,
@@ -141,7 +165,7 @@ export async function generatePatternPdf(input: PdfExportInput): Promise<Uint8Ar
         });
         if (cell.code) {
           const label = truncateTextToWidth(cell.code, 4, CELL_PT - 2, '...');
-          const safe = toWinAnsi(label);
+          const safe = cjk ? label : toWinAnsi(label);
           const textWidth = font.widthOfTextAtSize(safe, 4);
           const isLight = contrastColor(cell.hex) === '#000000';
           pdfPage.drawText(safe, {
@@ -179,7 +203,7 @@ export async function generatePatternPdf(input: PdfExportInput): Promise<Uint8Ar
 
   // 图例与用量清单页（末页）
   const legendPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
-  drawLegend(legendPage, font, name, stats);
+  drawLegend(legendPage, font, name, stats, cjk);
 
   return doc.save();
 }
