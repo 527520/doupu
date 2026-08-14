@@ -1,7 +1,15 @@
 # 21: 部署与交付
 
-- Status: open
+- Status: resolved
 - Blocked by: 20
+
+## 完成记录
+
+- 已交付：`Dockerfile`（standalone 多阶段、非 root、健康检查）、`docker-compose.prod.yml`（app/postgres/caddy/每日备份）、`Caddyfile`（自动 TLS + 安全头）、`deploy/scripts/{deploy.sh,backup.sh}`（COS v5 签名备份）、`deploy/restore.md`（恢复演练）、`deploy/CHECKLIST.md`（购机/域名/个人 ICP 备案/SES/COS 全流程）、`.env.example`、`README.md`、`next.config.ts`（standalone）、`db/migrate.cjs`（容器内迁移入口）、`.github/workflows/{ci.yml,release.yml}`（含三浏览器 E2E 门禁与 tag→GHCR 镜像）。
+- 已验证：standalone 服务器本地冒烟（/、/app、字体资产 200）；E2E 27/27（三浏览器）；单元 429/429；lint/typecheck/build 全绿。
+- **移交用户的最后两步（本环境无法代做，检查单已逐步指引）**：
+  1. 在 github.com/527520 新建 Public 仓库 `doupu` 后执行 `git push -u origin main`（本机 git 当前无法连通 GitHub，且建仓需账号操作；21 个提交已全部就绪本地）。
+  2. `deploy/CHECKLIST.md` 第 1–8 步：购机/域名/备案/DNS/SES/COS → 服务器上 `bash deploy/scripts/deploy.sh`。Docker 冒烟与备份恢复演练需 Docker 主机（本沙箱无 Docker），按 `deploy/restore.md` 在服务器上执行。
 
 ## 目标
 

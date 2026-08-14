@@ -1,18 +1,25 @@
 /**
  * 会话 Cookie 的序列化/解析（ADR-0004）：
- * doupu_session，HttpOnly / SameSite=Lax / Secure / Path=/，30 天滚动过期。
+ * doupu_session，HttpOnly / SameSite=Lax / Path=/，30 天滚动过期。
+ * Secure 仅在生产（HTTPS）附加：WebKit 会在 http://127.0.0.1 上拒绝 Secure Cookie，
+ * 导致开发/E2E 环境无法保持会话。
  */
+
+function secureFlag(): string {
+  return process.env.NODE_ENV === 'production' ? '; Secure' : '';
+}
+
 export const SESSION_COOKIE_NAME = 'doupu_session';
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 天
 
 /** 序列化 Set-Cookie 值（供响应头使用）。 */
 export function serializeSessionCookie(token: string, maxAgeSeconds: number = SESSION_TTL_SECONDS): string {
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${maxAgeSeconds}`;
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax${secureFlag()}; Max-Age=${maxAgeSeconds}`;
 }
 
 /** 清除会话的 Set-Cookie 值。 */
 export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`;
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax${secureFlag()}; Max-Age=0`;
 }
 
 /** 解析请求 Cookie 头 → Map（重复同名取第一个；无头返回空 Map）。 */

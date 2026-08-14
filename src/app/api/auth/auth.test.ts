@@ -108,7 +108,12 @@ describe('认证全生命周期', () => {
     const cookieHeader = login1.headers.get('set-cookie')!;
     expect(cookieHeader).toContain('HttpOnly');
     expect(cookieHeader).toContain('SameSite=Lax');
-    expect(cookieHeader).toContain('Secure');
+    // Secure 仅生产附加（WebKit 拒绝 http://127.0.0.1 上的 Secure Cookie）；测试环境断言其缺失
+    if (process.env.NODE_ENV === 'production') {
+      expect(cookieHeader).toContain('Secure');
+    } else {
+      expect(cookieHeader).not.toContain('Secure');
+    }
     expect(cookieHeader).toContain('Max-Age=2592000');
     const token1 = setCookieFromResponse(login1)!;
     expect(token1).toMatch(/^[A-Za-z0-9_-]{43}$/);

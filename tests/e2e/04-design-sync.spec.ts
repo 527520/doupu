@@ -52,6 +52,8 @@ test('双设备同步：设备 A 保存 → 设备 B 登录后可见同一设计
   await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
   await fillField(pageA, '设计名称', '云端同步测试设计');
   await pageA.getByRole('button', { name: /保存/ }).click();
+  // 等待保存完成（IndexedDB 写入落盘）再导航，避免慢浏览器下写入被中断
+  await expect(pageA.getByText(/已保存/).first()).toBeVisible({ timeout: 15_000 });
 
   // 设备 A 的设计列表出现该设计
   await pageA.goto('/designs');

@@ -65,6 +65,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
 
   // 保存并刷新恢复
   await page.getByRole('button', { name: /保存/ }).click();
+  await expect(page.getByText(/已保存/).first()).toBeVisible({ timeout: 15_000 });
   await page.reload();
   await expect(page.getByLabel('设计名称').first()).toBeVisible();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
