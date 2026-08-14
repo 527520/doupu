@@ -1,7 +1,12 @@
 # 16: 设计与色板 API + 同步引擎
 
-- Status: claimed
+- Status: resolved
 - Blocked by: 13
+
+## 父代理验证记录
+
+- 集成修复：db/client 拆分（生产/测试分离）、`AnyDatabase` 联合类型、session.ts/rateLimit.ts 命名同步；T16 测试已自行切换到 `db/testClient.ts`。
+- 验收：`src/lib/sync` 12/12、designs 路由 10/10、palettes 路由 5/5 全部通过；全量 376/376 绿、lint 绿、standalone 构建成功（提交 cd0fdd4）。
 
 ## 完成记录（实现完成；最终验收待父代理在 T14 落地后运行）
 
