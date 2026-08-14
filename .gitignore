@@ -50,3 +50,6 @@ next-env.d.ts
 
 # upstream reference clones (AGPL source kept out of this repo)
 .scratch/photo-to-pattern/upstream/
+.scratch/photo-to-pattern/research/perler-beads-master/
+.scratch/photo-to-pattern/research/perler-beads-ai-main/
+.scratch/photo-to-pattern/research/*.tar.gz
