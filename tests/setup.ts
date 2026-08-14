@@ -1,7 +1,10 @@
 /**
  * 测试全局设置：jsdom 不支持 Canvas 2D，用 Proxy 桩替代，
  * 使组件测试中的 drawImage/fillRect 等调用静默成功（像素断言在 E2E 覆盖）。
+ * 同时注册 testing-library 的 jest-dom 匹配器（toBeDisabled 等）。
  */
+import '@testing-library/jest-dom/vitest';
+
 const noop = (): void => undefined;
 
 type AnyObject = Record<string | symbol, unknown>;

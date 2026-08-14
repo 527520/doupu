@@ -5,6 +5,9 @@
 import rawData from './data/colorSystemMapping.json';
 import { BRANDS, type Brand, type PaletteColor } from '@/lib/types';
 
+// 供 UI 层便捷引用（BRANDS 的权威定义在 types.ts）
+export { BRANDS };
+
 /** 原始数据形状：hex → 各品牌色号（"-" 表示该品牌无此色号）。 */
 export type RawColorSystemMapping = Record<string, Partial<Record<Brand, string>>>;
 

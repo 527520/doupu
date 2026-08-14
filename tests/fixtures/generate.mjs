@@ -163,6 +163,23 @@ write('static.webp', riff([webpChunk('VP8L', Buffer.from([0x2f, 0x00, 0x00, 0x00
 
 write('empty.bin', Buffer.alloc(0));
 write('text-as-photo.jpg', Buffer.from('这不是图片，只是文本', 'utf8'));
+// E2E 用彩色渐变照片（64×64，覆盖多色相）
+{
+  const size = 64;
+  const pixels = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      pixels[i] = Math.round((x / size) * 255);
+      pixels[i + 1] = Math.round((y / size) * 255);
+      pixels[i + 2] = Math.round(128 + 64 * Math.sin((x + y) / 8));
+      pixels[i + 3] = 255;
+    }
+  }
+  write('photo-gradient-64.png', buildPng(size, size, pixels));
+  // 全透明 PNG（E10）
+  write('transparent-64.png', buildPng(size, size, Buffer.alloc(size * size * 4)));
+}
 // 伪 HEIC：ftyp 盒（size=20, 'ftyp', major 'heic', minor 0, 兼容 'mif1'）+ 垃圾字节
 {
   const ftyp = Buffer.alloc(20);

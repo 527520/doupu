@@ -1,7 +1,16 @@
 # 18: 色板管理 UI
 
-- Status: open
+- Status: resolved
 - Blocked by: 16
+
+## 完成记录
+
+- `src/components/palettes/api.ts`：listPalettes/savePalette/deletePalette（对接 T16 API，401/409/400 分类为 PalettesApiError）、`getPaletteColors(record)`（工作台接入接缝，T19）、newPaletteId。
+- `src/components/palettes/PaletteEditor.tsx`：逐行录入（色号 ≤20/hex）+ 行内即时校验（E20 矩阵：非法 hex/重复色号大小写不敏感/重复 hex/超长色号/空板全局错误/500 上限）+ 粘贴导入（parseHexList 纯函数）+ 文件导入 + 复制自品牌（覆盖前确认，291 行含色号）+ 计数与保存禁用逻辑。
+- `src/app/palettes/page.tsx`：内置五品牌只读展示（各 291 色）+ 自定义色板列表（空态/加载失败重试/未登录提示）+ 新建/编辑（含名称，重命名走编辑器）/删除（确认框）。
+- `src/messages/zh-CN.ts` 定点新增 `palettes:` 命名空间（含 retry 键）。
+- 测试 24 例：PaletteEditor 17（E20 矩阵全项 + 粘贴/文件/复制/纯函数）+ 页面 7（加载/空态/重试/401/新建保存/删除确认/编辑预填）。typecheck/lint 对本票文件零错误；`npm run test -- --run src/components/palettes src/app/palettes` 24/24 绿。
+- 注：工作台品牌选择器接入自定义色板由 T19 用 getPaletteColors 接缝完成（按父代理指示不修改工作台）。
 
 ## 目标
 
