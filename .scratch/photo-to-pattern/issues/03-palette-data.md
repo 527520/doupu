@@ -11,7 +11,7 @@
 
 - 从 `.scratch/photo-to-pattern/upstream/zippland/src/app/colorSystemMapping.json` 复制数据到 `src/lib/palettes/data/colorSystemMapping.json`，文件头注明出处（上游 AGPL-3.0）。
 - `src/lib/palettes/`：加载与程序化校验（291 个 hex 合法且唯一；每品牌色号在品牌内唯一；"-" 值 → `code: null`）；`buildBrandPalette(brand)` → `PaletteColor[]`；可用色过滤（`code === null` 的 hex 在该品牌下不可用）；自定义色板领域逻辑（CRUD 校验、色号唯一、hex 合法唯一、≤500 色、≤20 字色号）。
-- 交叉验证：解析上游根目录 `色号对应表.csv`（GBK 编码），断言其与 JSON 数据一致（该 csv 存为测试 fixture 副本，附出处说明）。
+- 交叉验证：解析上游根目录 `色号对应表.csv`（实际为 UTF-8 带 BOM 编码，非 GBK），断言其与 JSON 数据一致（CSV 多候选值如 `157/70` 按「JSON 取值 ∈ 候选集」比对）；上游已知缺陷（漫漫 S4 重复）白名单锁定。
 - 最近色索引基础设施的输入类型（供 T05 使用）。
 
 ## 不含

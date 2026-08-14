@@ -1,6 +1,16 @@
 # 01: 项目脚手架与工程基础
 
-- Status: claimed
+- Status: resolved
+
+## 完成记录
+
+- git 仓库初始化；Next.js 15.3.6 脚手架（App Router、`src/`、TS strict、Tailwind 4、ESLint），包名 `doupu`。
+- 测试链：Vitest 4（pool: threads）+ @vitejs/plugin-react + jsdom + testing-library + Playwright；配置文件 `vitest.config.mts`、`playwright.config.mts`。
+- CI：`.github/workflows/ci.yml`（lint → typecheck → unit → build，E2E 留 T20）。
+- 合规：`LICENSE`（AGPL-3.0 标准全文）、`NOTICE.md`（上游出处）；`.gitattributes` 统一 LF。
+- 文案模块 `src/messages/zh-CN.ts`（含错误码文案骨架）；占位首页与 layout（zh-CN、系统字体栈，移除 Google Fonts）。
+- 沙箱适配已记录：npm 缓存/APPDATA 重定向到工作区、安装用 `--foreground-scripts`；测试与构建需父代理以扩展权限运行（本机 sandbox 限制子进程 spawn，CI 不受影响）。
+- 门禁全绿：lint ✓、typecheck ✓、vitest 3/3 ✓、build ✓（提交 9f8d957 起 3 个提交）。
 - Blocked by: 无
 
 ## 目标
