@@ -1,7 +1,14 @@
 # 20: E2E 测试套件
 
-- Status: open
+- Status: resolved
 - Blocked by: 09, 10, 11, 12, 17
+
+## 完成记录
+
+- 基础设施：globalSetup/globalTeardown 启动 webpack dev 服务器（端口 3100）；dev 邮件假实现输出重定向到系统临时目录（避免 dev 文件监听触发 Fast Refresh）；DATABASE_URL 置空 → instrumentation 钩子初始化进程内 PGlite（免装 Postgres）；邮件链接经 URL 解析拼接基址。
+- 用例 8 个 × 3 浏览器（chromium/firefox/webkit）= 24 例全绿：注册→验证→登录全旅程、登录防枚举、找回密码恒成功、工作台全流程（上传→裁剪→调参→悬停→编辑→撤销→PNG/PDF/项目文件导出→保存→刷新恢复）、E4 动图拒绝、E3 改名文本拒绝、E2 截断 PNG、E10 全透明图。
+- 过程中修复真实跨浏览器缺陷：WebKit 的 createImageBitmap 不接受 options 参数、OffscreenCanvas 缺失 → 双层回退。
+- 全量门禁：429 单测绿、lint 绿、build 绿（提交 5c5bf9e）。
 
 ## 目标
 
