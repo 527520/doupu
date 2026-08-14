@@ -27,4 +27,29 @@ jobs:
       - name: Build
         run: npm run build
 
-  # E2E job is added by ticket 20 (runs against the docker-compose stack).
+  e2e:
+    name: E2E（chromium / firefox / webkit）
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run E2E
+        run: npm run test:e2e
+        env:
+          E2E_SKIP_EMAIL: '1'
+      - name: Upload E2E report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
