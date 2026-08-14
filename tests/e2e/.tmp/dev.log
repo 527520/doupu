@@ -1,0 +1,26 @@
+   ▲ Next.js 15.3.6
+   - Local:        http://localhost:3100
+   - Network:      http://198.18.0.1:3100
+
+ ✓ Starting...
+ ○ Compiling /instrumentation ...
+ ✓ Compiled /instrumentation in 913ms (164 modules)
+Error: Failed query: CREATE SCHEMA IF NOT EXISTS "drizzle"
+params: 
+    at async initFallbackDb (src\lib\auth\db.ts:35:2)
+    at async ensureFallbackDb (src\lib\auth\db.ts:42:17)
+    at async Module.register (src\instrumentation.ts:9:4)
+  33 |   const client = new PGlite();
+  34 |   const db = drizzle(client, { schema: schemaModule });
+> 35 |   await migrate(db, { migrationsFolder: resolve(process.cwd(), 'db/migrations') });
+     |  ^
+  36 |   return db;
+  37 | }
+  38 | {
+  query: 'CREATE SCHEMA IF NOT EXISTS "drizzle"',
+  params: [],
+  [cause]: [TypeError: The "path" argument must be of type string or an instance of Buffer or URL. Received an instance of URL] {
+    code: 'ERR_INVALID_ARG_TYPE'
+  }
+}
+[?25h

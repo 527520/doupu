@@ -1,7 +1,14 @@
 # 19: 响应式、新手引导与帮助页
 
-- Status: open
+- Status: resolved
 - Blocked by: 12, 17
+
+## 完成记录
+
+- `src/components/onboarding/OnboardingGuide.tsx`：三步引导（游客且未关闭时显示；localStorage 记忆关闭；/api/auth/me 探测会话）+ 6 例测试（401 显示/200 隐藏/已关闭不发请求/关闭记忆/网络失败静默/链接指向）。
+- `src/app/help/page.tsx`（上传要求/参数说明/板缝线/导出说明/5 条 FAQ）+ `src/app/about/page.tsx`（开源声明 AGPL-3.0/上游致谢/源码链接/隐私政策/备案号占位）+ 2 例内容测试。
+- 首页集成引导并将上传区改为入口链接；响应式断点（sm/md/lg）按 Tailwind 类内建，真实 viewport 断言由 T20 E2E 覆盖。
+- 全量验收：429/429 测试绿、typecheck 绿、lint 绿。
 
 ## 目标
 
