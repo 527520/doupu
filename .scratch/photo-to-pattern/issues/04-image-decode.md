@@ -1,6 +1,13 @@
 # 04: 图像解码与输入校验模块
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/image/`：sniff.ts（魔数嗅探：JPEG/PNG/WebP/GIF/HEIC 含 ftyp 兼容品牌；无扩展名兜底，E3 改名文件按内容拒绝）、animation.ts（GIF 块遍历帧计数、APNG acTL 先于 IDAT、WebP VP8X 动画位/ANIM chunk；损坏输入不抛异常）、validation.ts（EMPTY/UNSUPPORTED/TOO_LARGE/ANIMATED + 像素上限）、decode.ts（浏览器适配：createImageBitmap from-image、HEIC 原生探测与 WASM 缝位）。
+- fixture：`tests/fixtures/generate.mjs` 零依赖生成 PNG/双帧 GIF/APNG/VP8X 动画 WebP/截断 PNG/伪 HEIC/文本改名/空文件；EXIF 旋转与真实 HEIC 解码断言延后至 T20 E2E（已注明）。
+- 测试 21 例（嗅探 6、动图 6、校验 9）全绿；错误码 ↔ messages.errors 映射完整性断言。
+- 实现中修复两处自研 bug：ascii 读取语义（start+length）统一、GIF 描述符 packed 字节偏移。
 - Blocked by: 02
 
 ## 目标
