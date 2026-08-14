@@ -1,0 +1,22 @@
+/** 应用级常量：名称、版本、外部链接。 */
+export const APP_NAME = '豆谱';
+export const APP_VERSION = '0.1.0';
+export const SOURCE_REPO_URL = 'https://github.com/527520/doupu';
+export const PROJECT_FILE_FORMAT = 'doupu-project' as const;
+export const PROJECT_FILE_VERSION = 1 as const;
+
+/** 规格约束（spec §F1/F3/F6/F8），全项目唯一来源。 */
+export const LIMITS = {
+  maxFileBytes: 20 * 1024 * 1024,
+  maxPixels: 8000 * 8000,
+  targetWidth: { min: 20, max:200 },
+  targetColorCount: { min: 2, max: 128 },
+  gridCells: 200 * 200,
+  designNameLength: 100,
+  projectFileBytes: 5 * 1024 * 1024,
+  designsPerUser: 100,
+  palettesPerUser: 20,
+  customPaletteColors: 500,
+  customPaletteCodeLength: 20,
+  password: { min: 8, max: 72 },
+} as const;

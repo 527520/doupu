@@ -1,0 +1,2 @@
+[   25679ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://github.com/NervJS/taro/blob/main/packages/react/package.json:0
+[   29909ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://github.com/NervJS/taro/latest-commit/main/packages/react/package.json:0
