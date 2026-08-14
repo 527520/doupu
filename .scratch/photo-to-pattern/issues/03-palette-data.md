@@ -1,6 +1,13 @@
 # 03: 色板数据模块
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- 数据复制：`src/lib/palettes/data/colorSystemMapping.json`（上游逐字副本，出处见 data/README.md 与 NOTICE.md）；`tests/fixtures/color-system-table.csv`（上游 `色号对应表.csv` 副本，实为 **UTF-8 带 BOM**，非此前记录的 GBK）。
+- `src/lib/palettes/index.ts`：validateColorSystemData / normalizeCode（"-"→null）/ buildBrandPalette / getAvailableColors / lookupCode。
+- 实测发现的上游数据事实：①漫漫品牌 S4 色号重复（#7FCD9D 与 #F3C1C0，CSV 亦同）——白名单锁定，不臆改数据；②CSV 个别单元格为多候选值（如盼盼 P05–P08 的 "157/70"）——按「JSON 取值 ∈ 候选集」比对；③#55514C 在漫漫下为 "-"（E19 依据）。
+- 测试 10 例：完整性白名单断言、品牌 291 映射、normalizeCode、E19 可用色剔除、lookupCode、CSV 表头/行数/逐行一致性。
 - Blocked by: 02
 
 ## 目标

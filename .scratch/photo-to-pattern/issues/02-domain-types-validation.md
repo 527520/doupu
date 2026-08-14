@@ -1,6 +1,11 @@
 # 02: 领域核心类型与校验
 
-- Status: open
+- Status: resolved
+
+## 完成记录
+
+- `src/lib/types.ts`（Brand/BRANDS/isBrand、PaletteColor、SampleMode、GenerationParams+DEFAULT、PatternCell、Pattern、PatternStatsItem、CustomPaletteColor/Palette、ProjectPalette、ProjectFile、DesignMeta）、`src/lib/errors.ts`（AppErrorCode/HTTP_STATUS/AppError/ApiErrorBody）、`src/lib/schemas.ts`（hex/designName/email/password/生成参数/单元格/图纸/自定义色板/项目文件 v1/全套 API DTO + parseProjectFile 含 5MB 限制与 BOM 容忍 + parseGenerationParams 字段级错误）。
+- 单测 20 例覆盖 E14/E15/E17/E20/E31/E38/E10/E11 与 §5.3 坏文件矩阵；`src/lib/appInfo.ts` 的 LIMITS 为唯一常量来源。
 - Blocked by: 无
 
 ## 目标
