@@ -1,35 +1,22 @@
 /**
- * 数据库客户端工厂（ADR-0003）。
- * - 生产：node-postgres 连接池（DATABASE_URL）。
- * - 测试：PGlite（进程内 Postgres，免 Docker；@electric-sql/pglite + drizzle-orm/pglite）。
- * 说明：drizzle-orm / @electric-sql/pglite / pg 依赖由父代理安装（T13 交付时缺失），
- * 安装后执行 typecheck 与 db/models.test.ts。
+ * 生产数据库客户端（ADR-0003）：node-postgres 连接池。
+ * 注意：PGlite 测试客户端在 db/testClient.ts（仅测试导入，避免进入应用打包链）。
  */
-import { fileURLToPath } from 'node:url';
 import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { PGlite } from '@electric-sql/pglite';
-import { drizzle as drizzlePglite, type PgliteDatabase } from 'drizzle-orm/pglite';
-import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
 import { sql } from 'drizzle-orm';
+import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import * as schema from './schema';
 import { rateLimits } from './schema';
 
-export type Database = NodePgDatabase<typeof schema> | PgliteDatabase<typeof schema>;
+export type ProdDatabase = NodePgDatabase<typeof schema>;
+/** 生产/测试两种客户端共用的联合类型（PGlite 仅为 type-only 导入，不进打包链）。 */
+export type AnyDatabase = ProdDatabase | PgliteDatabase<typeof schema>;
 
 /** 生产客户端：连接池（max 10，单实例规模）。 */
-export function createProdClient(databaseUrl: string): NodePgDatabase<typeof schema> {
+export function createProdClient(databaseUrl: string): ProdDatabase {
   const pool = new Pool({ connectionString: databaseUrl, max: 10 });
   return drizzlePg(pool, { schema });
-}
-
-/** 测试客户端：内存 PGlite + 执行全部迁移（从零可重放、幂等）。 */
-export async function createTestClient(): Promise<PgliteDatabase<typeof schema>> {
-  const client = new PGlite();
-  const db = drizzlePglite(client, { schema });
-  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url));
-  await migratePglite(db, { migrationsFolder });
-  return db;
 }
 
 /**
@@ -37,7 +24,7 @@ export async function createTestClient(): Promise<PgliteDatabase<typeof schema>>
  * 同 key + 同窗口内 UPSERT 累加；新窗口重置为 1。返回递增后的 count。
  */
 export async function incrementRateLimit(
-  db: Database,
+  db: AnyDatabase,
   key: string,
   windowStart: Date,
 ): Promise<number> {

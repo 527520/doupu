@@ -3,7 +3,7 @@
  * 数据层使用 PGlite 内存库；邮件走 sentMails()；next/headers 的 cookies() 用可控 jar mock。
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTestClient } from '@/../db/client';
+import { createTestClient } from '@/../db/testClient';
 import { setTestDb } from '@/lib/auth/db';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';

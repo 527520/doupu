@@ -2,7 +2,7 @@
  * 限流（spec §4.2 / ADR-0004）：按 key 每 1 小时窗口最多 limit 次。
  * 使用 db/incrementRateLimit 原子递增；窗口起点按小时对齐。
  */
-import { incrementRateLimit, type Database } from '@/../db/client';
+import { incrementRateLimit, type AnyDatabase } from '@/../db/client';
 
 const WINDOW_MS = 60 * 60 * 1000;
 
@@ -27,7 +27,7 @@ export function clientIp(request: Request): string {
  * 递增计数并判定是否放行；返回 false 表示已超限（调用方回 429）。
  */
 export async function checkRateLimit(
-  db: Database,
+  db: AnyDatabase,
   key: string,
   limit: number,
   now: Date = new Date(),

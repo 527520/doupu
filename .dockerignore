@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.scratch
+tests
+docs
+.github
+*.log
+.env
+.env.*
+!.env.example
+docker-compose*.yml
+Caddyfile
+deploy

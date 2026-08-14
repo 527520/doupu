@@ -1,7 +1,16 @@
 # 15: 认证页面与邮件模板
 
-- Status: open
+- Status: resolved
 - Blocked by: 14
+
+## 完成记录
+
+- 页面：`src/app/{login,register,verify-email,forgot-password,reset-password}/page.tsx`（全部 'use client'，noValidate + 自定义校验；登录 401/400/429 统一文案防枚举；注册 409 emailTaken + 400 字段级错误；验证页 token 来自 URL（Suspense 包裹 useSearchParams）+ 失败统一文案 + 重发 60s 冷却；找回页恒成功语义含网络失败分支 + 冷却；重置页成功提示旧会话失效）。
+- 组件：`src/components/auth/{AuthShell,FormError}.tsx`；邮件模板 `src/lib/auth/mailTemplate.ts`（纯函数，文案单一来源 zhCN.auth）。
+- 文案：`authPages:` 命名空间 24 键。
+- 测试 24 例全绿：mailTemplate 3、login 5、register 5、verify-email 3、forgot-password 4、reset-password 4；覆盖 E28/E30/E31/E32 呈现与防枚举路径。
+- 修复过程：jsdom 原生表单校验拦截 submit → 表单加 noValidate；标题/按钮文本歧义 → role 查询；validHours 未使用告警。
+- 说明：全局 typecheck 现存 2 处错误在 T16 在途文件（db/client Database 导出重命名竞争），与本票无关。
 
 ## 目标
 

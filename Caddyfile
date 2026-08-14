@@ -1,0 +1,14 @@
+# 豆谱反向代理与 TLS（Caddy 自动签发 Let's Encrypt 证书）
+{$SITE_DOMAIN} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(self), microphone=()"
+		-Server
+	}
+
+	reverse_proxy app:3000
+}

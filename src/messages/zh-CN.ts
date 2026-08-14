@@ -192,6 +192,33 @@ export const zhCN = {
     resetHtml: (link: string) =>
       `<p>你请求了重置豆谱密码。</p><p>请点击以下链接设置新密码（1 小时内有效）：</p><p><a href="${link}">${link}</a></p><p>如果这不是你的操作，请忽略本邮件。</p>`,
   },
+  authPages: {
+    loginTitle: '登录',
+    registerTitle: '注册',
+    verifyTitle: '邮箱验证',
+    forgotTitle: '找回密码',
+    resetTitle: '重置密码',
+    email: '邮箱',
+    password: '密码',
+    confirmPassword: '确认密码',
+    loginSubmit: '登录',
+    registerSubmit: '注册',
+    submit: '提交',
+    noAccount: '还没有账号？去注册',
+    hasAccount: '已有账号？去登录',
+    loginSuccess: '登录成功，正在跳转…',
+    registeredSent: '注册成功！验证邮件已发送，请查收邮件并点击链接完成验证。',
+    verifyLoading: '正在验证邮箱…',
+    verifySuccess: '邮箱验证成功！现在可以登录了。',
+    goLogin: '前往登录',
+    resendTitle: '重新发送验证邮件',
+    resendSent: '若该邮箱已注册，验证邮件已重新发送，请查收。',
+    forgotSent: '若该邮箱已注册，重置邮件已发送，请查收（1 小时内有效）。',
+    resetSuccess: '密码已重置，旧会话已全部失效，请重新登录。',
+    passwordMismatch: '两次输入的密码不一致。',
+    required: '请填写此项。',
+    cooldown: (seconds: number) => `请 ${seconds} 秒后再试`,
+  },
 } as const;
 
 export type Messages = typeof zhCN;

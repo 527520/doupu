@@ -4,11 +4,12 @@
  */
 import { describe, expect, it, beforeAll } from 'vitest';
 import { eq, count } from 'drizzle-orm';
-import { createTestClient, incrementRateLimit, type Database } from './client';
+import { createTestClient } from './testClient';
+import { incrementRateLimit, type AnyDatabase } from './client';
 import { users, sessions, emailTokens, designs, palettes, rateLimits } from './schema';
 
 describe('db models（PGlite）', () => {
-  let db: Database;
+  let db: AnyDatabase;
 
   beforeAll(async () => {
     db = await createTestClient();

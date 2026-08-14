@@ -5,7 +5,7 @@
 import { cookies } from 'next/headers';
 import { and, eq, gt } from 'drizzle-orm';
 import { sessions, users } from '@/../db/schema';
-import type { Database } from '@/../db/client';
+import type { AnyDatabase } from '@/../db/client';
 import { getDb } from './db';
 import { generateToken, hashToken } from './tokens';
 import { readSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from './cookies';
@@ -14,7 +14,7 @@ const TTL_MS = SESSION_TTL_SECONDS * 1000;
 
 /** 创建会话：返回明文令牌（仅此一次）与过期时间。 */
 export async function createSession(
-  db: Database,
+  db: AnyDatabase,
   userId: string,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = generateToken();
@@ -24,12 +24,12 @@ export async function createSession(
 }
 
 /** 按令牌哈希删除单个会话。 */
-export async function deleteSessionByToken(db: Database, token: string): Promise<void> {
+export async function deleteSessionByToken(db: AnyDatabase, token: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)));
 }
 
 /** 删除用户的全部会话（找回密码后旧会话全失效，spec E32）。 */
-export async function deleteAllUserSessions(db: Database, userId: string): Promise<void> {
+export async function deleteAllUserSessions(db: AnyDatabase, userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
 }
 
@@ -38,7 +38,7 @@ export async function deleteAllUserSessions(db: Database, userId: string): Promi
  * 返回 userId 或 null；会话不存在/已过期/用户不存在均返回 null。
  */
 export async function resolveSessionUserId(
-  db: Database,
+  db: AnyDatabase,
   cookieHeader: string | null,
   now: Date = new Date(),
 ): Promise<string | null> {
