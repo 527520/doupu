@@ -23,9 +23,11 @@ export interface SesCredentials {
 /**
  * 模板发信（个人实名用户无「自定义发送」权限，仅可用控制台创建的模板；
  * 错误码 FailedOperation.WithOutPermission）。模板变量键名与模板中 {{key}} 一致。
+ * 注意：SendEmail 即使模板模式也强制要求 Subject 字段（MissingParameter）。
  */
 export interface SesTemplateMail {
   to: string;
+  subject: string;
   templateId: string;
   templateData: Record<string, string>;
 }
@@ -51,6 +53,7 @@ export function buildSesSendRequest(
   const payload = JSON.stringify({
     FromEmailAddress: creds.from,
     Destination: [mail.to],
+    Subject: mail.subject,
     Template: {
       TemplateID: mail.templateId,
       // SES 约定：TemplateData 为 JSON 字符串

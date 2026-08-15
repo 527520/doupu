@@ -100,7 +100,7 @@ export async function sendMail(
           region: process.env.SES_REGION ?? 'ap-guangzhou',
           from: SES_FROM,
         },
-        { to, templateId, templateData: options?.sesTemplate?.templateData ?? {} },
+        { to, subject, templateId, templateData: options?.sesTemplate?.templateData ?? {} },
       );
       return;
     }

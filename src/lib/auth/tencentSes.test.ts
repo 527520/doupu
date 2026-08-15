@@ -16,7 +16,7 @@ const creds = {
   region: 'ap-guangzhou',
   from: 'noreply@doupu.fun',
 };
-const mail = { to: 'user@example.com', templateId: '1000001', templateData: { token: 'verify-token-abc' } };
+const mail = { to: 'user@example.com', subject: '验证你的豆谱账号', templateId: '1000001', templateData: { token: 'verify-token-abc' } };
 const fixedDate = new Date('2026-08-15T08:00:00.000Z');
 
 interface SesPayloadShape {
@@ -32,7 +32,7 @@ describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
     const body = JSON.parse(req.body) as SesPayloadShape;
     expect(body.FromEmailAddress).toBe(creds.from);
     expect(body.Destination).toEqual([mail.to]);
-    expect(body.Subject).toBeUndefined(); // 主题由模板控制
+    expect(body.Subject).toBe(mail.subject); // API 强制要求，即使模板模式
     expect(body.Template.TemplateID).toBe(mail.templateId);
     expect(JSON.parse(body.Template.TemplateData)).toEqual(mail.templateData);
     expect(req.body).not.toContain(creds.secretKey);
@@ -75,6 +75,7 @@ describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
     const payload = JSON.stringify({
       FromEmailAddress: creds.from,
       Destination: [mail.to],
+      Subject: mail.subject,
       Template: { TemplateID: mail.templateId, TemplateData: JSON.stringify(mail.templateData) },
     });
     const canonicalRequest = [
