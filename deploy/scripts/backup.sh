@@ -30,13 +30,20 @@ STRING_TO_SIGN="sha1\n${SIGN_TIME}\n$(printf "%b" "${HTTP_STR}" | openssl dgst -
 SIGNATURE=$(printf "%b" "${STRING_TO_SIGN}" | openssl dgst -sha1 -hmac "${SIGN_KEY}" -binary | openssl base64)
 AUTH="q-sign-algorithm=sha1&q-ak=${COS_SECRET_ID}&q-sign-time=${SIGN_TIME}&q-key-time=${SIGN_TIME}&q-header-list=${HTTP_HEADERS}&q-url-param-list=&q-signature=${SIGNATURE}"
 
-curl -fsS -X PUT \
+HTTP_CODE=$(curl -sS -o "${TMP}.resp" -w "%{http_code}" -X PUT \
   -H "Host: ${HOST}" \
   -H "Date: ${HTTP_DATE}" \
   -H "Content-Type: ${CONTENT_TYPE}" \
   -H "Authorization: ${AUTH}" \
   --data-binary "@${TMP}" \
-  "https://${HOST}/${KEY}"
+  "https://${HOST}/${KEY}")
 
-rm -f "${TMP}"
+if [ "${HTTP_CODE}" != "200" ]; then
+  echo "COS upload failed with HTTP ${HTTP_CODE}:" >&2
+  cat "${TMP}.resp" >&2
+  rm -f "${TMP}.resp" "${TMP}"
+  exit 1
+fi
+
+rm -f "${TMP}.resp" "${TMP}"
 echo "backup uploaded: ${KEY}"
