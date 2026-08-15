@@ -134,7 +134,7 @@ export default function EditorToolbar({
         {t.replace}
       </button>
       {replaceCountMessage && <span className="text-xs text-gray-500">{replaceCountMessage}</span>}
-      <button type="button" onClick={onClear} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">
+      <button type="button" onClick={onClear} title={t.clearTitle} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">
         {t.clear}
       </button>
     </div>

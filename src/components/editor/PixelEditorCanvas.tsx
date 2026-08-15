@@ -22,6 +22,7 @@ import {
   type ToolId,
 } from '@/lib/editor/ops';
 import { createEditorState, refreshStats } from '@/lib/editor/state';
+import Modal from '@/components/ui/Modal';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD_PX = 6;
@@ -68,6 +69,7 @@ export default function PixelEditorCanvas({
   const [replaceFrom, setReplaceFrom] = useState('');
   const [replaceTo, setReplaceTo] = useState('0');
   const [replaceMsg, setReplaceMsg] = useState<string | null>(null);
+  const [clearOpen, setClearOpen] = useState(false);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
 
   // 容器宽度自适应：窄屏（手机）按实际可用宽度计算格尺寸，画布等比、绝不拉伸
@@ -128,11 +130,29 @@ export default function PixelEditorCanvas({
     historyRef.current = new EditHistory();
     setCanUndo(false);
     setCanRedo(false);
+    setCursor(null); // 新图纸尺寸可能变化，旧光标坐标失效
     const color = palette[0] ?? null;
     setCurrentColorState(color);
     onColorChange?.(color);
     setVersion((v) => v + 1);
   }, [pattern, palette, onColorChange]);
+
+  // 光标格始终滚入视野：方向键在放大/小格画布上移动时不会「看不见光标」
+  useEffect(() => {
+    if (!cursor) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const x = cursor.col * cellPx;
+    const y = cursor.row * cellPx;
+    if (x < container.scrollLeft) container.scrollLeft = x;
+    else if (x + cellPx > container.scrollLeft + container.clientWidth) {
+      container.scrollLeft = x + cellPx - container.clientWidth;
+    }
+    if (y < container.scrollTop) container.scrollTop = y;
+    else if (y + cellPx > container.scrollTop + container.clientHeight) {
+      container.scrollTop = y + cellPx - container.clientHeight;
+    }
+  }, [cursor, cellPx]);
 
   const commit = useCallback(
     (label: ToolId, snapshots: EditSnapshot[]): number => {
@@ -173,9 +193,22 @@ export default function PixelEditorCanvas({
       showLabels: cellPx >= 12,
     });
     if (cursor) {
+      const cx = cursor.col * cellPx;
+      const cy = cursor.row * cellPx;
+      // 高对比双描边：外白内蓝，任何底色（含深色格子）上都清晰可见
+      ctx.lineWidth = Math.max(3, Math.round(cellPx / 4));
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeRect(cx + 1, cy + 1, Math.max(1, cellPx - 2), Math.max(1, cellPx - 2));
+      ctx.lineWidth = Math.max(2, Math.round(cellPx / 8));
       ctx.strokeStyle = '#1d4ed8';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(cursor.col * cellPx + 1, cursor.row * cellPx + 1, cellPx - 2, cellPx - 2);
+      ctx.strokeRect(cx + 1, cy + 1, Math.max(1, cellPx - 2), Math.max(1, cellPx - 2));
+      if (cellPx < 6) {
+        // 极小格（手机上 100×100 图纸）：中心十字标记，确保能看到光标位置
+        ctx.fillStyle = '#ffffff';
+        const half = Math.max(1, Math.floor(cellPx / 2));
+        ctx.fillRect(cx + half, cy, 1, cellPx);
+        ctx.fillRect(cx, cy + half, cellPx, 1);
+      }
     }
   }, [W, H, cellPx, cursor, version]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -238,7 +271,19 @@ export default function PixelEditorCanvas({
     [W, setColor],
   );
 
+  /** 光标格的可读标签（色号或留空），用于状态行展示。 */
+  const cursorCellLabel = useCallback(
+    (row: number, col: number): string => {
+      const cell = stateRef.current.cells[row * W + col];
+      if (!cell) return '—';
+      return cell.transparent ? '留空' : (cell.code ?? cell.hex ?? '—');
+    },
+    [W],
+  );
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    // 点击画布即聚焦编辑区：之后方向键立即可用（否则按键会作用到页面其他地方）
+    containerRef.current?.focus();
     const cell = cellAt(e.clientX, e.clientY);
     if (!cell) return;
     const active = toolRef.current;
@@ -346,7 +391,12 @@ export default function PixelEditorCanvas({
   };
 
   const onClear = (): void => {
+    setClearOpen(true); // 先弹确认（清空整张图纸是破坏性操作，误触代价高）
+  };
+
+  const confirmClear = (): void => {
     commit('clear', clearAll(stateRef.current.cells));
+    setClearOpen(false);
   };
 
   const onReplaceSubmit = (e: React.FormEvent): void => {
@@ -390,8 +440,9 @@ export default function PixelEditorCanvas({
       case 'arrowright': {
         e.preventDefault();
         setCursor((prev) => {
-          if (!prev) return { row: 0, col: 0 };
-          const next = { ...prev };
+          // 首次按键即初始化并应用移动（此前首次按键只落光标不移动，用户感觉按键无效）
+          const base = prev ?? { row: 0, col: 0 };
+          const next = { ...base };
           if (e.key === 'ArrowUp') next.row = Math.max(0, next.row - 1);
           if (e.key === 'ArrowDown') next.row = Math.min(H - 1, next.row + 1);
           if (e.key === 'ArrowLeft') next.col = Math.max(0, next.col - 1);
@@ -467,6 +518,7 @@ export default function PixelEditorCanvas({
       <div
         ref={containerRef}
         tabIndex={0}
+        aria-label={t.editorRegion}
         onKeyDown={onKeyDown}
         className="overflow-auto rounded border border-gray-200 bg-gray-50 p-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
       >
@@ -480,10 +532,29 @@ export default function PixelEditorCanvas({
           style={{ touchAction: 'none', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>
-      <p className="text-xs text-gray-400">
-        {tool === 'pick' ? t.pickHint : t.cursorHint}
+      <p className="text-xs text-gray-400" role="status">
+        {tool === 'pick'
+          ? t.pickHint
+          : cursor
+            ? t.cursorAt(cursor.row + 1, cursor.col + 1, cursorCellLabel(cursor.row, cursor.col))
+            : t.cursorHint}
         {currentColor ? ` · ${currentColor.code ?? currentColor.hex}` : ` · ${t.noColor}`}
       </p>
+
+      {clearOpen && (
+        <Modal label={t.clearConfirmTitle} onClose={() => setClearOpen(false)} panelClassName="max-w-sm border-red-200">
+          <h3 className="text-sm font-medium text-red-700">{t.clearConfirmTitle}</h3>
+          <p className="mt-2 text-sm leading-6 text-gray-600">{t.clearConfirmBody}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => setClearOpen(false)} className="rounded border border-gray-300 px-3 py-1 text-sm">
+              {zhCN.designs.cancel}
+            </button>
+            <button type="button" onClick={confirmClear} className="rounded bg-red-600 px-3 py-1 text-sm text-white">
+              {t.clearConfirm}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

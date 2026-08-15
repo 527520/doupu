@@ -95,6 +95,40 @@ describe('PixelEditorCanvas', () => {
     expect(screen.getByRole('button', { name: /画笔/ }).getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('方向键移动光标：状态行显示行列与色号', () => {
+    const { canvas } = setup();
+    const wrapper = canvas.parentElement!;
+    // 未按键：显示提示文案
+    expect(screen.getByText(/方向键移动光标/)).toBeTruthy();
+    // 初始光标 (0,0) → 右移 → 第 1 行第 2 列，该格为红色 A
+    fireEvent.keyDown(wrapper, { key: 'ArrowRight' });
+    expect(screen.getByText(/光标：第 1 行 第 2 列 · A（回车落笔）/)).toBeTruthy();
+    // 下移越界被钳制在最后一行（3×2 图纸 → 第 2 行）
+    fireEvent.keyDown(wrapper, { key: 'ArrowDown' });
+    fireEvent.keyDown(wrapper, { key: 'ArrowDown' });
+    expect(screen.getByText(/光标：第 2 行 第 2 列/)).toBeTruthy();
+  });
+
+  it('回车在光标格落笔并上抛统计', () => {
+    const { onStatsChange, canvas } = setup();
+    const wrapper = canvas.parentElement!;
+    fireEvent.keyDown(wrapper, { key: 'ArrowRight' }); // 光标到 (0,1)
+    fireEvent.keyDown(wrapper, { key: 'Enter' });
+    // (0,1) 红 A → 蓝 B：统计 A 5 / B 1
+    expect(onStatsChange).toHaveBeenCalledWith(
+      expect.arrayContaining([{ code: 'B', hex: '#0000FF', count: 1 }]),
+      6,
+    );
+  });
+
+  it('点击画布后编辑区获得焦点（方向键立即可用）', () => {
+    const { canvas } = setup();
+    const wrapper = canvas.parentElement!;
+    pointer(canvas, 'pointerDown', { clientX: 0, clientY: 0 });
+    pointer(canvas, 'pointerUp', { clientX: 0, clientY: 0 });
+    expect(document.activeElement).toBe(wrapper);
+  });
+
   it('触屏长按 500ms 吸色（fake timers）', () => {
     vi.useFakeTimers();
     const { onColorChange, canvas } = setup();
@@ -136,11 +170,24 @@ describe('PixelEditorCanvas', () => {
     expect(screen.getByText('图中没有该色号，未做任何修改')).toBeTruthy();
   });
 
-  it('清除全部后统计为 0，撤销恢复（E24）', () => {
+  it('清除全部：先确认弹窗，确认后统计为 0，撤销恢复（E24）', () => {
     const { onStatsChange } = setup();
     fireEvent.click(screen.getByRole('button', { name: /清除全部/ }));
+    // 未确认前不清除
+    expect(onStatsChange).not.toHaveBeenCalledWith([], 0);
+    const dialog = screen.getByRole('dialog', { name: '清除全部' });
+    expect(dialog).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /确认清除/ }));
     expect(onStatsChange).toHaveBeenCalledWith([], 0);
     fireEvent.click(screen.getByRole('button', { name: /撤销/ }));
     expect(onStatsChange).toHaveBeenLastCalledWith([{ code: 'A', hex: '#FF0000', count: 6 }], 6);
+  });
+
+  it('清除全部：取消确认不清除', () => {
+    const { onStatsChange } = setup();
+    fireEvent.click(screen.getByRole('button', { name: /清除全部/ }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(onStatsChange).not.toHaveBeenCalled();
   });
 });
