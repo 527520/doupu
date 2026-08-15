@@ -9,8 +9,8 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-echo "==> 构建并启动服务"
-docker compose -f docker-compose.prod.yml up -d --build
+echo "==> 构建并启动服务（--force-recreate：确保 .env/源码变更必定生效）"
+docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 
 echo "==> 等待 postgres 就绪"
 for i in $(seq 1 30); do
