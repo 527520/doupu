@@ -24,13 +24,33 @@ export default function Home() {
         </Link>
       </section>
 
-      <nav className="flex flex-wrap justify-center gap-6 text-sm text-blue-600 underline-offset-4 hover:underline">
-        <Link href="/app">{nav.workbench}</Link>
-        <Link href="/designs">{nav.designs}</Link>
-        <Link href="/palettes">{nav.palettes}</Link>
-        <Link href="/help">{nav.help}</Link>
-        <Link href="/about">{nav.about}</Link>
-        <Link href="/login">{nav.login}</Link>
+      <nav
+        aria-label={nav.mainNav}
+        className="flex flex-wrap items-center justify-center gap-2 text-sm"
+      >
+        {(
+          [
+            ['/app', nav.workbench],
+            ['/designs', nav.designs],
+            ['/palettes', nav.palettes],
+            ['/help', nav.help],
+            ['/about', nav.about],
+          ] as const
+        ).map(([href, label]) => (
+          <Link
+            key={href}
+            href={href}
+            className="rounded-full px-4 py-2 font-medium text-gray-600 transition-colors duration-150 hover:bg-blue-50 hover:text-blue-600"
+          >
+            {label}
+          </Link>
+        ))}
+        <Link
+          href="/login"
+          className="rounded-full bg-blue-600 px-5 py-2 font-medium text-white transition-colors duration-150 hover:bg-blue-700"
+        >
+          {nav.login}
+        </Link>
       </nav>
 
       <footer className="mt-auto flex w-full flex-col items-center gap-2 pb-6 text-xs text-gray-400">

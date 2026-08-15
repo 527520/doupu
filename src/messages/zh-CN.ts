@@ -10,6 +10,7 @@ export const zhCN = {
     description: '豆谱（DouPu）—— 免费开源的拼豆图纸生成工具：上传照片或像素画，裁剪、调参、修补，导出可打印的拼豆图纸。',
   },
   nav: {
+    mainNav: '主导航',
     workbench: '工作台',
     designs: '我的设计',
     palettes: '色板管理',
