@@ -61,6 +61,8 @@ export function exportPngBlob(
   let legendWidth = 0;
   let legendCols = 0;
   let legendEntriesPerCol = 0;
+  /** 图例列宽依据的最长文本宽度（px）——宽度计算与绘制两处必须用同一个值，避免长色号越界 */
+  let legendTextPx = 0;
   if (includeLegend && stats.length > 0) {
     legendCols = legendColumns(stats.length, cellPx, patternPxH);
     legendEntriesPerCol = legendEntriesPerColumn(cellPx, patternPxH);
@@ -79,7 +81,8 @@ export function exportPngBlob(
     } else {
       maxTextPx = cellPx * 4;
     }
-    legendWidth = legendCols * legendColumnWidth(cellPx, maxTextPx) + LEGEND_GAP;
+    legendTextPx = Math.max(maxTextPx, 1);
+    legendWidth = legendCols * legendColumnWidth(cellPx, legendTextPx) + LEGEND_GAP;
   }
 
   const canvas = document.createElement('canvas');
@@ -152,7 +155,7 @@ export function exportPngBlob(
   // 图例（右侧，按列排布，确定性顺序来自 computeStats）
   if (includeLegend && stats.length > 0) {
     const entryH = legendEntryHeight(cellPx);
-    const colWidth = legendColumnWidth(cellPx, Math.max(fontPx * 3, 1));
+    const colWidth = legendColumnWidth(cellPx, legendTextPx);
     const legendX0 = patternPxW + LEGEND_GAP;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';

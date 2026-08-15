@@ -8,7 +8,9 @@ import { LIMITS } from '@/lib/appInfo';
  */
 export function exceedsProjectLimit(project: unknown): boolean {
   try {
-    return JSON.stringify(project).length > LIMITS.projectFileBytes;
+    // 用字节数而非 UTF-16 字符数：与请求体体积上限、项目文件解析的口径一致
+    // （含中文/emoji 时字符数会明显低估实际体积）。
+    return new TextEncoder().encode(JSON.stringify(project)).length > LIMITS.projectFileBytes;
   } catch {
     return true;
   }

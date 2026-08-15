@@ -97,11 +97,21 @@ function cursorForMode(mode: DragMode): string {
 export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageCropperProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** 拖拽中注册的原生监听清理函数（pointerup/cancel 或组件卸载时调用，防止遗留监听）。 */
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const [rect, setRect] = useState<Rect>(() =>
     clampCropRect(initialRect ?? { x: 0, y: 0, width: image.width, height: image.height }, image.width, image.height),
   );
   const [ratioMode, setRatioMode] = useState<RatioMode>('free');
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+
+  // 卸载兜底：拖拽进行中组件被移除时清理画布上的监听
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
 
   // 容器宽度自适应：画布始终等比显示，窄屏（手机）绝不拉伸变形
   useEffect(() => {
@@ -296,6 +306,13 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         setRect(clampCropRect(nextRectFor(q), image.width, image.height));
       };
 
+      const cleanupDragListeners = (): void => {
+        canvas.removeEventListener('pointermove', onMove as unknown as EventListener);
+        canvas.removeEventListener('pointerup', onUp as unknown as EventListener);
+        canvas.removeEventListener('pointercancel', onUp as unknown as EventListener);
+        dragCleanupRef.current = null;
+      };
+
       const onUp = (ev: PointerEvent) => {
         // pointerup 位置是权威终点：以它收敛最终选区（部分浏览器会合并中间 pointermove，
         // 只依赖 move 事件可能丢掉最后一小段拖动）。
@@ -315,14 +332,13 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
           setRect(clampCropRect(nextRectFor(q), image.width, image.height));
         }
         canvas.style.cursor = 'crosshair';
-        canvas.removeEventListener('pointermove', onMove as unknown as EventListener);
-        canvas.removeEventListener('pointerup', onUp as unknown as EventListener);
-        canvas.removeEventListener('pointercancel', onUp as unknown as EventListener);
+        cleanupDragListeners();
       };
 
       canvas.addEventListener('pointermove', onMove as unknown as EventListener);
       canvas.addEventListener('pointerup', onUp as unknown as EventListener);
       canvas.addEventListener('pointercancel', onUp as unknown as EventListener);
+      dragCleanupRef.current = cleanupDragListeners;
     },
     [rect, image.width, image.height, ratioMode, ratioFor, toImageCoords, clampPointer, hitSize],
   );
