@@ -1,6 +1,9 @@
 # ---------- 构建阶段 ----------
 FROM node:20-alpine AS deps
 WORKDIR /app
+# argon2 的 musl 预编译与新版 alpine musl ABI 不兼容，node-gyp-build 会回退源码编译，
+# 因此需要编译工具链（仅构建阶段，运行镜像不受影响）
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
@@ -35,6 +38,10 @@ COPY --from=builder /app/db/migrations ./db/migrations
 # 补全 drizzle-orm：nft 只追踪了 ESM 变体，而 db/migrate.cjs 以 CJS require
 # node-postgres/index.cjs 与 node-postgres/migrator 子路径，需整包覆盖。
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+
+# 补全 argon2：node-gyp-build 动态解析 build/Release 或 prebuilds 中的原生二进制，
+# nft 无法静态追踪该路径；整包覆盖保证密码哈希在容器内可用。
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/argon2 ./node_modules/argon2
 
 USER nextjs
 EXPOSE 3000
