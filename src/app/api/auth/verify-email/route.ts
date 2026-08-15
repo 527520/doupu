@@ -19,9 +19,10 @@ export async function POST(request: Request) {
 
   const db = getDb();
   const now = new Date();
-  const rows = await db
-    .select({ id: emailTokens.id, userId: emailTokens.userId })
-    .from(emailTokens)
+  // 原子消费：条件更新（usedAt IS NULL 且未过期），并发双 POST 只有一次生效（安全审查 P2）
+  const consumed = await db
+    .update(emailTokens)
+    .set({ usedAt: now })
     .where(
       and(
         eq(emailTokens.tokenHash, hashToken(parsed.data.token)),
@@ -29,18 +30,18 @@ export async function POST(request: Request) {
         isNull(emailTokens.usedAt),
         gt(emailTokens.expiresAt, now),
       ),
-    );
+    )
+    .returning();
 
   // 过期/重用/伪造统一文案（spec 边界 E30）
-  if (rows.length === 0) {
+  if (consumed.length === 0) {
     return apiError(new AppError('VALIDATION', zhCN.auth.linkInvalid));
   }
 
-  await db.update(emailTokens).set({ usedAt: now }).where(eq(emailTokens.id, rows[0].id));
   await db
     .update(users)
     .set({ emailVerifiedAt: now, updatedAt: now })
-    .where(eq(users.id, rows[0].userId));
+    .where(eq(users.id, consumed[0].userId));
 
   return okJson({ ok: true });
 }

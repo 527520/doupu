@@ -7,6 +7,7 @@
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
 import { ImageCropper } from '@/components/crop/ImageCropper';
 import GenerationParamsPanel, { type PaletteOption } from '@/components/params/GenerationParamsPanel';
@@ -70,6 +71,22 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<'guest' | 'user'>('guest');
+
+  // 登录态探测：决定头部显示「登录/注册」还是「我的设计」入口
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me', { method: 'GET' })
+      .then((res) => {
+        if (!cancelled) setAuthStatus(res.ok ? 'user' : 'guest');
+      })
+      .catch(() => {
+        if (!cancelled) setAuthStatus('guest');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [tab, setTab] = useState<Tab>('preview');
 
@@ -360,6 +377,21 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         {step === 'workspace' && (
           <div className="flex items-center gap-4">
             <SaveStatus state={saveState} onSave={() => void doSave()} />
+            <div className="flex items-center gap-3 text-sm">
+              {authStatus === 'guest' && (
+                <>
+                  <Link href="/login" className="text-blue-600 hover:underline">
+                    {zhCN.nav.login}
+                  </Link>
+                  <Link href="/register" className="text-blue-600 hover:underline">
+                    {zhCN.nav.register}
+                  </Link>
+                </>
+              )}
+              <Link href="/designs" className="text-blue-600 hover:underline">
+                {zhCN.nav.designs}
+              </Link>
+            </div>
             <button
               type="button"
               onClick={handleRestart}

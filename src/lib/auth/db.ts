@@ -30,8 +30,11 @@ function writeGlobalFallback(db: PgliteDatabase<typeof schema>): void {
   (globalThis as Record<string, unknown>)[globalFallbackKey] = db;
 }
 
-/** 是否走进程内 PGlite（开发/E2E）。 */
+/** 是否走进程内 PGlite（仅开发/E2E）。 */
 export function usesPgliteFallback(): boolean {
+  // 生产环境绝不允许静默回退内存库（重启即丢数据，安全审查 P0）：
+  // 缺 DATABASE_URL 时 fail-fast，由部署侧显式配置。
+  if (process.env.NODE_ENV === 'production') return false;
   const url = process.env.DATABASE_URL;
   return !url || url.startsWith('pglite:');
 }
@@ -78,6 +81,9 @@ export function getDb(): Database {
   if (url && !url.startsWith('pglite:')) {
     prodDb = createProdClient(url);
     return prodDb;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DATABASE_URL is not configured (production requires PostgreSQL)');
   }
   const fallbackDb = readGlobalFallback();
   if (!fallbackDb) throw new Error('database is not ready (PGlite initializing)');

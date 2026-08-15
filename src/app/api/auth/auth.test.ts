@@ -176,7 +176,7 @@ describe('认证全生命周期', () => {
     cookieJar.set(SESSION_COOKIE_NAME, setCookieFromResponse(loginAfterReset)!);
 
     // 9. 退出登录 → 204 + 清除 Cookie；me → 401
-    const logout = await logoutPost();
+    const logout = await logoutPost(post('/api/auth/logout', {}));
     expect(logout.status).toBe(204);
     expect(logout.headers.get('set-cookie')).toContain('Max-Age=0');
     cookieJar.clear();

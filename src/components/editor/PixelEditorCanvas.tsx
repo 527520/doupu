@@ -369,6 +369,7 @@ export default function PixelEditorCanvas({
         brushSize={brushSize}
         canUndo={canUndo}
         canRedo={canRedo}
+        currentColor={currentColor}
         replaceCountMessage={replaceMsg}
         onToolChange={(next) => {
           setToolState(next);

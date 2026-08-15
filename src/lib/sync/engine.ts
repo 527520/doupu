@@ -28,6 +28,20 @@ export function compareUpdatedAt(a: string, b: string): number {
 }
 
 /**
+ * 客户端时钟偏差防护（安全审查 P2-8）：
+ * 离线编辑产生的本地时间戳若 ≤ 已知服务器时间（本机时钟落后），
+ * 会被 LWW 误判为旧数据；此处钳制为 maxServer + 1ms 并返回。
+ * 客户端时钟领先时原样保留（服务器仍采纳其时间，跨设备下一轮比对以服务端回显对齐）。
+ */
+export function sanitizeClientTimestamp(clientIso: string, maxServerIso: string | null): string {
+  if (!maxServerIso) return clientIso;
+  const client = Date.parse(clientIso);
+  const server = Date.parse(maxServerIso);
+  if (!Number.isFinite(client) || !Number.isFinite(server)) return clientIso;
+  return client <= server ? new Date(server + 1).toISOString() : clientIso;
+}
+
+/**
  * 双向比对（LWW）：
  * - 本地独有 → push（含本地墓碑）；
  * - 云端独有 → pull（云端墓碑且本地从未见过该 id 时忽略，避免垃圾墓碑）；

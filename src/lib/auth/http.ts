@@ -8,11 +8,55 @@ import { zodErrorsToStrings } from '@/lib/schemas';
 
 export type JsonResult = { ok: true; data: unknown } | { ok: false; response: NextResponse };
 
-/** 解析 JSON 请求体；失败返回 400 VALIDATION。 */
-export async function readJson(request: Request): Promise<JsonResult> {
+export const DEFAULT_MAX_BODY_BYTES = 64 * 1024; // 认证类端点默认上限
+
+/**
+ * 解析 JSON 请求体；失败返回 400 VALIDATION。
+ * maxBytes 先按 Content-Length 预检、再流式截断，避免超大 body 打爆内存（安全审查 P0）。
+ */
+export async function readJson(request: Request, maxBytes: number = DEFAULT_MAX_BODY_BYTES): Promise<JsonResult> {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    return {
+      ok: false,
+      response: apiError(new AppError('VALIDATION', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
+    };
+  }
+
+  const body = request.body;
+  if (!body) {
+    return { ok: false, response: apiError(new AppError('VALIDATION', '请求体不能为空')) };
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   try {
-    const data = await request.json();
-    return { ok: true, data };
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return {
+          ok: false,
+          response: apiError(new AppError('VALIDATION', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
+        };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, response: apiError(new AppError('VALIDATION', '读取请求体失败')) };
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { ok: true, data: JSON.parse(new TextDecoder().decode(merged)) };
   } catch {
     return {
       ok: false,

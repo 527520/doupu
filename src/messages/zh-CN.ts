@@ -134,6 +134,7 @@ export const zhCN = {
     pickHint: '点击图纸拾取颜色',
     cursorHint: '方向键移动光标，回车落笔',
     noColor: '请先选择颜色',
+    currentColor: '当前颜色',
     canvasAria: '图纸编辑画布',
   },
   exportPdf: {

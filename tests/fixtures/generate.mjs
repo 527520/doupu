@@ -185,6 +185,22 @@ write('text-as-photo.jpg', Buffer.from('这不是图片，只是文本', 'utf8')
   write('photo-gradient-64.png', buildPng(size, size, pixels));
   // 全透明 PNG（E10）
   write('transparent-64.png', buildPng(size, size, Buffer.alloc(size * size * 4)));
+  // 裁剪交互测试用大图（320×200：角手柄热区占比小，可区分移动/缩放/框选）
+  {
+    const w = 320;
+    const h = 200;
+    const px = Buffer.alloc(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        px[i] = Math.round((x / w) * 255);
+        px[i + 1] = Math.round((y / h) * 255);
+        px[i + 2] = Math.round(128 + 64 * Math.sin((x + y) / 16));
+        px[i + 3] = 255;
+      }
+    }
+    write('photo-wide-320x200.png', buildPng(w, h, px));
+  }
 }
 // 伪 HEIC：ftyp 盒（size=20, 'ftyp', major 'heic', minor 0, 兼容 'mif1'）+ 垃圾字节
 {

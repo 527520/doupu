@@ -3,7 +3,7 @@
  * 本地存储（src/lib/storage）与云端 designs API 之间。
  * 纯逻辑、可注入（storage/api 均由调用方传入），单测无需 DOM/网络。
  */
-import { reconcile, type SyncRecord } from './engine';
+import { reconcile, sanitizeClientTimestamp, type SyncRecord } from './engine';
 import { parseStoredProject } from '@/lib/storage';
 import type { DesignRecord, StorageAdapter } from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
@@ -53,6 +53,7 @@ export interface SyncOutcome {
 }
 
 const TOMBSTONES_META_KEY = 'sync-tombstones';
+const LAST_SERVER_TIME_KEY = 'sync-last-server-time';
 
 interface TombstoneShape {
   id: string;
@@ -109,11 +110,36 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
         name: m.name,
       }));
 
+      // 时钟偏差防护（安全审查 P2-8）：仅保护「上次同步之后」的本地编辑——
+      // 若本地时间戳早于已知服务器时间（本机时钟落后），钳制为 maxServer+1ms；
+      // 旧快照（≤ lastServer）与首次同步保持原样，交 LWW 判定（保守信任服务器）。
+      const lastServer = await storage.getMeta(LAST_SERVER_TIME_KEY);
+      const maxServer = cloudMeta.reduce<string | null>(
+        (max, m) => (max === null || m.updatedAt > max ? m.updatedAt : max),
+        null,
+      );
+      for (const record of local) {
+        if (record.deleted) continue;
+        if (!lastServer || record.updatedAt <= lastServer) continue;
+        const sanitized = sanitizeClientTimestamp(record.updatedAt, maxServer);
+        if (sanitized !== record.updatedAt) {
+          record.updatedAt = sanitized;
+          if (record.project) record.project.updatedAt = sanitized;
+          const existing = all.find((r) => r.id === record.id);
+          if (existing) {
+            existing.updatedAt = sanitized;
+            if (record.project) existing.projectJson = JSON.stringify(record.project);
+            await storage.put(existing);
+          }
+        }
+      }
+
       const result = reconcile([...local, ...tombstones], cloud);
       const outcome: SyncOutcome = { pushed: 0, pulled: 0, overwrittenByCloud: result.overwrittenByCloud, errors: [...errors] };
 
       // 推送
       const pushedTombstoneIds: string[] = [];
+      let maxAdopted: string | null = null; // 本轮推送中服务端回显的最大时间戳
       for (const record of result.toPush) {
         try {
           if (record.deleted) {
@@ -122,6 +148,7 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
           } else if (record.project) {
             const name = record.name ?? record.project.name;
             const response = await api.putDesign(record.id, name, record.project);
+            if (!maxAdopted || response.updatedAt > maxAdopted) maxAdopted = response.updatedAt;
             // 采纳服务端 updatedAt：本地内容与云端时间戳对齐，下次比对准幂等
             const existing = all.find((r) => r.id === record.id);
             if (existing) {
@@ -167,6 +194,15 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
         } catch (error) {
           outcome.errors.push(`${record.id}: ${error instanceof Error ? error.message : '拉取失败'}`);
         }
+      }
+
+      // 记录本次同步后的服务器时间基准（时钟偏差防护的门控依据）。
+      // 必须包含本轮推送回显的时间戳：否则下次同步会把「已对齐的相等时间戳」再钳制 +1ms，
+      // 造成每轮都误判为脏数据而无限推送。
+      let newBaseline = maxServer ?? lastServer;
+      if (maxAdopted && (!newBaseline || maxAdopted > newBaseline)) newBaseline = maxAdopted;
+      if (newBaseline) {
+        await storage.setMeta(LAST_SERVER_TIME_KEY, newBaseline);
       }
 
       return outcome;

@@ -57,8 +57,8 @@ docs/adr/      架构决策记录
 
 ## 测试
 
-全量测试 400+ 例：纯算法（含属性测试与性能预算）、React 组件（jsdom）、
-API 路由（PGlite 真实数据库语义）、E2E 主旅程（Chromium/Firefox/WebKit）。
+全量测试 460+ 例：纯算法（含属性测试与性能预算）、React 组件（jsdom）、
+API 路由（PGlite 真实数据库语义）、E2E 主旅程（Chromium/Firefox/WebKit，含真实拖拽裁剪回归）。
 边界情况矩阵见 `.scratch/photo-to-pattern/spec.md` §6（输入/参数/编辑/导出/账号/同步各类）。
 
 ## 许可证

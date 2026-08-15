@@ -9,7 +9,7 @@ Open registration with email + password, email verification and password reset (
 
 ## Decision
 
-- Password hashing: **argon2id** (memory 19456 KiB, iterations 2, parallelism 1 — OWASP baseline), via the `argon2` native binding.
+- Password hashing: **argon2id** (memory 65536 KiB, iterations 3, parallelism 1 — OWASP recommended tier; upgraded 2026-08-15 from baseline 19456/2, verification of old hashes unaffected), via the `argon2` native binding.
 - Sessions: opaque random 32-byte token, **SHA-256 hashed** at rest in the `sessions` table; cookie `doupu_session`, `HttpOnly`, `SameSite=Lax`, `Secure`, 30-day rolling expiry; logout deletes the row.
 - Email tokens (verify / reset): single-use, random 32-byte, hashed at rest, 24 h expiry (verify), 1 h expiry (reset); consuming marks `used_at`.
 - Rate limiting: per-IP and per-email counters for register/login/token-request (e.g. 10/hour), stored in DB; responses do not leak which field failed.

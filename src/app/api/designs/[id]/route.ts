@@ -48,7 +48,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return apiError(new AppError('VALIDATION', '设计 id 必须为 UUID'));
 
-  const parsed = await readJson(request);
+  const parsed = await readJson(request, LIMITS.projectFileBytes + 64 * 1024);
   if (!parsed.ok) return parsed.response;
   const result = designPutSchema.safeParse(parsed.data);
   if (!result.success) return apiError(result.error);

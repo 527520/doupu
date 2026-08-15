@@ -47,7 +47,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return apiError(new AppError('VALIDATION', '色板 id 必须为 UUID'));
 
-  const parsed = await readJson(request);
+  const parsed = await readJson(request, 1024 * 1024); // 500 色板远小于 1MB
   if (!parsed.ok) return parsed.response;
   const result = palettePutSchema.safeParse(parsed.data);
   if (!result.success) return apiError(result.error);

@@ -1,12 +1,13 @@
 /**
- * 密码哈希与校验（ADR-0004）：argon2id，memoryCost 19456 KiB、timeCost 2、parallelism 1。
+ * 密码哈希与校验（ADR-0004）：argon2id，memoryCost 65536 KiB、timeCost 3、parallelism 1
+ * （OWASP 推荐档，单机低并发下足够快；升级不影响旧哈希的校验）。
  */
 import argon2 from 'argon2';
 
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
-  memoryCost: 19456,
-  timeCost: 2,
+  memoryCost: 65536,
+  timeCost: 3,
   parallelism: 1,
 } as const;
 

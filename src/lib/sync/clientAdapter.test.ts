@@ -136,6 +136,32 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(api.cloud.get('c1')!.name).toBe('离线编辑');
   });
 
+  it('时钟偏差防护：上次同步后的本地编辑早于服务器时间 → 钳制后推送并采纳服务端时间戳', async () => {
+    // 上次同步基准 10:00；期间另一设备推送到 12:00（服务器 max）；本机时钟落后，编辑记作 11:00
+    const cloudProject = makeProject('云端编辑', '2026-08-15T12:00:00.000Z');
+    const api = new FakeApi([{ id: 'g1', name: '云端编辑', project: cloudProject, updatedAt: cloudProject.updatedAt }]);
+    const storage = new FakeStorage();
+    await storage.setMeta('sync-last-server-time', '2026-08-15T10:00:00.000Z');
+    const localProject = makeProject('本地编辑', '2026-08-15T11:00:00.000Z');
+    await storage.put(record('g1', localProject, localProject.updatedAt));
+    const client = createSyncClient(storage, api);
+
+    const outcome = await client.sync();
+    // 钳制为 12:00:00.001 → 严格较新 → 本地编辑胜出（LWW 不丢编辑）
+    expect(outcome.pushed).toBe(1);
+    expect(outcome.pulled).toBe(0);
+    expect(outcome.overwrittenByCloud).toEqual([]);
+    expect(api.cloud.get('g1')!.name).toBe('本地编辑');
+    expect(api.cloud.get('g1')!.updatedAt).toBe('2026-08-15T12:00:01.001Z');
+
+    // 本地采纳服务端时间戳，下一轮同步幂等
+    const local = await storage.getAll();
+    expect(local[0].updatedAt).toBe('2026-08-15T12:00:01.001Z');
+    const again = await client.sync();
+    expect(again.pushed).toBe(0);
+    expect(again.pulled).toBe(0);
+  });
+
   it('本地墓碑：deleteLocal 后同步调用云端 DELETE 并清理墓碑', async () => {
     const api = new FakeApi();
     const storage = new FakeStorage();

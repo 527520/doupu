@@ -1,14 +1,17 @@
 'use client';
 
-/** 编辑器工具栏（表现组件）：工具切换、画笔大小、撤销/重做、替换入口、清除。 */
+/** 编辑器工具栏（表现组件）：当前颜色指示、工具切换、画笔大小、撤销/重做、替换入口、清除。 */
 import { zhCN } from '@/messages/zh-CN';
 import type { BrushSize, ToolId } from '@/lib/editor/ops';
+import type { PaletteColor } from '@/lib/types';
 
 interface Props {
   tool: ToolId;
   brushSize: BrushSize;
   canUndo: boolean;
   canRedo: boolean;
+  /** 当前画笔颜色（橡皮等工具下显示对应状态） */
+  currentColor?: PaletteColor | null;
   replaceCountMessage?: string | null;
   onToolChange: (tool: ToolId) => void;
   onBrushSizeChange: (size: BrushSize) => void;
@@ -32,6 +35,7 @@ export default function EditorToolbar({
   brushSize,
   canUndo,
   canRedo,
+  currentColor,
   replaceCountMessage,
   onToolChange,
   onBrushSizeChange,
@@ -48,8 +52,32 @@ export default function EditorToolbar({
     { id: 'pick', label: t.pick },
   ];
 
+  const colorIndicator =
+    tool === 'eraser' || tool === 'clear'
+      ? { swatch: 'transparent', label: t.eraser }
+      : currentColor
+        ? { swatch: currentColor.hex, label: currentColor.code ?? currentColor.hex }
+        : { swatch: '#d1d5db', label: t.noColor };
+
   return (
     <div aria-label={t.title} className="flex flex-wrap items-center gap-2 text-sm">
+      {/* 当前颜色指示（spec 用户体验：始终可见当前将落笔的颜色） */}
+      <span
+        role="status"
+        aria-label={`${t.currentColor}: ${colorIndicator.label}`}
+        className="flex items-center gap-1.5 rounded border border-gray-300 bg-white px-2 py-1"
+      >
+        <span
+          className="inline-block h-4 w-4 rounded-sm border border-gray-400"
+          style={
+            colorIndicator.swatch === 'transparent'
+              ? { background: 'repeating-conic-gradient(#d1d5db 0% 25%, #ffffff 0% 50%) 50% / 8px 8px' }
+              : { backgroundColor: colorIndicator.swatch }
+          }
+        />
+        <span className="font-mono text-xs text-gray-700">{colorIndicator.label}</span>
+      </span>
+
       {tools.map(({ id, label }) => (
         <button
           key={id}
