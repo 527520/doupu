@@ -21,11 +21,13 @@ EXPIRE=$((NOW + 600))
 HTTP_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
 CONTENT_TYPE="application/gzip"
 
-# COS 签名（v5 header 鉴权）：header 值 URL 编码；中间哈希与 SignKey/Signature
-# 均为 16 进制小写（官方文档：以 SignKey 为字符串密钥计算消息摘要，16 进制小写形式）。
+# COS 签名（v5 header 鉴权，官方算法）：
+# SignKey = Base64(HMAC-SHA1(SecretKey, KeyTime))；
+# StringToSign = "sha1\n" + KeyTime + "\n" + hex(SHA1(HttpString)) + "\n"（header 值 URL 编码）；
+# Signature = hex(HMAC-SHA1(SignKey 字符串, StringToSign))。
 SIGN_TIME="${NOW};${EXPIRE}"
 HTTP_HEADERS="content-type;host"
-SIGN_KEY=$(printf "%s" "${COS_SECRET_KEY}" | openssl dgst -sha1 -hmac "${SIGN_TIME}" -r | awk '{print $1}')
+SIGN_KEY=$(printf "%s" "${COS_SECRET_KEY}" | openssl dgst -sha1 -hmac "${SIGN_TIME}" -binary | openssl base64)
 HTTP_STR="put\n/${KEY}\n\ncontent-type=application%2Fgzip&host=${HOST}\n"
 HTTP_SHA1=$(printf "%b" "${HTTP_STR}" | openssl dgst -sha1 -r | awk '{print $1}')
 STRING_TO_SIGN="sha1\n${SIGN_TIME}\n${HTTP_SHA1}\n"
