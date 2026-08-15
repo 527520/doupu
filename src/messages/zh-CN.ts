@@ -28,6 +28,8 @@ export const zhCN = {
   },
   footer: {
     sourceCode: '源码仓库（AGPL-3.0）',
+    author: (name: string) => `作者：${name}`,
+    authorGithub: 'GitHub 主页',
     icp: '备案号：上线后填写',
     privacy: '隐私政策',
     attribution: '基于 Zippland/perler-beads 二次开发',
@@ -376,6 +378,11 @@ export const zhCN = {
     licenseBody:
       '豆谱以 AGPL-3.0 许可开源。基于 Zippland/perler-beads 二次开发，感谢上游作者的开放共享。',
     sourceCode: '源码仓库',
+    authorTitle: '作者',
+    authorGithub: 'GitHub 主页',
+    feedbackTitle: '问题与建议',
+    feedbackBody: '遇到问题或有新想法？欢迎在 GitHub Issues 上反馈，作者会尽快查看。',
+    feedbackLink: 'GitHub Issues 反馈',
     privacyTitle: '隐私政策',
     privacyBody:
       '我们只收集你主动提供的信息：注册邮箱与设计图纸数据。上传的照片仅在本地浏览器中处理，不会上传到服务器；云端仅保存图纸（色块网格）与自定义色板。你可以随时导出项目文件备份，或注销账号以永久删除全部云端数据。',

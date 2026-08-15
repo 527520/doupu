@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
+import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SOURCE_REPO_URL } from '@/lib/appInfo';
 import OnboardingGuide from '@/components/onboarding/OnboardingGuide';
 
 export default function Home() {
@@ -36,12 +37,23 @@ export default function Home() {
         <p>
           {home.openSourceNotice} ·{' '}
           <a
-            href="https://github.com/527520/doupu"
+            href={SOURCE_REPO_URL}
             target="_blank"
             rel="noreferrer"
             className="text-blue-500 underline-offset-4 hover:underline"
           >
             {footer.sourceCode}
+          </a>
+        </p>
+        <p>
+          {footer.author(AUTHOR_NAME)} ·{' '}
+          <a
+            href={AUTHOR_GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-500 underline-offset-4 hover:underline"
+          >
+            {footer.authorGithub}
           </a>
         </p>
         <p>{footer.icp}</p>

@@ -35,3 +35,6 @@ PDF 导出嵌入 **Noto Sans CJK SC**（OFL-1.1，SIL Open Font License）：
 ## 本项目许可
 
 豆谱整体以 AGPL-3.0 发布，详见 `LICENSE`。
+
+- 版权所有：© 2026 wuqian（https://github.com/527520）
+- 项目仓库：https://github.com/527520/doupu

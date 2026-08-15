@@ -1,5 +1,5 @@
 import { zhCN } from '@/messages/zh-CN';
-import { APP_VERSION, SOURCE_REPO_URL } from '@/lib/appInfo';
+import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, ISSUES_URL, SOURCE_REPO_URL } from '@/lib/appInfo';
 import Link from 'next/link';
 
 export default function AboutPage() {
@@ -32,6 +32,36 @@ export default function AboutPage() {
             className="text-blue-600 underline-offset-4 hover:underline"
           >
             {t.sourceCode}
+          </a>
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">{t.authorTitle}</h2>
+        <p className="text-sm leading-6 text-gray-700">
+          {AUTHOR_NAME} ·{' '}
+          <a
+            href={AUTHOR_GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 underline-offset-4 hover:underline"
+          >
+            {t.authorGithub}
+          </a>
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">{t.feedbackTitle}</h2>
+        <p className="text-sm leading-6 text-gray-700">{t.feedbackBody}</p>
+        <p className="text-sm">
+          <a
+            href={ISSUES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 underline-offset-4 hover:underline"
+          >
+            {t.feedbackLink}
           </a>
         </p>
       </section>

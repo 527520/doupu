@@ -2,6 +2,9 @@
 export const APP_NAME = '豆谱';
 export const APP_VERSION = '0.1.0';
 export const SOURCE_REPO_URL = 'https://github.com/527520/doupu';
+export const ISSUES_URL = 'https://github.com/527520/doupu/issues';
+export const AUTHOR_NAME = 'wuqian';
+export const AUTHOR_GITHUB_URL = 'https://github.com/527520';
 export const PROJECT_FILE_FORMAT = 'doupu-project' as const;
 export const PROJECT_FILE_VERSION = 1 as const;
 

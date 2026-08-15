@@ -2,6 +2,14 @@
     "name": "doupu",
     "version": "0.1.0",
     "private": true,
+    "author": "wuqian (https://github.com/527520)",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/527520/doupu.git"
+    },
+    "bugs": {
+        "url": "https://github.com/527520/doupu/issues"
+    },
     "scripts": {
         "dev": "next dev",
         "build": "next build",

@@ -32,4 +32,19 @@ describe('关于页', () => {
     expect(screen.getByText(/不会上传到服务器/)).toBeTruthy();
     expect(screen.getByText(/注销账号/)).toBeTruthy();
   });
+
+  it('包含作者信息（wuqian 与 GitHub 主页链接）', () => {
+    render(<AboutPage />);
+    expect(screen.getByRole('heading', { name: '作者' })).toBeTruthy();
+    expect(screen.getByText(/wuqian/)).toBeTruthy();
+    const githubLink = screen.getByRole('link', { name: 'GitHub 主页' });
+    expect(githubLink.getAttribute('href')).toBe('https://github.com/527520');
+  });
+
+  it('包含 GitHub Issues 反馈入口', () => {
+    render(<AboutPage />);
+    expect(screen.getByRole('heading', { name: '问题与建议' })).toBeTruthy();
+    const issuesLink = screen.getByRole('link', { name: 'GitHub Issues 反馈' });
+    expect(issuesLink.getAttribute('href')).toBe('https://github.com/527520/doupu/issues');
+  });
 });
