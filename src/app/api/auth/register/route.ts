@@ -6,6 +6,7 @@ import { getDb } from '@/lib/auth/db';
 import { hashPassword } from '@/lib/auth/password';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
+import { checkMailSendLimits } from '@/lib/auth/mailLimits';
 import { buildVerifyLink, DEV_MAIL_LINK_HEADER, isDevMailMode, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
 
   const db = getDb();
   if (!(await checkRateLimit(db, rateLimitKey('register', ip, email), RATE_LIMIT))) {
+    return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
+  }
+
+  // 发信成本防护：配额耗尽时先于建号拒绝（IP/全局限 → 统一 429）
+  const mailLimit = await checkMailSendLimits(db, { email, ip });
+  if (mailLimit !== 'ok') {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
 
@@ -59,7 +66,13 @@ export async function POST(request: Request) {
   });
 
   const link = buildVerifyLink(token);
-  await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+  try {
+    await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+  } catch {
+    // 账号已创建、验证邮件发送失败：返回 503，用户可稍后经「重发验证邮件」恢复；
+    // 熔断器已在 mailer 内打开（60 秒内发信请求统一快速失败，不烧配额）。
+    return apiError(new AppError('MAIL_UNAVAILABLE', zhCN.auth.mailSendFailed));
+  }
   // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
   const headers = isDevMailMode() ? { [DEV_MAIL_LINK_HEADER]: link } : undefined;
   return noContent(204, headers ? { headers } : undefined);

@@ -5,7 +5,8 @@ import { resendVerificationSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
-import { buildVerifyLink, isDevMailMode, sendMail } from '@/lib/auth/mailer';
+import { checkMailSendLimits } from '@/lib/auth/mailLimits';
+import { buildVerifyLink, isDevMailMode, isMailCircuitOpen, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -33,6 +34,21 @@ export async function POST(request: Request) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
 
+  // 熔断器打开时：统一 503（对幽灵与真实邮箱一致，无枚举面）
+  if (isMailCircuitOpen()) {
+    return apiError(new AppError('MAIL_UNAVAILABLE', zhCN.auth.mailSendFailed));
+  }
+
+  // 发信成本防护：每邮箱日限命中 → 静默 204（照常防枚举，攻击者无法借此确认账号存在）
+  const mailLimit = await checkMailSendLimits(db, { email, ip });
+  if (mailLimit === 'emailLimited') {
+    console.warn('[mail] resend skipped (email daily limit)');
+    return noContent();
+  }
+  if (mailLimit !== 'ok') {
+    return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
+  }
+
   const rows = await db
     .select({ id: users.id, emailVerifiedAt: users.emailVerifiedAt })
     .from(users)
@@ -47,7 +63,14 @@ export async function POST(request: Request) {
       expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
     });
     const link = buildVerifyLink(token);
-    await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+    try {
+      await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+    } catch {
+      // 发送失败：保持 204（防枚举——首个失败请求不泄露账号状态；熔断器已打开，
+      // 后续请求统一 503），操作者可从日志排查。
+      console.error('[mail] resend send failed');
+      return noContent();
+    }
   } else if (!isDevMailMode()) {
     // 幽灵/已验证邮箱：补与 SMTP 往返同量级的固定延迟，抹平时序枚举（防枚举）
     await new Promise((resolve) => setTimeout(resolve, 400));

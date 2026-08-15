@@ -7,6 +7,7 @@ export type AppErrorCode =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'RATE_LIMITED'
+  | 'MAIL_UNAVAILABLE'
   | 'INTERNAL';
 
 export const HTTP_STATUS: Record<AppErrorCode, number> = {
@@ -16,6 +17,7 @@ export const HTTP_STATUS: Record<AppErrorCode, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   RATE_LIMITED: 429,
+  MAIL_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 

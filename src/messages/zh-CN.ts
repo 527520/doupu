@@ -190,6 +190,7 @@ export const zhCN = {
     loginRequired: '请先登录。',
     emailUnverified: '邮箱未验证，请查收验证邮件。',
     linkInvalid: '链接无效或已过期，请重新获取。',
+    mailSendFailed: '邮件发送失败，请稍后重试。',
     currentPasswordWrong: '当前密码不正确。',
     tooManyRequests: '操作过于频繁，请稍后再试。',
     verifySubject: '验证你的豆谱账号',

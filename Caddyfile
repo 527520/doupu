@@ -2,6 +2,10 @@
 {$SITE_DOMAIN} {
 	encode gzip
 
+	# 注入真实客户端 IP：应用限流键（发信成本防护）只信任该头；
+	# 客户端伪造的 X-Forwarded-For 因此失效（app 侧优先读取 x-real-ip）。
+	header_up X-Real-IP {remote_host}
+
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options SAMEORIGIN
