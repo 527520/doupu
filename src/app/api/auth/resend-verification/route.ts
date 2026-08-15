@@ -64,7 +64,13 @@ export async function POST(request: Request) {
     });
     const link = buildVerifyLink(token);
     try {
-      await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+      await sendMail(
+        email,
+        zhCN.auth.verifySubject,
+        zhCN.auth.verifyHtml(link),
+        zhCN.auth.verifyText(link),
+        { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { link } } },
+      );
     } catch {
       // 发送失败：保持 204（防枚举——首个失败请求不泄露账号状态；熔断器已打开，
       // 后续请求统一 503），操作者可从日志排查。

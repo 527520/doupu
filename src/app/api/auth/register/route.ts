@@ -67,7 +67,13 @@ export async function POST(request: Request) {
 
   const link = buildVerifyLink(token);
   try {
-    await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+    await sendMail(
+      email,
+      zhCN.auth.verifySubject,
+      zhCN.auth.verifyHtml(link),
+      zhCN.auth.verifyText(link),
+      { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { link } } },
+    );
   } catch {
     // 账号已创建、验证邮件发送失败：返回 503，用户可稍后经「重发验证邮件」恢复；
     // 熔断器已在 mailer 内打开（60 秒内发信请求统一快速失败，不烧配额）。

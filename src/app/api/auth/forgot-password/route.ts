@@ -68,7 +68,13 @@ export async function POST(request: Request) {
     });
     const link = buildResetLink(token);
     try {
-      await sendMail(email, zhCN.auth.resetSubject, zhCN.auth.resetHtml(link), zhCN.auth.resetText(link));
+      await sendMail(
+        email,
+        zhCN.auth.resetSubject,
+        zhCN.auth.resetHtml(link),
+        zhCN.auth.resetText(link),
+        { sesTemplate: { templateId: process.env.SES_RESET_TEMPLATE_ID ?? '', templateData: { link } } },
+      );
     } catch {
       // 发送失败：保持 204（防枚举；熔断器已打开，后续请求统一 503）
       console.error('[mail] forgot send failed');

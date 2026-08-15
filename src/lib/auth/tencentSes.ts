@@ -20,11 +20,14 @@ export interface SesCredentials {
   from: string;
 }
 
-export interface OutgoingMail {
+/**
+ * 模板发信（个人实名用户无「自定义发送」权限，仅可用控制台创建的模板；
+ * 错误码 FailedOperation.WithOutPermission）。模板变量键名与模板中 {{key}} 一致。
+ */
+export interface SesTemplateMail {
   to: string;
-  subject: string;
-  html: string;
-  text: string;
+  templateId: string;
+  templateData: Record<string, string>;
 }
 
 function sha256Hex(data: string): string {
@@ -42,17 +45,16 @@ function hmacSha256(key: string | Buffer, data: string): Buffer {
  */
 export function buildSesSendRequest(
   creds: SesCredentials,
-  mail: OutgoingMail,
+  mail: SesTemplateMail,
   now: Date = new Date(),
 ): { url: string; headers: Record<string, string>; body: string } {
   const payload = JSON.stringify({
     FromEmailAddress: creds.from,
     Destination: [mail.to],
-    Subject: mail.subject,
-    Simple: {
-      // SES 要求 Html/Text 为 base64（错误码 InvalidParameterValue.EmailContentIsWrong）
-      Html: Buffer.from(mail.html, 'utf8').toString('base64'),
-      Text: Buffer.from(mail.text, 'utf8').toString('base64'),
+    Template: {
+      TemplateID: mail.templateId,
+      // SES 约定：TemplateData 为 JSON 字符串
+      TemplateData: JSON.stringify(mail.templateData),
     },
   });
 
@@ -103,11 +105,11 @@ interface SesResponseBody {
 }
 
 /**
- * 经 SendEmail API 发信；非 2xx 或业务错误上抛 Error（消息只含 code + 官方 Message）。
+ * 经 SendEmail API（模板模式）发信；非 2xx 或业务错误上抛 Error（消息只含 code + 官方 Message）。
  */
 export async function sendViaTencentSes(
   creds: SesCredentials,
-  mail: OutgoingMail,
+  mail: SesTemplateMail,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const { url, headers, body } = buildSesSendRequest(creds, mail);

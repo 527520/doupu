@@ -18,6 +18,11 @@ export interface Mail {
   text: string;
 }
 
+/** SES 模板发信选项（个人用户仅模板模式可用；subject/html/text 供 SMTP/日志通道使用）。 */
+export interface MailOptions {
+  sesTemplate?: { templateId: string; templateData: Record<string, string> };
+}
+
 const sent: Mail[] = [];
 
 export function sentMails(): readonly Mail[] {
@@ -59,7 +64,13 @@ export function buildResetLink(token: string): string {
   return `${appUrl()}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
-export async function sendMail(to: string, subject: string, html: string, text: string): Promise<void> {
+export async function sendMail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+  options?: MailOptions,
+): Promise<void> {
   const mail: Mail = { to, subject, html, text };
   sent.push(mail);
   if (sent.length > 100) sent.shift();
@@ -78,6 +89,10 @@ export async function sendMail(to: string, subject: string, html: string, text: 
       return;
     }
     if (SES_SECRET_ID && SES_SECRET_KEY && SES_FROM) {
+      const templateId = options?.sesTemplate?.templateId;
+      if (!templateId) {
+        throw new Error('SES 发信缺少模板 ID（SES_VERIFY_TEMPLATE_ID / SES_RESET_TEMPLATE_ID 未配置）');
+      }
       await sendViaTencentSes(
         {
           secretId: SES_SECRET_ID,
@@ -85,7 +100,7 @@ export async function sendMail(to: string, subject: string, html: string, text: 
           region: process.env.SES_REGION ?? 'ap-guangzhou',
           from: SES_FROM,
         },
-        { to, subject, html, text },
+        { to, templateId, templateData: options?.sesTemplate?.templateData ?? {} },
       );
       return;
     }

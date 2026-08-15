@@ -1,9 +1,9 @@
 /**
- * SES 发信适配器测试：
+ * SES 模板发信适配器测试：
  * - TC3 签名结构/确定性/敏感性 + 与内联参考计算的交叉校验；
- * - 请求体字段与「无凭证泄露」；
+ * - Template 请求体字段与「无凭证泄露」；
  * - sendViaTencentSes 成功/错误映射；
- * - mailer SES 分支接线与熔断器。
+ * - mailer SES 分支接线与熔断器（含缺模板 ID 的快速失败）。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash, createHmac } from 'node:crypto';
@@ -16,21 +16,18 @@ const creds = {
   region: 'ap-guangzhou',
   from: 'noreply@doupu.fun',
 };
-const mail = { to: 'user@example.com', subject: '验证你的豆谱账号', html: '<p>hi</p>', text: 'hi' };
-const fixedDate = new Date('2026-08-15T08:00:00.000Z'); // timestamp 1784692800
+const mail = { to: 'user@example.com', templateId: '1000001', templateData: { link: 'https://doupu.fun/verify-email?token=x' } };
+const fixedDate = new Date('2026-08-15T08:00:00.000Z');
 
-describe('buildSesSendRequest（TC3 签名结构）', () => {
-  it('请求体包含 SendEmail 全部字段且无密钥泄露', () => {
+describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
+  it('请求体为 Template 模式（个人用户无自定义发送权限）且无密钥泄露', () => {
     const req = buildSesSendRequest(creds, mail, fixedDate);
-    const body = JSON.parse(req.body) as Record<string, unknown>;
+    const body = JSON.parse(req.body) as Record<string, any>;
     expect(body.FromEmailAddress).toBe(creds.from);
     expect(body.Destination).toEqual([mail.to]);
-    expect(body.Subject).toBe(mail.subject);
-    // Html/Text 必须 base64（SES 要求）
-    expect(body.Simple).toEqual({
-      Html: Buffer.from(mail.html, 'utf8').toString('base64'),
-      Text: Buffer.from(mail.text, 'utf8').toString('base64'),
-    });
+    expect(body.Subject).toBeUndefined(); // 主题由模板控制
+    expect(body.Template.TemplateID).toBe(mail.templateId);
+    expect(JSON.parse(body.Template.TemplateData)).toEqual(mail.templateData);
     expect(req.body).not.toContain(creds.secretKey);
     expect(JSON.stringify(req.headers)).not.toContain(creds.secretKey);
     expect(req.headers.Authorization).toContain(creds.secretId);
@@ -55,10 +52,10 @@ describe('buildSesSendRequest（TC3 签名结构）', () => {
     expect(a.headers.Authorization).toBe(b.headers.Authorization);
   });
 
-  it('签名敏感性：改密钥/改正文/改时间任一变化 → 签名变化', () => {
+  it('签名敏感性：改密钥/改模板变量/改时间任一变化 → 签名变化', () => {
     const base = buildSesSendRequest(creds, mail, fixedDate).headers.Authorization;
     const otherKey = buildSesSendRequest({ ...creds, secretKey: creds.secretKey + 'x' }, mail, fixedDate);
-    const otherBody = buildSesSendRequest(creds, { ...mail, text: 'bye' }, fixedDate);
+    const otherBody = buildSesSendRequest(creds, { ...mail, templateData: { link: 'https://other' } }, fixedDate);
     const otherTime = buildSesSendRequest(creds, mail, new Date('2026-08-15T08:00:01.000Z'));
     expect(otherKey.headers.Authorization).not.toBe(base);
     expect(otherBody.headers.Authorization).not.toBe(base);
@@ -71,11 +68,7 @@ describe('buildSesSendRequest（TC3 签名结构）', () => {
     const payload = JSON.stringify({
       FromEmailAddress: creds.from,
       Destination: [mail.to],
-      Subject: mail.subject,
-      Simple: {
-        Html: Buffer.from(mail.html, 'utf8').toString('base64'),
-        Text: Buffer.from(mail.text, 'utf8').toString('base64'),
-      },
+      Template: { TemplateID: mail.templateId, TemplateData: JSON.stringify(mail.templateData) },
     });
     const canonicalRequest = [
       'POST', '/', '',
@@ -105,7 +98,7 @@ describe('buildSesSendRequest（TC3 签名结构）', () => {
 describe('sendViaTencentSes', () => {
   it('成功：2xx 且无业务错误 → 正常返回，fetch 收到签名请求', async () => {
     const fetchImpl = vi.fn(
-      async () => new Response(JSON.stringify({ Response: { RequestId: 'req-1' } }), { status: 200 }),
+      async () => new Response(JSON.stringify({ Response: { RequestId: 'req-1', MessageId: 'm-1' } }), { status: 200 }),
     );
     await sendViaTencentSes(creds, mail, fetchImpl as unknown as typeof fetch);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -118,12 +111,12 @@ describe('sendViaTencentSes', () => {
   it('业务错误：抛错只含 code + 官方 Message，无密钥', async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(
-        JSON.stringify({ Response: { Error: { Code: 'FailedOperation.EmailAddressIsNotVerified', Message: '发信地址未验证' } } }),
+        JSON.stringify({ Response: { Error: { Code: 'FailedOperation.WithOutPermission', Message: '必须使用模版发送' } } }),
         { status: 200 },
       ),
     );
     await expect(sendViaTencentSes(creds, mail, fetchImpl as unknown as typeof fetch)).rejects.toThrow(
-      'TencentSES FailedOperation.EmailAddressIsNotVerified 发信地址未验证',
+      'TencentSES FailedOperation.WithOutPermission 必须使用模版发送',
     );
   });
 
@@ -142,17 +135,27 @@ describe('mailer SES 分支与熔断器', () => {
     vi.unstubAllGlobals();
   });
 
-  it('配置 SES_* 时经 API 发信，不走日志分支', async () => {
+  it('配置 SES_* 且带模板选项时经 API 发信，不走日志分支', async () => {
     process.env.SES_SECRET_ID = creds.secretId;
     process.env.SES_SECRET_KEY = creds.secretKey;
     process.env.SES_FROM = creds.from;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ Response: {} }), { status: 200 }));
     vi.stubGlobal('fetch', fetchImpl);
-    await sendMail(mail.to, mail.subject, mail.html, mail.text);
+    await sendMail(mail.to, '主题', '<p>hi</p>', 'hi', {
+      sesTemplate: { templateId: mail.templateId, templateData: mail.templateData },
+    });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(logSpy).not.toHaveBeenCalled();
     logSpy.mockRestore();
+  });
+
+  it('配置 SES_* 但缺模板 ID：快速失败并上抛（打开熔断器）', async () => {
+    process.env.SES_SECRET_ID = creds.secretId;
+    process.env.SES_SECRET_KEY = creds.secretKey;
+    process.env.SES_FROM = creds.from;
+    await expect(sendMail(mail.to, '主题', '<p>hi</p>', 'hi')).rejects.toThrow('缺少模板 ID');
+    expect(isMailCircuitOpen()).toBe(true);
   });
 
   it('SES 发送失败：上抛 + 打开熔断器（60 秒后自然关闭）', async () => {
@@ -160,7 +163,11 @@ describe('mailer SES 分支与熔断器', () => {
     process.env.SES_SECRET_KEY = creds.secretKey;
     process.env.SES_FROM = creds.from;
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down'); }));
-    await expect(sendMail(mail.to, mail.subject, mail.html, mail.text)).rejects.toThrow('network down');
+    await expect(
+      sendMail(mail.to, '主题', '<p>hi</p>', 'hi', {
+        sesTemplate: { templateId: mail.templateId, templateData: mail.templateData },
+      }),
+    ).rejects.toThrow('network down');
     expect(isMailCircuitOpen()).toBe(true);
     expect(isMailCircuitOpen(Date.now() + 61_000)).toBe(false);
   });
@@ -169,7 +176,7 @@ describe('mailer SES 分支与熔断器', () => {
     delete process.env.SMTP_HOST;
     delete process.env.SES_SECRET_ID;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sendMail(mail.to, mail.subject, mail.html, mail.text);
+    await sendMail(mail.to, '主题', '<p>hi</p>', 'hi');
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(isMailCircuitOpen()).toBe(false);
     logSpy.mockRestore();
