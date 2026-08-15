@@ -1,4 +1,9 @@
 # 豆谱反向代理与 TLS（Caddy 自动签发 Let's Encrypt 证书）
+# www 子域重定向到主域（避免重复内容，www 证书同样自动签发）
+www.{$SITE_DOMAIN} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
 {$SITE_DOMAIN} {
 	encode gzip
 
