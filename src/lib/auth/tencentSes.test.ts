@@ -19,10 +19,17 @@ const creds = {
 const mail = { to: 'user@example.com', templateId: '1000001', templateData: { token: 'verify-token-abc' } };
 const fixedDate = new Date('2026-08-15T08:00:00.000Z');
 
+interface SesPayloadShape {
+  FromEmailAddress: string;
+  Destination: string[];
+  Subject?: string;
+  Template: { TemplateID: string; TemplateData: string };
+}
+
 describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
   it('请求体为 Template 模式（个人用户无自定义发送权限）且无密钥泄露', () => {
     const req = buildSesSendRequest(creds, mail, fixedDate);
-    const body = JSON.parse(req.body) as Record<string, any>;
+    const body = JSON.parse(req.body) as SesPayloadShape;
     expect(body.FromEmailAddress).toBe(creds.from);
     expect(body.Destination).toEqual([mail.to]);
     expect(body.Subject).toBeUndefined(); // 主题由模板控制
