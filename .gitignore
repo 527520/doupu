@@ -58,3 +58,6 @@ next-env.d.ts
 .scratch/photo-to-pattern/research/perler-beads-master/
 .scratch/photo-to-pattern/research/perler-beads-ai-main/
 .scratch/photo-to-pattern/research/*.tar.gz
+
+# 部署向导临时产物（prod.env 含生产数据库密码，严禁入库）
+.scratch/deploy-wizard/
