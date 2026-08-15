@@ -65,11 +65,19 @@
 
 ## 第 7 步：部署
 
-- [ ] SSH 登录服务器，安装 Docker 与 docker compose 插件（Ubuntu：`apt install docker.io docker-compose-v2`），将当前用户加入 docker 组。
-- [ ] 上传代码（`git clone https://github.com/527520/doupu.git`）或上传构建产物。
-- [ ] 复制 `deploy/.env.example` 为 `.env`，填写全部变量（数据库密码、会话密钥、SMTP、COS、站点域名）。
+- [ ] SSH 登录服务器，安装 Docker 与 docker compose 插件（OpenCloudOS：`sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin`，仓库见 docker-ce 官方源/腾讯云镜像；Ubuntu：`apt install docker.io docker-compose-v2`），将当前用户加入 docker 组。
+- [ ] 上传代码：将本机源码打包（排除 node_modules/.next/.git/.scratch 等）为 `doupu-src.tgz`，scp 到服务器并解压至 `/opt/doupu`，并 `chmod +x deploy/scripts/*.sh`。
+- [ ] 复制 `deploy/.env.example` 为 `.env`，填写全部变量（数据库密码、会话密钥、SMTP 或 SES 模板发信、COS、站点域名）。
 - [ ] 执行 `bash deploy/scripts/deploy.sh`（构建/拉取镜像 → 运行数据库迁移 → 启动 app/postgres/caddy/backup）。
 - [ ] 验证：`docker compose ps` 全部 healthy；`curl -I https://<域名>` 返回 200。
+
+## 发版升级（上线后的日常更新）
+
+部署就绪后，日常发版只需一条非交互命令（本地维护一份 `prod.env` 记录 SSH 用户与密钥位置）：
+
+- 打包本机源码（同上排除规则）→ scp → 解压到 `/opt/doupu` → `chmod +x deploy/scripts/*.sh` → `bash deploy/scripts/deploy.sh`。
+- 或使用部署工作目录下的一键脚本 `release-upgrade.ps1`（Windows，读 prod.env，全程无交互）。
+- 注意：升级脚本**不覆盖**服务器 `.env`（SES/COS/SMTP 等配置保留）；数据库迁移随 deploy.sh 幂等执行。
 
 ## 第 8 步：上线验收（对照 spec §10）
 
