@@ -95,8 +95,9 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     if (SMTP_HOST || (SES_SECRET_ID && SES_SECRET_KEY)) {
       // 打开熔断器：60 秒内后续发信请求统一快速失败，不再烧配额
       openMailCircuit();
-      // 只记录渠道类型，绝不落凭证/正文
-      console.error('[mail] send failed via', SMTP_HOST ? 'smtp' : 'ses');
+      // 只记录渠道类型与错误摘要（code + 官方 Message），绝不落凭证/正文
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error('[mail] send failed via', SMTP_HOST ? 'smtp' : 'ses', ':', detail);
     }
     throw error;
   }
