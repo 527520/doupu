@@ -4,7 +4,7 @@ import { AppError } from '@/lib/errors';
 import { changePasswordSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
-import { getSessionUserId } from '@/lib/auth/session';
+import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (userId === null) {
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.loginRequired));
   }

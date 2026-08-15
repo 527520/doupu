@@ -39,7 +39,16 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(password);
-  const [user] = await db.insert(users).values({ email, passwordHash }).returning();
+  let user;
+  try {
+    [user] = await db.insert(users).values({ email, passwordHash }).returning();
+  } catch (error) {
+    // 并发同邮箱注册命中唯一索引：与预检查重同文案（防枚举）
+    if (isUniqueViolation(error)) {
+      return apiError(new AppError('CONFLICT', zhCN.auth.emailTaken, 'email'));
+    }
+    throw error;
+  }
 
   const token = generateToken();
   await db.insert(emailTokens).values({
@@ -54,4 +63,11 @@ export async function POST(request: Request) {
   // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
   const headers = isDevMailMode() ? { [DEV_MAIL_LINK_HEADER]: link } : undefined;
   return noContent(204, headers ? { headers } : undefined);
+}
+
+/** Postgres 唯一约束冲突（23505）；PGlite 以 cause/code 形式透传。 */
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: string; cause?: { code?: string } };
+  return candidate.code === '23505' || candidate.cause?.code === '23505';
 }

@@ -4,6 +4,7 @@ import {
   clampCropRect,
   cropImageData,
   MIN_CROP_SIZE,
+  resizeEdge,
   type AspectAnchor,
   type Rect,
 } from './layout';
@@ -196,5 +197,38 @@ describe('cropImageData', () => {
     expect(out.width).toBe(1);
     expect(out.height).toBe(1);
     expect(out.data[3]).toBe(255);
+  });
+});
+
+describe('resizeEdge（边框手柄缩放）', () => {
+  const rect: Rect = { x: 40, y: 30, width: 80, height: 40 };
+
+  it('自由模式：拖顶边只改上沿（对边与宽度不变）', () => {
+    expect(resizeEdge(rect, 'top', { x: 80, y: 20 }, null)).toEqual({ x: 40, y: 20, width: 80, height: 50 });
+  });
+
+  it('自由模式：拖右边只改右沿（对边与高度不变）', () => {
+    expect(resizeEdge(rect, 'right', { x: 140, y: 50 }, null)).toEqual({ x: 40, y: 30, width: 100, height: 40 });
+  });
+
+  it('自由模式：拖左边/底边', () => {
+    expect(resizeEdge(rect, 'left', { x: 20, y: 50 }, null)).toEqual({ x: 20, y: 30, width: 100, height: 40 });
+    expect(resizeEdge(rect, 'bottom', { x: 80, y: 90 }, null)).toEqual({ x: 40, y: 30, width: 80, height: 60 });
+  });
+
+  it('比例锁定 1:1：拖顶边 → 高度决定宽度，对边固定、水平居中', () => {
+    const out = resizeEdge(rect, 'top', { x: 80, y: 20 }, 1);
+    // 高 50 → 宽 50，水平居中：x = 40 + (80-50)/2 = 55
+    expect(out).toEqual({ x: 55, y: 20, width: 50, height: 50 });
+  });
+
+  it('比例锁定 2:1：拖右边 → 宽度决定高度，对边固定、垂直居中', () => {
+    const out = resizeEdge(rect, 'right', { x: 140, y: 50 }, 2);
+    // 宽 100 → 高 50，垂直居中：y = 30 + (40-50)/2 = 25
+    expect(out).toEqual({ x: 40, y: 25, width: 100, height: 50 });
+  });
+
+  it('非法比例退化为自由模式', () => {
+    expect(resizeEdge(rect, 'bottom', { x: 80, y: 90 }, NaN)).toEqual({ x: 40, y: 30, width: 80, height: 60 });
   });
 });

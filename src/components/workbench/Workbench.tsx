@@ -6,7 +6,7 @@
  * 刷新恢复最后设计；配额满/存储不可用降级提示（E39）。
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import Link from 'next/link';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
 import { ImageCropper } from '@/components/crop/ImageCropper';
@@ -42,6 +42,13 @@ type Step = 'upload' | 'crop' | 'workspace';
 type Tab = 'preview' | 'edit';
 type PaletteKind = { kind: 'builtin'; brand: Brand } | { kind: 'custom' };
 
+/** 清除 URL 上的 ?id= 参数（开始新设计后，刷新不应再恢复旧设计）。 */
+function clearDesignQuery(): void {
+  if (typeof window !== 'undefined') {
+    window.history.replaceState(null, '', '/app');
+  }
+}
+
 interface WorkbenchProps {
   /** 测试/环境注入：本地存储适配器；null 表示不可用；缺省自行打开 IndexedDB。 */
   storage?: StorageAdapter | null;
@@ -71,17 +78,23 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
-  const [authStatus, setAuthStatus] = useState<'guest' | 'user'>('guest');
+  const [authStatus, setAuthStatus] = useState<{ kind: 'guest' | 'user'; email: string }>({ kind: 'guest', email: '' });
 
-  // 登录态探测：决定头部显示「登录/注册」还是「我的设计」入口
+  // 登录态探测：决定头部显示「登录/注册」还是账号邮箱 + 「我的设计」入口
   useEffect(() => {
     let cancelled = false;
     fetch('/api/auth/me', { method: 'GET' })
-      .then((res) => {
-        if (!cancelled) setAuthStatus(res.ok ? 'user' : 'guest');
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          const body = (await res.json().catch(() => null)) as { email?: string } | null;
+          setAuthStatus({ kind: 'user', email: body?.email ?? '' });
+        } else {
+          setAuthStatus({ kind: 'guest', email: '' });
+        }
       })
       .catch(() => {
-        if (!cancelled) setAuthStatus('guest');
+        if (!cancelled) setAuthStatus({ kind: 'guest', email: '' });
       });
     return () => {
       cancelled = true;
@@ -92,7 +105,25 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
 
   const adapterRef = useRef<StorageAdapter | null>(null);
   const dirtyRef = useRef(false);
-  const restoredRef = useRef(false);
+  /** 编辑代数：每次置脏 +1；保存完成后仅当代数未变才清脏（避免抹掉保存期间的编辑）。 */
+  const editGenRef = useRef(0);
+
+  const markDirty = useCallback((): void => {
+    dirtyRef.current = true;
+    editGenRef.current += 1;
+  }, []);
+
+  const previewTabRef = useRef<HTMLButtonElement>(null);
+  const editTabRef = useRef<HTMLButtonElement>(null);
+
+  /** 页签键盘导航：←/→ 切换预览/编辑，焦点跟随（ARIA tabs pattern） */
+  const handleTabKey = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const next: Tab = tab === 'preview' ? 'edit' : 'preview';
+    setTab(next);
+    (next === 'preview' ? previewTabRef : editTabRef).current?.focus();
+  }, [tab]);
 
   const palette = useMemo<PaletteColor[]>(
     () => (paletteKind.kind === 'builtin' ? buildBrandPalette(paletteKind.brand) : customPalette),
@@ -117,12 +148,12 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         setStats(output.stats);
         setTotal(output.totalBeadCount);
         setErrorMsg(null);
-        dirtyRef.current = true;
+        markDirty();
       } catch {
         setErrorMsg(t.generateFailed);
       }
     },
-    [t.generateFailed],
+    [t.generateFailed, markDirty],
   );
 
   // ---------- 上传/裁剪 ----------
@@ -193,8 +224,8 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
 
   const handlePatternChange = useCallback((p: Pattern): void => {
     setPattern(p);
-    dirtyRef.current = true;
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const handleStatsChange = useCallback((s: PatternStatsItem[], count: number): void => {
     setStats(s);
@@ -228,13 +259,15 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     }
     const project = buildProject();
     if (!project) return;
+    const genBefore = editGenRef.current;
     setSaveState('saving');
     try {
       const thumbnail = renderThumbnail(project.pattern, 256);
       await adapter.put(createDesignRecord(designId, project, thumbnail));
       setSavedNames((prev) => (prev.includes(project.name) ? prev : [...prev, project.name]));
       setSaveState('saved');
-      dirtyRef.current = false;
+      // 仅当保存期间没有新的编辑才清脏；否则保持脏标记（自动保存会再兜底一次）
+      if (editGenRef.current === genBefore) dirtyRef.current = false;
     } catch (error) {
       setSaveState(isQuotaError(error) ? 'quota' : 'error');
     }
@@ -266,8 +299,9 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   // ---------- 恢复最后设计 ----------
 
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
+    // StrictMode 安全：不做 ref 一次性守卫——dev 双调用时第一次会被 cleanup 取消，
+    // 第二次必须正常执行完恢复逻辑（此前 ref 守卫导致第二次直接跳过 → 打开设计后空白）。
+    // 恢复本身只读 + setState，重复执行幂等。
     let cancelled = false;
     const restore = async (): Promise<void> => {
       try {
@@ -278,8 +312,10 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
           setSaveState('unavailable');
           return;
         }
+        // 优先恢复 URL ?id= 指定的设计（「我的设计 → 打开」入口），否则恢复最近编辑的设计
+        const requestedId = new URLSearchParams(window.location.search).get('id');
         const records = await adapter.getAll();
-        const last = records[0];
+        const last = records.find((r) => r.id === requestedId) ?? records[0];
         if (!last) return;
         const project = parseStoredProject(last.projectJson);
         if (!project) return;
@@ -329,10 +365,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         setPaletteKind({ kind: 'custom' });
       }
       setErrorMsg(null);
-      dirtyRef.current = true;
+      markDirty();
       setStep('workspace');
+      clearDesignQuery(); // 新设计不再对应 URL ?id= 的旧设计（否则刷新会恢复错对象）
     },
-    [],
+    [markDirty],
   );
 
   const handleRestart = useCallback((): void => {
@@ -350,6 +387,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     setParams(DEFAULT_GENERATION_PARAMS);
     setPaletteKind({ kind: 'builtin', brand: 'MARD' });
     setCustomPalette([]);
+    clearDesignQuery();
   }, []);
 
   const projectPalette = useMemo<ProjectFile['palette']>(
@@ -367,7 +405,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
           <h1 className="text-lg font-semibold">{t.title}</h1>
           {step === 'workspace' && (
             <>
-              <DesignNameEditor name={name} onChange={(n) => { setName(n); dirtyRef.current = true; }} />
+              <DesignNameEditor name={name} onChange={(n) => { setName(n); markDirty(); }} />
               <span className="text-xs text-gray-400">
                 {paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}
               </span>
@@ -378,7 +416,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
           <div className="flex items-center gap-4">
             <SaveStatus state={saveState} onSave={() => void doSave()} />
             <div className="flex items-center gap-3 text-sm">
-              {authStatus === 'guest' && (
+              {authStatus.kind === 'guest' ? (
                 <>
                   <Link href="/login" className="text-blue-600 hover:underline">
                     {zhCN.nav.login}
@@ -387,6 +425,10 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
                     {zhCN.nav.register}
                   </Link>
                 </>
+              ) : (
+                <span className="max-w-[160px] truncate text-gray-500" title={authStatus.email}>
+                  {authStatus.email}
+                </span>
               )}
               <Link href="/designs" className="text-blue-600 hover:underline">
                 {zhCN.nav.designs}
@@ -424,40 +466,57 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
       {step === 'workspace' && pattern && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
           <section className="flex flex-col gap-3">
-            <div role="tablist" aria-label={t.title} className="flex gap-1 rounded border border-gray-200 p-1 text-sm">
+            <div
+              role="tablist"
+              aria-label={t.title}
+              onKeyDown={handleTabKey}
+              className="flex gap-1 rounded border border-gray-200 p-1 text-sm"
+            >
               <button
+                ref={previewTabRef}
                 type="button"
+                id="tab-preview"
                 role="tab"
                 aria-selected={tab === 'preview'}
+                aria-controls="panel-preview"
+                tabIndex={tab === 'preview' ? 0 : -1}
                 onClick={() => setTab('preview')}
-                className={`rounded px-3 py-1 ${tab === 'preview' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+                className={`rounded px-3 py-1 ${tab === 'preview' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
               >
                 {t.previewTab}
               </button>
               <button
+                ref={editTabRef}
                 type="button"
+                id="tab-edit"
                 role="tab"
                 aria-selected={tab === 'edit'}
+                aria-controls="panel-edit"
+                tabIndex={tab === 'edit' ? 0 : -1}
                 onClick={() => setTab('edit')}
-                className={`rounded px-3 py-1 ${tab === 'edit' ? 'bg-blue-600 text-white' : 'text-gray-600'}`}
+                className={`rounded px-3 py-1 ${tab === 'edit' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
               >
                 {t.editTab}
               </button>
             </div>
             {tab === 'preview' ? (
-              <PatternPreview
-                pattern={pattern}
-                onCellHover={(info) =>
-                  setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)
-                }
-              />
+              <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview">
+                <PatternPreview
+                  pattern={pattern}
+                  onCellHover={(info) =>
+                    setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)
+                  }
+                />
+              </div>
             ) : (
-              <PixelEditorCanvas
-                pattern={pattern}
-                palette={palette}
-                onStatsChange={handleStatsChange}
-                onPatternChange={handlePatternChange}
-              />
+              <div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit">
+                <PixelEditorCanvas
+                  pattern={pattern}
+                  palette={palette}
+                  onStatsChange={handleStatsChange}
+                  onPatternChange={handlePatternChange}
+                />
+              </div>
             )}
             {hoverInfo && tab === 'preview' && (
               <p role="status" className="rounded bg-gray-800 px-2 py-1 text-xs text-white">

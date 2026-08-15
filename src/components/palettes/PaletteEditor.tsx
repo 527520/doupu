@@ -166,7 +166,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
         <button type="button" onClick={() => setPasteOpen((v) => !v)} className="rounded border px-2 py-1 text-xs hover:bg-gray-50">
           {t.pasteImport}
         </button>
-        <label className="rounded border px-2 py-1 text-xs hover:bg-gray-50">
+        <label className="cursor-pointer rounded border px-2 py-1 text-xs hover:bg-gray-50 focus-within:ring-2 focus-within:ring-blue-500">
           {t.fileImport}
           <input
             type="file"
@@ -253,7 +253,12 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
                   />
                 </td>
                 <td className="py-1">
-                  <button type="button" onClick={() => removeRow(index)} aria-label={`${t.removeRow} ${index + 1}`} className="text-xs text-red-600 hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(index)}
+                    aria-label={`${t.removeRow} ${index + 1}`}
+                    className="rounded px-1.5 py-1 text-xs text-red-600 hover:bg-red-50"
+                  >
                     ×
                   </button>
                   {rowErrors.get(index) && (

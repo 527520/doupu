@@ -102,7 +102,7 @@ export const zhCN = {
     confirm: '确认裁剪',
     cancel: '取消',
     useWholeImage: '使用整张图片',
-    dragHint: '拖动选框调整范围，拖动四角缩放',
+    dragHint: '拖动选框移动，拖动四角或边框缩放，框外拖拽新建选区',
     nudgeHint: '方向键微调 1 像素，Shift+方向键 10 像素',
     ariaRatioMode: '裁剪比例模式',
     ariaCropCanvas: '裁剪选区画布',

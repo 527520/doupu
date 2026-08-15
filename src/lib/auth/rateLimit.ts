@@ -11,13 +11,21 @@ export function hourlyWindowStart(now: Date = new Date()): Date {
   return new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS);
 }
 
-/** 构造限流 key：路由 + IP + 邮箱（防跨账号与跨 IP 枚举）。 */
-export function rateLimitKey(route: string, ip: string, email: string): string {
+/** 构造限流 key：路由 + IP（+ 邮箱，防跨账号与跨 IP 枚举）。 */
+export function rateLimitKey(route: string, ip: string, email = ''): string {
   return `auth:${route}:${ip}:${email.trim().toLowerCase()}`;
 }
 
-/** 提取客户端 IP（信任 x-forwarded-for 首项；本机回退 local）。 */
+/**
+ * 提取客户端 IP：
+ * - 优先取反代注入的专用头 x-real-ip（若部署侧配置注入，见 deploy 文档）；
+ * - 否则取 x-forwarded-for 首项。当前部署为单层反代（Caddy），XFF 不可信来源会被
+ *   Caddy 覆盖；若未来接入 CDN，必须先在反代配置 trusted_proxies 后取「最后一个可信项」，
+ *   否则攻击者可伪造 XFF 绕过限流（安全审查）。
+ */
 export function clientIp(request: Request): string {
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) return forwarded.split(',')[0].trim();
   return 'local';

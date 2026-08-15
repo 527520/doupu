@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { passwordSchema } from '@/lib/schemas';
+import Modal from '@/components/ui/Modal';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 
 interface Props {
@@ -52,48 +53,52 @@ export function ChangePasswordDialog({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={t.changePasswordTitle} className="rounded border border-gray-300 bg-white p-4 shadow-lg">
-      <h3 className="mb-3 text-sm font-medium">{t.changePasswordTitle}</h3>
-      <div className="flex flex-col gap-2">
-        <input
-          type="password"
-          aria-label={t.currentPassword}
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          placeholder={t.currentPassword}
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
-        />
-        <input
-          type="password"
-          aria-label={t.newPassword}
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          placeholder={t.newPassword}
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
-        />
-        <input
-          type="password"
-          aria-label={t.confirmPassword}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder={t.confirmPassword}
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
-        />
-      </div>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+      className="flex flex-col gap-2"
+    >
+      <h3 className="text-sm font-medium">{t.changePasswordTitle}</h3>
+      <input
+        type="password"
+        aria-label={t.currentPassword}
+        value={current}
+        onChange={(e) => setCurrent(e.target.value)}
+        placeholder={t.currentPassword}
+        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+      />
+      <input
+        type="password"
+        aria-label={t.newPassword}
+        value={next}
+        onChange={(e) => setNext(e.target.value)}
+        placeholder={t.newPassword}
+        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+      />
+      <input
+        type="password"
+        aria-label={t.confirmPassword}
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        placeholder={t.confirmPassword}
+        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+      />
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600">
           {error}
         </p>
       )}
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="mt-1 flex justify-end gap-2">
         <button type="button" onClick={onClose} disabled={busy} className="rounded border border-gray-300 px-3 py-1 text-sm">
           {zhCN.designs.cancel}
         </button>
-        <button type="button" onClick={() => void submit()} disabled={busy} className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50">
+        <button type="submit" disabled={busy} className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:bg-gray-100 disabled:text-gray-400">
           {zhCN.designs.save}
         </button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -125,31 +130,37 @@ export function DeleteAccountDialog({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={t.deleteAccountTitle} className="rounded border border-red-200 bg-white p-4 shadow-lg">
-      <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteAccountTitle}</h3>
-      <p className="mb-3 text-sm text-gray-600">{t.deleteAccountHint}</p>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+      className="flex flex-col gap-2"
+    >
+      <h3 className="text-sm font-medium text-red-700">{t.deleteAccountTitle}</h3>
+      <p className="text-sm text-gray-600">{t.deleteAccountHint}</p>
       <input
         type="password"
         aria-label={t.passwordLabel}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t.passwordLabel}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+        className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
       />
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600">
           {error}
         </p>
       )}
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="mt-1 flex justify-end gap-2">
         <button type="button" onClick={onClose} disabled={busy} className="rounded border border-gray-300 px-3 py-1 text-sm">
           {zhCN.designs.cancel}
         </button>
-        <button type="button" onClick={() => void submit()} disabled={busy} className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:opacity-50">
+        <button type="submit" disabled={busy} className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:bg-gray-100 disabled:text-gray-400">
           {t.deleteConfirm}
         </button>
       </div>
-    </div>
+    </form>
   );
 }
 
@@ -213,7 +224,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   return (
     <div className="relative flex items-center gap-3 text-sm">
       {me.state === 'verified' ? (
-        <span>
+        <span className="max-w-[160px] truncate" title={me.email}>
           {me.email} <span className="text-xs text-green-600">({t.verified})</span>
         </span>
       ) : (
@@ -235,7 +246,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             type="button"
             onClick={() => void resend()}
             disabled={cooldown > 0}
-            className="rounded border border-gray-300 px-2 py-1 text-xs disabled:opacity-50"
+            className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
           >
             {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
           </button>
@@ -250,29 +261,29 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
 
       {me.state === 'verified' && (
         <>
-          <button type="button" onClick={() => setShowPassword(true)} className="rounded border border-gray-300 px-2 py-1 text-xs">
+          <button type="button" onClick={() => setShowPassword(true)} className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">
             {t.changePassword}
           </button>
-          <button type="button" onClick={() => setShowDelete(true)} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600">
+          <button type="button" onClick={() => setShowDelete(true)} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">
             {t.deleteAccount}
           </button>
         </>
       )}
-      <button type="button" onClick={() => void logout()} className="rounded border border-gray-300 px-2 py-1 text-xs">
+      <button type="button" onClick={() => void logout()} className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">
         {t.logout}
       </button>
 
       {showPassword && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-72">
+        <Modal label={t.changePasswordTitle} onClose={() => setShowPassword(false)}>
           <ChangePasswordDialog
             api={api}
             onClose={() => setShowPassword(false)}
             onSuccess={() => setShowPassword(false)}
           />
-        </div>
+        </Modal>
       )}
       {showDelete && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-80">
+        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="border-red-200">
           <DeleteAccountDialog
             api={api}
             onClose={() => setShowDelete(false)}
@@ -281,7 +292,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
               onAuthChanged();
             }}
           />
-        </div>
+        </Modal>
       )}
     </div>
   );

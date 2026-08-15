@@ -5,6 +5,37 @@
   --foreground: #171717;
 }
 
+/* Tailwind v4 preflight 将按钮光标重置为 default；这里恢复平台惯例：
+   可点击的按钮显示手型，禁用按钮显示禁止光标。 */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  /* 统一键盘焦点环（文本输入框除外，它们用边框/ring 表达焦点） */
+  a:focus-visible,
+  button:focus-visible,
+  [role='button']:focus-visible,
+  select:focus-visible,
+  input[type='checkbox']:focus-visible,
+  input[type='radio']:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+}
+
+/* 触屏设备：小按钮抬升到 ≥44px 触控目标 */
+@media (pointer: coarse) {
+  button,
+  [role='button'] {
+    min-height: 44px;
+  }
+}
+
 body {
   color: var(--foreground);
   background: var(--background);

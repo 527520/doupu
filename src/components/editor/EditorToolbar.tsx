@@ -85,7 +85,7 @@ export default function EditorToolbar({
           aria-pressed={tool === id}
           title={TOOL_SHORTCUTS[id] ? `${label}（${TOOL_SHORTCUTS[id]}）` : label}
           onClick={() => onToolChange(id)}
-          className={`rounded border px-2 py-1 ${tool === id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-600'}`}
+          className={`rounded border px-2 py-1 ${tool === id ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
         >
           {label}
         </button>
@@ -99,7 +99,7 @@ export default function EditorToolbar({
               type="button"
               aria-pressed={brushSize === size}
               onClick={() => onBrushSizeChange(size)}
-              className={`h-7 w-7 rounded border text-xs ${brushSize === size ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+              className={`h-7 w-7 rounded border text-xs ${brushSize === size ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 hover:bg-gray-50'}`}
             >
               {size}
             </button>
@@ -114,7 +114,7 @@ export default function EditorToolbar({
         onClick={onUndo}
         disabled={!canUndo}
         title="Ctrl+Z"
-        className="rounded border border-gray-300 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
       >
         {t.undo}
       </button>
@@ -123,18 +123,18 @@ export default function EditorToolbar({
         onClick={onRedo}
         disabled={!canRedo}
         title="Ctrl+Shift+Z"
-        className="rounded border border-gray-300 px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
       >
         {t.redo}
       </button>
 
       <span className="mx-1 h-4 w-px bg-gray-300" />
 
-      <button type="button" onClick={onReplaceOpen} className="rounded border border-gray-300 px-2 py-1 text-gray-600">
+      <button type="button" onClick={onReplaceOpen} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
         {t.replace}
       </button>
       {replaceCountMessage && <span className="text-xs text-gray-500">{replaceCountMessage}</span>}
-      <button type="button" onClick={onClear} className="rounded border border-red-200 px-2 py-1 text-red-600">
+      <button type="button" onClick={onClear} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">
         {t.clear}
       </button>
     </div>

@@ -4,7 +4,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { getDb } from '@/lib/auth/db';
 import { palettes } from '@/../db/schema';
-import { getSessionUserId } from '@/lib/auth/session';
+import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { apiError, okJson } from '@/lib/auth/http';
 import { AppError } from '@/lib/errors';
 import type { CustomPaletteColor } from '@/lib/types';
@@ -14,7 +14,7 @@ function toColors(value: unknown): CustomPaletteColor[] {
 }
 
 export async function GET() {
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const db = getDb();
   const rows = await db

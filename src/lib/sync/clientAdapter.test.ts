@@ -67,6 +67,7 @@ class FakeApi {
       width: d.project.pattern.width,
       height: d.project.pattern.height,
       updatedAt: d.updatedAt,
+      deleted: d.deleted ?? false,
     }));
   }
   async getDesign(id: string): Promise<CloudDesignFull | null> {
@@ -179,6 +180,39 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const again = await client.sync();
     expect(again.pushed).toBe(0);
     expect(again.pulled).toBe(0);
+  });
+
+  it('云端墓碑较新：拉取删除本地副本（跨设备删除收敛）', async () => {
+    const cloudProject = makeProject('已删', '2026-08-15T12:00:00.000Z');
+    const api = new FakeApi([
+      { id: 'h1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true },
+    ]);
+    const storage = new FakeStorage();
+    const localProject = makeProject('本地副本', '2026-08-15T10:00:00.000Z');
+    await storage.put(record('h1', localProject, localProject.updatedAt));
+    const client = createSyncClient(storage, api);
+
+    const outcome = await client.sync();
+    expect(outcome.pulled).toBe(1);
+    expect(outcome.pushed).toBe(0);
+    expect(await storage.getAll()).toEqual([]);
+  });
+
+  it('本地较新编辑可复活云端墓碑（E37 扩展：删除与编辑的 LWW）', async () => {
+    const cloudProject = makeProject('已删', '2026-08-15T10:00:00.000Z');
+    const api = new FakeApi([
+      { id: 'i1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true },
+    ]);
+    const storage = new FakeStorage();
+    const localProject = makeProject('本地复活', '2026-08-15T13:00:00.000Z');
+    await storage.put(record('i1', localProject, localProject.updatedAt));
+    const client = createSyncClient(storage, api);
+
+    const outcome = await client.sync();
+    expect(outcome.pushed).toBe(1);
+    expect(outcome.pulled).toBe(0);
+    expect(api.cloud.get('i1')!.name).toBe('本地复活');
+    expect(api.cloud.get('i1')!.deleted).toBeFalsy();
   });
 
   it('云端独有设计拉取到本地；pullDesign 单独拉取可用', async () => {

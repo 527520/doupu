@@ -82,7 +82,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
       )}
 
       {open && (
-        <div role="dialog" aria-modal="true" aria-label={t.dialogTitle} className="rounded border border-gray-300 bg-white p-4 shadow-lg">
+        <section aria-label={t.dialogTitle} className="rounded border border-gray-300 bg-white p-4 shadow-lg">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
           <p className="text-sm text-gray-700">{t.pageCount(layout.gridPages.length)}</p>
           {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-gray-500">{t.largeHint}</p>}
@@ -96,7 +96,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
               type="button"
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
             >
               {t.cancel}
             </button>
@@ -104,12 +104,12 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
               type="button"
               onClick={() => void confirm()}
               disabled={busy}
-              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
             >
               {busy ? t.generating : t.confirm}
             </button>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

@@ -116,3 +116,40 @@ test('1:1 比例锁定：拖拽框选强制正方形', async ({ page }) => {
   const { w, h } = await sizeOf(page);
   expect(w).toBe(h);
 });
+
+test('边框手柄缩放：拖顶边中点只改高度、宽度不变', async ({ page }) => {
+  await openCropper(page);
+  const box = await canvasBox(page);
+
+  // 先缩小到左上 1/2（右下角 → 50%），得到选区 (0,0,160,100)
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+
+  // 顶边中点（选区上沿 x=80px 处）向下拖 15% 画布高 → 高度 100→70、宽度保持 160
+  await page.mouse.move(box.x + box.width * 0.25, box.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.15, { steps: 6 });
+  await page.mouse.up();
+
+  const { w, h } = await sizeOf(page);
+  expect(w).toBe(160);
+  expect(h).toBeGreaterThan(64);
+  expect(h).toBeLessThan(76);
+});
+
+test('窄屏（350px）：画布保持原图 1.6 宽高比不拉伸，且 touch-action 为 none', async ({ page }) => {
+  await page.setViewportSize({ width: 350, height: 700 });
+  await openCropper(page);
+  const canvas = page.locator('canvas[aria-label*="裁剪"]');
+  // 等待画布收缩到容器宽度（< 原图 320px），避免在首帧默认尺寸上取包围盒
+  await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeLessThan(320);
+  const box = (await canvas.boundingBox())!;
+  expect(box.width).toBeGreaterThan(300);
+  const ratio = box.width / box.height;
+  expect(ratio).toBeGreaterThan(1.55);
+  expect(ratio).toBeLessThan(1.65);
+  const touchAction = await canvas.evaluate((el) => getComputedStyle(el).touchAction);
+  expect(touchAction).toBe('none');
+});

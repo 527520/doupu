@@ -51,14 +51,14 @@ describe('PdfExportButton', () => {
   it('空图纸（全透明）不打开对话框并显示错误', () => {
     setup({ pattern: emptyPattern });
     fireEvent.click(screen.getByRole('button', { name: '导出 PDF' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('region', { name: '确认导出 PDF' })).toBeNull();
     expect(screen.getByRole('alert').textContent).toBe('图纸为空，无法导出');
   });
 
   it('正常图纸打开确认框并显示页数（2×2 → 图纸 1 页 + 清单 1 页）', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: '导出 PDF' }));
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('region', { name: '确认导出 PDF' });
     expect(dialog).toBeTruthy();
     expect(screen.getByText('共 2 页：图纸 1 页 + 图例清单 1 页')).toBeTruthy();
   });

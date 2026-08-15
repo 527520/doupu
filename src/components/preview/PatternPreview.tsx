@@ -123,6 +123,23 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
     }
   };
 
+  // 手势被系统打断：停止拖拽、清理长按定时器
+  const onPointerCancel = (): void => {
+    dragState.current = null;
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // 卸载时清理长按定时器
+  useEffect(
+    () => () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    },
+    [],
+  );
+
   const onPointerLeave = (): void => {
     if (!dragState.current) onCellHover?.(null);
   };
@@ -138,11 +155,11 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <button type="button" onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="rounded border px-2 py-0.5">
+        <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="rounded border px-2 py-1 hover:bg-gray-50">
           −
         </button>
-        <span aria-label={t.zoom}>{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded border px-2 py-0.5">
+        <span role="status" aria-label={t.zoom}>{Math.round(zoom * 100)}%</span>
+        <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded border px-2 py-1 hover:bg-gray-50">
           +
         </button>
         <Toggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
@@ -157,6 +174,7 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
           onPointerLeave={onPointerLeave}
           style={{ touchAction: 'none', maxWidth: '100%' }}
         />

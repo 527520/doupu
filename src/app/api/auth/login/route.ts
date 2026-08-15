@@ -3,7 +3,7 @@ import { users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { loginSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
-import { verifyPassword } from '@/lib/auth/password';
+import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { createSession } from '@/lib/auth/session';
 import { serializeSessionCookie } from '@/lib/auth/cookies';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
@@ -12,6 +12,13 @@ import { apiError, okJson, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 
 const RATE_LIMIT = 10;
+
+/** 时序对齐用假哈希（懒加载，进程内缓存）：未知邮箱也执行一次 argon2 校验，抹平枚举时序。 */
+let dummyHashPromise: Promise<string> | null = null;
+function dummyPasswordHash(): Promise<string> {
+  dummyHashPromise ??= hashPassword('doupu-timing-equalizer');
+  return dummyHashPromise;
+}
 
 export async function POST(request: Request) {
   const guard = enforceMutatingGuard(request);
@@ -34,8 +41,13 @@ export async function POST(request: Request) {
     .from(users)
     .where(eq(sql`lower(${users.email})`, email));
 
-  // 用户不存在与密码错误使用同一文案（防枚举，spec E28/E31）
-  if (rows.length === 0 || !(await verifyPassword(rows[0].passwordHash, password))) {
+  // 用户不存在与密码错误使用同一文案（防枚举，spec E28/E31）；
+  // 未知邮箱也执行一次假哈希校验，抹平「已注册 + 错密码」与「未注册」的 argon2 时序差。
+  if (rows.length === 0) {
+    await verifyPassword(await dummyPasswordHash(), password);
+    return apiError(new AppError('UNAUTHORIZED', zhCN.auth.invalidCredentials));
+  }
+  if (!(await verifyPassword(rows[0].passwordHash, password))) {
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.invalidCredentials));
   }
 

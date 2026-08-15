@@ -1,7 +1,11 @@
 'use client';
 
 /**
- * 图片裁剪组件（spec §F2）：自由/1:1/原始比例框选，四角缩放 + 内部拖动 + 键盘微调。
+ * 图片裁剪组件（spec §F2）：自由/1:1/原始比例框选。
+ * 交互：四角 + 四边手柄缩放、内部拖动、框外拖拽框选、键盘微调；
+ * 移动端：touch-action none 防页面滚动/下拉刷新，触屏手柄热区加大，
+ * 指针位置钳制在图像内（拖到边框平滑停靠，不会瞬间跳变）。
+ * 展示：容器宽度自适应 + 严格按原图宽高比显示（窄屏不拉伸变形）。
  * 像素读取直接使用 DecodedImage 的 RGBA 缓冲（不调用 getImageData），
  * 全部矩形几何经 src/lib/crop/layout.ts 纯函数处理。
  * 说明：自研实现（未采用 react-cropper：其 React 19 peer 依赖不兼容）。
@@ -12,8 +16,10 @@ import {
   applyAspectLock,
   clampCropRect,
   MIN_CROP_SIZE,
+  resizeEdge,
   type AspectAnchor,
   type Rect,
+  type ResizeEdge,
 } from '@/lib/crop/layout';
 import type { DecodedImage } from '@/lib/image/decode';
 
@@ -25,23 +31,95 @@ export interface ImageCropperProps {
 }
 
 type RatioMode = 'free' | 'square' | 'original';
-type DragMode = 'create' | 'move' | 'resize-tl' | 'resize-tr' | 'resize-bl' | 'resize-br';
+type DragMode =
+  | 'create'
+  | 'move'
+  | 'resize-tl'
+  | 'resize-tr'
+  | 'resize-bl'
+  | 'resize-br'
+  | 'resize-top'
+  | 'resize-bottom'
+  | 'resize-left'
+  | 'resize-right';
 
 /** 展示宽度上限（CSS px），大图等比缩小，小图按原尺寸显示。 */
 const MAX_DISPLAY_WIDTH = 800;
-/** 手柄视觉尺寸 / 命中热区尺寸（CSS px，热区更大便于鼠标与触屏）。 */
+/** 手柄视觉尺寸（CSS px）。 */
 const HANDLE_VISUAL = 8;
+const EDGE_HANDLE_VISUAL = 6;
+/** 命中热区尺寸（CSS px）：鼠标 / 触屏（热区更大便于手指）。 */
 const HANDLE_HIT = 20;
+const HANDLE_HIT_TOUCH = 30;
+
+/** 命中检测（纯函数，供拖拽与桌面悬停光标共用）。 */
+function hitTestMode(p: { x: number; y: number }, current: Rect, hitX: number, hitY: number): DragMode {
+  const nearX = (v: number) => Math.abs(p.x - v) <= hitX;
+  const nearY = (v: number) => Math.abs(p.y - v) <= hitY;
+  const insideX = p.x >= current.x && p.x <= current.x + current.width;
+  const insideY = p.y >= current.y && p.y <= current.y + current.height;
+
+  // 四角优先
+  if (nearX(current.x) && nearY(current.y)) return 'resize-tl';
+  if (nearX(current.x + current.width) && nearY(current.y)) return 'resize-tr';
+  if (nearX(current.x) && nearY(current.y + current.height)) return 'resize-bl';
+  if (nearX(current.x + current.width) && nearY(current.y + current.height)) return 'resize-br';
+  // 四边（对轴在内侧）
+  if (nearY(current.y) && insideX) return 'resize-top';
+  if (nearY(current.y + current.height) && insideX) return 'resize-bottom';
+  if (nearX(current.x) && insideY) return 'resize-left';
+  if (nearX(current.x + current.width) && insideY) return 'resize-right';
+  if (insideX && insideY) return 'move';
+  return 'create';
+}
+
+function cursorForMode(mode: DragMode): string {
+  switch (mode) {
+    case 'move':
+      return 'move';
+    case 'resize-tl':
+    case 'resize-br':
+      return 'nwse-resize';
+    case 'resize-tr':
+    case 'resize-bl':
+      return 'nesw-resize';
+    case 'resize-top':
+    case 'resize-bottom':
+      return 'ns-resize';
+    case 'resize-left':
+    case 'resize-right':
+      return 'ew-resize';
+    default:
+      return 'crosshair';
+  }
+}
 
 export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageCropperProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<Rect>(() =>
     clampCropRect(initialRect ?? { x: 0, y: 0, width: image.width, height: image.height }, image.width, image.height),
   );
   const [ratioMode, setRatioMode] = useState<RatioMode>('free');
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
 
-  const displayWidth = Math.min(image.width, MAX_DISPLAY_WIDTH);
-  const displayHeight = Math.round((displayWidth * image.height) / image.width);
+  // 容器宽度自适应：画布始终等比显示，窄屏（手机）绝不拉伸变形
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // 先同步测一次，避免首帧按默认上限渲染后再收缩的闪现
+    setContainerWidth(el.clientWidth > 0 ? Math.floor(el.clientWidth) : null);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setContainerWidth(w > 0 ? Math.floor(w) : null);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const displayWidth = Math.max(1, Math.min(image.width, MAX_DISPLAY_WIDTH, containerWidth ?? image.width));
+  const displayHeight = Math.max(1, Math.round((displayWidth * image.height) / image.width));
   const scale = displayWidth / image.width;
 
   /** 自然尺寸的像素画布（从 DecodedImage 的 RGBA 缓冲直接构建，避免 getImageData）。 */
@@ -56,7 +134,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     return canvas;
   }, [image]);
 
-  /** 重绘：源图 + 选框遮罩 + 四角手柄。 */
+  /** 重绘：源图 + 选框遮罩 + 四角/四边手柄。 */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -65,7 +143,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     canvas.width = Math.round(displayWidth * dpr);
     canvas.height = Math.round(displayHeight * dpr);
-    // 关键：显式 CSS 尺寸，防止父容器（grid/flex）把画布拉伸导致坐标错乱
+    // 显式 CSS 尺寸与容器测量一致：父容器（grid/flex）无法拉伸画布
     canvas.style.width = `${displayWidth}px`;
     canvas.style.height = `${displayHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -89,15 +167,19 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     ctx.lineWidth = 2;
     ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
 
-    // 四角手柄（视觉 8px）
+    // 四角手柄（视觉 8px）+ 四边中点手柄（视觉 6px）
     ctx.fillStyle = '#3b82f6';
-    for (const [hx, hy] of [
-      [rx, ry],
-      [rx + rw, ry],
-      [rx, ry + rh],
-      [rx + rw, ry + rh],
-    ]) {
-      ctx.fillRect(hx - HANDLE_VISUAL / 2, hy - HANDLE_VISUAL / 2, HANDLE_VISUAL, HANDLE_VISUAL);
+    for (const [hx, hy, size] of [
+      [rx, ry, HANDLE_VISUAL],
+      [rx + rw, ry, HANDLE_VISUAL],
+      [rx, ry + rh, HANDLE_VISUAL],
+      [rx + rw, ry + rh, HANDLE_VISUAL],
+      [rx + rw / 2, ry, EDGE_HANDLE_VISUAL],
+      [rx + rw / 2, ry + rh, EDGE_HANDLE_VISUAL],
+      [rx, ry + rh / 2, EDGE_HANDLE_VISUAL],
+      [rx + rw, ry + rh / 2, EDGE_HANDLE_VISUAL],
+    ] as const) {
+      ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
     }
   }, [image, rect, scale, displayWidth, displayHeight, sourceCanvas]);
 
@@ -116,11 +198,31 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     [image.width, image.height],
   );
 
+  /** 指针位置钳制到图像范围内：拖到边框时平滑停靠，避免选区瞬移/跳变。 */
+  const clampPointer = useCallback(
+    (p: { x: number; y: number }) => ({
+      x: Math.min(Math.max(p.x, 0), image.width),
+      y: Math.min(Math.max(p.y, 0), image.height),
+    }),
+    [image.width, image.height],
+  );
+
   const ratioFor = useCallback((mode: RatioMode): number | null => {
     if (mode === 'square') return 1;
     if (mode === 'original') return image.width / image.height;
     return null;
   }, [image.width, image.height]);
+
+  const hitSize = useCallback(
+    (bounds: { width: number; height: number }, isTouch: boolean) => {
+      const hit = isTouch ? HANDLE_HIT_TOUCH : HANDLE_HIT;
+      return {
+        x: (hit / Math.max(bounds.width, 1)) * image.width,
+        y: (hit / Math.max(bounds.height, 1)) * image.height,
+      };
+    },
+    [image.width, image.height],
+  );
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
@@ -131,23 +233,10 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
 
       const current = clampCropRect(rect, image.width, image.height);
       const p = toImageCoords(event.clientX, event.clientY);
-
-      // 命中半径按画布真实渲染比例换算成图像像素
       const bounds = canvas.getBoundingClientRect();
-      const hitX = (HANDLE_HIT / Math.max(bounds.width, 1)) * image.width;
-      const hitY = (HANDLE_HIT / Math.max(bounds.height, 1)) * image.height;
-      const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(hitX, hitY);
-
-      let mode: DragMode;
-      if (near(p.x, current.x) && near(p.y, current.y)) mode = 'resize-tl';
-      else if (near(p.x, current.x + current.width) && near(p.y, current.y)) mode = 'resize-tr';
-      else if (near(p.x, current.x) && near(p.y, current.y + current.height)) mode = 'resize-bl';
-      else if (near(p.x, current.x + current.width) && near(p.y, current.y + current.height)) mode = 'resize-br';
-      else if (p.x >= current.x && p.x <= current.x + current.width && p.y >= current.y && p.y <= current.y + current.height) {
-        mode = 'move';
-      } else {
-        mode = 'create'; // 框外按下：拖拽框选新选区
-      }
+      const hit = hitSize(bounds, event.pointerType === 'touch');
+      const mode = hitTestMode(p, current, hit.x, hit.y);
+      canvas.style.cursor = cursorForMode(mode);
 
       const drag = {
         mode,
@@ -157,13 +246,14 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
 
       /** 由指针位置计算选区（move/resize/create 共用；pointerup 时以此收敛最终值）。 */
       const nextRectFor = (q: { x: number; y: number }): Rect => {
-        const dx = q.x - drag.startPointer.x;
-        const dy = q.y - drag.startPointer.y;
+        const qc = clampPointer(q);
+        const dx = qc.x - drag.startPointer.x;
+        const dy = qc.y - drag.startPointer.y;
         if (drag.mode === 'create') {
           // 拖拽框选：起点到当前点围成矩形
           const raw: Rect = {
-            x: Math.min(drag.startPointer.x, q.x),
-            y: Math.min(drag.startPointer.y, q.y),
+            x: Math.min(drag.startPointer.x, qc.x),
+            y: Math.min(drag.startPointer.y, qc.y),
             width: Math.abs(dx),
             height: Math.abs(dy),
           };
@@ -185,6 +275,10 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         if (drag.mode === 'move') {
           return { x: drag.startRect.x + dx, y: drag.startRect.y + dy, width: drag.startRect.width, height: drag.startRect.height };
         }
+        if (drag.mode === 'resize-top' || drag.mode === 'resize-bottom' || drag.mode === 'resize-left' || drag.mode === 'resize-right') {
+          const edge: ResizeEdge = drag.mode === 'resize-top' ? 'top' : drag.mode === 'resize-bottom' ? 'bottom' : drag.mode === 'resize-left' ? 'left' : 'right';
+          return resizeEdge(drag.startRect, edge, qc, ratioFor(ratioMode));
+        }
         const anchor: AspectAnchor =
           drag.mode === 'resize-tl'
             ? 'bottom-right'
@@ -193,7 +287,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
               : drag.mode === 'resize-bl'
                 ? 'top-right'
                 : 'top-left';
-        const moved = moveCorner(drag.startRect, drag.mode, q);
+        const moved = moveCorner(drag.startRect, drag.mode, qc);
         return ratioFor(ratioMode) !== null ? applyAspectLock(moved, ratioFor(ratioMode)!, anchor) : moved;
       };
 
@@ -220,14 +314,33 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         } else {
           setRect(clampCropRect(nextRectFor(q), image.width, image.height));
         }
+        canvas.style.cursor = 'crosshair';
         canvas.removeEventListener('pointermove', onMove as unknown as EventListener);
         canvas.removeEventListener('pointerup', onUp as unknown as EventListener);
+        canvas.removeEventListener('pointercancel', onUp as unknown as EventListener);
       };
 
       canvas.addEventListener('pointermove', onMove as unknown as EventListener);
       canvas.addEventListener('pointerup', onUp as unknown as EventListener);
+      canvas.addEventListener('pointercancel', onUp as unknown as EventListener);
     },
-    [rect, image.width, image.height, ratioMode, ratioFor, toImageCoords],
+    [rect, image.width, image.height, ratioMode, ratioFor, toImageCoords, clampPointer, hitSize],
+  );
+
+  /** 桌面悬停：按位置切换光标（角/边/移动/框选）。 */
+  const handleHover = useCallback(
+    (event: PointerEvent<HTMLCanvasElement>) => {
+      if (event.pointerType !== 'mouse') return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const current = clampCropRect(rect, image.width, image.height);
+      const bounds = canvas.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+      const hit = hitSize(bounds, false);
+      const p = toImageCoords(event.clientX, event.clientY);
+      canvas.style.cursor = cursorForMode(hitTestMode(p, current, hit.x, hit.y));
+    },
+    [rect, image.width, image.height, toImageCoords, hitSize],
   );
 
   const handleKeyDown = useCallback(
@@ -294,20 +407,24 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         </div>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        tabIndex={0}
-        aria-label={crop.ariaCropCanvas}
-        onPointerDown={handlePointerDown}
-        onKeyDown={handleKeyDown}
-        // 首帧即按展示尺寸布局（displayWidth 在渲染期已知）：
-        // 若等绘制 effect 再设置，画布会先以 300×150 默认尺寸闪现一帧，
-        // 期间命中检测与坐标换算都会错位（WebKit 实测偶发）。
-        width={displayWidth}
-        height={displayHeight}
-        style={{ width: displayWidth, height: displayHeight }}
-        className="max-w-full cursor-crosshair rounded outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      <div ref={containerRef} className="w-full">
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          aria-label={crop.ariaCropCanvas}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handleHover}
+          onPointerLeave={() => {
+            if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
+          }}
+          onKeyDown={handleKeyDown}
+          // 首帧即按展示尺寸布局；displayWidth 由容器测量决定，画布严格等比
+          width={displayWidth}
+          height={displayHeight}
+          style={{ width: displayWidth, height: displayHeight }}
+          className="block touch-none select-none cursor-crosshair rounded outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        />
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
         <p>{crop.sizeLabel(current.width, current.height)}</p>
@@ -344,7 +461,11 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
 }
 
 /** 按拖拽的角更新矩形（对角固定）。 */
-function moveCorner(rect: Rect, mode: Exclude<DragMode, 'move' | 'create'>, p: { x: number; y: number }): Rect {
+function moveCorner(
+  rect: Rect,
+  mode: Exclude<DragMode, 'move' | 'create' | 'resize-top' | 'resize-bottom' | 'resize-left' | 'resize-right'>,
+  p: { x: number; y: number },
+): Rect {
   switch (mode) {
     case 'resize-tl':
       return { x: p.x, y: p.y, width: rect.x + rect.width - p.x, height: rect.y + rect.height - p.y };

@@ -31,7 +31,7 @@ export default function SaveStatus({ state, onSave }: Props) {
         type="button"
         onClick={onSave}
         disabled={state === 'saving'}
-        className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
       >
         {t.save}
       </button>

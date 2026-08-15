@@ -14,6 +14,8 @@ export interface CloudDesignMeta {
   width: number;
   height: number;
   updatedAt: string;
+  /** 云端墓碑（已删除）：updatedAt 即删除时间，供 LWW 传播删除 */
+  deleted: boolean;
 }
 
 export interface CloudDesignFull {
@@ -21,6 +23,7 @@ export interface CloudDesignFull {
   name: string;
   project: ProjectFile;
   updatedAt: string;
+  deleted?: boolean;
 }
 
 /** 云端 designs API（fetch 实现见 ./api.ts；测试用假实现）。 */
@@ -105,7 +108,7 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
       const cloud: SyncRecord[] = cloudMeta.map((m) => ({
         id: m.id,
         updatedAt: m.updatedAt,
-        deleted: false,
+        deleted: m.deleted,
         project: null,
         name: m.name,
       }));
@@ -113,26 +116,31 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
       // 时钟偏差防护（安全审查 P2-8）：仅保护「上次同步之后」的本地编辑——
       // 若本地时间戳早于已知服务器时间（本机时钟落后），钳制为 maxServer+1ms；
       // 旧快照（≤ lastServer）与首次同步保持原样，交 LWW 判定（保守信任服务器）。
+      // 本地墓碑同样参与钳制：否则落后时钟下删除会被云端较新内容覆盖而丢失。
       const lastServer = await storage.getMeta(LAST_SERVER_TIME_KEY);
       const maxServer = cloudMeta.reduce<string | null>(
         (max, m) => (max === null || m.updatedAt > max ? m.updatedAt : max),
         null,
       );
-      for (const record of local) {
-        if (record.deleted) continue;
+      let tombstonesChanged = false;
+      for (const record of [...local, ...tombstones]) {
         if (!lastServer || record.updatedAt <= lastServer) continue;
         const sanitized = sanitizeClientTimestamp(record.updatedAt, maxServer);
-        if (sanitized !== record.updatedAt) {
-          record.updatedAt = sanitized;
-          if (record.project) record.project.updatedAt = sanitized;
-          const existing = all.find((r) => r.id === record.id);
-          if (existing) {
-            existing.updatedAt = sanitized;
-            if (record.project) existing.projectJson = JSON.stringify(record.project);
-            await storage.put(existing);
-          }
+        if (sanitized === record.updatedAt) continue;
+        record.updatedAt = sanitized;
+        if (record.deleted) {
+          tombstonesChanged = true;
+          continue;
+        }
+        if (record.project) record.project.updatedAt = sanitized;
+        const existing = all.find((r) => r.id === record.id);
+        if (existing) {
+          existing.updatedAt = sanitized;
+          if (record.project) existing.projectJson = JSON.stringify(record.project);
+          await storage.put(existing);
         }
       }
+      if (tombstonesChanged) await saveTombstones(tombstones);
 
       const result = reconcile([...local, ...tombstones], cloud);
       const outcome: SyncOutcome = { pushed: 0, pulled: 0, overwrittenByCloud: result.overwrittenByCloud, errors: [...errors] };

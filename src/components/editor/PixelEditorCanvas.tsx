@@ -54,6 +54,8 @@ export default function PixelEditorCanvas({
   const historyRef = useRef(new EditHistory());
   const onPatternChangeRef = useRef(onPatternChange);
   onPatternChangeRef.current = onPatternChange;
+  /** 最近一次经 onPatternChange 回显给父级的图纸引用（区分外部变更与自身回显）。 */
+  const lastEmittedRef = useRef<Pattern | null>(null);
 
   const [tool, setToolState] = useState<ToolId>('brush');
   const [brushSize, setBrushSizeState] = useState<BrushSize>(1);
@@ -93,8 +95,25 @@ export default function PixelEditorCanvas({
     setCanRedo(historyRef.current.canRedo);
     setVersion((v) => v + 1);
     if (stats && total !== undefined && onStatsChange) onStatsChange(stats, total);
-    onPatternChangeRef.current?.({ width: W, height: H, cells: stateRef.current.cells.map((c) => ({ ...c })) });
+    // 记录本次回显引用：父级因回显引起的 pattern 变化不应被当成外部变更重置编辑状态
+    const emitted: Pattern = { width: W, height: H, cells: stateRef.current.cells.map((c) => ({ ...c })) };
+    lastEmittedRef.current = emitted;
+    onPatternChangeRef.current?.(emitted);
   }, [onStatsChange, W, H]);
+
+  // 外部 pattern 变更（父级重新生成/切换色板/导入）：重置编辑状态到新图纸。
+  // 此前 stateRef 只在首帧初始化，外部新图纸会被旧 cells 静默覆盖（数据丢失缺陷）。
+  useEffect(() => {
+    if (pattern === lastEmittedRef.current) return; // 自己的回显，跳过
+    stateRef.current = createEditorState(pattern);
+    historyRef.current = new EditHistory();
+    setCanUndo(false);
+    setCanRedo(false);
+    const color = palette[0] ?? null;
+    setCurrentColorState(color);
+    onColorChange?.(color);
+    setVersion((v) => v + 1);
+  }, [pattern, palette, onColorChange]);
 
   const commit = useCallback(
     (label: ToolId, snapshots: EditSnapshot[]): number => {
@@ -284,6 +303,17 @@ export default function PixelEditorCanvas({
     }
   };
 
+  // 手势被系统打断（来电/下拉通知等）：丢弃进行中的笔迹，不提交
+  const onPointerCancel = (): void => {
+    clearLongPressTimer();
+    strokeRef.current.active = false;
+    strokeRef.current.snapshots = [];
+    strokeRef.current.lastCell = null;
+  };
+
+  // 卸载时清理长按定时器（防悬空定时器触发已卸载组件的回调）
+  useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
+
   const undo = (): void => {
     if (!historyRef.current.undo(stateRef.current.cells)) return;
     refreshStats(stateRef.current);
@@ -419,7 +449,7 @@ export default function PixelEditorCanvas({
         ref={containerRef}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="overflow-auto rounded border border-gray-200 bg-gray-50 p-2 outline-none focus:ring-2 focus:ring-blue-300"
+        className="overflow-auto rounded border border-gray-200 bg-gray-50 p-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
       >
         <canvas
           ref={canvasRef}
@@ -427,6 +457,7 @@ export default function PixelEditorCanvas({
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
           style={{ touchAction: 'none', maxWidth: '100%', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>

@@ -70,7 +70,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={handleExport}
           disabled={disabled}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
         >
           {t.exportLabel}
         </button>
@@ -78,7 +78,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
         >
           {t.importLabel}
         </button>

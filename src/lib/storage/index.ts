@@ -90,15 +90,12 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
     async put(record) {
       const tx = db.transaction(STORE_DESIGNS, 'readwrite');
       await wrapRequest(tx.objectStore(STORE_DESIGNS).put(record));
-      await new Promise<void>((resolve, reject) => {
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(toStorageError(tx.error));
-        tx.onabort = () => reject(toStorageError(tx.error));
-      });
+      await txComplete(tx);
     },
     async delete(id) {
       const tx = db.transaction(STORE_DESIGNS, 'readwrite');
       await wrapRequest(tx.objectStore(STORE_DESIGNS).delete(id));
+      await txComplete(tx);
     },
     async getMeta(key) {
       const tx = db.transaction(STORE_META, 'readonly');
@@ -108,8 +105,18 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
     async setMeta(key, value) {
       const tx = db.transaction(STORE_META, 'readwrite');
       await wrapRequest(tx.objectStore(STORE_META).put({ key, value }));
+      await txComplete(tx);
     },
   };
+}
+
+/** 等待读写事务完整提交：请求成功但事务 abort（如配额满）时也必须上抛，不得静默吞掉。 */
+function txComplete(tx: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(toStorageError(tx.error));
+    tx.onabort = () => reject(toStorageError(tx.error));
+  });
 }
 
 // ---------- 纯函数辅助 ----------

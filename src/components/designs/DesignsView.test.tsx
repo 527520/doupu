@@ -86,6 +86,7 @@ class FakeApi implements DoupuApi {
       width: d.project.pattern.width,
       height: d.project.pattern.height,
       updatedAt: d.updatedAt,
+      deleted: d.deleted ?? false,
     }));
   }
   async getDesign(id: string) {

@@ -5,7 +5,7 @@ import { resendVerificationSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
-import { buildVerifyLink, sendMail } from '@/lib/auth/mailer';
+import { buildVerifyLink, isDevMailMode, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -48,6 +48,9 @@ export async function POST(request: Request) {
     });
     const link = buildVerifyLink(token);
     await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
+  } else if (!isDevMailMode()) {
+    // 幽灵/已验证邮箱：补与 SMTP 往返同量级的固定延迟，抹平时序枚举（防枚举）
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
 
   return noContent();

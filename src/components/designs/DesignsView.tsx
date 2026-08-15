@@ -1,7 +1,7 @@
 'use client';
 
 /** 我的设计列表页（ticket 17）：本地 + 云端设计网格、同步角标、重命名/删除、账号菜单。 */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
@@ -9,6 +9,7 @@ import { createDoupuApi, type DoupuApi, type MeInfo } from '@/lib/sync/api';
 import { createSyncClient, type CloudDesignMeta, type SyncClient } from '@/lib/sync/clientAdapter';
 import { openIndexedDb, parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
 import AccountMenu from '@/components/account/AccountMenu';
+import Modal from '@/components/ui/Modal';
 import { fillDeleteHint, formatDateTime } from './format';
 
 export interface DisplayDesign {
@@ -36,6 +37,8 @@ function buildDisplay(
 ): DisplayDesign[] {
   const map = new Map<string, DisplayDesign>();
   for (const meta of cloud) {
+    // 云端墓碑只参与同步 LWW，不显示在列表里
+    if (meta.deleted) continue;
     map.set(meta.id, { ...meta, thumbnail: null, status: 'synced' });
   }
   for (const record of local) {
@@ -76,11 +79,16 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const [deleting, setDeleting] = useState<DisplayDesign | null>(null);
 
   const load = useCallback(async () => {
+    // StrictMode 安全：取消守卫——dev 双调用 effect 时第一次被 cleanup 取消，第二次正常完成；
+    // 避免两个 load 并发交错执行 sync 造成重复推送/墓碑竞争。
+    const cancelled = { value: false };
+    loadCancelRef.current = cancelled;
     setError(null);
     setCloudFailed(false);
     setSyncing(true);
     try {
       const st = storageOverride !== undefined ? storageOverride : await openIndexedDb().catch(() => null);
+      if (cancelled.value) return;
       setStorage(st);
       const client = st ? createSyncClient(st, api) : null;
       setSyncClient(client);
@@ -89,6 +97,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         api.me().catch((): MeInfo => ({ state: 'guest' })),
         st ? st.getAll().catch(() => [] as DesignRecord[]) : ([] as DesignRecord[]),
       ]);
+      if (cancelled.value) return;
       setMe(meInfo);
 
       let cloud: CloudDesignMeta[] = [];
@@ -111,17 +120,23 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
           }
         }
       }
+      if (cancelled.value) return;
       setConflicts(conflictIds);
       setDesigns(buildDisplay(refreshedLocal, cloud, meInfo, conflictIds));
     } catch {
-      setError(t.loadFailed);
+      if (!cancelled.value) setError(t.loadFailed);
     } finally {
-      setSyncing(false);
+      if (!cancelled.value) setSyncing(false);
     }
   }, [api, storageOverride]);
 
+  const loadCancelRef = useRef<{ value: boolean } | null>(null);
+
   useEffect(() => {
     void load();
+    return () => {
+      if (loadCancelRef.current) loadCancelRef.current.value = true;
+    };
   }, [load]);
 
   const ensureLocal = async (id: string): Promise<boolean> => {
@@ -223,7 +238,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       {cloudFailed && (
         <div className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
           <span>{t.syncFailed}</span>
-          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="rounded border border-gray-300 px-2 py-0.5 text-xs disabled:opacity-50">
+          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400">
             {syncing ? t.syncing : t.retry}
           </button>
         </div>
@@ -232,7 +247,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       {error && (
         <div role="alert" className="flex items-center gap-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="rounded border border-red-300 px-2 py-0.5 text-xs">
+          <button type="button" onClick={() => void load()} className="rounded border border-red-300 px-2 py-0.5 text-xs hover:bg-red-50">
             {t.retry}
           </button>
         </div>
@@ -267,8 +282,8 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               {design.status === 'localOnly' && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">{t.localOnly}</span>}
               {design.status === 'conflict' && <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-700">{t.conflict}</span>}
             </div>
-            <div className="mt-auto flex gap-2 text-xs">
-              <button type="button" onClick={() => void handleOpen(design)} className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50">
+            <div className="mt-auto flex flex-wrap gap-1 text-xs">
+              <button type="button" onClick={() => void handleOpen(design)} className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50">
                 {t.open}
               </button>
               <button
@@ -277,11 +292,11 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                   setRenaming(design);
                   setRenameValue(design.name);
                 }}
-                className="rounded border border-gray-300 px-2 py-0.5 hover:bg-gray-50"
+                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50"
               >
                 {t.rename}
               </button>
-              <button type="button" onClick={() => setDeleting(design)} className="rounded border border-red-300 px-2 py-0.5 text-red-600 hover:bg-red-50">
+              <button type="button" onClick={() => setDeleting(design)} className="rounded border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
                 {t.delete}
               </button>
             </div>
@@ -290,48 +305,50 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       </ul>
 
       {renaming && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30">
-          <div role="dialog" aria-modal="true" aria-label={t.renameTitle} className="w-80 rounded border border-gray-300 bg-white p-4 shadow-lg">
+        <Modal label={t.renameTitle} onClose={() => setRenaming(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleRename();
+            }}
+          >
             <h3 className="mb-2 text-sm font-medium">{t.renameTitle}</h3>
             <input
               aria-label={t.renameLabel}
               value={renameValue}
               maxLength={100}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
             />
             <div className="mt-3 flex justify-end gap-2">
               <button type="button" onClick={() => setRenaming(null)} className="rounded border border-gray-300 px-3 py-1 text-sm">
                 {t.cancel}
               </button>
               <button
-                type="button"
-                onClick={() => void handleRename()}
+                type="submit"
                 disabled={renameValue.trim().length === 0}
                 className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
               >
                 {t.save}
               </button>
             </div>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
 
       {deleting && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30">
-          <div role="dialog" aria-modal="true" aria-label={t.deleteTitle} className="w-80 rounded border border-red-200 bg-white p-4 shadow-lg">
-            <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteTitle}</h3>
-            <p className="mb-3 text-sm text-gray-600">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleting(null)} className="rounded border border-gray-300 px-3 py-1 text-sm">
-                {t.cancel}
-              </button>
-              <button type="button" onClick={() => void handleDelete()} className="rounded bg-red-600 px-3 py-1 text-sm text-white">
-                {t.delete}
-              </button>
-            </div>
+        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="border-red-200">
+          <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteTitle}</h3>
+          <p className="mb-3 text-sm text-gray-600">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setDeleting(null)} className="rounded border border-gray-300 px-3 py-1 text-sm">
+              {t.cancel}
+            </button>
+            <button type="button" onClick={() => void handleDelete()} className="rounded bg-red-600 px-3 py-1 text-sm text-white">
+              {t.delete}
+            </button>
           </div>
-        </div>
+        </Modal>
       )}
     </main>
   );

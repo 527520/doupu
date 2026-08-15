@@ -20,34 +20,49 @@ interface Props {
   onPaletteSelect: (value: string) => void;
 }
 
+/** 参数浅比较（全部为原始字段）。 */
+function paramsEqual(a: GenerationParams, b: GenerationParams): boolean {
+  return (
+    a.targetWidth === b.targetWidth &&
+    a.targetColorCount === b.targetColorCount &&
+    a.dithering === b.dithering &&
+    a.mode === b.mode &&
+    a.brightness === b.brightness &&
+    a.contrast === b.contrast &&
+    a.backgroundRemoval === b.backgroundRemoval &&
+    a.bgTolerance === b.bgTolerance
+  );
+}
+
 export default function GenerationParamsPanel({
   params,
   paletteOptions,
   selectedPalette,
   onParamsChange,
   onPaletteSelect,
-}: Props) {
-  const [local, setLocal] = useState<GenerationParams>(params);
+}: Props) {  const [local, setLocal] = useState<GenerationParams>(params);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [widthText, setWidthText] = useState(String(params.targetWidth));
   const [colorsText, setColorsText] = useState(String(params.targetColorCount));
-  const firstRender = useRef(true);
+  /** 最近一次已上抛（或已确认为当前外部值）的参数：跳过无变化的重复上抛（StrictMode 安全）。 */
+  const lastEmittedRef = useRef<GenerationParams>(params);
 
-  // 外部重置（换图/导入）时同步
+  // 外部重置（换图/导入/恢复设计）时同步
   useEffect(() => {
     setLocal(params);
     setWidthText(String(params.targetWidth));
     setColorsText(String(params.targetColorCount));
+    lastEmittedRef.current = params;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.targetWidth, params.targetColorCount, params.mode, params.brightness, params.contrast, params.backgroundRemoval, params.bgTolerance, params.dithering]);
 
-  // 防抖 300ms 上抛
+  // 防抖 300ms 上抛；与上次上抛值相同时不上抛（避免首挂载与回显的冗余 regenerate）
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
-    const timer = setTimeout(() => onParamsChange(local), 300);
+    if (paramsEqual(local, lastEmittedRef.current)) return;
+    const timer = setTimeout(() => {
+      lastEmittedRef.current = local;
+      onParamsChange(local);
+    }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [local]);

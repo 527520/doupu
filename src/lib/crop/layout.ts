@@ -60,8 +60,7 @@ export function clampCropRect(
  * ratio 为宽/高；非法 ratio（非有限正数）原样返回。
  * 结果可能越出图像边界，调用方需再用 clampCropRect 约束。
  */
-export function applyAspectLock(rect: Rect, ratio: number, anchor: AspectAnchor): Rect {
-  const rounded: Rect = {
+export function applyAspectLock(rect: Rect, ratio: number, anchor: AspectAnchor): Rect {  const rounded: Rect = {
     x: Math.round(rect.x),
     y: Math.round(rect.y),
     width: Math.round(rect.width),
@@ -116,6 +115,52 @@ export function applyAspectLock(rect: Rect, ratio: number, anchor: AspectAnchor)
       break;
   }
   return { x: Math.round(x), y: Math.round(y), width, height };
+}
+
+/** 边框手柄方向。 */
+export type ResizeEdge = 'top' | 'bottom' | 'left' | 'right';
+
+/**
+ * 按拖拽的边更新矩形：
+ * - 自由模式（ratio 为 null/非法）：仅移动该边（对边固定，另一轴不变）；
+ * - 比例锁定：保持宽高比，对边固定、另一轴居中。
+ * 结果可能越出图像边界，调用方需再用 clampCropRect 约束。
+ */
+export function resizeEdge(rect: Rect, edge: ResizeEdge, p: { x: number; y: number }, ratio: number | null): Rect {
+  if (ratio === null || !Number.isFinite(ratio) || ratio <= 0) {
+    switch (edge) {
+      case 'left':
+        return { x: p.x, y: rect.y, width: rect.x + rect.width - p.x, height: rect.height };
+      case 'right':
+        return { x: rect.x, y: rect.y, width: p.x - rect.x, height: rect.height };
+      case 'top':
+        return { x: rect.x, y: p.y, width: rect.width, height: rect.y + rect.height - p.y };
+      case 'bottom':
+        return { x: rect.x, y: rect.y, width: rect.width, height: p.y - rect.y };
+    }
+  }
+  switch (edge) {
+    case 'top': {
+      const height = Math.max(1, Math.round(rect.y + rect.height - p.y));
+      const width = Math.max(1, Math.round(height * ratio));
+      return { x: Math.round(rect.x + (rect.width - width) / 2), y: Math.round(p.y), width, height };
+    }
+    case 'bottom': {
+      const height = Math.max(1, Math.round(p.y - rect.y));
+      const width = Math.max(1, Math.round(height * ratio));
+      return { x: rect.x, y: rect.y, width, height };
+    }
+    case 'left': {
+      const width = Math.max(1, Math.round(rect.x + rect.width - p.x));
+      const height = Math.max(1, Math.round(width / ratio));
+      return { x: Math.round(p.x), y: Math.round(rect.y + (rect.height - height) / 2), width, height };
+    }
+    case 'right': {
+      const width = Math.max(1, Math.round(p.x - rect.x));
+      const height = Math.max(1, Math.round(width / ratio));
+      return { x: rect.x, y: Math.round(rect.y + (rect.height - height) / 2), width, height };
+    }
+  }
 }
 
 /**

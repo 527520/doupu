@@ -69,13 +69,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const updatedAt = new Date();
+  // 安全（IDOR 修复）：upsert 仅在目标行属于当前用户时生效（setWhere）；
+  // 若该 id 已被其他用户占用，DO UPDATE 被跳过（等价 DO NOTHING），随后校验返回 409。
   await db
     .insert(palettes)
     .values({ id, userId, name, colors, updatedAt, deletedAt: null })
     .onConflictDoUpdate({
       target: palettes.id,
       set: { name, colors, updatedAt, deletedAt: null },
+      setWhere: eq(palettes.userId, userId),
     });
+  const ownership = await db.select({ userId: palettes.userId }).from(palettes).where(eq(palettes.id, id));
+  if (ownership.length === 0 || ownership[0].userId !== userId) {
+    return apiError(new AppError('CONFLICT', '该色板 id 已被占用，请重新保存'));
+  }
 
   return okJson({ id, name, colors, updatedAt: updatedAt.toISOString() }, { status: 200 });
 }

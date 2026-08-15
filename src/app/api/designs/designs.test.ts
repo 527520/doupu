@@ -57,7 +57,10 @@ let db: TestDatabase;
 
 async function newUser(): Promise<string> {
   const email = `user-${Math.random().toString(36).slice(2, 10)}@example.com`;
-  const rows = await db.insert(users).values({ email, passwordHash: 'hash' }).returning();
+  const rows = await db
+    .insert(users)
+    .values({ email, passwordHash: 'hash', emailVerifiedAt: new Date() })
+    .returning();
   return rows[0].id;
 }
 
@@ -93,17 +96,22 @@ describe('GET /api/designs（列表）', () => {
     expect(await response.json()).toEqual([]);
   });
 
-  it('返回非墓碑设计（含 width/height），按 updatedAt 降序，墓碑不可见', async () => {
+  it('返回全部条目（含墓碑，供同步 LWW），非墓碑含 width/height，按 updatedAt 降序', async () => {
     const a = await putOne(jsonRequest('PUT', '/api/designs/00000000-0000-4000-8000-000000000001', { name: 'A', project: projectFile('A', 4, 3) }), { params: Promise.resolve({ id: '00000000-0000-4000-8000-000000000001' }) });
     expect(a.status).toBe(200);
     const b = await putOne(jsonRequest('PUT', '/api/designs/00000000-0000-4000-8000-000000000002', { name: 'B', project: projectFile('B') }), { params: Promise.resolve({ id: '00000000-0000-4000-8000-000000000002' }) });
     expect(b.status).toBe(200);
     await deleteOne(jsonRequest('DELETE', '/api/designs/00000000-0000-4000-8000-000000000002'), { params: Promise.resolve({ id: '00000000-0000-4000-8000-000000000002' }) });
 
-    const list = (await (await listGet()).json()) as Array<{ id: string; width: number; height: number }>;
-    expect(list).toHaveLength(1);
-    expect(list[0].width).toBe(4);
-    expect(list[0].height).toBe(3);
+    const list = (await (await listGet()).json()) as Array<{ id: string; width: number; height: number; deleted: boolean }>;
+    expect(list).toHaveLength(2);
+    const live = list.filter((d) => !d.deleted);
+    const tomb = list.filter((d) => d.deleted);
+    expect(live).toHaveLength(1);
+    expect(live[0].width).toBe(4);
+    expect(live[0].height).toBe(3);
+    expect(tomb).toHaveLength(1);
+    expect(tomb[0].id).toBe('00000000-0000-4000-8000-000000000002');
   });
 });
 
@@ -140,6 +148,28 @@ describe('PUT /api/designs/[id]', () => {
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('V2');
     expect(list[0].width).toBe(5);
+  });
+
+  it('IDOR 防护：其他用户的设计 id 不可被覆盖（409 且原数据不变）', async () => {
+    const ID = '00000000-0000-4000-8000-000000000011';
+    const p = (id: string) => ({ params: Promise.resolve({ id }) });
+
+    // 用户 A（beforeEach 会话）保存设计
+    const putA = await putOne(jsonRequest('PUT', `/api/designs/${ID}`, { name: 'A 的设计', project: projectFile('A 的设计') }), p(ID));
+    expect(putA.status).toBe(200);
+
+    // 用户 B 登录并尝试用相同 id 覆盖
+    const userB = await newUser();
+    const sessionB = await createSession(db, userB);
+    cookieJar.set(SESSION_COOKIE_NAME, sessionB.token);
+    const putB = await putOne(jsonRequest('PUT', `/api/designs/${ID}`, { name: 'B 的覆盖', project: projectFile('B 的覆盖') }), p(ID));
+    expect(putB.status).toBe(409);
+
+    // A 的数据未被覆盖
+    const rows = await db.select().from(designs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('A 的设计');
+    expect(rows[0].userId).not.toBe(userB);
   });
 
   it('100 上限：第 101 个 → 409；更新既有设计不受限', async () => {
@@ -192,19 +222,21 @@ describe('PUT /api/designs/[id]', () => {
 });
 
 describe('DELETE /api/designs/[id]（墓碑）', () => {
-  it('删除后列表不可见、GET 404；同 id 重新 PUT 复活（墓碑可恢复同步）', async () => {
+  it('删除后列表只剩墓碑条目（deleted=true）、GET 404；同 id 重新 PUT 复活', async () => {
     const ID = '00000000-0000-4000-8000-000000000040';
     const p = (id: string) => ({ params: Promise.resolve({ id }) });
     await putOne(jsonRequest('PUT', `/api/designs/${ID}`, { name: 'X', project: projectFile('X') }), p(ID));
     expect((await deleteOne(jsonRequest('DELETE', `/api/designs/${ID}`), p(ID))).status).toBe(204);
     // 幂等重复删除
     expect((await deleteOne(jsonRequest('DELETE', `/api/designs/${ID}`), p(ID))).status).toBe(204);
-    const list = (await (await listGet()).json()) as unknown[];
-    expect(list).toHaveLength(0);
+    const list = (await (await listGet()).json()) as Array<{ id: string; deleted: boolean }>;
+    expect(list).toHaveLength(1);
+    expect(list[0].deleted).toBe(true);
     // 复活
     const revived = await putOne(jsonRequest('PUT', `/api/designs/${ID}`, { name: 'X2', project: projectFile('X2') }), p(ID));
     expect(revived.status).toBe(200);
-    const list2 = (await (await listGet()).json()) as unknown[];
+    const list2 = (await (await listGet()).json()) as Array<{ id: string; deleted: boolean }>;
     expect(list2).toHaveLength(1);
+    expect(list2[0].deleted).toBe(false);
   });
 });

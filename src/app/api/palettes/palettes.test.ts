@@ -53,7 +53,10 @@ beforeEach(async () => {
   await db.delete(users);
   cookieJar.clear();
   const email = `user-${Math.random().toString(36).slice(2, 10)}@example.com`;
-  const rows = await db.insert(users).values({ email, passwordHash: 'hash' }).returning();
+  const rows = await db
+    .insert(users)
+    .values({ email, passwordHash: 'hash', emailVerifiedAt: new Date() })
+    .returning();
   const session = await createSession(db, rows[0].id);
   cookieJar.set(SESSION_COOKIE_NAME, session.token);
 });
@@ -111,5 +114,28 @@ describe('/api/palettes', () => {
     expect(((await (await listGet()).json()) as unknown[]).length).toBe(0);
     expect((await getOne(jsonRequest('GET', `/api/palettes/${ID}`), p(ID))).status).toBe(404);
     expect((await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X2', colors: colors(1) }), p(ID))).status).toBe(200);
+  });
+
+  it('IDOR 防护：其他用户的色板 id 不可被覆盖（409 且原数据不变）', async () => {
+    const ID = '00000000-0000-4000-8000-0000000000b3';
+    const created = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'A 的色板', colors: colors(2) }), p(ID));
+    expect(created.status).toBe(200);
+
+    // 用户 B 登录并尝试用相同 id 覆盖
+    const userB = (
+      await db
+        .insert(users)
+        .values({ email: `b-${Math.random().toString(36).slice(2, 10)}@example.com`, passwordHash: 'hash', emailVerifiedAt: new Date() })
+        .returning()
+    )[0];
+    const sessionB = await createSession(db, userB.id);
+    cookieJar.set(SESSION_COOKIE_NAME, sessionB.token);
+    const putB = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'B 的覆盖', colors: colors(9) }), p(ID));
+    expect(putB.status).toBe(409);
+
+    const rows = await db.select().from(palettes);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('A 的色板');
+    expect(rows[0].userId).not.toBe(userB.id);
   });
 });

@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { emailTokens, users } from '@/../db/schema';
 import { forgotPasswordSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
@@ -36,6 +36,11 @@ export async function POST(request: Request) {
     .where(eq(sql`lower(${users.email})`, email));
   let devLink: string | null = null;
   if (rows.length === 1) {
+    // 旧的重置令牌作废：同一时刻只保留一个有效重置链接
+    await db
+      .update(emailTokens)
+      .set({ usedAt: new Date() })
+      .where(and(eq(emailTokens.userId, rows[0].id), eq(emailTokens.purpose, 'reset'), isNull(emailTokens.usedAt)));
     const token = generateToken();
     await db.insert(emailTokens).values({
       userId: rows[0].id,
@@ -47,6 +52,9 @@ export async function POST(request: Request) {
     await sendMail(email, zhCN.auth.resetSubject, zhCN.auth.resetHtml(link), zhCN.auth.resetText(link));
     // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
     devLink = isDevMailMode() ? link : null;
+  } else if (!isDevMailMode()) {
+    // 幽灵账号：补一个与 SMTP 往返同量级的固定延迟，抹平时序枚举（防枚举 E30/E33）
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
 
   const headers = devLink ? { [DEV_MAIL_LINK_HEADER]: devLink } : undefined;

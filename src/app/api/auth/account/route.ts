@@ -5,7 +5,7 @@ import { AppError } from '@/lib/errors';
 import { deleteAccountSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { verifyPassword } from '@/lib/auth/password';
-import { getSessionUserId } from '@/lib/auth/session';
+import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { clearSessionCookie } from '@/lib/auth/cookies';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, readJson } from '@/lib/auth/http';
@@ -16,7 +16,7 @@ export async function DELETE(request: Request): Promise<NextResponse> {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (userId === null) {
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.loginRequired));
   }

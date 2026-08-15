@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
+import Modal from '@/components/ui/Modal';
 import {
   deletePalette,
   listPalettes,
@@ -136,7 +137,7 @@ export default function PalettesPage() {
       <section aria-label={t.builtinTitle} className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-gray-700">{t.builtinTitle}</h2>
         <p className="text-xs text-gray-400">{t.builtinNote}</p>
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {BRANDS.map((brand) => (
             <li key={brand} className="rounded border border-gray-200 p-3 text-sm">
               <p className="font-medium">{brand}</p>
@@ -164,11 +165,11 @@ export default function PalettesPage() {
                     {t.colorCount(record.colors.length)} · {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
                   </p>
                 </div>
-                <div className="flex shrink-0 gap-2 text-xs">
-                  <button type="button" onClick={() => startEdit(record)} className="text-blue-600 hover:underline">
+                <div className="flex shrink-0 gap-1 text-xs">
+                  <button type="button" onClick={() => startEdit(record)} className="rounded px-1 py-1 text-blue-600 hover:bg-blue-50">
                     {t.edit}
                   </button>
-                  <button type="button" onClick={() => void handleDelete(record)} className="text-red-600 hover:underline">
+                  <button type="button" onClick={() => void handleDelete(record)} className="rounded px-1 py-1 text-red-600 hover:bg-red-50">
                     {t.delete}
                   </button>
                 </div>
@@ -179,17 +180,15 @@ export default function PalettesPage() {
       </section>
 
       {editing && (
-        <div className="fixed inset-0 z-20 flex items-start justify-center overflow-auto bg-black/40 p-4">
-          <div className="mt-10 w-full max-w-2xl">
-            <PaletteEditor
-              initialName={editing.name}
-              initialColors={editing.colors}
-              saving={saving}
-              onSave={handleSave}
-              onCancel={() => setEditing(null)}
-            />
-          </div>
-        </div>
+        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-2xl max-h-[85vh] overflow-auto">
+          <PaletteEditor
+            initialName={editing.name}
+            initialColors={editing.colors}
+            saving={saving}
+            onSave={handleSave}
+            onCancel={() => setEditing(null)}
+          />
+        </Modal>
       )}
     </main>
   );

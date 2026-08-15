@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SOURCE_REPO_URL } from '@/lib/appInfo';
 import OnboardingGuide from '@/components/onboarding/OnboardingGuide';
+import HomeAuthNav from '@/components/layout/HomeAuthNav';
 
 export default function Home() {
   const { app, home, footer, nav } = zhCN;
@@ -45,12 +46,7 @@ export default function Home() {
             {label}
           </Link>
         ))}
-        <Link
-          href="/login"
-          className="rounded-full bg-blue-600 px-5 py-2 font-medium text-white transition-colors duration-150 hover:bg-blue-700"
-        >
-          {nav.login}
-        </Link>
+        <HomeAuthNav />
       </nav>
 
       <footer className="mt-auto flex w-full flex-col items-center gap-2 pb-6 text-xs text-gray-400">
