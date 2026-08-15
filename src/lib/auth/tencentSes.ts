@@ -49,7 +49,11 @@ export function buildSesSendRequest(
     FromEmailAddress: creds.from,
     Destination: [mail.to],
     Subject: mail.subject,
-    Simple: { Html: mail.html, Text: mail.text },
+    Simple: {
+      // SES 要求 Html/Text 为 base64（错误码 InvalidParameterValue.EmailContentIsWrong）
+      Html: Buffer.from(mail.html, 'utf8').toString('base64'),
+      Text: Buffer.from(mail.text, 'utf8').toString('base64'),
+    },
   });
 
   const timestamp = Math.floor(now.getTime() / 1000);

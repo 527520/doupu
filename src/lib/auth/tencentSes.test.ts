@@ -26,7 +26,11 @@ describe('buildSesSendRequest（TC3 签名结构）', () => {
     expect(body.FromEmailAddress).toBe(creds.from);
     expect(body.Destination).toEqual([mail.to]);
     expect(body.Subject).toBe(mail.subject);
-    expect(body.Simple).toEqual({ Html: mail.html, Text: mail.text });
+    // Html/Text 必须 base64（SES 要求）
+    expect(body.Simple).toEqual({
+      Html: Buffer.from(mail.html, 'utf8').toString('base64'),
+      Text: Buffer.from(mail.text, 'utf8').toString('base64'),
+    });
     expect(req.body).not.toContain(creds.secretKey);
     expect(JSON.stringify(req.headers)).not.toContain(creds.secretKey);
     expect(req.headers.Authorization).toContain(creds.secretId);
@@ -68,7 +72,10 @@ describe('buildSesSendRequest（TC3 签名结构）', () => {
       FromEmailAddress: creds.from,
       Destination: [mail.to],
       Subject: mail.subject,
-      Simple: { Html: mail.html, Text: mail.text },
+      Simple: {
+        Html: Buffer.from(mail.html, 'utf8').toString('base64'),
+        Text: Buffer.from(mail.text, 'utf8').toString('base64'),
+      },
     });
     const canonicalRequest = [
       'POST', '/', '',
