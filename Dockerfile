@@ -32,6 +32,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder /app/db/migrate.cjs ./db/migrate.cjs
 COPY --from=builder /app/db/migrations ./db/migrations
 
+# 补全 drizzle-orm：nft 只追踪了 ESM 变体，而 db/migrate.cjs 以 CJS require
+# node-postgres/index.cjs 与 node-postgres/migrator 子路径，需整包覆盖。
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
