@@ -22,12 +22,13 @@ HTTP_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
 CONTENT_TYPE="application/gzip"
 
 # COS 签名（v5 header 鉴权，官方算法）：
-# SignKey = Base64(HMAC-SHA1(SecretKey, KeyTime))；
+# SignKey = Base64(HMAC-SHA1(密钥=SecretKey, 消息=KeyTime))——注意 openssl dgst
+# 的 -hmac 参数是「密钥」，stdin 是「消息」，两者不能接反；
 # StringToSign = "sha1\n" + KeyTime + "\n" + hex(SHA1(HttpString)) + "\n"（header 值 URL 编码）；
-# Signature = hex(HMAC-SHA1(SignKey 字符串, StringToSign))。
+# Signature = hex(HMAC-SHA1(密钥=SignKey 字符串, 消息=StringToSign))。
 SIGN_TIME="${NOW};${EXPIRE}"
 HTTP_HEADERS="content-type;host"
-SIGN_KEY=$(printf "%s" "${COS_SECRET_KEY}" | openssl dgst -sha1 -hmac "${SIGN_TIME}" -binary | openssl base64)
+SIGN_KEY=$(printf "%s" "${SIGN_TIME}" | openssl dgst -sha1 -hmac "${COS_SECRET_KEY}" -binary | openssl base64)
 HTTP_STR="put\n/${KEY}\n\ncontent-type=application%2Fgzip&host=${HOST}\n"
 HTTP_SHA1=$(printf "%b" "${HTTP_STR}" | openssl dgst -sha1 -r | awk '{print $1}')
 STRING_TO_SIGN="sha1\n${SIGN_TIME}\n${HTTP_SHA1}\n"
