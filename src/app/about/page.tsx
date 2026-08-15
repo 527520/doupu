@@ -1,5 +1,5 @@
 import { zhCN } from '@/messages/zh-CN';
-import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, ISSUES_URL, SOURCE_REPO_URL } from '@/lib/appInfo';
+import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, CONTACT_EMAIL, ISSUES_URL, SOURCE_REPO_URL } from '@/lib/appInfo';
 import Link from 'next/link';
 
 export default function AboutPage() {
@@ -47,6 +47,10 @@ export default function AboutPage() {
             className="text-blue-600 underline-offset-4 hover:underline"
           >
             {t.authorGithub}
+          </a>{' '}
+          ·{' '}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-blue-600 underline-offset-4 hover:underline">
+            {CONTACT_EMAIL}
           </a>
         </p>
       </section>

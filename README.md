@@ -1,5 +1,9 @@
 # 豆谱（DouPu）
 
+[![CI](https://img.shields.io/github/actions/workflow/status/527520/doupu/ci.yml?branch=main)](https://github.com/527520/doupu/actions)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/github/package-json/v/527520/doupu)](https://github.com/527520/doupu)
+
 上传照片，生成拼豆图纸 —— 免费、开源、无广告、无 AI 的拼豆图纸生成工具。
 
 把照片或像素画变成可打印的拼豆图纸：裁剪 → 调整参数（尺寸/颜色数/抖动）→ 生成 → 像素级修补 → 导出 PNG 图纸、打印版 PDF（含图例与色号用量清单）或项目文件。支持账号体系与设计云端同步、自定义色板。
@@ -9,6 +13,14 @@
 - 仅 5mm 融合豆，图纸按 29×29 拼豆板绘制板缝线
 - 原图永不上传服务器；云端仅同步图纸数据
 - 许可证：AGPL-3.0（基于 [Zippland/perler-beads](https://github.com/Zippland/perler-beads) 二次开发，致谢见 [NOTICE.md](NOTICE.md)）
+
+## 界面预览
+
+| 首页 | 工作台（生成图纸后） |
+|---|---|
+| ![首页](docs/screenshots/home.png) | ![工作台](docs/screenshots/workbench.png) |
+
+截图由 `node docs/screenshots/capture.mjs` 生成（需本地 dev 服务器运行中）。
 
 ## 快速开始（开发）
 
@@ -64,7 +76,7 @@ API 路由（PGlite 真实数据库语义）、E2E 主旅程（Chromium/Firefox/
 
 ## 作者与反馈
 
-- 作者：wuqian（[github.com/527520](https://github.com/527520)）
+- 作者：wuqian（[github.com/527520](https://github.com/527520)）· 邮箱：wqa527520@qq.com
 - 问题与建议：欢迎到 [GitHub Issues](https://github.com/527520/doupu/issues) 反馈
 
 ## 许可证

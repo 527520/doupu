@@ -17,6 +17,9 @@ describe('帮助页', () => {
     expect(screen.getByText(/透明底的像素画/)).toBeTruthy();
     expect(screen.getAllByText(/8000×8000/).length).toBeGreaterThan(0);
     expect(screen.getByText(/色号是拼豆品牌/)).toBeTruthy();
+    expect(screen.getByText('图纸宽度选多少合适？')).toBeTruthy();
+    expect(screen.getByText(/熨烫时有什么技巧/)).toBeTruthy();
+    expect(screen.getByText(/豆谱会收费吗/)).toBeTruthy();
   });
 });
 
@@ -39,6 +42,8 @@ describe('关于页', () => {
     expect(screen.getByText(/wuqian/)).toBeTruthy();
     const githubLink = screen.getByRole('link', { name: 'GitHub 主页' });
     expect(githubLink.getAttribute('href')).toBe('https://github.com/527520');
+    const mailLink = screen.getByRole('link', { name: 'wqa527520@qq.com' });
+    expect(mailLink.getAttribute('href')).toBe('mailto:wqa527520@qq.com');
   });
 
   it('包含 GitHub Issues 反馈入口', () => {
