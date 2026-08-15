@@ -11,10 +11,13 @@ const now = new Date('2026-08-15T08:00:00.000Z');
 
 beforeAll(async () => {
   db = await createTestClient();
+  // 成本防护仅在配置真实发信渠道时生效（测试需显式开启）
+  process.env.SES_SECRET_ID = 'test-id';
 });
 
 afterAll(async () => {
   // PGlite 内存库无需显式关闭；清 env 防串扰
+  delete process.env.SES_SECRET_ID;
   delete process.env.MAIL_DAILY_SEND_LIMIT;
 });
 

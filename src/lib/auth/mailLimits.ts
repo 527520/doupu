@@ -36,6 +36,10 @@ export async function checkMailSendLimits(
   db: AnyDatabase,
   opts: { email: string; ip: string; emailLimit?: number; now?: Date },
 ): Promise<MailLimitResult> {
+  // 成本防护只应在存在真实发信成本时生效（配置了 SES 或 SMTP）。
+  // 开发/E2E（无渠道，仅日志输出）不受限，避免测试环境被限流计数干扰。
+  if (!process.env.SMTP_HOST && !process.env.SES_SECRET_ID) return 'ok';
+
   const now = opts.now ?? new Date();
   const email = opts.email.trim().toLowerCase();
   const emailLimit = opts.emailLimit ?? MAIL_PER_EMAIL_DAILY;
