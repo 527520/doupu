@@ -50,12 +50,17 @@ export function buildSesSendRequest(
   mail: SesTemplateMail,
   now: Date = new Date(),
 ): { url: string; headers: Record<string, string>; body: string } {
+  // TemplateID 必须是 uint64 数字（InvalidParameter: input type should be uint64）
+  const templateIdNum = Number(mail.templateId);
+  if (!Number.isInteger(templateIdNum) || templateIdNum <= 0) {
+    throw new Error(`SES 模板 ID 非法：${mail.templateId}`);
+  }
   const payload = JSON.stringify({
     FromEmailAddress: creds.from,
     Destination: [mail.to],
     Subject: mail.subject,
     Template: {
-      TemplateID: mail.templateId,
+      TemplateID: templateIdNum,
       // SES 约定：TemplateData 为 JSON 字符串
       TemplateData: JSON.stringify(mail.templateData),
     },

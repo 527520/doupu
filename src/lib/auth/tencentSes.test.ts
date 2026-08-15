@@ -23,7 +23,7 @@ interface SesPayloadShape {
   FromEmailAddress: string;
   Destination: string[];
   Subject?: string;
-  Template: { TemplateID: string; TemplateData: string };
+  Template: { TemplateID: number; TemplateData: string };
 }
 
 describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
@@ -33,7 +33,7 @@ describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
     expect(body.FromEmailAddress).toBe(creds.from);
     expect(body.Destination).toEqual([mail.to]);
     expect(body.Subject).toBe(mail.subject); // API 强制要求，即使模板模式
-    expect(body.Template.TemplateID).toBe(mail.templateId);
+    expect(body.Template.TemplateID).toBe(1000001); // 必须为 uint64 数字
     expect(JSON.parse(body.Template.TemplateData)).toEqual(mail.templateData);
     expect(req.body).not.toContain(creds.secretKey);
     expect(JSON.stringify(req.headers)).not.toContain(creds.secretKey);
@@ -76,7 +76,7 @@ describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
       FromEmailAddress: creds.from,
       Destination: [mail.to],
       Subject: mail.subject,
-      Template: { TemplateID: mail.templateId, TemplateData: JSON.stringify(mail.templateData) },
+      Template: { TemplateID: 1000001, TemplateData: JSON.stringify(mail.templateData) },
     });
     const canonicalRequest = [
       'POST', '/', '',
