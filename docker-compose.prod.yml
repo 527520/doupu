@@ -62,8 +62,8 @@ services:
       COS_REGION: ${COS_REGION:-}
     volumes:
       - ./deploy/scripts:/scripts:ro
-    # postgres:16-alpine 无 openssl（COS 签名需要）：启动时装上再进备份循环
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache openssl >/dev/null 2>&1 && while true; do /scripts/backup.sh; sleep 86400; done"]
+    # postgres:16-alpine 无 openssl/curl（COS 签名与上传需要）：启动时装上再进备份循环
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache openssl curl >/dev/null 2>&1 && while true; do /scripts/backup.sh; sleep 86400; done"]
     depends_on:
       - postgres
 
