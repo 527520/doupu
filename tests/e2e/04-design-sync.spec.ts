@@ -36,6 +36,24 @@ async function login(page: import('@playwright/test').Page, email: string, passw
   await page.waitForURL(/\/designs|\/app/, { timeout: 15_000 });
 }
 
+/** 读取本机 IndexedDB 中第一条设计的 id（用于构造 /app?id=… 直链）。 */
+async function firstDesignId(page: import('@playwright/test').Page): Promise<string | null> {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((res, rej) => {
+      const r = indexedDB.open('doupu', 1);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const records = await new Promise<Array<{ id: string }>>((res, rej) => {
+      const tx = db.transaction('designs', 'readonly');
+      const r = tx.objectStore('designs').getAll();
+      r.onsuccess = () => res(r.result as Array<{ id: string }>);
+      r.onerror = () => rej(r.error);
+    });
+    return records.length > 0 ? records[0].id : null;
+  });
+}
+
 test('双设备同步：设备 A 保存 → 设备 B 登录后可见同一设计', async ({ browser }) => {
   // 两个隔离的浏览器上下文模拟两台设备
   const contextA = await browser.newContext();
@@ -64,6 +82,81 @@ test('双设备同步：设备 A 保存 → 设备 B 登录后可见同一设计
   await login(pageB, email, password);
   await pageB.goto('/designs');
   await expect(pageB.getByText('云端同步测试设计').first()).toBeVisible({ timeout: 15_000 });
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打不开、B 也看不到', async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const { email, password } = await registerAndVerifyInContext(contextA);
+
+  // 设备 A：登录 → 生成并保存设计
+  const pageA = await contextA.newPage();
+  await login(pageA, email, password);
+  await pageA.goto('/app');
+  await pageA.getByLabel('图片文件选择器').setInputFiles(PHOTO);
+  await pageA.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
+  await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
+  await fillField(pageA, '设计名称', '待删除设计');
+  await pageA.getByRole('button', { name: /保存/ }).click();
+  await expect(pageA.getByText(/已保存/).first()).toBeVisible({ timeout: 15_000 });
+  const designId = await firstDesignId(pageA);
+  expect(designId).toBeTruthy();
+
+  // A：删除（此前 DELETE 被守卫 400 拦截导致删除失败——本用例守护该回归）
+  await pageA.goto('/designs');
+  await expect(pageA.getByText('待删除设计').first()).toBeVisible({ timeout: 15_000 });
+  await pageA.getByRole('button', { name: '删除' }).first().click();
+  await pageA.getByRole('dialog').getByRole('button', { name: '删除' }).click();
+  await expect(pageA.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
+  await expect(pageA.getByText('加载失败')).toHaveCount(0);
+
+  // A：刷新后仍不出现；直链打开 → 上传页（打不开已删设计）
+  await pageA.reload();
+  await expect(pageA.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
+  await pageA.goto(`/app?id=${designId}`);
+  await expect(pageA.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageA.getByLabel('设计名称')).toHaveCount(0);
+
+  // 设备 B：删除已同步——列表为空，直链同样打不开
+  const pageB = await contextB.newPage();
+  await login(pageB, email, password);
+  await pageB.goto('/designs');
+  await expect(pageB.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
+  await pageB.goto(`/app?id=${designId}`);
+  await expect(pageB.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageB.getByLabel('设计名称')).toHaveCount(0);
+
+  await contextA.close();
+  await contextB.close();
+});
+
+test('越权防护：他人设计的 id 直链打不开（本地无副本 → 上传页，云端 GET 404）', async ({ browser }) => {
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+
+  // 用户 A 创建并保存一个设计，取它的 id
+  const accountA = await registerAndVerifyInContext(contextA);
+  const pageA = await contextA.newPage();
+  await login(pageA, accountA.email, accountA.password);
+  await pageA.goto('/app');
+  await pageA.getByLabel('图片文件选择器').setInputFiles(PHOTO);
+  await pageA.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
+  await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
+  await pageA.getByRole('button', { name: /保存/ }).click();
+  await expect(pageA.getByText(/已保存/).first()).toBeVisible({ timeout: 15_000 });
+  const designId = await firstDesignId(pageA);
+  expect(designId).toBeTruthy();
+
+  // 用户 B（另一账号）打开 A 的设计直链 → 看不到 A 的作品
+  const accountB = await registerAndVerifyInContext(contextB);
+  const pageB = await contextB.newPage();
+  await login(pageB, accountB.email, accountB.password);
+  await pageB.goto(`/app?id=${designId}`);
+  await expect(pageB.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageB.getByLabel('设计名称')).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

@@ -124,7 +124,10 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
       );
       let tombstonesChanged = false;
       for (const record of [...local, ...tombstones]) {
-        if (!lastServer || record.updatedAt <= lastServer) continue;
+        // 本地墓碑（删除意图）不受 lastServer 门控：删除必须能赢过旧快照。
+        // 若客户端时钟落后，sanitize 会钳制到 maxServer+1ms；否则按原时间参与 LWW。
+        // （普通本地记录仍保留门控：≤ lastServer 的旧快照保守信任服务器，避免误判脏数据。）
+        if (!record.deleted && (!lastServer || record.updatedAt <= lastServer)) continue;
         const sanitized = sanitizeClientTimestamp(record.updatedAt, maxServer);
         if (sanitized === record.updatedAt) continue;
         record.updatedAt = sanitized;

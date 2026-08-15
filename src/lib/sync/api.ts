@@ -42,7 +42,10 @@ async function throwFor(response: Response): Promise<never> {
 export function createDoupuApi(fetchImpl: typeof fetch = fetch) {
   async function request(path: string, init?: RequestInit): Promise<Response> {
     const headers: Record<string, string> = { ...(init?.headers as Record<string, string>) };
-    if (init?.method && init.method !== 'GET' && init.body !== undefined) {
+    // 所有 mutating 方法都带 JSON 声明（含无 body 的 DELETE）：
+    // 服务端 enforceMutatingGuard 要求 Content-Type: application/json，
+    // 此前 bodyless DELETE 未带头导致被 400 拒绝 → 删除失败。
+    if (init?.method && init.method !== 'GET') {
       headers['Content-Type'] = headers['Content-Type'] ?? 'application/json';
     }
     return fetchImpl(path, { ...init, headers });

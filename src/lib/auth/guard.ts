@@ -40,6 +40,11 @@ export function enforceMutatingGuard(request: Request): NextResponse | null {
     );
   }
   const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType) {
+    // 完全未声明 Content-Type：视为无请求体的变更请求（如原生 bodyless DELETE），放行。
+    // 本站客户端对所有 mutating 请求统一带 application/json（见 src/lib/sync/api.ts）。
+    return null;
+  }
   if (!contentType.toLowerCase().startsWith('application/json')) {
     return NextResponse.json(
       { error: { code: 'VALIDATION', message: '请求体必须为 application/json' } },

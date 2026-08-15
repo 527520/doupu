@@ -191,6 +191,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
       setCreatedAt(new Date().toISOString());
       regenerate(params, cropped, palette);
       setStep('workspace');
+      clearDesignQuery(); // 上传生成的是新设计：清除 ?id/?new，刷新后恢复的即这个新设计
     },
     [decoded, params, palette, regenerate],
   );
@@ -312,10 +313,15 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
           setSaveState('unavailable');
           return;
         }
-        // 优先恢复 URL ?id= 指定的设计（「我的设计 → 打开」入口），否则恢复最近编辑的设计
-        const requestedId = new URLSearchParams(window.location.search).get('id');
+        // 恢复策略：
+        // - ?new=1（「新建设计」入口）：不恢复任何历史设计，从空白上传开始；
+        // - ?id=X：仅当本地存在该设计时恢复；不存在则保持上传页（绝不回落打开其他设计）；
+        // - 无参数（刷新恢复）：恢复最近编辑的设计。
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('new') === '1') return;
+        const requestedId = urlParams.get('id');
         const records = await adapter.getAll();
-        const last = records.find((r) => r.id === requestedId) ?? records[0];
+        const last = requestedId ? records.find((r) => r.id === requestedId) : records[0];
         if (!last) return;
         const project = parseStoredProject(last.projectJson);
         if (!project) return;
@@ -414,7 +420,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         </div>
         {step === 'workspace' && (
           <div className="flex items-center gap-4">
-            <SaveStatus state={saveState} onSave={() => void doSave()} />
+            <SaveStatus state={saveState} loggedIn={authStatus.kind === 'user'} onSave={() => void doSave()} />
             <div className="flex items-center gap-3 text-sm">
               {authStatus.kind === 'guest' ? (
                 <>

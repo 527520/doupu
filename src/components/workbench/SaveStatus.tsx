@@ -8,12 +8,14 @@ export type SaveState = 'idle' | 'saving' | 'saved' | 'quota' | 'error' | 'unava
 interface Props {
   state: SaveState;
   onSave: () => void;
+  /** 是否已登录：决定「空闲」态文案（已登录不再显示误导性的未登录提示）。 */
+  loggedIn: boolean;
 }
 
-export default function SaveStatus({ state, onSave }: Props) {
+export default function SaveStatus({ state, onSave, loggedIn }: Props) {
   const t = zhCN.workbench;
   const badge: Record<SaveState, { text: string; className: string }> = {
-    idle: { text: t.localOnly, className: 'text-gray-400' },
+    idle: { text: loggedIn ? t.localSaved : t.localOnly, className: 'text-gray-400' },
     saving: { text: t.saving, className: 'text-blue-600' },
     saved: { text: t.saved, className: 'text-green-600' },
     quota: { text: t.quotaError, className: 'text-red-600' },

@@ -182,6 +182,29 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(again.pulled).toBe(0);
   });
 
+  it('时钟落后的本地删除：墓碑钳制后仍推送（删除不因时钟偏差被云端复活）', async () => {
+    // 云端设计 12:00；上次同步基准 12:00；本机时钟落后，删除记作 11:00
+    const cloudProject = makeProject('云端版', '2026-08-15T12:00:00.000Z');
+    const api = new FakeApi([{ id: 'j1', name: '云端版', project: cloudProject, updatedAt: cloudProject.updatedAt }]);
+    const storage = new FakeStorage();
+    await storage.setMeta('sync-last-server-time', '2026-08-15T12:00:00.000Z');
+    const localProject = makeProject('本地副本', '2026-08-15T12:00:00.000Z');
+    await storage.put(record('j1', localProject, localProject.updatedAt));
+    const client = createSyncClient(storage, api);
+
+    await client.deleteLocal('j1', '2026-08-15T11:00:00.000Z');
+    const outcome = await client.sync();
+    // 墓碑被钳制为 maxServer+1ms → 删除胜出：调云端 DELETE，不被拉回复活
+    expect(api.deleted).toEqual(['j1']);
+    expect(outcome.pushed).toBe(1);
+    expect(outcome.pulled).toBe(0);
+    expect(await storage.getAll()).toEqual([]);
+    // 幂等：下一轮零操作
+    const again = await client.sync();
+    expect(again.pushed).toBe(0);
+    expect(again.pulled).toBe(0);
+  });
+
   it('云端墓碑较新：拉取删除本地副本（跨设备删除收敛）', async () => {
     const cloudProject = makeProject('已删', '2026-08-15T12:00:00.000Z');
     const api = new FakeApi([

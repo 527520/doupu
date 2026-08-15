@@ -27,10 +27,27 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
   const [showGrid, setShowGrid] = useState(true);
   const [showSeams, setShowSeams] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const dragState = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const baseCellPx = defaultCellPx ?? fitCellSize(pattern.width, pattern.height, 800, 560);
+  // 容器宽度自适应：格尺寸随容器（窄屏手机）等比计算，画布绝不拉伸变形
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setContainerWidth(el.clientWidth > 0 ? Math.floor(el.clientWidth) : null);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setContainerWidth(w > 0 ? Math.floor(w) : null);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // 容器 p-2 两侧内边距 16px；窄屏按实际可用宽度计算，画布宽高始终等比
+  const baseCellPx =
+    defaultCellPx ?? fitCellSize(pattern.width, pattern.height, Math.max(1, (containerWidth ?? 800) - 16), 560);
   const cellPx = Math.max(1, Math.round(baseCellPx * zoom));
 
   const draw = useCallback(() => {
@@ -176,7 +193,7 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
           onPointerLeave={onPointerLeave}
-          style={{ touchAction: 'none', maxWidth: '100%' }}
+          style={{ touchAction: 'none' }}
         />
       </div>
     </div>

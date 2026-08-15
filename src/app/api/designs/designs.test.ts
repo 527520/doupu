@@ -135,6 +135,25 @@ describe('GET /api/designs/[id]', () => {
     expect((await getOne(jsonRequest('GET', `/api/designs/${ID}`), paramsOf(ID))).status).toBe(404);
     expect((await getOne(jsonRequest('GET', `/api/designs/${ID}`), paramsOf('00000000-0000-4000-8000-0000000000ff'))).status).toBe(404);
   });
+
+  it('IDOR 防护：他人设计的 id 无法读取/删除（GET 404，DELETE 204 但不生效）', async () => {
+    const ID = '00000000-0000-4000-8000-0000000000c1';
+    const p = (id: string) => ({ params: Promise.resolve({ id }) });
+    // 用户 A（beforeEach 会话）创建设计
+    await putOne(jsonRequest('PUT', `/api/designs/${ID}`, { name: 'A 私有', project: projectFile('A 私有') }), p(ID));
+
+    // 用户 B 登录后尝试借 id 读取/删除
+    const userB = await newUser();
+    const sessionB = await createSession(db, userB);
+    cookieJar.set(SESSION_COOKIE_NAME, sessionB.token);
+    expect((await getOne(jsonRequest('GET', `/api/designs/${ID}`), p(ID))).status).toBe(404);
+    expect((await deleteOne(jsonRequest('DELETE', `/api/designs/${ID}`), p(ID))).status).toBe(204);
+
+    // A 的数据完好无损
+    const rows = await db.select().from(designs);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].name).toBe('A 私有');
+  });
 });
 
 describe('PUT /api/designs/[id]', () => {

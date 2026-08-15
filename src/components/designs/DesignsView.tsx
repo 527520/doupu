@@ -213,7 +213,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
         <h1 className="text-lg font-semibold">{t.title}</h1>
         <div className="flex items-center gap-4">
-          <Link href="/app" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
+          <Link href="/app?new=1" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
             {t.newDesign}
           </Link>
           <AccountMenu api={api} me={me} onAuthChanged={() => void load()} />

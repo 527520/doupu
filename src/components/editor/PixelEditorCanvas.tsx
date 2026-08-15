@@ -68,6 +68,21 @@ export default function PixelEditorCanvas({
   const [replaceFrom, setReplaceFrom] = useState('');
   const [replaceTo, setReplaceTo] = useState('0');
   const [replaceMsg, setReplaceMsg] = useState<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+
+  // 容器宽度自适应：窄屏（手机）按实际可用宽度计算格尺寸，画布等比、绝不拉伸
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setContainerWidth(el.clientWidth > 0 ? Math.floor(el.clientWidth) : null);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setContainerWidth(w > 0 ? Math.floor(w) : null);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const toolRef = useRef(tool);
   const brushSizeRef = useRef(brushSize);
@@ -88,7 +103,11 @@ export default function PixelEditorCanvas({
 
   const { width: W, height: H } = stateRef.current;
   const maxCellPx = Math.max(1, Math.floor(4096 / Math.max(W, H)));
-  const cellPx = Math.max(1, Math.min(defaultCellPx ?? fitCellSize(W, H, 800, 560), maxCellPx));
+  // 容器 p-2 两侧内边距 16px；窄屏按实际可用宽度计算，画布宽高始终等比
+  const cellPx = Math.max(
+    1,
+    Math.min(defaultCellPx ?? fitCellSize(W, H, Math.max(1, (containerWidth ?? 800) - 16), 560), maxCellPx),
+  );
 
   const syncFlags = useCallback((stats?: PatternStatsItem[], total?: number) => {
     setCanUndo(historyRef.current.canUndo);
@@ -458,7 +477,7 @@ export default function PixelEditorCanvas({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
-          style={{ touchAction: 'none', maxWidth: '100%', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
+          style={{ touchAction: 'none', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>
       <p className="text-xs text-gray-400">

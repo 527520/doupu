@@ -164,6 +164,7 @@ export const zhCN = {
     saved: '已保存',
     saveFailed: '保存失败',
     localOnly: '未登录：设计仅保存在本机浏览器，注册后可云端同步',
+    localSaved: '已保存到本机「我的设计」，登录后自动同步云端',
     unavailable: '本地存储不可用（可能处于隐私模式），设计将无法保存',
     quotaError: '本地存储空间不足，请导出项目文件备份后清理浏览器数据',
     generateFailed: '图纸生成失败，请重试。',
@@ -392,6 +393,15 @@ export const zhCN = {
         a: '不会。豆谱完全免费、无广告、无会员，也不需要付费解锁任何功能。',
       },
     ],
+  },
+  errorPages: {
+    notFoundTitle: '页面不存在',
+    notFoundBody: '你访问的页面不存在或已被移动。可以去首页继续制作拼豆图纸。',
+    errorTitle: '页面出错了',
+    errorBody: '很抱歉，页面加载时出了点问题。点击重试，或返回首页重新开始。',
+    retry: '重试',
+    backHome: '返回首页',
+    goWorkbench: '去工作台',
   },
   about: {
     title: '关于豆谱',
