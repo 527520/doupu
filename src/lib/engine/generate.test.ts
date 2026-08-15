@@ -113,6 +113,7 @@ describe('generatePattern 边界（E14–E19）', () => {
 });
 
 describe('generatePattern 性质测试', () => {
+  // 50 组随机输入在 CI 慢速 runner 上约 10-15s，超出默认 5s；显式放宽到 30s
   it('50 组随机输入：不抛异常、尺寸正确、输出全部在色板内、统计自洽', () => {
     for (let seed = 1; seed <= 50; seed++) {
       const w = 1 + Math.floor(mulberry32(seed)() * 40);
@@ -140,7 +141,7 @@ describe('generatePattern 性质测试', () => {
         expect(item.count).toBeGreaterThan(0);
       }
     }
-  });
+  }, 30_000);
 
   it('确定性：同输入两次输出完全一致', () => {
     const img = randomImage(99, 33, 27, 0.3);
