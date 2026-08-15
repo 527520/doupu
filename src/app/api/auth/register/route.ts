@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       zhCN.auth.verifySubject,
       zhCN.auth.verifyHtml(link),
       zhCN.auth.verifyText(link),
-      { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { link } } },
+      { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { token } } },
     );
   } catch {
     // 账号已创建、验证邮件发送失败：返回 503，用户可稍后经「重发验证邮件」恢复；

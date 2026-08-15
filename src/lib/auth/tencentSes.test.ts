@@ -16,7 +16,7 @@ const creds = {
   region: 'ap-guangzhou',
   from: 'noreply@doupu.fun',
 };
-const mail = { to: 'user@example.com', templateId: '1000001', templateData: { link: 'https://doupu.fun/verify-email?token=x' } };
+const mail = { to: 'user@example.com', templateId: '1000001', templateData: { token: 'verify-token-abc' } };
 const fixedDate = new Date('2026-08-15T08:00:00.000Z');
 
 describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
@@ -55,7 +55,7 @@ describe('buildSesSendRequest（TC3 签名结构 + 模板模式）', () => {
   it('签名敏感性：改密钥/改模板变量/改时间任一变化 → 签名变化', () => {
     const base = buildSesSendRequest(creds, mail, fixedDate).headers.Authorization;
     const otherKey = buildSesSendRequest({ ...creds, secretKey: creds.secretKey + 'x' }, mail, fixedDate);
-    const otherBody = buildSesSendRequest(creds, { ...mail, templateData: { link: 'https://other' } }, fixedDate);
+    const otherBody = buildSesSendRequest(creds, { ...mail, templateData: { token: 'other' } }, fixedDate);
     const otherTime = buildSesSendRequest(creds, mail, new Date('2026-08-15T08:00:01.000Z'));
     expect(otherKey.headers.Authorization).not.toBe(base);
     expect(otherBody.headers.Authorization).not.toBe(base);

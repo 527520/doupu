@@ -73,7 +73,7 @@ export async function POST(request: Request) {
         zhCN.auth.resetSubject,
         zhCN.auth.resetHtml(link),
         zhCN.auth.resetText(link),
-        { sesTemplate: { templateId: process.env.SES_RESET_TEMPLATE_ID ?? '', templateData: { link } } },
+        { sesTemplate: { templateId: process.env.SES_RESET_TEMPLATE_ID ?? '', templateData: { token } } },
       );
     } catch {
       // 发送失败：保持 204（防枚举；熔断器已打开，后续请求统一 503）

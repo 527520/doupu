@@ -69,7 +69,7 @@ export async function POST(request: Request) {
         zhCN.auth.verifySubject,
         zhCN.auth.verifyHtml(link),
         zhCN.auth.verifyText(link),
-        { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { link } } },
+        { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { token } } },
       );
     } catch {
       // 发送失败：保持 204（防枚举——首个失败请求不泄露账号状态；熔断器已打开，
