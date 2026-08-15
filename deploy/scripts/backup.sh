@@ -21,16 +21,15 @@ EXPIRE=$((NOW + 600))
 HTTP_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
 CONTENT_TYPE="application/gzip"
 
-# COS 签名（v5 header 鉴权）：签名串中的 header 值必须 URL 编码
-# （application/gzip → application%2Fgzip，见 COS 返回的 FormatString）；
-# 中间哈希 SHA1(HttpString) 必须为 hex（COS StringToSign 期望 40 位十六进制）。
+# COS 签名（v5 header 鉴权）：header 值 URL 编码；中间哈希与 SignKey/Signature
+# 均为 16 进制小写（官方文档：以 SignKey 为字符串密钥计算消息摘要，16 进制小写形式）。
 SIGN_TIME="${NOW};${EXPIRE}"
 HTTP_HEADERS="content-type;host"
-SIGN_KEY=$(printf "%s" "${COS_SECRET_KEY}" | openssl dgst -sha1 -hmac "${SIGN_TIME}" -binary | openssl base64)
+SIGN_KEY=$(printf "%s" "${COS_SECRET_KEY}" | openssl dgst -sha1 -hmac "${SIGN_TIME}" -r | awk '{print $1}')
 HTTP_STR="put\n/${KEY}\n\ncontent-type=application%2Fgzip&host=${HOST}\n"
 HTTP_SHA1=$(printf "%b" "${HTTP_STR}" | openssl dgst -sha1 -r | awk '{print $1}')
 STRING_TO_SIGN="sha1\n${SIGN_TIME}\n${HTTP_SHA1}\n"
-SIGNATURE=$(printf "%b" "${STRING_TO_SIGN}" | openssl dgst -sha1 -hmac "${SIGN_KEY}" -binary | openssl base64)
+SIGNATURE=$(printf "%b" "${STRING_TO_SIGN}" | openssl dgst -sha1 -hmac "${SIGN_KEY}" -r | awk '{print $1}')
 AUTH="q-sign-algorithm=sha1&q-ak=${COS_SECRET_ID}&q-sign-time=${SIGN_TIME}&q-key-time=${SIGN_TIME}&q-header-list=${HTTP_HEADERS}&q-url-param-list=&q-signature=${SIGNATURE}"
 
 HTTP_CODE=$(curl -sS -o "${TMP}.resp" -w "%{http_code}" -X PUT \
