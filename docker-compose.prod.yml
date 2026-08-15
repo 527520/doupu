@@ -60,10 +60,17 @@ services:
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       COS_BUCKET: ${COS_BUCKET:-}
       COS_REGION: ${COS_REGION:-}
+      # rclone 远程 doupucos（TencentCOS，签名由 rclone 处理）
+      RCLONE_CONFIG_DOUPUCOS_TYPE: s3
+      RCLONE_CONFIG_DOUPUCOS_PROVIDER: TencentCOS
+      RCLONE_CONFIG_DOUPUCOS_ENV_AUTH: "true"
+      RCLONE_CONFIG_DOUPUCOS_ACCESS_KEY_ID: ${COS_SECRET_ID:-}
+      RCLONE_CONFIG_DOUPUCOS_SECRET_ACCESS_KEY: ${COS_SECRET_KEY:-}
+      RCLONE_CONFIG_DOUPUCOS_ENDPOINT: https://cos.${COS_REGION:-ap-seoul}.myqcloud.com
     volumes:
       - ./deploy/scripts:/scripts:ro
-    # postgres:16-alpine 无 openssl/curl（COS 签名与上传需要）：启动时装上再进备份循环
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache openssl curl >/dev/null 2>&1 && while true; do /scripts/backup.sh; sleep 86400; done"]
+    # 装 rclone（上传由 rclone 完成），再进每日备份循环
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache rclone >/dev/null 2>&1 && while true; do /scripts/backup.sh; sleep 86400; done"]
     depends_on:
       - postgres
 
