@@ -274,7 +274,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       </button>
 
       {showPassword && (
-        <Modal label={t.changePasswordTitle} onClose={() => setShowPassword(false)}>
+        <Modal label={t.changePasswordTitle} onClose={() => setShowPassword(false)} panelClassName="max-w-sm">
           <ChangePasswordDialog
             api={api}
             onClose={() => setShowPassword(false)}
@@ -283,7 +283,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
         </Modal>
       )}
       {showDelete && (
-        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="border-red-200">
+        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="max-w-sm border-red-200">
           <DeleteAccountDialog
             api={api}
             onClose={() => setShowDelete(false)}

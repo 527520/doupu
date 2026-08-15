@@ -305,7 +305,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       </ul>
 
       {renaming && (
-        <Modal label={t.renameTitle} onClose={() => setRenaming(null)}>
+        <Modal label={t.renameTitle} onClose={() => setRenaming(null)} panelClassName="max-w-sm">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -337,7 +337,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       )}
 
       {deleting && (
-        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="border-red-200">
+        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="max-w-sm border-red-200">
           <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteTitle}</h3>
           <p className="mb-3 text-sm text-gray-600">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
           <div className="flex justify-end gap-2">
