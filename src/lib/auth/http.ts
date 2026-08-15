@@ -69,8 +69,8 @@ export function okJson(data: unknown, init?: ResponseInit): NextResponse {
   return NextResponse.json(data, init);
 }
 
-export function noContent(status: 204 | 200 = 204): NextResponse {
-  return new NextResponse(null, { status });
+export function noContent(status: 204 | 200 = 204, init?: ResponseInit): NextResponse {
+  return new NextResponse(null, { ...init, status });
 }
 
 /** 统一错误响应：AppError → 对应状态码；ZodError → 400；未知 → 500（不泄露细节）。 */

@@ -45,6 +45,9 @@ next-env.d.ts
 /.npm-cache
 /.appdata
 
+# dev 本地持久化数据库（PGlite 回退库落盘目录）
+/.pglite-dev/
+
 # playwright
 /test-results
 /playwright-report

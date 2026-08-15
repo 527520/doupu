@@ -48,21 +48,35 @@ async function initFallbackDb(): Promise<PgliteDatabase<typeof schema>> {
       import('node:fs'),
       import('node:path'),
     ]);
-  const client = new PGlite();
+  // 开发数据默认持久化到磁盘（重启不丢账号/设计/色板）；
+  // PGLITE_DATA_DIR 显式置空（如 E2E globalSetup）时退回内存库。
+  const dataDir =
+    process.env.PGLITE_DATA_DIR === undefined
+      ? join(process.cwd(), '.pglite-dev')
+      : process.env.PGLITE_DATA_DIR || undefined;
+  const client = dataDir ? new PGlite({ dataDir }) : new PGlite();
   const db = drizzle(client, { schema: schemaModule });
-  // 直接按文件名顺序执行迁移 SQL（drizzle migrator 在 webpack 打包环境存在
-  // URL 类型问题；测试环境的 db/testClient 仍走 migrator 并已由测试覆盖）。
-  // 注意：drizzle 生成的迁移文件含 `--> statement-breakpoint` 注释行，非合法 SQL，需剔除。
+
+  // 迁移记账：持久化库重启后只执行未应用过的迁移（避免重复建表报错）。
+  // drizzle 生成的迁移文件含 `--> statement-breakpoint` 注释行，非合法 SQL，需剔除。
+  await client.exec(
+    `CREATE TABLE IF NOT EXISTS _doupu_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+  );
+  const appliedRows = await client.query<{ name: string }>('SELECT name FROM _doupu_migrations');
+  const applied = new Set(appliedRows.rows.map((r) => r.name));
+
   const dir = resolve(process.cwd(), 'db/migrations');
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
   for (const file of files) {
+    if (applied.has(file)) continue;
     const sqlText = readFileSync(join(dir, file), 'utf8')
       .split(/\r?\n/)
       .filter((line) => !line.trim().startsWith('-->'))
       .join('\n');
     await client.exec(sqlText);
+    await client.query('INSERT INTO _doupu_migrations (name) VALUES ($1)', [file]);
   }
   return db;
 }

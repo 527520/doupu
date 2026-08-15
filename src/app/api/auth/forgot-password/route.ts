@@ -4,7 +4,7 @@ import { forgotPasswordSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
-import { buildResetLink, sendMail } from '@/lib/auth/mailer';
+import { buildResetLink, DEV_MAIL_LINK_HEADER, isDevMailMode, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     .select({ id: users.id })
     .from(users)
     .where(eq(sql`lower(${users.email})`, email));
+  let devLink: string | null = null;
   if (rows.length === 1) {
     const token = generateToken();
     await db.insert(emailTokens).values({
@@ -44,7 +45,10 @@ export async function POST(request: Request) {
     });
     const link = buildResetLink(token);
     await sendMail(email, zhCN.auth.resetSubject, zhCN.auth.resetHtml(link), zhCN.auth.resetText(link));
+    // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
+    devLink = isDevMailMode() ? link : null;
   }
 
-  return noContent();
+  const headers = devLink ? { [DEV_MAIL_LINK_HEADER]: devLink } : undefined;
+  return noContent(204, headers ? { headers } : undefined);
 }

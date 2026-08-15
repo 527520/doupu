@@ -31,6 +31,17 @@ describe('forgot-password 页', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zhCN.authPages.forgotSent));
   });
 
+  it('开发邮件模式：响应带 x-dev-mail-link 时展示可点击的重置链接', async () => {
+    const link = 'http://localhost:3000/reset-password?token=dev-token-456';
+    fetchMock.mockResolvedValue(new Response(null, { status: 204, headers: { 'x-dev-mail-link': link } }));
+    render(<ForgotPasswordPage />);
+    fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'a@b.com' } });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.authPages.submit }));
+    const shown = await screen.findByRole('link', { name: link });
+    expect(shown.getAttribute('href')).toBe(link);
+    expect(screen.getByText(zhCN.authPages.devMailHint)).toBeTruthy();
+  });
+
   it('网络失败同样恒成功（不泄露账号是否存在）', async () => {
     fetchMock.mockRejectedValue(new Error('network down'));
     render(<ForgotPasswordPage />);

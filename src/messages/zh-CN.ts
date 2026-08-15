@@ -212,6 +212,7 @@ export const zhCN = {
     hasAccount: '已有账号？去登录',
     loginSuccess: '登录成功，正在跳转…',
     registeredSent: '注册成功！验证邮件已发送，请查收邮件并点击链接完成验证。',
+    devMailHint: '开发模式提示：邮件未真实发送，直接打开下方链接继续操作（正式环境将发送到你的邮箱）。',
     verifyLoading: '正在验证邮箱…',
     verifySuccess: '邮箱验证成功！现在可以登录了。',
     goLogin: '前往登录',

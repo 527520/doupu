@@ -47,6 +47,8 @@ export default async function globalSetup(): Promise<void> {
         NEXT_TELEMETRY_DISABLED: '1',
         // 显式移除 DATABASE_URL → PGlite 回退
         DATABASE_URL: '',
+        // 回退库退回内存（不落盘）：每轮 E2E 全新库，且不与本地 dev 的 .pglite-dev 竞争
+        PGLITE_DATA_DIR: '',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,

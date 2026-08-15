@@ -6,7 +6,7 @@ import { getDb } from '@/lib/auth/db';
 import { hashPassword } from '@/lib/auth/password';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
-import { buildVerifyLink, sendMail } from '@/lib/auth/mailer';
+import { buildVerifyLink, DEV_MAIL_LINK_HEADER, isDevMailMode, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -51,5 +51,7 @@ export async function POST(request: Request) {
 
   const link = buildVerifyLink(token);
   await sendMail(email, zhCN.auth.verifySubject, zhCN.auth.verifyHtml(link), zhCN.auth.verifyText(link));
-  return noContent();
+  // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
+  const headers = isDevMailMode() ? { [DEV_MAIL_LINK_HEADER]: link } : undefined;
+  return noContent(204, headers ? { headers } : undefined);
 }

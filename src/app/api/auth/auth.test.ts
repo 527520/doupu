@@ -89,12 +89,13 @@ describe('认证全生命周期', () => {
   it('注册 → 验证 → 登录 → me → 修改密码 → 找回重置 → 旧会话失效 → 注销', async () => {
     const mail = email();
 
-    // 1. 注册 → 204，发送验证邮件
+    // 1. 注册 → 204，发送验证邮件；开发邮件模式链接随响应头下发
     const reg = await registerPost(post('/api/auth/register', { email: mail, password }));
     expect(reg.status).toBe(204);
     expect(sentMails()).toHaveLength(1);
     expect(lastMail().to).toBe(mail);
     expect(lastMail().text).toContain('24 小时');
+    expect(reg.headers.get('x-dev-mail-link')).toContain('/verify-email?token=');
     const verifyToken = tokenFromMail(lastMail());
 
     // 2. 重复注册（大小写变体）→ 409（E28）
@@ -157,12 +158,14 @@ describe('认证全生命周期', () => {
     expect(newLogin.status).toBe(200);
     cookieJar.set(SESSION_COOKIE_NAME, setCookieFromResponse(newLogin)!);
 
-    // 7. 忘记密码（防枚举恒 204，E33）
+    // 7. 忘记密码（防枚举恒 204，E33）；开发邮件模式：存在的账号下发重置链接头，幽灵账号无头
     const forgot = await forgotPost(post('/api/auth/forgot-password', { email: mail }));
     expect(forgot.status).toBe(204);
+    expect(forgot.headers.get('x-dev-mail-link')).toContain('/reset-password?token=');
     const resetToken = tokenFromMail(lastMail());
     const forgotGhost = await forgotPost(post('/api/auth/forgot-password', { email: 'ghost@example.com' }));
     expect(forgotGhost.status).toBe(204);
+    expect(forgotGhost.headers.get('x-dev-mail-link')).toBeNull();
     expect(sentMails()).toHaveLength(2); // 不存在的邮箱不发信
 
     // 8. 重置密码 → 204；旧会话全部失效（E32）

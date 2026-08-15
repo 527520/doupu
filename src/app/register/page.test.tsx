@@ -45,6 +45,26 @@ describe('register 页', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zhCN.authPages.registeredSent));
   });
 
+  it('开发邮件模式：响应带 x-dev-mail-link 时展示可点击的验证链接', async () => {
+    const link = 'http://localhost:3000/verify-email?token=dev-token-123';
+    fetchMock.mockResolvedValue(new Response(null, { status: 204, headers: { 'x-dev-mail-link': link } }));
+    render(<RegisterPage />);
+    fill('a@b.com', '12345678', '12345678');
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    const shown = await screen.findByRole('link', { name: link });
+    expect(shown.getAttribute('href')).toBe(link);
+    expect(screen.getByText(zhCN.authPages.devMailHint)).toBeTruthy();
+  });
+
+  it('无 x-dev-mail-link 响应头时不显示开发链接（正式环境）', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    render(<RegisterPage />);
+    fill('a@b.com', '12345678', '12345678');
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+    expect(screen.queryByText(zhCN.authPages.devMailHint)).toBeNull();
+  });
+
   it('邮箱已存在（CONFLICT）显示对应文案', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { code: 'CONFLICT', message: zhCN.auth.emailTaken } }), { status: 409 }));
     render(<RegisterPage />);

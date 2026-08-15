@@ -7,6 +7,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { registerSchema } from '@/lib/schemas';
+import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
 
 export default function RegisterPage() {
   const t = zhCN.authPages;
@@ -16,6 +17,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
+  const [devMailLink, setDevMailLink] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -38,6 +40,8 @@ export default function RegisterPage() {
       });
       if (res.ok) {
         setDone(true);
+        // 开发邮件模式：服务端把验证链接放在响应头里，直接展示给用户（正式环境为 null）
+        setDevMailLink(res.headers.get(DEV_MAIL_LINK_HEADER));
         return;
       }
       const body = await res.json().catch(() => null);
@@ -65,6 +69,14 @@ export default function RegisterPage() {
         <p role="status" className="mb-4 text-center text-green-700">
           {t.registeredSent}
         </p>
+        {devMailLink && (
+          <div className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm">
+            <p className="mb-2 text-blue-800">{t.devMailHint}</p>
+            <a href={devMailLink} className="break-all text-blue-600 underline underline-offset-2">
+              {devMailLink}
+            </a>
+          </div>
+        )}
         <Link href="/login" className="block text-center text-blue-600 hover:underline">
           {t.goLogin}
         </Link>

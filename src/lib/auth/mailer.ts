@@ -6,6 +6,9 @@
  * 所有发送的邮件同时入 sentMails（上限 100 条）供测试断言。
  */
 import nodemailer from 'nodemailer';
+import { DEV_MAIL_LINK_HEADER } from './mailMeta';
+
+export { DEV_MAIL_LINK_HEADER };
 
 export interface Mail {
   to: string;
@@ -26,6 +29,11 @@ export function clearMailbox(): void {
 
 export function appUrl(): string {
   return process.env.APP_URL ?? 'http://localhost:3000';
+}
+
+/** 是否开发邮件模式（非生产且未配置 SMTP）：邮件只打印到日志，不真实发送。 */
+export function isDevMailMode(): boolean {
+  return process.env.NODE_ENV !== 'production' && !process.env.SMTP_HOST;
 }
 
 export function buildVerifyLink(token: string): string {
