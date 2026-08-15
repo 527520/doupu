@@ -34,6 +34,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # Caddyfile 的 {$SITE_DOMAIN} 占位符来源；仅注入这一项（与 backup 同风格的最小面）
+      SITE_DOMAIN: ${SITE_DOMAIN:?请在 .env 中设置 SITE_DOMAIN}
     ports:
       - "80:80"
       - "443:443"
