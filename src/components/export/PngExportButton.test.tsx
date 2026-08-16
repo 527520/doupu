@@ -11,11 +11,6 @@ function makePattern(w: number, h: number, cells: PatternCell[]): Pattern {
   return { width: w, height: h, cells };
 }
 
-/** 打开选项面板并点击确认（模拟用户完整导出路径）。 */
-async function exportViaPanel2(): Promise<void> {
-  fireEvent.click(screen.getByRole('button', { name: '导出' }));
-}
-
 describe('PngExportButton（优化票 10：选项面板）', () => {
   beforeEach(() => {
     // jsdom 无 toBlob / createObjectURL
