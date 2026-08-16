@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import PixelEditorCanvas from './PixelEditorCanvas';
 import { makeSolid } from '@/lib/editor/ops';
+import { zhCN } from '@/messages/zh-CN';
 import type { PaletteColor, Pattern } from '@/lib/types';
 
 const RED: PaletteColor = { hex: '#FF0000', code: 'A' };
@@ -189,5 +190,31 @@ describe('PixelEditorCanvas', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(onStatsChange).not.toHaveBeenCalled();
+  });
+
+  it('旋转：宽高互换上抛，撤销恢复原尺寸（优化票 09）', () => {
+    const onPatternChange = vi.fn();
+    setup(3, 2, { onPatternChange });
+    fireEvent.click(screen.getByTitle('顺时针旋转 90°'));
+    expect(onPatternChange).toHaveBeenCalledTimes(1);
+    expect(onPatternChange).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 2, height: 3 }),
+    );
+    // Ctrl+Z 撤销 → 恢复 3×2
+    const wrapper = screen.getByLabelText(zhCN.editor.editorRegion);
+    fireEvent.keyDown(wrapper, { key: 'z', ctrlKey: true });
+    const lastCall = onPatternChange.mock.calls[onPatternChange.mock.calls.length - 1][0] as Pattern;
+    expect(lastCall.width).toBe(3);
+    expect(lastCall.height).toBe(2);
+  });
+
+  it('镜像：尺寸不变、可撤销（优化票 09）', () => {
+    const onPatternChange = vi.fn();
+    setup(3, 2, { onPatternChange });
+    fireEvent.click(screen.getByTitle('左右翻转'));
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.width).toBe(3);
+    expect(emitted.height).toBe(2);
+    expect(onPatternChange).toHaveBeenCalledTimes(1);
   });
 });

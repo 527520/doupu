@@ -1,19 +1,23 @@
 'use client';
 
-/** PNG 导出按钮（spec §F7）：空图纸禁用并提示；导出失败可重试。 */
+/** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import { contentBounds } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
 import type { Pattern } from '@/lib/types';
+import { usePublicConfig } from '@/components/config/usePublicConfig';
 
 interface Props {
   pattern: Pattern;
   designName: string;
+  /** 测试/外部注入覆盖（优先于站点配置默认值） */
   cellPx?: number;
   cropToContent?: boolean;
   includeLegend?: boolean;
 }
+
+const CELL_CHOICES = [8, 16, 24, 32, 48] as const;
 
 export default function PngExportButton({
   pattern,
@@ -24,14 +28,39 @@ export default function PngExportButton({
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  // 站点配置默认值（改环境变量即生效）；外部注入 props 优先
+  const pubCfg = usePublicConfig();
+  const defaultCellPx = cellPx ?? pubCfg.exportPng.cellPx;
+  const defaultCrop = cropToContent ?? pubCfg.exportPng.cropToContent;
+  const defaultLegend = includeLegend ?? pubCfg.exportPng.includeLegend;
+
+  const [optCellPx, setOptCellPx] = useState<number>(defaultCellPx);
+  const [optCrop, setOptCrop] = useState<boolean>(defaultCrop);
+  const [optLegend, setOptLegend] = useState<boolean>(defaultLegend);
   const empty = useMemo(() => contentBounds(pattern) === null, [pattern]);
 
-  const handleClick = async (): Promise<void> => {
+  const t = zhCN.exportPng;
+
+  const handleClick = (): void => {
+    if (empty || busy) return;
+    setError(null);
+    setOptCellPx(defaultCellPx);
+    setOptCrop(defaultCrop);
+    setOptLegend(defaultLegend);
+    setOpen(true);
+  };
+
+  const confirm = async (): Promise<void> => {
     if (empty || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await exportPngBlob(pattern, designName, { cellPx, cropToContent, includeLegend });
+      const result = await exportPngBlob(pattern, designName, {
+        cellPx: optCellPx,
+        cropToContent: optCrop,
+        includeLegend: optLegend,
+      });
       if (!result.ok) {
         setError(result.code === 'EMPTY_PATTERN' ? zhCN.export.pngEmptyError : zhCN.export.pngFailed);
         return;
@@ -44,6 +73,7 @@ export default function PngExportButton({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
+      setOpen(false);
     } catch {
       setError(zhCN.export.pngFailed);
     } finally {
@@ -55,7 +85,7 @@ export default function PngExportButton({
     <div className="flex flex-col gap-1">
       <button
         type="button"
-        onClick={() => void handleClick()}
+        onClick={handleClick}
         disabled={empty || busy}
         className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
       >
@@ -65,6 +95,55 @@ export default function PngExportButton({
         <p role="alert" className="text-xs text-red-600">
           {error}
         </p>
+      )}
+
+      {open && (
+        <section aria-label={t.dialogTitle} className="rounded border border-gray-300 bg-white p-3 shadow-lg">
+          <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
+          <div className="flex flex-col gap-2 text-sm">
+            <label htmlFor="png-cellpx" className="flex items-center justify-between gap-2 text-gray-700">
+              {t.cellSize}
+              <select
+                id="png-cellpx"
+                value={optCellPx}
+                onChange={(e) => setOptCellPx(Number(e.target.value))}
+                className="rounded border border-gray-300 px-2 py-1"
+              >
+                {CELL_CHOICES.map((size) => (
+                  <option key={size} value={size}>
+                    {t.cellSizeValue(size)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-gray-700">
+              <input type="checkbox" checked={optCrop} onChange={(e) => setOptCrop(e.target.checked)} />
+              {t.cropToContent}
+            </label>
+            <label className="flex items-center gap-2 text-gray-700">
+              <input type="checkbox" checked={optLegend} onChange={(e) => setOptLegend(e.target.checked)} />
+              {t.includeLegend}
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={busy}
+              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {zhCN.designs.cancel}
+            </button>
+            <button
+              type="button"
+              onClick={() => void confirm()}
+              disabled={busy}
+              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {t.confirm}
+            </button>
+          </div>
+        </section>
       )}
     </div>
   );

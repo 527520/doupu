@@ -33,10 +33,11 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.locator('canvas').first().click({ position: { x: 4, y: 4 } });
   await page.keyboard.press('Control+z');
 
-  // 导出 PNG（断言下载）
+  // 导出 PNG（选项面板确认后断言下载）
+  await page.getByRole('button', { name: /导出 PNG/ }).click();
   const [pngDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /导出 PNG/ }).click(),
+    page.getByRole('button', { name: '导出', exact: true }).click(),
   ]);
   expect(pngDownload.suggestedFilename()).toMatch(/^豆谱-.*\.png$/);
   const pngPath = await pngDownload.path();

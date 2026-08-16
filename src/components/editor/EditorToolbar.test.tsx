@@ -16,6 +16,7 @@ function setup(over: Partial<Parameters<typeof EditorToolbar>[0]> = {}) {
     onRedo: vi.fn(),
     onReplaceOpen: vi.fn(),
     onClear: vi.fn(),
+    onTransform: vi.fn(),
     ...over,
   };
   render(<EditorToolbar {...props} />);

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyBrush,
   applyErase,
+  applyTransform,
   brushBounds,
   clearAll,
   floodFill,
@@ -23,6 +24,72 @@ function grid(W: number, H: number, fill: (r: number, c: number) => PatternCell)
 }
 
 const solidGrid = (W: number, H: number, color: PaletteColor = RED) => grid(W, H, () => makeSolid(color.hex, color.code));
+
+describe('applyTransform（优化票 09：镜像/旋转）', () => {
+  /** 每格 code 记作 "x,y"（x=列, y=行），便于验证坐标映射。 */
+  const labeled = (W: number, H: number): PatternCell[] =>
+    Array.from({ length: W * H }, (_, i) => makeSolid('#112233', `${i % W},${Math.floor(i / W)}`));
+  const codeAt = (cells: PatternCell[], W: number, x: number, y: number) => cells[y * W + x].code;
+
+  it('mirrorH：左右互换，尺寸不变，入参不被修改', () => {
+    const src = labeled(2, 3);
+    const r = applyTransform(src, 2, 3, 'mirrorH');
+    expect(r.width).toBe(2);
+    expect(r.height).toBe(3);
+    expect(codeAt(r.cells, 2, 1, 0)).toBe('0,0');
+    expect(codeAt(r.cells, 2, 0, 0)).toBe('1,0');
+    expect(codeAt(r.cells, 2, 1, 2)).toBe('0,2');
+    expect(codeAt(src, 2, 0, 0)).toBe('0,0'); // 入参不变
+  });
+
+  it('mirrorV：上下互换，尺寸不变', () => {
+    const r = applyTransform(labeled(2, 3), 2, 3, 'mirrorV');
+    expect(r.width).toBe(2);
+    expect(r.height).toBe(3);
+    expect(codeAt(r.cells, 2, 0, 0)).toBe('0,2');
+    expect(codeAt(r.cells, 2, 1, 1)).toBe('1,1');
+  });
+
+  it('rotateCW：90° 顺转，宽高互换（2×3 → 3×2），坐标映射正确', () => {
+    const r = applyTransform(labeled(2, 3), 2, 3, 'rotateCW');
+    expect(r.width).toBe(3);
+    expect(r.height).toBe(2);
+    // 原 (x,y) → 新 (H-1-y, x)
+    expect(codeAt(r.cells, 3, 2, 0)).toBe('0,0');
+    expect(codeAt(r.cells, 3, 0, 0)).toBe('0,2');
+    expect(codeAt(r.cells, 3, 1, 1)).toBe('1,1');
+  });
+
+  it('rotateCCW 与 rotateCW 互逆；旋转四次回到原样', () => {
+    const src = labeled(2, 3);
+    const cw = applyTransform(src, 2, 3, 'rotateCW');
+    const back = applyTransform(cw.cells, cw.width, cw.height, 'rotateCCW');
+    expect(back.width).toBe(2);
+    expect(back.height).toBe(3);
+    for (let i = 0; i < back.cells.length; i++) {
+      expect(back.cells[i].code).toBe(src[i].code);
+    }
+    let four = applyTransform(src, 2, 3, 'rotateCW');
+    for (let i = 0; i < 3; i++) {
+      four = applyTransform(four.cells, four.width, four.height, 'rotateCW');
+    }
+    expect(four.width).toBe(2);
+    expect(four.height).toBe(3);
+    for (let i = 0; i < four.cells.length; i++) {
+      expect(four.cells[i].code).toBe(src[i].code);
+    }
+  });
+
+  it('透明/外部标志随格迁移（旋转 2×2）', () => {
+    const src = labeled(2, 2);
+    src[0] = makeTransparent(); // 原(0,0)
+    src[1] = { ...src[1], external: true }; // 原(1,0)
+    const r = applyTransform(src, 2, 2, 'rotateCW');
+    // 原(0,0) → 新(1,0) → index 1；原(1,0) → 新(1,1) → index 3
+    expect(r.cells[1].transparent).toBe(true);
+    expect(r.cells[3].external).toBe(true);
+  });
+});
 
 describe('brushBounds', () => {
   it('居中且钳制边界（含 1×1 图纸）', () => {

@@ -4,7 +4,6 @@
 import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
-import { generatePatternPdf } from '@/lib/export/pdf';
 import { loadPdfCjkFont } from '@/lib/export/pdfFont';
 import { buildExportFilename, computePdfLayout, type PdfPageMetrics } from '@/lib/export/pdfLayout';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
@@ -66,7 +65,11 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
     setBusy(true);
     setError(null);
     try {
-      const fontBytes = await loadPdfCjkFont();
+      // 优化票 08：pdf-lib/fontkit（约 412KB）点击导出时才加载，不进首屏包
+      const [{ generatePatternPdf }, fontBytes] = await Promise.all([
+        import('@/lib/export/pdf'),
+        loadPdfCjkFont(),
+      ]);
       const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);

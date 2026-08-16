@@ -4,7 +4,7 @@
  */
 import type { PaletteColor, PatternCell } from '@/lib/types';
 
-export type ToolId = 'brush' | 'eraser' | 'fill' | 'pick' | 'replace' | 'clear';
+export type ToolId = 'brush' | 'eraser' | 'fill' | 'pick' | 'replace' | 'clear' | 'transform';
 
 export type BrushSize = 1 | 2 | 3;
 
@@ -177,4 +177,61 @@ export function clearAll(cells: PatternCell[]): EditSnapshot[] {
     cells[i] = after;
   }
   return snapshots;
+}
+
+// ---------- 镜像/旋转（优化票 09） ----------
+
+export type TransformOp = 'mirrorH' | 'mirrorV' | 'rotateCW' | 'rotateCCW';
+
+export interface TransformResult {
+  cells: PatternCell[];
+  width: number;
+  height: number;
+}
+
+/**
+ * 整图变换：左右/上下翻转（尺寸不变）与顺/逆时针 90° 旋转（宽高互换）。
+ * 格子对象整槽复制（含 transparent/external 标志），不改入参。
+ * 结果数组与入参等长（旋转保持格子总数），索引按目标坐标系排布。
+ */
+export function applyTransform(cells: PatternCell[], W: number, H: number, op: TransformOp): TransformResult {
+  const out = new Array<PatternCell>(cells.length);
+  switch (op) {
+    case 'mirrorH': {
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          out[y * W + (W - 1 - x)] = { ...cells[y * W + x] };
+        }
+      }
+      return { cells: out, width: W, height: H };
+    }
+    case 'mirrorV': {
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          out[y * W + x] = { ...cells[(H - 1 - y) * W + x] };
+        }
+      }
+      return { cells: out, width: W, height: H };
+    }
+    case 'rotateCW': {
+      // 新坐标系 (x', y')：x' = H-1-y，y' = x；新宽 = H，新高 = W
+      const newW = H;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          out[x * newW + (H - 1 - y)] = { ...cells[y * W + x] };
+        }
+      }
+      return { cells: out, width: H, height: W };
+    }
+    case 'rotateCCW': {
+      // 新坐标系 (x', y')：x' = y，y' = W-1-x；新宽 = H，新高 = W
+      const newW = H;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          out[(W - 1 - x) * newW + y] = { ...cells[y * W + x] };
+        }
+      }
+      return { cells: out, width: H, height: W };
+    }
+  }
 }

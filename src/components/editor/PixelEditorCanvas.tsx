@@ -14,12 +14,14 @@ import { EditHistory } from '@/lib/editor/history';
 import {
   applyBrush,
   applyErase,
+  applyTransform,
   clearAll,
   floodFill,
   replaceByCode,
   type BrushSize,
   type EditSnapshot,
   type ToolId,
+  type TransformOp,
 } from '@/lib/editor/ops';
 import { createEditorState, refreshStats } from '@/lib/editor/state';
 import Modal from '@/components/ui/Modal';
@@ -116,11 +118,13 @@ export default function PixelEditorCanvas({
     setCanRedo(historyRef.current.canRedo);
     setVersion((v) => v + 1);
     if (stats && total !== undefined && onStatsChange) onStatsChange(stats, total);
-    // 记录本次回显引用：父级因回显引起的 pattern 变化不应被当成外部变更重置编辑状态
-    const emitted: Pattern = { width: W, height: H, cells: stateRef.current.cells.map((c) => ({ ...c })) };
+    // 记录本次回显引用：父级因回显引起的 pattern 变化不应被当成外部变更重置编辑状态。
+    // 尺寸从 stateRef 实时读取（旋转等变换会改变宽高，渲染闭包里的 W/H 是旧值）。
+    const { width, height, cells } = stateRef.current;
+    const emitted: Pattern = { width, height, cells: cells.map((c) => ({ ...c })) };
     lastEmittedRef.current = emitted;
     onPatternChangeRef.current?.(emitted);
-  }, [onStatsChange, W, H]);
+  }, [onStatsChange]);
 
   // 外部 pattern 变更（父级重新生成/切换色板/导入）：重置编辑状态到新图纸。
   // 此前 stateRef 只在首帧初始化，外部新图纸会被旧 cells 静默覆盖（数据丢失缺陷）。
@@ -379,15 +383,46 @@ export default function PixelEditorCanvas({
   useEffect(() => clearLongPressTimer, [clearLongPressTimer]);
 
   const undo = (): void => {
-    if (!historyRef.current.undo(stateRef.current.cells)) return;
+    const entry = historyRef.current.undo(stateRef.current.cells);
+    if (!entry) return;
+    if (entry.dims) {
+      stateRef.current.width = entry.dims.before.width;
+      stateRef.current.height = entry.dims.before.height;
+    }
+    setCursor(null);
     refreshStats(stateRef.current);
     syncFlags(stateRef.current.stats, stateRef.current.totalBeadCount);
   };
 
   const redo = (): void => {
-    if (!historyRef.current.redo(stateRef.current.cells)) return;
+    const entry = historyRef.current.redo(stateRef.current.cells);
+    if (!entry) return;
+    if (entry.dims) {
+      stateRef.current.width = entry.dims.after.width;
+      stateRef.current.height = entry.dims.after.height;
+    }
+    setCursor(null);
     refreshStats(stateRef.current);
     syncFlags(stateRef.current.stats, stateRef.current.totalBeadCount);
+  };
+
+  /** 镜像/旋转（优化票 09）：整图变换，快照覆盖全部格子并记录尺寸变化，可撤销。 */
+  const onTransform = (op: TransformOp): void => {
+    const st = stateRef.current;
+    const beforeCells = st.cells.map((c) => ({ ...c }));
+    const beforeDims = { width: st.width, height: st.height };
+    const { cells, width, height } = applyTransform(st.cells, st.width, st.height, op);
+    st.cells = cells;
+    st.width = width;
+    st.height = height;
+    historyRef.current.push({
+      label: 'transform',
+      snapshots: beforeCells.map((cell, i) => ({ index: i, before: cell, after: st.cells[i] })),
+      dims: { before: beforeDims, after: { width, height } },
+    });
+    setCursor(null);
+    refreshStats(st);
+    syncFlags(st.stats, st.totalBeadCount);
   };
 
   const onClear = (): void => {
@@ -480,6 +515,7 @@ export default function PixelEditorCanvas({
         onRedo={redo}
         onReplaceOpen={() => setReplaceOpen((v) => !v)}
         onClear={onClear}
+        onTransform={onTransform}
       />
 
       {replaceOpen && (

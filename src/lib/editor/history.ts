@@ -6,6 +6,8 @@ export const HISTORY_LIMIT = 100;
 export interface HistoryEntry {
   label: ToolId;
   snapshots: EditSnapshot[];
+  /** 变换类操作（旋转）的尺寸恢复信息：undo 用 before、redo 用 after。 */
+  dims?: { before: { width: number; height: number }; after: { width: number; height: number } };
 }
 
 export class EditHistory {

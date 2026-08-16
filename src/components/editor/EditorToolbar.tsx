@@ -1,8 +1,8 @@
 'use client';
 
-/** 编辑器工具栏（表现组件）：当前颜色指示、工具切换、画笔大小、撤销/重做、替换入口、清除。 */
+/** 编辑器工具栏（表现组件）：当前颜色指示、工具切换、画笔大小、撤销/重做、替换入口、镜像旋转、清除。 */
 import { zhCN } from '@/messages/zh-CN';
-import type { BrushSize, ToolId } from '@/lib/editor/ops';
+import type { BrushSize, ToolId, TransformOp } from '@/lib/editor/ops';
 import type { PaletteColor } from '@/lib/types';
 
 interface Props {
@@ -19,6 +19,8 @@ interface Props {
   onRedo: () => void;
   onReplaceOpen: () => void;
   onClear: () => void;
+  /** 镜像/旋转（优化票 09） */
+  onTransform: (op: TransformOp) => void;
 }
 
 const TOOL_SHORTCUTS: Record<ToolId, string> = {
@@ -28,6 +30,7 @@ const TOOL_SHORTCUTS: Record<ToolId, string> = {
   pick: 'I',
   replace: '',
   clear: '',
+  transform: '',
 };
 
 export default function EditorToolbar({
@@ -43,6 +46,7 @@ export default function EditorToolbar({
   onRedo,
   onReplaceOpen,
   onClear,
+  onTransform,
 }: Props) {
   const t = zhCN.editor;
   const tools: Array<{ id: ToolId; label: string }> = [
@@ -134,6 +138,22 @@ export default function EditorToolbar({
         {t.replace}
       </button>
       {replaceCountMessage && <span className="text-xs text-gray-500">{replaceCountMessage}</span>}
+
+      <div className="flex items-center gap-1" aria-label={t.transformGroup}>
+        <button type="button" onClick={() => onTransform('mirrorH')} title={t.mirrorH} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+          ⇋
+        </button>
+        <button type="button" onClick={() => onTransform('mirrorV')} title={t.mirrorV} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+          ⇵
+        </button>
+        <button type="button" onClick={() => onTransform('rotateCCW')} title={t.rotateCCW} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+          ↺
+        </button>
+        <button type="button" onClick={() => onTransform('rotateCW')} title={t.rotateCW} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+          ↻
+        </button>
+      </div>
+
       <button type="button" onClick={onClear} title={t.clearTitle} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">
         {t.clear}
       </button>
