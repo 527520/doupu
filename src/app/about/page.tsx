@@ -63,7 +63,7 @@ export default function AboutPage() {
       </section>
 
       <footer className="flex flex-col gap-2 text-sm text-ink-soft/80">
-        <p>{t.icp}</p>
+        {/* 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回一行 icp */}
         <Link href="/" className="link-soft">
           ← 返回首页
         </Link>

@@ -32,7 +32,7 @@ export const zhCN = {
     sourceCode: '源码仓库（AGPL-3.0）',
     author: (name: string) => `作者：${name}`,
     authorGithub: 'GitHub 主页',
-    icp: '备案号：上线后填写',
+    // 备案（D31）：服务器在海外无需 ICP；将来迁回国内时在此加回 icp 字段并在页脚渲染
     privacy: '隐私政策',
     attribution: '基于 Zippland/perler-beads 二次开发',
   },
@@ -453,7 +453,7 @@ export const zhCN = {
     privacyTitle: '隐私政策',
     privacyBody:
       '我们只收集你主动提供的信息：注册邮箱与设计图纸数据。上传的照片仅在本地浏览器中处理，不会上传到服务器；云端仅保存图纸（色块网格）与自定义色板。你可以随时导出项目文件备份，或注销账号以永久删除全部云端数据。',
-    icp: '备案号：上线后填写',
+    // 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回 icp 字段并在页脚渲染
   },
 } as const;
 

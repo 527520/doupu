@@ -74,8 +74,8 @@ export default function Home() {
             {footer.authorGithub}
           </a>
         </p>
-        <p>{footer.icp}</p>
         <p>{footer.attribution}</p>
+        {/* 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回一行 icp */}
         <p>
           <Link href="/about" className="hover:underline">
             {footer.privacy}
