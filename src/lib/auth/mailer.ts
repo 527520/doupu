@@ -51,9 +51,11 @@ export function appUrl(): string {
   return process.env.APP_URL ?? 'http://localhost:3000';
 }
 
-/** 是否开发邮件模式（非生产且未配置 SMTP）：邮件只打印到日志，不真实发送。 */
+/** 是否开发邮件模式（非生产且未配置任何发信渠道）：邮件只打印到日志，不真实发送。
+ * 安全自查 L4：SES 也算真实渠道——仅 SMTP 未配置就判定 dev 模式，
+ * 会导致「测试环境配了 SES」时把验证链接经 x-dev-mail-link 响应头外泄。 */
 export function isDevMailMode(): boolean {
-  return process.env.NODE_ENV !== 'production' && !process.env.SMTP_HOST;
+  return process.env.NODE_ENV !== 'production' && !process.env.SMTP_HOST && !process.env.SES_SECRET_ID;
 }
 
 export function buildVerifyLink(token: string): string {
@@ -82,7 +84,13 @@ export async function sendMail(
       const transport = nodemailer.createTransport({
         host: SMTP_HOST,
         port: Number(SMTP_PORT ?? 465),
-        secure: Number(SMTP_PORT ?? 465) === 465,
+        // 安全自查 L3：尊重显式 SMTP_SECURE 配置（true/1），否则按端口 465 推断
+        secure:
+          process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1'
+            ? true
+            : process.env.SMTP_SECURE === 'false' || process.env.SMTP_SECURE === '0'
+              ? false
+              : Number(SMTP_PORT ?? 465) === 465,
         auth: { user: SMTP_USER, pass: SMTP_PASS },
       });
       await transport.sendMail({ from: SMTP_FROM ?? SMTP_USER, to, subject, html, text });
