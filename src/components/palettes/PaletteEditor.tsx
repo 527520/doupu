@@ -141,7 +141,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
   };
 
   return (
-    <section aria-label={t.title} className="flex flex-col gap-4 rounded-2xl border border-lilac/40 bg-white p-4">
+    <section aria-label={t.title} className="flex flex-col gap-4">
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium text-ink">{t.name}</span>
         <input
