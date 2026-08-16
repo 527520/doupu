@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternCell } from '@/lib/types';
+import { CANVAS_UI } from '@/lib/appInfo';
 import { drawPattern } from '@/lib/render/draw';
 import { clampZoom, fitCellSize, pointToCell } from '@/lib/render/layout';
 
@@ -45,9 +46,15 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
     return () => observer.disconnect();
   }, []);
 
-  // 容器 p-2 两侧内边距 16px；窄屏按实际可用宽度计算，画布宽高始终等比
+  // 容器 p-2 两侧内边距；窄屏按实际可用宽度计算，画布宽高始终等比（常量见 CANVAS_UI）
   const baseCellPx =
-    defaultCellPx ?? fitCellSize(pattern.width, pattern.height, Math.max(1, (containerWidth ?? 800) - 16), 560);
+    defaultCellPx ??
+    fitCellSize(
+      pattern.width,
+      pattern.height,
+      Math.max(1, (containerWidth ?? 800) - CANVAS_UI.containerPadding),
+      CANVAS_UI.maxDisplayHeight,
+    );
   const cellPx = Math.max(1, Math.round(baseCellPx * zoom));
 
   const draw = useCallback(() => {

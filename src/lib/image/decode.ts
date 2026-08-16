@@ -1,6 +1,6 @@
 /**
  * 浏览器端解码适配层（spec §F1）。
- * 本模块依赖 DOM API（createImageBitmap/OffscreenCanvas），无 Node 单测，
+ * 本模块依赖 DOM API（createImageBitmap/OffscreenCanvas）：jsdom 下用桩做契约级单测（decode.test.ts），
  * 真实解码断言在 E2E（ticket 20）覆盖。
  * HEIC 的 WASM 兜底（heic2any）在 ticket 07 接入，此处保留调用缝。
  */

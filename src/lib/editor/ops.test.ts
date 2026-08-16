@@ -213,3 +213,36 @@ describe('clearAll / sameCell', () => {
     expect(sameCell(a, makeSolid(RED.hex, null))).toBe(false);
   });
 });
+
+describe('编辑器核心操作性能（优化票 12：200×200 单操作，设计预算 <50ms；阈值放宽至 200ms 防负载抖动，与既有口径一致）', () => {
+  const W = 200;
+  const H = 200;
+
+  it('applyBrush：最大笔刷 200×200 中心', () => {
+    const cells = solidGrid(W, H);
+    const start = performance.now();
+    const snaps = applyBrush(cells, W, H, 100, 100, 3, BLUE);
+    const elapsed = performance.now() - start;
+    expect(snaps).toHaveLength(9);
+    expect(elapsed).toBeLessThan(200);
+  });
+
+  it('floodFill：全连通 40000 格区域', () => {
+    const cells = solidGrid(W, H);
+    const start = performance.now();
+    const snaps = floodFill(cells, W, H, 0, 0, BLUE);
+    const elapsed = performance.now() - start;
+    expect(snaps).toHaveLength(W * H);
+    expect(cells.every((c) => c.hex === BLUE.hex)).toBe(true);
+    expect(elapsed).toBeLessThan(200);
+  });
+
+  it('clearAll：200×200 全图清除', () => {
+    const cells = solidGrid(W, H);
+    const start = performance.now();
+    const snaps = clearAll(cells);
+    const elapsed = performance.now() - start;
+    expect(snaps).toHaveLength(W * H);
+    expect(elapsed).toBeLessThan(200);
+  });
+});

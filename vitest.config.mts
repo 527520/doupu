@@ -19,7 +19,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/lib/**'],
-      exclude: ['src/lib/**/*.test.ts'],
+      exclude: ['src/lib/**/*.test.ts', 'src/lib/palettes/data/**'],
+      // 覆盖率护栏（优化票 12 / spec §8）：src/lib 行/语句/函数 ≥90%，分支 ≥75%。
+      // 实测基线（含本票新增测试）：行 92.93 / 语句 91.78 / 函数 94.15 / 分支 81.08。
+      thresholds: {
+        lines: 90,
+        statements: 90,
+        functions: 90,
+        branches: 75,
+      },
     },
   },
 });

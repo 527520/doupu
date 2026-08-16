@@ -24,6 +24,7 @@ import {
   type TransformOp,
 } from '@/lib/editor/ops';
 import { createEditorState, refreshStats } from '@/lib/editor/state';
+import { CANVAS_UI } from '@/lib/appInfo';
 import Modal from '@/components/ui/Modal';
 
 const LONG_PRESS_MS = 500;
@@ -106,11 +107,20 @@ export default function PixelEditorCanvas({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { width: W, height: H } = stateRef.current;
-  const maxCellPx = Math.max(1, Math.floor(4096 / Math.max(W, H)));
-  // 容器 p-2 两侧内边距 16px；窄屏按实际可用宽度计算，画布宽高始终等比
+  const maxCellPx = Math.max(1, Math.floor(CANVAS_UI.editorMaxCanvasPx / Math.max(W, H)));
+  // 容器 p-2 两侧内边距；窄屏按实际可用宽度计算，画布宽高始终等比（常量见 CANVAS_UI）
   const cellPx = Math.max(
     1,
-    Math.min(defaultCellPx ?? fitCellSize(W, H, Math.max(1, (containerWidth ?? 800) - 16), 560), maxCellPx),
+    Math.min(
+      defaultCellPx ??
+        fitCellSize(
+          W,
+          H,
+          Math.max(1, (containerWidth ?? 800) - CANVAS_UI.containerPadding),
+          CANVAS_UI.maxDisplayHeight,
+        ),
+      maxCellPx,
+    ),
   );
 
   const syncFlags = useCallback((stats?: PatternStatsItem[], total?: number) => {

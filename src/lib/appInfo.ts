@@ -24,3 +24,13 @@ export const LIMITS = {
   customPaletteCodeLength: 20,
   password: { min: 8, max: 72 },
 } as const;
+
+/** 画布显示约束（优化票 12 盘点 #21：收拢自组件的魔法数字）。 */
+export const CANVAS_UI = {
+  /** 画布最大显示高度（px）：等比缩放时长边不超过此值，避免长图纸占满整屏。 */
+  maxDisplayHeight: 560,
+  /** 容器两侧内边距合计（px，Tailwind p-2 = 8px×2）：计算可用宽度时扣除。 */
+  containerPadding: 16,
+  /** 编辑画布像素总量上限：格尺寸按此封顶，避免超大画布内存/性能失控。 */
+  editorMaxCanvasPx: 4096,
+} as const;

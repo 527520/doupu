@@ -31,6 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 .dev-server*.log
 
+# logs（本地运行残留：e2e-webkit.log、.scratch/e2e-run.log 等）
+*.log
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example

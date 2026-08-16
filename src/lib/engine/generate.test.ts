@@ -176,12 +176,12 @@ describe('computeStats', () => {
 });
 
 describe('性能预算（spec §7.1）', () => {
-  it('200×200 图纸 + 291 色色板 < 3000ms（CI 阈值）', () => {
+  it('200×200 图纸 + 291 色色板 < 2000ms（spec ≤2s；实测 ~0.7-0.8s，留 2.5 倍余量）', () => {
     const img = randomImage(42, 1600, 1600, 0);
     const start = performance.now();
     const out = generatePattern(img, params({ targetWidth: 200, dithering: true }), MARD);
     const elapsed = performance.now() - start;
     expect(out.pattern.width).toBe(200);
-    expect(elapsed).toBeLessThan(3000);
+    expect(elapsed).toBeLessThan(2000);
   }, 15000);
 });
