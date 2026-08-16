@@ -210,10 +210,10 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
-        <h1 className="text-lg font-semibold">{t.title}</h1>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-lilac/30 pb-3">
+        <h1 className="text-lg font-semibold text-ink">{t.title}</h1>
         <div className="flex items-center gap-4">
-          <Link href="/app?new=1" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
+          <Link href="/app?new=1" className="rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-deep">
             {t.newDesign}
           </Link>
           <AccountMenu api={api} me={me} onAuthChanged={() => void load()} />
@@ -221,69 +221,69 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       </header>
 
       {me !== 'loading' && me.state === 'guest' && (
-        <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <div className="rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm text-ink">
           {t.guestBanner}{' '}
-          <Link href="/login" className="font-medium underline underline-offset-4">
+          <Link href="/login" className="font-medium text-primary-deep underline underline-offset-4">
             {t.goLogin}
           </Link>
         </div>
       )}
 
       {conflicts.length > 0 && (
-        <div role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.conflictBanner.replace('{n}', String(conflicts.length))}
         </div>
       )}
 
       {cloudFailed && (
-        <div className="flex items-center gap-3 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+        <div className="flex items-center gap-3 rounded-xl border border-lilac/30 bg-lilac-soft/60 p-3 text-sm text-ink-soft">
           <span>{t.syncFailed}</span>
-          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400">
+          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="rounded-full border border-lilac/50 px-2 py-0.5 text-xs transition-colors hover:bg-white disabled:bg-lilac-soft disabled:text-ink-soft/60">
             {syncing ? t.syncing : t.retry}
           </button>
         </div>
       )}
 
       {error && (
-        <div role="alert" className="flex items-center gap-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="rounded border border-red-300 px-2 py-0.5 text-xs hover:bg-red-50">
+          <button type="button" onClick={() => void load()} className="rounded-full border border-red-300 px-2 py-0.5 text-xs hover:bg-red-50">
             {t.retry}
           </button>
         </div>
       )}
 
       {!error && designs.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded border-2 border-dashed border-gray-200 p-10 text-center">
-          <p className="font-medium text-gray-700">{t.emptyTitle}</p>
-          <p className="text-sm text-gray-500">{t.emptyHint}</p>
+        <div className="flex flex-col items-center gap-2 rounded-3xl border-2 border-dashed border-lilac/50 p-10 text-center">
+          <p className="font-medium text-ink">{t.emptyTitle}</p>
+          <p className="text-sm text-ink-soft">{t.emptyHint}</p>
         </div>
       )}
 
       <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {designs.map((design) => (
-          <li key={design.id} className="flex flex-col gap-2 rounded border border-gray-200 p-3">
-            <div className="flex h-32 items-center justify-center overflow-hidden rounded bg-gray-100">
+          <li key={design.id} className="card-surface flex flex-col gap-2 p-3">
+            <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-cream-deep/70">
               {design.thumbnail ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={design.thumbnail} alt={t.placeholder} className="max-h-full max-w-full object-contain" />
               ) : (
-                <span className="text-xs text-gray-400">{t.size(design.width, design.height)}</span>
+                <span className="text-xs text-ink-soft/80">{t.size(design.width, design.height)}</span>
               )}
             </div>
-            <p className="truncate text-sm font-medium" title={design.name}>
+            <p className="truncate text-sm font-medium text-ink" title={design.name}>
               {design.name}
             </p>
-            <p className="text-xs text-gray-500">{t.size(design.width, design.height)}</p>
-            <p className="text-xs text-gray-400">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
+            <p className="text-xs text-ink-soft">{t.size(design.width, design.height)}</p>
+            <p className="text-xs text-ink-soft/80">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
             <div className="flex flex-wrap items-center gap-1 text-xs">
-              {design.status === 'synced' && <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-700">{t.synced}</span>}
-              {design.status === 'unsynced' && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">{t.unsynced}</span>}
-              {design.status === 'localOnly' && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">{t.localOnly}</span>}
-              {design.status === 'conflict' && <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-700">{t.conflict}</span>}
+              {design.status === 'synced' && <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-green-700">{t.synced}</span>}
+              {design.status === 'unsynced' && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700">{t.unsynced}</span>}
+              {design.status === 'localOnly' && <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">{t.localOnly}</span>}
+              {design.status === 'conflict' && <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-red-700">{t.conflict}</span>}
             </div>
             <div className="mt-auto flex flex-wrap gap-1 text-xs">
-              <button type="button" onClick={() => void handleOpen(design)} className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50">
+              <button type="button" onClick={() => void handleOpen(design)} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
                 {t.open}
               </button>
               <button
@@ -292,11 +292,11 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                   setRenaming(design);
                   setRenameValue(design.name);
                 }}
-                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50"
+                className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft"
               >
                 {t.rename}
               </button>
-              <button type="button" onClick={() => setDeleting(design)} className="rounded border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
+              <button type="button" onClick={() => setDeleting(design)} className="rounded-full border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
                 {t.delete}
               </button>
             </div>
@@ -312,22 +312,22 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               void handleRename();
             }}
           >
-            <h3 className="mb-2 text-sm font-medium">{t.renameTitle}</h3>
+            <h3 className="mb-2 text-sm font-medium text-ink">{t.renameTitle}</h3>
             <input
               aria-label={t.renameLabel}
               value={renameValue}
               maxLength={100}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+              className="input-field"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <button type="button" onClick={() => setRenaming(null)} className="rounded border border-gray-300 px-3 py-1 text-sm">
+              <button type="button" onClick={() => setRenaming(null)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft hover:bg-lilac-soft">
                 {t.cancel}
               </button>
               <button
                 type="submit"
                 disabled={renameValue.trim().length === 0}
-                className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+                className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:opacity-50"
               >
                 {t.save}
               </button>
@@ -339,9 +339,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       {deleting && (
         <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="max-w-sm border-red-200">
           <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteTitle}</h3>
-          <p className="mb-3 text-sm text-gray-600">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
+          <p className="mb-3 text-sm text-ink-soft">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setDeleting(null)} className="rounded border border-gray-300 px-3 py-1 text-sm">
+            <button type="button" onClick={() => setDeleting(null)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft">
               {t.cancel}
             </button>
             <button type="button" onClick={() => void handleDelete()} className="rounded bg-red-600 px-3 py-1 text-sm text-white">

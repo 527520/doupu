@@ -67,7 +67,7 @@ export function ChangePasswordDialog({
         value={current}
         onChange={(e) => setCurrent(e.target.value)}
         placeholder={t.currentPassword}
-        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+        className="input-field"
       />
       <input
         type="password"
@@ -75,7 +75,7 @@ export function ChangePasswordDialog({
         value={next}
         onChange={(e) => setNext(e.target.value)}
         placeholder={t.newPassword}
-        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+        className="input-field"
       />
       <input
         type="password"
@@ -83,7 +83,7 @@ export function ChangePasswordDialog({
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}
         placeholder={t.confirmPassword}
-        className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+        className="input-field"
       />
       {error && (
         <p role="alert" className="text-sm text-red-600">
@@ -91,10 +91,10 @@ export function ChangePasswordDialog({
         </p>
       )}
       <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="rounded border border-gray-300 px-3 py-1 text-sm">
+        <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
           {zhCN.designs.cancel}
         </button>
-        <button type="submit" disabled={busy} className="rounded bg-blue-600 px-3 py-1 text-sm text-white disabled:bg-gray-100 disabled:text-gray-400">
+        <button type="submit" disabled={busy} className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:bg-lilac-soft disabled:text-ink-soft/60">
           {zhCN.designs.save}
         </button>
       </div>
@@ -138,14 +138,14 @@ export function DeleteAccountDialog({
       className="flex flex-col gap-2"
     >
       <h3 className="text-sm font-medium text-red-700">{t.deleteAccountTitle}</h3>
-      <p className="text-sm text-gray-600">{t.deleteAccountHint}</p>
+      <p className="text-sm text-ink-soft">{t.deleteAccountHint}</p>
       <input
         type="password"
         aria-label={t.passwordLabel}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t.passwordLabel}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40"
+        className="input-field"
       />
       {error && (
         <p role="alert" className="text-sm text-red-600">
@@ -153,10 +153,10 @@ export function DeleteAccountDialog({
         </p>
       )}
       <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="rounded border border-gray-300 px-3 py-1 text-sm">
+        <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
           {zhCN.designs.cancel}
         </button>
-        <button type="submit" disabled={busy} className="rounded bg-red-600 px-3 py-1 text-sm text-white disabled:bg-gray-100 disabled:text-gray-400">
+        <button type="submit" disabled={busy} className="rounded-full bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700 disabled:bg-lilac-soft disabled:text-ink-soft/60">
           {t.deleteConfirm}
         </button>
       </div>
@@ -206,15 +206,15 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     onAuthChanged();
   };
 
-  if (me === 'loading') return <span className="text-sm text-gray-400">{zhCN.designs.syncing}</span>;
+  if (me === 'loading') return <span className="text-sm text-ink-soft/80">{zhCN.designs.syncing}</span>;
 
   if (me.state === 'guest') {
     return (
       <nav aria-label={t.menuLabel} className="flex items-center gap-3 text-sm">
-        <Link href="/login" className="text-blue-600 underline-offset-4 hover:underline">
+        <Link href="/login" className="link-soft">
           {t.login}
         </Link>
-        <Link href="/register" className="text-blue-600 underline-offset-4 hover:underline">
+        <Link href="/register" className="link-soft">
           {t.register}
         </Link>
       </nav>
@@ -233,20 +233,20 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
 
       {me.state === 'unverified' && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{t.unverifiedHint}</span>
+          <span className="text-xs text-ink-soft">{t.unverifiedHint}</span>
           <input
             type="email"
             aria-label={t.resendEmailLabel}
             value={resendEmail}
             onChange={(e) => setResendEmail(e.target.value)}
             placeholder={t.resendEmailLabel}
-            className="w-40 rounded border border-gray-300 px-2 py-1 text-xs"
+            className="w-40 rounded-lg border border-lilac/50 px-2 py-1 text-xs"
           />
           <button
             type="button"
             onClick={() => void resend()}
             disabled={cooldown > 0}
-            className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+            className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
           >
             {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
           </button>
@@ -261,7 +261,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
 
       {me.state === 'verified' && (
         <>
-          <button type="button" onClick={() => setShowPassword(true)} className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">
+          <button type="button" onClick={() => setShowPassword(true)} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
             {t.changePassword}
           </button>
           <button type="button" onClick={() => setShowDelete(true)} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">
@@ -269,7 +269,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
           </button>
         </>
       )}
-      <button type="button" onClick={() => void logout()} className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50">
+      <button type="button" onClick={() => void logout()} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
         {t.logout}
       </button>
 

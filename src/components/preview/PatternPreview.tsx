@@ -170,7 +170,7 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
 
   const t = zhCN.preview;
   const Toggle = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <label className="flex items-center gap-1 text-xs text-gray-600">
+    <label className="flex items-center gap-1 text-xs text-ink-soft">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
@@ -179,19 +179,19 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="rounded border px-2 py-1 hover:bg-gray-50">
+        <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
           −
         </button>
         <span role="status" aria-label={t.zoom}>{Math.round(zoom * 100)}%</span>
-        <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded border px-2 py-1 hover:bg-gray-50">
+        <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
           +
         </button>
         <Toggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
         <Toggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
         <Toggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
-        <span className="text-gray-400">{t.panHint}</span>
+        <span className="text-ink-soft/80">{t.panHint}</span>
       </div>
-      <div ref={containerRef} className="overflow-auto rounded border border-gray-200 bg-gray-50 p-2">
+      <div ref={containerRef} className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2">
         <canvas
           ref={canvasRef}
           onWheel={onWheel}

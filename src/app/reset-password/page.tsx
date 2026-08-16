@@ -58,8 +58,7 @@ function ResetInner() {
     }
   };
 
-  const field =
-    'w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
+  const field = 'input-field';
 
   if (done) {
     return (
@@ -67,7 +66,7 @@ function ResetInner() {
         <p role="status" className="mb-4 text-center text-green-700">
           {t.resetSuccess}
         </p>
-        <Link href="/login" className="block text-center text-blue-600 hover:underline">
+        <Link href="/login" className="link-soft block text-center">
           {t.goLogin}
         </Link>
       </AuthShell>
@@ -78,7 +77,7 @@ function ResetInner() {
     <AuthShell title={t.resetTitle}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <FormError message={error} />
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.password}
           <input
             type="password"
@@ -89,7 +88,7 @@ function ResetInner() {
             required
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.confirmPassword}
           <input
             type="password"
@@ -100,11 +99,7 @@ function ResetInner() {
             required
           />
         </label>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={pending} className="btn-primary w-full">
           {pending ? '…' : t.submit}
         </button>
       </form>

@@ -15,8 +15,8 @@ interface Props {
 export default function SaveStatus({ state, onSave, loggedIn }: Props) {
   const t = zhCN.workbench;
   const badge: Record<SaveState, { text: string; className: string }> = {
-    idle: { text: loggedIn ? t.localSaved : t.localOnly, className: 'text-gray-400' },
-    saving: { text: t.saving, className: 'text-blue-600' },
+    idle: { text: loggedIn ? t.localSaved : t.localOnly, className: 'text-ink-soft/80' },
+    saving: { text: t.saving, className: 'text-primary-deep' },
     saved: { text: t.saved, className: 'text-green-600' },
     quota: { text: t.quotaError, className: 'text-red-600' },
     error: { text: t.saveFailed, className: 'text-red-600' },
@@ -33,7 +33,7 @@ export default function SaveStatus({ state, onSave, loggedIn }: Props) {
         type="button"
         onClick={onSave}
         disabled={state === 'saving'}
-        className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+        className="rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
       >
         {t.save}
       </button>

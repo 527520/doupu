@@ -91,9 +91,9 @@ export default function GenerationParamsPanel({
   const t = zhCN.params;
 
   return (
-    <section aria-label={t.title} className="flex flex-col gap-4">
+    <section aria-label={t.title} className="card-surface flex flex-col gap-4 p-4">
       <div>
-        <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-gray-700">
+        <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-ink-soft">
           {t.targetWidth}（{LIMITS.targetWidth.min}–{LIMITS.targetWidth.max}）
         </label>
         <div className="flex items-center gap-3">
@@ -121,13 +121,13 @@ export default function GenerationParamsPanel({
             onChange={(e) => setWidthText(e.target.value)}
             onBlur={commitWidth}
             onKeyDown={(e) => e.key === 'Enter' && commitWidth()}
-            className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
+            className="w-20 rounded-lg border border-lilac/50 px-2 py-1 text-sm text-ink"
           />
         </div>
       </div>
 
       <div>
-        <label htmlFor="param-colors" className="mb-1 block text-sm font-medium text-gray-700">
+        <label htmlFor="param-colors" className="mb-1 block text-sm font-medium text-ink-soft">
           {t.targetColorCount}（{LIMITS.targetColorCount.min}–{LIMITS.targetColorCount.max}）
         </label>
         <div className="flex items-center gap-3">
@@ -155,12 +155,12 @@ export default function GenerationParamsPanel({
             onChange={(e) => setColorsText(e.target.value)}
             onBlur={commitColors}
             onKeyDown={(e) => e.key === 'Enter' && commitColors()}
-            className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
+            className="w-20 rounded-lg border border-lilac/50 px-2 py-1 text-sm text-ink"
           />
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-700">
+      <label className="flex items-center gap-2 text-sm text-ink-soft">
         <input
           type="checkbox"
           checked={local.dithering}
@@ -170,14 +170,14 @@ export default function GenerationParamsPanel({
       </label>
 
       <div className="mb-2 text-sm">
-        <label htmlFor="param-brand" className="mb-1 block font-medium text-gray-700">
+        <label htmlFor="param-brand" className="mb-1 block font-medium text-ink-soft">
           {t.brand}
         </label>
         <select
           id="param-brand"
           value={paletteValue}
           onChange={(e) => onPaletteSelect(e.target.value)}
-          className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+          className="w-full rounded-lg border border-lilac/50 px-2 py-1.5 text-sm text-ink"
         >
           {paletteOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -191,22 +191,22 @@ export default function GenerationParamsPanel({
         type="button"
         onClick={() => setAdvancedOpen((v) => !v)}
         aria-expanded={advancedOpen}
-        className="text-left text-sm text-blue-600 underline-offset-4 hover:underline"
+        className="link-soft text-left text-sm"
       >
         {t.advanced}
       </button>
 
       {advancedOpen && (
-        <div className="flex flex-col gap-4 rounded border border-gray-200 p-3">
+        <div className="flex flex-col gap-4 rounded-xl border border-lilac/30 bg-lilac-soft/40 p-3">
           <div>
-            <label htmlFor="param-mode" className="mb-1 block text-sm text-gray-700">
+            <label htmlFor="param-mode" className="mb-1 block text-sm text-ink-soft">
               {t.sampleMode}
             </label>
             <select
               id="param-mode"
               value={local.mode}
               onChange={(e) => patch({ mode: e.target.value as 'dominant' | 'average' })}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+              className="w-full rounded-lg border border-lilac/50 px-2 py-1.5 text-sm text-ink"
             >
               <option value="dominant">{t.sampleDominant}</option>
               <option value="average">{t.sampleAverage}</option>
@@ -220,7 +220,7 @@ export default function GenerationParamsPanel({
             ] as const
           ).map(([key, label, min, max]) => (
             <div key={key}>
-              <label htmlFor={`param-${key}`} className="mb-1 block text-sm text-gray-700">
+              <label htmlFor={`param-${key}`} className="mb-1 block text-sm text-ink-soft">
                 {label}（{local[key]}）
               </label>
               <input
@@ -236,7 +236,7 @@ export default function GenerationParamsPanel({
             </div>
           ))}
 
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
             <input
               type="checkbox"
               checked={local.backgroundRemoval}
@@ -247,7 +247,7 @@ export default function GenerationParamsPanel({
 
           {local.backgroundRemoval && (
             <div>
-              <label htmlFor="param-bgtolerance" className="mb-1 block text-sm text-gray-700">
+              <label htmlFor="param-bgtolerance" className="mb-1 block text-sm text-ink-soft">
                 {t.bgTolerance}（{local.bgTolerance}）
               </label>
               <input

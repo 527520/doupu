@@ -6,7 +6,7 @@ import { zhCN } from '@/messages/zh-CN';
 
 export default function AppPage() {
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-cream">
       <h1 className="sr-only">{zhCN.workbench.title}</h1>
       <Workbench />
     </main>

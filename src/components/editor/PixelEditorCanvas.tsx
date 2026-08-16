@@ -529,24 +529,24 @@ export default function PixelEditorCanvas({
       />
 
       {replaceOpen && (
-        <form onSubmit={onReplaceSubmit} className="flex flex-wrap items-center gap-2 rounded border border-gray-200 p-2 text-sm">
-          <label htmlFor="editor-replace-from" className="text-gray-600">
+        <form onSubmit={onReplaceSubmit} className="flex flex-wrap items-center gap-2 rounded-xl border border-lilac/40 p-2 text-sm">
+          <label htmlFor="editor-replace-from" className="text-ink-soft">
             {t.replaceFrom}
           </label>
           <input
             id="editor-replace-from"
             value={replaceFrom}
             onChange={(e) => setReplaceFrom(e.target.value)}
-            className="w-24 rounded border border-gray-300 px-2 py-1"
+            className="w-24 rounded-lg border border-lilac/50 px-2 py-1"
           />
-          <label htmlFor="editor-replace-to" className="text-gray-600">
+          <label htmlFor="editor-replace-to" className="text-ink-soft">
             {t.replaceTo}
           </label>
           <select
             id="editor-replace-to"
             value={replaceTo}
             onChange={(e) => setReplaceTo(e.target.value)}
-            className="rounded border border-gray-300 px-2 py-1"
+            className="rounded-lg border border-lilac/50 px-2 py-1"
           >
             {palette.map((p, i) => (
               <option key={p.hex} value={String(i)}>
@@ -555,7 +555,7 @@ export default function PixelEditorCanvas({
             ))}
             <option value="transparent">{t.excludeColor}</option>
           </select>
-          <button type="submit" className="rounded border border-blue-500 bg-blue-50 px-2 py-1 text-blue-700">
+          <button type="submit" className="rounded-lg border border-primary/60 bg-primary-soft px-2 py-1 text-primary-deep">
             {t.replaceConfirm}
           </button>
         </form>
@@ -566,7 +566,7 @@ export default function PixelEditorCanvas({
         tabIndex={0}
         aria-label={t.editorRegion}
         onKeyDown={onKeyDown}
-        className="overflow-auto rounded border border-gray-200 bg-gray-50 p-2 outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+        className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         <canvas
           ref={canvasRef}
@@ -578,7 +578,7 @@ export default function PixelEditorCanvas({
           style={{ touchAction: 'none', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>
-      <p className="text-xs text-gray-400" role="status">
+      <p className="text-xs text-ink-soft/80" role="status">
         {tool === 'pick'
           ? t.pickHint
           : cursor
@@ -590,12 +590,12 @@ export default function PixelEditorCanvas({
       {clearOpen && (
         <Modal label={t.clearConfirmTitle} onClose={() => setClearOpen(false)} panelClassName="max-w-sm border-red-200">
           <h3 className="text-sm font-medium text-red-700">{t.clearConfirmTitle}</h3>
-          <p className="mt-2 text-sm leading-6 text-gray-600">{t.clearConfirmBody}</p>
+          <p className="mt-2 text-sm leading-6 text-ink-soft">{t.clearConfirmBody}</p>
           <div className="mt-3 flex justify-end gap-2">
-            <button type="button" onClick={() => setClearOpen(false)} className="rounded border border-gray-300 px-3 py-1 text-sm">
+            <button type="button" onClick={() => setClearOpen(false)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft">
               {zhCN.designs.cancel}
             </button>
-            <button type="button" onClick={confirmClear} className="rounded bg-red-600 px-3 py-1 text-sm text-white">
+            <button type="button" onClick={confirmClear} className="rounded-full bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700">
               {t.clearConfirm}
             </button>
           </div>

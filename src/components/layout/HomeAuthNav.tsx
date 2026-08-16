@@ -59,14 +59,14 @@ export default function HomeAuthNav() {
   if (auth.kind === 'user') {
     return (
       <div className="flex items-center gap-2 text-sm">
-        <span className="max-w-[180px] truncate rounded-full border border-gray-200 bg-white px-3 py-1.5 text-gray-600" title={auth.email}>
+        <span className="max-w-[180px] truncate rounded-full border border-lilac/50 bg-white px-3 py-1.5 text-ink-soft" title={auth.email}>
           {auth.email || zhCN.nav.logout}
         </span>
         <button
           type="button"
           onClick={() => void logout()}
           disabled={loggingOut}
-          className="rounded-full px-3 py-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+          className="rounded-full px-3 py-1.5 text-ink-soft transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
         >
           {zhCN.nav.logout}
         </button>
@@ -78,12 +78,12 @@ export default function HomeAuthNav() {
     return (
       <Link
         href="/login"
-        className="rounded-full bg-blue-600 px-5 py-2 font-medium text-white transition-colors duration-150 hover:bg-blue-700"
+        className="rounded-full bg-primary px-5 py-2 font-semibold text-white shadow-soft transition-colors duration-150 hover:bg-primary-deep"
       >
         {zhCN.nav.login}
       </Link>
     );
   }
 
-  return <span className="px-5 py-2 text-sm text-gray-300">…</span>;
+  return <span className="px-5 py-2 text-sm text-ink-soft/60">…</span>;
 }

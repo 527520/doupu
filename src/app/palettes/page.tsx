@@ -100,16 +100,16 @@ export default function PalettesPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
-        <h1 className="text-lg font-semibold">{t.title}</h1>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-lilac/30 pb-3">
+        <h1 className="text-lg font-semibold text-ink">{t.title}</h1>
         <nav className="flex items-center gap-4 text-sm">
-          <Link href="/app" className="text-blue-600 underline-offset-4 hover:underline">
+          <Link href="/app" className="link-soft">
             {zhCN.nav.workbench}
           </Link>
           <button
             type="button"
             onClick={startCreate}
-            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+            className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-deep"
           >
             {t.newPalette}
           </button>
@@ -117,59 +117,59 @@ export default function PalettesPage() {
       </header>
 
       {pageError && (
-        <p role="alert" className="flex items-center gap-3 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <p role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {pageError}
-          <button type="button" onClick={() => void load()} className="rounded border border-red-300 px-2 py-0.5 text-xs hover:bg-red-100">
+          <button type="button" onClick={() => void load()} className="rounded-full border border-red-300 px-2 py-0.5 text-xs hover:bg-red-100">
             {t.retry}
           </button>
         </p>
       )}
 
       {loginRequired && (
-        <p role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.loginRequired}{' '}
-          <Link href="/login" className="text-blue-600 underline-offset-4 hover:underline">
+          <Link href="/login" className="link-soft">
             {zhCN.nav.login}
           </Link>
         </p>
       )}
 
       <section aria-label={t.builtinTitle} className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-gray-700">{t.builtinTitle}</h2>
-        <p className="text-xs text-gray-400">{t.builtinNote}</p>
+        <h2 className="text-sm font-medium text-ink-soft">{t.builtinTitle}</h2>
+        <p className="text-xs text-ink-soft/80">{t.builtinNote}</p>
         <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {BRANDS.map((brand) => (
-            <li key={brand} className="rounded border border-gray-200 p-3 text-sm">
-              <p className="font-medium">{brand}</p>
-              <p className="text-xs text-gray-500">{t.colorCount(buildBrandPalette(brand).length)}</p>
+            <li key={brand} className="card-surface p-3 text-sm">
+              <p className="font-medium text-ink">{brand}</p>
+              <p className="text-xs text-ink-soft">{t.colorCount(buildBrandPalette(brand).length)}</p>
             </li>
           ))}
         </ul>
       </section>
 
       <section aria-label={t.customTitle} className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-gray-700">{t.customTitle}</h2>
+        <h2 className="text-sm font-medium text-ink-soft">{t.customTitle}</h2>
         {loading ? (
-          <p className="text-sm text-gray-400">…</p>
+          <p className="text-sm text-ink-soft/80">…</p>
         ) : records.length === 0 ? (
-          <p className="rounded border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">
+          <p className="rounded-2xl border border-dashed border-lilac/50 p-6 text-center text-sm text-ink-soft">
             {t.empty}
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {records.map((record) => (
-              <li key={record.id} className="flex items-center justify-between gap-2 rounded border border-gray-200 p-3">
+              <li key={record.id} className="card-surface flex items-center justify-between gap-2 p-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{record.name}</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="truncate text-sm font-medium text-ink">{record.name}</p>
+                  <p className="text-xs text-ink-soft">
                     {t.colorCount(record.colors.length)} · {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-1 text-xs">
-                  <button type="button" onClick={() => startEdit(record)} className="rounded px-1 py-1 text-blue-600 hover:bg-blue-50">
+                  <button type="button" onClick={() => startEdit(record)} className="rounded-full px-1.5 py-1 text-primary-deep hover:bg-primary-soft">
                     {t.edit}
                   </button>
-                  <button type="button" onClick={() => void handleDelete(record)} className="rounded px-1 py-1 text-red-600 hover:bg-red-50">
+                  <button type="button" onClick={() => void handleDelete(record)} className="rounded-full px-1.5 py-1 text-red-600 hover:bg-red-50">
                     {t.delete}
                   </button>
                 </div>

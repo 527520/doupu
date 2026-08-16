@@ -69,17 +69,17 @@ export default function EditorToolbar({
       <span
         role="status"
         aria-label={`${t.currentColor}: ${colorIndicator.label}`}
-        className="flex items-center gap-1.5 rounded border border-gray-300 bg-white px-2 py-1"
+        className="flex items-center gap-1.5 rounded-full border border-lilac/50 bg-white px-2 py-1"
       >
         <span
-          className="inline-block h-4 w-4 rounded-sm border border-gray-400"
+          className="inline-block h-4 w-4 rounded-sm border border-lilac/60"
           style={
             colorIndicator.swatch === 'transparent'
               ? { background: 'repeating-conic-gradient(#d1d5db 0% 25%, #ffffff 0% 50%) 50% / 8px 8px' }
               : { backgroundColor: colorIndicator.swatch }
           }
         />
-        <span className="font-mono text-xs text-gray-700">{colorIndicator.label}</span>
+        <span className="font-mono text-xs text-ink">{colorIndicator.label}</span>
       </span>
 
       {tools.map(({ id, label }) => (
@@ -89,7 +89,7 @@ export default function EditorToolbar({
           aria-pressed={tool === id}
           title={TOOL_SHORTCUTS[id] ? `${label}（${TOOL_SHORTCUTS[id]}）` : label}
           onClick={() => onToolChange(id)}
-          className={`rounded border px-2 py-1 ${tool === id ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          className={`rounded-lg border px-2 py-1 transition-colors ${tool === id ? 'border-primary bg-primary text-white' : 'border-lilac/50 text-ink-soft hover:bg-lilac-soft'}`}
         >
           {label}
         </button>
@@ -103,7 +103,7 @@ export default function EditorToolbar({
               type="button"
               aria-pressed={brushSize === size}
               onClick={() => onBrushSizeChange(size)}
-              className={`h-7 w-7 rounded border text-xs ${brushSize === size ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 hover:bg-gray-50'}`}
+              className={`h-7 w-7 rounded-lg border text-xs transition-colors ${brushSize === size ? 'border-primary bg-primary text-white' : 'border-lilac/50 hover:bg-lilac-soft'}`}
             >
               {size}
             </button>
@@ -111,14 +111,14 @@ export default function EditorToolbar({
         </div>
       )}
 
-      <span className="mx-1 h-4 w-px bg-gray-300" />
+      <span className="mx-1 h-4 w-px bg-lilac/40" />
 
       <button
         type="button"
         onClick={onUndo}
         disabled={!canUndo}
         title="Ctrl+Z"
-        className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+        className="rounded-lg border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft disabled:cursor-not-allowed disabled:bg-lilac-soft disabled:text-ink-soft/60"
       >
         {t.undo}
       </button>
@@ -127,29 +127,29 @@ export default function EditorToolbar({
         onClick={onRedo}
         disabled={!canRedo}
         title="Ctrl+Shift+Z"
-        className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+        className="rounded-lg border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft disabled:cursor-not-allowed disabled:bg-lilac-soft disabled:text-ink-soft/60"
       >
         {t.redo}
       </button>
 
-      <span className="mx-1 h-4 w-px bg-gray-300" />
+      <span className="mx-1 h-4 w-px bg-lilac/40" />
 
-      <button type="button" onClick={onReplaceOpen} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+      <button type="button" onClick={onReplaceOpen} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
         {t.replace}
       </button>
-      {replaceCountMessage && <span className="text-xs text-gray-500">{replaceCountMessage}</span>}
+      {replaceCountMessage && <span className="text-xs text-ink-soft">{replaceCountMessage}</span>}
 
       <div className="flex items-center gap-1" aria-label={t.transformGroup}>
-        <button type="button" onClick={() => onTransform('mirrorH')} title={t.mirrorH} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+        <button type="button" onClick={() => onTransform('mirrorH')} title={t.mirrorH} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
           ⇋
         </button>
-        <button type="button" onClick={() => onTransform('mirrorV')} title={t.mirrorV} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+        <button type="button" onClick={() => onTransform('mirrorV')} title={t.mirrorV} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
           ⇵
         </button>
-        <button type="button" onClick={() => onTransform('rotateCCW')} title={t.rotateCCW} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+        <button type="button" onClick={() => onTransform('rotateCCW')} title={t.rotateCCW} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
           ↺
         </button>
-        <button type="button" onClick={() => onTransform('rotateCW')} title={t.rotateCW} className="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-50">
+        <button type="button" onClick={() => onTransform('rotateCW')} title={t.rotateCW} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
           ↻
         </button>
       </div>

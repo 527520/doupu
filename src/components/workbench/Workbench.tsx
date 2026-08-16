@@ -554,13 +554,13 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-lilac/30 pb-3">
         <div className="flex flex-wrap items-center gap-4">
-          <h1 className="text-lg font-semibold">{t.title}</h1>
+          <h1 className="text-lg font-semibold text-ink">{t.title}</h1>
           {step === 'workspace' && (
             <>
               <DesignNameEditor name={name} onChange={(n) => { setName(n); markDirty(); }} />
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-ink-soft/80">
                 {paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}
               </span>
             </>
@@ -572,26 +572,26 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
             <div className="flex items-center gap-3 text-sm">
               {authStatus.kind === 'guest' ? (
                 <>
-                  <Link href="/login" className="text-blue-600 hover:underline">
+                  <Link href="/login" className="link-soft">
                     {zhCN.nav.login}
                   </Link>
-                  <Link href="/register" className="text-blue-600 hover:underline">
+                  <Link href="/register" className="link-soft">
                     {zhCN.nav.register}
                   </Link>
                 </>
               ) : (
-                <span className="max-w-[160px] truncate text-gray-500" title={authStatus.email}>
+                <span className="max-w-[160px] truncate text-ink-soft" title={authStatus.email}>
                   {authStatus.email}
                 </span>
               )}
-              <Link href="/designs" className="text-blue-600 hover:underline">
+              <Link href="/designs" className="link-soft">
                 {zhCN.nav.designs}
               </Link>
             </div>
             <button
               type="button"
               onClick={handleRestart}
-              className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+              className="rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft"
             >
               {t.restart}
             </button>
@@ -599,16 +599,16 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         )}
       </header>
 
-      {busy && <p className="text-sm text-blue-600" role="status">{busyText}</p>}
+      {busy && <p className="text-sm text-primary-deep" role="status">{busyText}</p>}
       {generating && !busy && (
-        <div className="flex items-center gap-3 text-sm text-blue-600" role="status">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-primary-deep" role="status">
           <span>{t.generating}</span>
           {/* 进度条与百分比用固定宽度槽位：出现/更新时「取消」按钮位置不跳动（可稳定点击） */}
           {progress !== null ? (
             <progress
               value={progress}
               max={100}
-              className="h-2 w-48 accent-blue-600"
+              className="h-2 w-48 accent-primary"
               aria-label={t.generatingProgressLabel}
             />
           ) : (
@@ -618,19 +618,19 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
           <button
             type="button"
             onClick={handleCancelGenerate}
-            className="underline underline-offset-2 hover:text-blue-800"
+            className="underline underline-offset-2 hover:text-primary-deep"
           >
             {t.cancel}
           </button>
         </div>
       )}
       {saveState === 'unavailable' && (
-        <div role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.unavailable}
         </div>
       )}
       {errorMsg && (
-        <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {errorMsg}
         </div>
       )}
@@ -648,7 +648,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
               role="tablist"
               aria-label={t.title}
               onKeyDown={handleTabKey}
-              className="flex gap-1 rounded border border-gray-200 p-1 text-sm"
+              className="flex gap-1 rounded-full border border-lilac/40 bg-white p-1 text-sm"
             >
               <button
                 ref={previewTabRef}
@@ -659,7 +659,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
                 aria-controls="panel-preview"
                 tabIndex={tab === 'preview' ? 0 : -1}
                 onClick={() => setTab('preview')}
-                className={`rounded px-3 py-1 ${tab === 'preview' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                className={`rounded-full px-3 py-1 transition-colors ${tab === 'preview' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
               >
                 {t.previewTab}
               </button>
@@ -672,7 +672,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
                 aria-controls="panel-edit"
                 tabIndex={tab === 'edit' ? 0 : -1}
                 onClick={() => setTab('edit')}
-                className={`rounded px-3 py-1 ${tab === 'edit' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                className={`rounded-full px-3 py-1 transition-colors ${tab === 'edit' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
               >
                 {t.editTab}
               </button>
@@ -697,11 +697,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
               </div>
             )}
             {hoverInfo && tab === 'preview' && (
-              <p role="status" className="rounded bg-gray-800 px-2 py-1 text-xs text-white">
+              <p role="status" className="rounded-lg bg-ink px-2 py-1 text-xs text-white">
                 {hoverInfo}
               </p>
             )}
-            <p className="text-xs text-gray-400">{t.editorHint}</p>
+            <p className="text-xs text-ink-soft/80">{t.editorHint}</p>
           </section>
 
           <aside className="flex flex-col gap-4">
@@ -713,14 +713,14 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
               onPaletteSelect={handlePaletteSelect}
             />
 
-            <div className="rounded border border-gray-200 p-3 text-sm">
-              <p className="font-medium text-gray-700">
+            <div className="card-surface p-3 text-sm">
+              <p className="font-semibold text-ink">
                 {t.statsTotal(total)} · {t.colorCount(stats.length)}
               </p>
               <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto">
                 {stats.slice(0, 50).map((item) => (
-                  <li key={item.hex} className="flex items-center gap-2 text-xs text-gray-600">
-                    <span className="inline-block h-3 w-3 rounded-sm border border-gray-300" style={{ backgroundColor: item.hex }} />
+                  <li key={item.hex} className="flex items-center gap-2 text-xs text-ink-soft">
+                    <span className="inline-block h-3 w-3 rounded-sm border border-lilac/40" style={{ backgroundColor: item.hex }} />
                     <span className="font-mono">{item.code}</span>
                     <span className="ml-auto">{item.count} {zhCN.export.countUnit}</span>
                   </li>
@@ -728,7 +728,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
               </ul>
             </div>
 
-            <div className="flex flex-col gap-3 rounded border border-gray-200 p-3">
+            <div className="card-surface flex flex-col gap-3 p-3">
               <PngExportButton pattern={pattern} designName={name.trim() || zhCN.project.unnamed} />
               <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={pattern} stats={stats} />
               <ProjectFileButtons

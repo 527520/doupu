@@ -46,13 +46,13 @@ export default function OnboardingGuide() {
   ];
 
   return (
-    <section aria-label={t.title} className="w-full max-w-3xl rounded-xl border border-blue-200 bg-blue-50 p-6 text-left">
+    <section aria-label={t.title} className="card-surface w-full max-w-3xl p-6 text-left">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-800">{t.title}</h2>
+        <h2 className="text-lg font-semibold text-ink">{t.title}</h2>
         <button
           type="button"
           onClick={dismiss}
-          className="rounded border border-gray-300 px-3 py-1 text-sm text-gray-600 hover:bg-white"
+          className="rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft"
         >
           {t.dismiss}
         </button>
@@ -60,16 +60,13 @@ export default function OnboardingGuide() {
       <ol className="flex flex-col gap-4 sm:flex-row sm:gap-6">
         {steps.map((step, index) => (
           <li key={step.title} className="flex-1">
-            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-blue-600">0{index + 1}</p>
-            <p className="mb-1 font-medium text-gray-800">{step.title}</p>
-            <p className="text-xs leading-5 text-gray-600">{step.body}</p>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wide text-primary-deep">0{index + 1}</p>
+            <p className="mb-1 font-medium text-ink">{step.title}</p>
+            <p className="text-xs leading-5 text-ink-soft">{step.body}</p>
           </li>
         ))}
       </ol>
-      <Link
-        href="/app"
-        className="mt-5 inline-block rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-      >
+      <Link href="/app" className="btn-primary mt-5 inline-flex px-4 py-2 text-sm">
         {t.start}
       </Link>
     </section>

@@ -399,7 +399,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     <div className="flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{crop.title}</h2>
-        <div role="group" aria-label={crop.ariaRatioMode} className="flex gap-1 rounded border border-gray-300 p-1 text-sm">
+        <div role="group" aria-label={crop.ariaRatioMode} className="flex gap-1 rounded-full border border-lilac/50 p-1 text-sm">
           {(
             [
               ['free', crop.modeFree],
@@ -413,8 +413,8 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
               aria-pressed={ratioMode === mode}
               onClick={() => changeRatioMode(mode)}
               className={[
-                'rounded px-2 py-1',
-                ratioMode === mode ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100',
+                'rounded-full px-2.5 py-1 transition-colors',
+                ratioMode === mode ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft',
               ].join(' ')}
             >
               {label}
@@ -438,13 +438,15 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
           width={displayWidth}
           height={displayHeight}
           style={{ width: displayWidth, height: displayHeight }}
-          className="block touch-none select-none cursor-crosshair rounded outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          // 注意：必须是方角（rounded-none）——全图选区的四角手柄位于画布角点，
+          // 圆角会裁掉角点命中区域导致拖拽失灵（E2E 05 角点拖拽回归依赖此行为）
+          className="block touch-none select-none cursor-crosshair rounded-none outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-soft">
         <p>{crop.sizeLabel(current.width, current.height)}</p>
-        <p className="hidden text-xs text-gray-400 sm:block">
+        <p className="hidden text-xs text-ink-soft/80 sm:block">
           {crop.dragHint}；{crop.nudgeHint}
         </p>
       </div>
@@ -453,22 +455,18 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         <button
           type="button"
           onClick={onCancel}
-          className="rounded border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+          className="btn-outline"
         >
           {crop.cancel}
         </button>
         <button
           type="button"
           onClick={() => onConfirm({ x: 0, y: 0, width: image.width, height: image.height })}
-          className="rounded border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+          className="btn-outline"
         >
           {crop.useWholeImage}
         </button>
-        <button
-          type="button"
-          onClick={confirm}
-          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-        >
+        <button type="button" onClick={confirm} className="btn-primary">
           {crop.confirm}
         </button>
       </div>

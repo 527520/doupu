@@ -21,24 +21,17 @@ export default function PageError({
 
   const t = zhCN.errorPages;
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-      <p className="text-7xl font-bold text-gray-200" aria-hidden="true">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-6 py-16 text-center">
+      <p className="text-7xl font-semibold text-lilac/50" aria-hidden="true">
         !
       </p>
-      <h1 className="text-2xl font-semibold">{t.errorTitle}</h1>
-      <p className="max-w-md text-sm leading-6 text-gray-500">{t.errorBody}</p>
+      <h1 className="text-2xl font-semibold tracking-wide text-ink">{t.errorTitle}</h1>
+      <p className="max-w-md text-sm leading-6 text-ink-soft">{t.errorBody}</p>
       <div className="flex flex-wrap justify-center gap-3">
-        <button
-          type="button"
-          onClick={reset}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-        >
+        <button type="button" onClick={reset} className="btn-primary">
           {t.retry}
         </button>
-        <Link
-          href="/"
-          className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
-        >
+        <Link href="/" className="btn-outline">
           {t.backHome}
         </Link>
       </div>

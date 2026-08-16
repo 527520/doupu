@@ -1,48 +1,50 @@
 import { zhCN } from '@/messages/zh-CN';
 import Link from 'next/link';
+import ArcSignature from '@/components/ui/ArcSignature';
 
 export default function HelpPage() {
   const t = zhCN.help;
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
-      <header>
-        <h1 className="text-3xl font-bold">{t.title}</h1>
+      <header className="flex flex-col items-center gap-3 text-center">
+        <ArcSignature className="w-24" />
+        <h1 className="text-3xl font-semibold tracking-wide text-ink">{t.title}</h1>
       </header>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">{t.uploadTitle}</h2>
-        <p className="text-sm leading-6 text-gray-700">{t.uploadBody}</p>
+        <h2 className="text-lg font-semibold text-ink">{t.uploadTitle}</h2>
+        <p className="text-sm leading-6 text-ink-soft">{t.uploadBody}</p>
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">{t.paramsTitle}</h2>
-        <p className="text-sm leading-6 text-gray-700">{t.paramsBody}</p>
+        <h2 className="text-lg font-semibold text-ink">{t.paramsTitle}</h2>
+        <p className="text-sm leading-6 text-ink-soft">{t.paramsBody}</p>
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">{t.seamTitle}</h2>
-        <p className="text-sm leading-6 text-gray-700">{t.seamBody}</p>
+        <h2 className="text-lg font-semibold text-ink">{t.seamTitle}</h2>
+        <p className="text-sm leading-6 text-ink-soft">{t.seamBody}</p>
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">{t.exportTitle}</h2>
-        <p className="text-sm leading-6 text-gray-700">{t.exportBody}</p>
+        <h2 className="text-lg font-semibold text-ink">{t.exportTitle}</h2>
+        <p className="text-sm leading-6 text-ink-soft">{t.exportBody}</p>
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">{t.faqTitle}</h2>
+        <h2 className="text-lg font-semibold text-ink">{t.faqTitle}</h2>
         <dl className="flex flex-col gap-4">
           {t.faqs.map((faq) => (
-            <div key={faq.q} className="rounded border border-gray-200 p-3">
-              <dt className="mb-1 font-medium text-gray-800">{faq.q}</dt>
-              <dd className="text-sm leading-6 text-gray-600">{faq.a}</dd>
+            <div key={faq.q} className="card-surface p-4">
+              <dt className="mb-1 font-medium text-ink">{faq.q}</dt>
+              <dd className="text-sm leading-6 text-ink-soft">{faq.a}</dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <footer className="text-sm text-gray-500">
-        <Link href="/" className="text-blue-600 underline-offset-4 hover:underline">
+      <footer className="text-sm text-ink-soft">
+        <Link href="/" className="link-soft">
           ← 返回首页
         </Link>
       </footer>

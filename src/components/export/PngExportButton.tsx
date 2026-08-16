@@ -87,7 +87,7 @@ export default function PngExportButton({
         type="button"
         onClick={handleClick}
         disabled={empty || busy}
-        className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+        className="rounded-full bg-primary px-3 py-1.5 text-sm text-white shadow-soft transition-colors hover:bg-primary-deep disabled:cursor-not-allowed disabled:bg-lilac/50"
       >
         {busy ? '…' : zhCN.export.pngExport}
       </button>
@@ -98,16 +98,16 @@ export default function PngExportButton({
       )}
 
       {open && (
-        <section aria-label={t.dialogTitle} className="rounded border border-gray-300 bg-white p-3 shadow-lg">
+        <section aria-label={t.dialogTitle} className="rounded-2xl border border-lilac/40 bg-white p-3 shadow-soft">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
           <div className="flex flex-col gap-2 text-sm">
-            <label htmlFor="png-cellpx" className="flex items-center justify-between gap-2 text-gray-700">
+            <label htmlFor="png-cellpx" className="flex items-center justify-between gap-2 text-ink-soft">
               {t.cellSize}
               <select
                 id="png-cellpx"
                 value={optCellPx}
                 onChange={(e) => setOptCellPx(Number(e.target.value))}
-                className="rounded border border-gray-300 px-2 py-1"
+                className="rounded-lg border border-lilac/50 px-2 py-1"
               >
                 {CELL_CHOICES.map((size) => (
                   <option key={size} value={size}>
@@ -116,11 +116,11 @@ export default function PngExportButton({
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-2 text-gray-700">
+            <label className="flex items-center gap-2 text-ink-soft">
               <input type="checkbox" checked={optCrop} onChange={(e) => setOptCrop(e.target.checked)} />
               {t.cropToContent}
             </label>
-            <label className="flex items-center gap-2 text-gray-700">
+            <label className="flex items-center gap-2 text-ink-soft">
               <input type="checkbox" checked={optLegend} onChange={(e) => setOptLegend(e.target.checked)} />
               {t.includeLegend}
             </label>
@@ -130,7 +130,7 @@ export default function PngExportButton({
               type="button"
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+              className="rounded-full border border-lilac/50 px-3 py-1 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
             >
               {zhCN.designs.cancel}
             </button>
@@ -138,7 +138,7 @@ export default function PngExportButton({
               type="button"
               onClick={() => void confirm()}
               disabled={busy}
-              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
+              className="rounded-full bg-primary px-3 py-1 text-sm text-white transition-colors hover:bg-primary-deep disabled:bg-lilac-soft disabled:text-ink-soft/60"
             >
               {t.confirm}
             </button>

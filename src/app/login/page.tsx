@@ -55,14 +55,13 @@ export default function LoginPage() {
     }
   };
 
-  const field =
-    'w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
+  const field = 'input-field';
 
   return (
     <AuthShell title={t.loginTitle}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <FormError message={error} />
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.email}
           <input
             type="email"
@@ -73,7 +72,7 @@ export default function LoginPage() {
             required
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.password}
           <input
             type="password"
@@ -84,18 +83,14 @@ export default function LoginPage() {
             required
           />
         </label>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={pending} className="btn-primary w-full">
           {pending ? '…' : t.loginSubmit}
         </button>
-        <div className="flex justify-between text-sm text-blue-600">
-          <Link href="/register" className="hover:underline">
+        <div className="flex justify-between text-sm">
+          <Link href="/register" className="link-soft">
             {t.noAccount}
           </Link>
-          <Link href="/forgot-password" className="hover:underline">
+          <Link href="/forgot-password" className="link-soft">
             {t.forgotTitle}
           </Link>
         </div>

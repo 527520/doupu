@@ -70,7 +70,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={handleExport}
           disabled={disabled}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+          className="rounded-full border border-lilac/50 px-3 py-1.5 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
         >
           {t.exportLabel}
         </button>
@@ -78,7 +78,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+          className="rounded-full border border-lilac/50 px-3 py-1.5 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
         >
           {t.importLabel}
         </button>
@@ -92,7 +92,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
         className="sr-only"
       />
       {errors.length > 0 && (
-        <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
           <p className="font-medium">{t.importFailed}</p>
           <ul className="list-inside list-disc">
             {errors.map((error, index) => (

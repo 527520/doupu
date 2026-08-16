@@ -11,6 +11,7 @@ export const zhCN = {
   },
   nav: {
     mainNav: '主导航',
+    home: '首页',
     workbench: '工作台',
     designs: '我的设计',
     palettes: '色板管理',

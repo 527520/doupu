@@ -1,8 +1,37 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   豆谱设计系统（优化票 01 · 温柔治愈 / D30）
+   奶油白底 · 主粉 · 墨紫 · 丁香紫；圆润字体、柔和粉色阴影。
+   所有页面统一从这里的 token 取色，不在组件里硬编码。
+   ============================================================ */
+@theme {
+  /* 底色 */
+  --color-cream: #fdf8f4;
+  --color-cream-deep: #f6ede3;
+
+  /* 主粉（主操作/强调） */
+  --color-primary: #e885a8;
+  --color-primary-deep: #d96a92;
+  --color-primary-soft: #fbeaf0;
+
+  /* 墨紫（正文/标题） */
+  --color-ink: #4b4356;
+  --color-ink-soft: #7e7589;
+
+  /* 丁香紫（次级点缀/装饰） */
+  --color-lilac: #b9a7d9;
+  --color-lilac-deep: #a08cc9;
+  --color-lilac-soft: #f0eaf8;
+
+  /* 柔和粉色阴影（卡片/主按钮） */
+  --shadow-soft: 0 8px 24px -10px rgb(232 133 168 / 0.45);
+  --shadow-card: 0 2px 14px -6px rgb(75 67 86 / 0.14);
+
+  /* 圆润字体栈：Nunito 风格拉丁（系统回退）+ 幼圆/圆体（中文本地圆体） */
+  --font-sans:
+    "Yuanti SC", "YouYuan", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 /* Tailwind v4 preflight 将按钮光标重置为 default；这里恢复平台惯例：
@@ -15,7 +44,7 @@
   button:disabled {
     cursor: not-allowed;
   }
-  /* 统一键盘焦点环（文本输入框除外，它们用边框/ring 表达焦点） */
+  /* 统一键盘焦点环（文本输入框除外，它们用边框/ring 表达焦点）——主粉色 */
   a:focus-visible,
   button:focus-visible,
   [role='button']:focus-visible,
@@ -23,8 +52,40 @@
   input[type='checkbox']:focus-visible,
   input[type='radio']:focus-visible,
   summary:focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-primary-soft);
+    color: var(--color-ink);
+  }
+}
+
+/* 组件类：全站按钮/输入/卡片/链接的统一样式（避免逐处重复） */
+@layer components {
+  /* 主操作按钮：胶囊 + 柔和粉色阴影 */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition-colors duration-150 hover:bg-primary-deep disabled:opacity-50;
+  }
+  /* 次级描边按钮 */
+  .btn-outline {
+    @apply inline-flex items-center justify-center rounded-full border border-lilac bg-white px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary hover:text-primary-deep disabled:opacity-50;
+  }
+  /* 文本输入框 */
+  .input-field {
+    @apply w-full rounded-xl border border-lilac/50 bg-white px-3.5 py-2.5 text-sm text-ink transition-colors duration-150 placeholder:text-ink-soft/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30;
+  }
+  /* 卡片面：圆角 + 柔和阴影 + 丁香描边 */
+  .card-surface {
+    @apply rounded-2xl border border-lilac/30 bg-white shadow-card;
+  }
+  /* 粉色文字链接 */
+  .link-soft {
+    @apply text-primary-deep underline-offset-4 hover:underline;
+  }
+  /* 页标题 */
+  .page-title {
+    @apply text-2xl font-semibold tracking-wide text-ink;
   }
 }
 
@@ -37,14 +98,7 @@
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    "PingFang SC",
-    "Hiragino Sans GB",
-    "Microsoft YaHei",
-    sans-serif;
+  color: var(--color-ink);
+  background: var(--color-cream);
+  font-family: var(--font-sans);
 }

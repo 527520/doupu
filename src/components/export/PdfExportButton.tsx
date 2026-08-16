@@ -86,7 +86,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
         type="button"
         onClick={onExportClick}
         disabled={disabled || busy}
-        className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-full border border-lilac/50 px-3 py-1.5 text-sm transition-colors hover:bg-lilac-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? t.generating : t.button}
       </button>
@@ -98,10 +98,10 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
       )}
 
       {open && (
-        <section aria-label={t.dialogTitle} className="rounded border border-gray-300 bg-white p-4 shadow-lg">
+        <section aria-label={t.dialogTitle} className="rounded-2xl border border-lilac/40 bg-white p-4 shadow-soft">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
-          <p className="text-sm text-gray-700">{t.pageCount(layout.gridPages.length)}</p>
-          {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-gray-500">{t.largeHint}</p>}
+          <p className="text-sm text-ink">{t.pageCount(layout.gridPages.length)}</p>
+          {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-ink-soft">{t.largeHint}</p>}
           {error && (
             <p role="alert" className="mt-2 text-sm text-red-600">
               {error}
@@ -112,7 +112,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
               type="button"
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+              className="rounded-full border border-lilac/50 px-3 py-1 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
             >
               {t.cancel}
             </button>
@@ -120,7 +120,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
               type="button"
               onClick={() => void confirm()}
               disabled={busy}
-              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
+              className="rounded-full bg-primary px-3 py-1 text-sm text-white transition-colors hover:bg-primary-deep disabled:bg-lilac-soft disabled:text-ink-soft/60"
             >
               {busy ? t.generating : t.confirm}
             </button>

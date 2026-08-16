@@ -20,17 +20,20 @@ export default function GlobalError({
   const t = zhCN.errorPages;
   return (
     <html lang="zh-CN">
-      <body>
+      <body style={{ background: '#fdf8f4', color: '#4b4356' }}>
         <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-          <p className="text-7xl font-bold text-gray-200" aria-hidden="true">
+          <p className="text-7xl font-semibold" style={{ color: '#b9a7d980' }} aria-hidden="true">
             !
           </p>
           <h1 className="text-2xl font-semibold">{t.errorTitle}</h1>
-          <p className="max-w-md text-sm leading-6 text-gray-500">{t.errorBody}</p>
+          <p className="max-w-md text-sm leading-6" style={{ color: '#7e7589' }}>
+            {t.errorBody}
+          </p>
           <button
             type="button"
             onClick={reset}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="rounded-full px-5 py-2.5 text-sm font-semibold text-white"
+            style={{ backgroundColor: '#e885a8' }}
           >
             {t.retry}
           </button>

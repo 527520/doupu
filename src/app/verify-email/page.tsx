@@ -75,13 +75,12 @@ function VerifyInner() {
     }
   };
 
-  const field =
-    'w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
+  const field = 'input-field';
 
   return (
     <AuthShell title={t.verifyTitle}>
       {state === 'loading' && (
-        <p role="status" className="text-center text-gray-500">
+        <p role="status" className="text-center text-ink-soft">
           {t.verifyLoading}
         </p>
       )}
@@ -90,7 +89,7 @@ function VerifyInner() {
           <p role="status" className="mb-4 text-center text-green-700">
             {t.verifySuccess}
           </p>
-          <Link href="/login" className="block text-center text-blue-600 hover:underline">
+          <Link href="/login" className="link-soft block text-center">
             {t.goLogin}
           </Link>
         </>
@@ -99,7 +98,7 @@ function VerifyInner() {
         <>
           <FormError message={zhCN.auth.linkInvalid} />
           <form onSubmit={resend} noValidate className="mt-4 flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-gray-700">{t.resendTitle}</h2>
+            <h2 className="text-sm font-medium text-ink-soft">{t.resendTitle}</h2>
             <input
               type="email"
               aria-label={t.email}
@@ -112,7 +111,7 @@ function VerifyInner() {
             <button
               type="submit"
               disabled={resendPending || cooldown > 0}
-              className="rounded bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+              className="btn-primary w-full"
             >
               {cooldown > 0 ? t.cooldown(cooldown) : t.submit}
             </button>

@@ -47,7 +47,7 @@ export default function Modal({ label, onClose, children, panelClassName = '' }:
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className={`w-full max-w-[calc(100vw-2rem)] rounded border border-gray-300 bg-white p-4 shadow-lg ${panelClassName}`}
+        className={`w-full max-w-[calc(100vw-2rem)] rounded-2xl border border-lilac/30 bg-white p-4 shadow-soft ${panelClassName}`}
       >
         {children}
       </div>

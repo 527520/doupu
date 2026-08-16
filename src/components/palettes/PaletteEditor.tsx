@@ -141,9 +141,9 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
   };
 
   return (
-    <section aria-label={t.title} className="flex flex-col gap-4 rounded border border-gray-300 bg-white p-4">
+    <section aria-label={t.title} className="flex flex-col gap-4 rounded-2xl border border-lilac/40 bg-white p-4">
       <label className="flex flex-col gap-1 text-sm">
-        <span className="font-medium text-gray-700">{t.name}</span>
+        <span className="font-medium text-ink">{t.name}</span>
         <input
           type="text"
           value={name}
@@ -151,22 +151,22 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           onChange={(e) => setName(e.target.value)}
           aria-label={t.name}
           aria-invalid={nameError !== null}
-          className="rounded border border-gray-300 px-2 py-1"
+          className="rounded-lg border border-lilac/50 px-2 py-1"
         />
         {nameError && <span role="alert" className="text-xs text-red-600">{nameError}</span>}
       </label>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span aria-label={t.colorsCounter(rows.length)} className="text-xs text-gray-500">
+        <span aria-label={t.colorsCounter(rows.length)} className="text-xs text-ink-soft">
           {t.colorsCounter(rows.length)}
         </span>
-        <button type="button" onClick={addRow} disabled={rows.length >= LIMITS.customPaletteColors} className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50">
+        <button type="button" onClick={addRow} disabled={rows.length >= LIMITS.customPaletteColors} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft disabled:opacity-50">
           {t.addRow}
         </button>
-        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="rounded border px-2 py-1 text-xs hover:bg-gray-50">
+        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
           {t.pasteImport}
         </button>
-        <label className="cursor-pointer rounded border px-2 py-1 text-xs hover:bg-gray-50 focus-within:ring-2 focus-within:ring-blue-500">
+        <label className="cursor-pointer rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft focus-within:ring-2 focus-within:ring-primary">
           {t.fileImport}
           <input
             type="file"
@@ -183,7 +183,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           value=""
           onChange={(e) => copyFromBrand(e.target.value)}
           aria-label={t.copyFromBrand}
-          className="rounded border px-2 py-1 text-xs"
+          className="rounded-full border border-lilac/50 px-2 py-1 text-xs"
         >
           <option value="" disabled>
             {t.copyFromBrand}
@@ -200,19 +200,19 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
 
       {pasteOpen && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-gray-500">{t.pasteHint}</p>
+          <p className="text-xs text-ink-soft">{t.pasteHint}</p>
           <textarea
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
             aria-label={t.pasteImport}
-            className="rounded border border-gray-300 p-2 font-mono text-xs"
+            className="rounded-xl border border-lilac/50 p-2 font-mono text-xs"
           />
           <div className="flex gap-2">
-            <button type="button" onClick={doPasteImport} className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">
+            <button type="button" onClick={doPasteImport} className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-deep">
               {t.pasteImport}
             </button>
-            <button type="button" onClick={() => setPasteOpen(false)} className="rounded border px-3 py-1 text-xs hover:bg-gray-50">
+            <button type="button" onClick={() => setPasteOpen(false)} className="rounded-full border border-lilac/50 px-3 py-1 text-xs transition-colors hover:bg-lilac-soft">
               {t.cancel}
             </button>
           </div>
@@ -222,7 +222,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
       <div className="max-h-80 overflow-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs text-gray-500">
+            <tr className="text-left text-xs text-ink-soft">
               <th className="pb-1 font-medium">{t.code}</th>
               <th className="pb-1 font-medium">{t.hex}</th>
               <th className="pb-1 w-16" aria-label={t.removeRow} />
@@ -239,7 +239,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
                     onChange={(e) => setRow(index, { code: e.target.value })}
                     aria-label={`${t.code} ${index + 1}`}
                     aria-invalid={rowErrors.has(index)}
-                    className="w-28 rounded border border-gray-300 px-1 py-0.5 text-xs"
+                    className="w-28 rounded-lg border border-lilac/50 px-1 py-0.5 text-xs"
                   />
                 </td>
                 <td className="py-1 pr-2">
@@ -249,7 +249,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
                     onChange={(e) => setRow(index, { hex: e.target.value })}
                     aria-label={`${t.hex} ${index + 1}`}
                     aria-invalid={rowErrors.has(index)}
-                    className="w-28 rounded border border-gray-300 px-1 py-0.5 font-mono text-xs"
+                    className="w-28 rounded-lg border border-lilac/50 px-1 py-0.5 font-mono text-xs"
                   />
                 </td>
                 <td className="py-1">
@@ -274,14 +274,14 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
       {global && <p role="alert" className="text-sm text-red-600">{global}</p>}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={saving} className="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 disabled:opacity-50">
+        <button type="button" onClick={onCancel} disabled={saving} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
           {t.cancel}
         </button>
         <button
           type="button"
           onClick={submit}
           disabled={!canSave}
-          className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:cursor-not-allowed disabled:bg-lilac/50"
         >
           {saving ? '…' : t.save}
         </button>

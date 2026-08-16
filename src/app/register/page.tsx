@@ -60,8 +60,7 @@ export default function RegisterPage() {
     }
   };
 
-  const field =
-    'w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
+  const field = 'input-field';
 
   if (done) {
     return (
@@ -70,14 +69,14 @@ export default function RegisterPage() {
           {t.registeredSent}
         </p>
         {devMailLink && (
-          <div className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm">
-            <p className="mb-2 text-blue-800">{t.devMailHint}</p>
-            <a href={devMailLink} className="break-all text-blue-600 underline underline-offset-2">
+          <div className="mb-4 rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm">
+            <p className="mb-2 text-ink">{t.devMailHint}</p>
+            <a href={devMailLink} className="break-all text-primary-deep underline underline-offset-2">
               {devMailLink}
             </a>
           </div>
         )}
-        <Link href="/login" className="block text-center text-blue-600 hover:underline">
+        <Link href="/login" className="link-soft block text-center">
           {t.goLogin}
         </Link>
       </AuthShell>
@@ -88,7 +87,7 @@ export default function RegisterPage() {
     <AuthShell title={t.registerTitle}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <FormError message={error} />
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.email}
           <input
             type="email"
@@ -99,7 +98,7 @@ export default function RegisterPage() {
             required
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.password}
           <input
             type="password"
@@ -110,7 +109,7 @@ export default function RegisterPage() {
             required
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-gray-700">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.confirmPassword}
           <input
             type="password"
@@ -121,15 +120,11 @@ export default function RegisterPage() {
             required
           />
         </label>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={pending} className="btn-primary w-full">
           {pending ? '…' : t.registerSubmit}
         </button>
-        <div className="text-center text-sm text-blue-600">
-          <Link href="/login" className="hover:underline">
+        <div className="text-center text-sm">
+          <Link href="/login" className="link-soft">
             {t.hasAccount}
           </Link>
         </div>

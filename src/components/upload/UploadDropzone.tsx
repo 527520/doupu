@@ -118,9 +118,9 @@ export function UploadDropzone({ onValid, mobile = false, disabled = false }: Up
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         className={[
-          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
-          dragging ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-300 text-gray-500',
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-blue-400',
+          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed p-8 text-center transition-colors',
+          dragging ? 'border-primary bg-primary-soft text-primary-deep' : 'border-lilac/60 text-ink-soft',
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-primary hover:text-primary-deep',
         ].join(' ')}
       >
         {reading ? (
@@ -128,7 +128,7 @@ export function UploadDropzone({ onValid, mobile = false, disabled = false }: Up
         ) : (
           <>
             <p>{dragging ? upload.dragActive : hint}</p>
-            <p className="text-xs text-gray-400">{upload.formatHint}</p>
+            <p className="text-xs text-ink-soft/80">{upload.formatHint}</p>
           </>
         )}
       </div>
