@@ -2,7 +2,7 @@
 
 Status: done
 
-## Comments（2026-02 实施记录）
+## Comments（2026-08 实施记录）
 
 - 实现：`src/lib/engine/runGenerate.ts`（任务句柄 `{ promise, cancel }`，无 Worker 环境同步回退，Worker 异常回退主线程同步执行一次并 `console.error` 记录）+ `generate.worker.ts`（协议：progress/done/error）。
 - 进度：`generatePattern` 增加可选 `onProgress` 按管线 8 阶段上报（5→100 单调）；工作台 >300ms 才显示进度条（固定宽度槽位，避免「取消」按钮位移导致误点），快速任务直接出结果。

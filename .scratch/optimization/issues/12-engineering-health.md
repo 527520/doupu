@@ -2,7 +2,7 @@
 
 Status: done
 
-## Comments（2026-02 实施记录）
+## Comments（2026-08 实施记录）
 
 - **覆盖率护栏**：实测基线（本票新增 37 个单测后）src/lib 行 92.93 / 语句 91.78 / 函数 94.15 / 分支 81.08 → 达到 spec §8 ≥90% 目标。阈值定为 行/语句/函数 90、分支 75（vitest.config.mts `coverage.thresholds`），CI quality job 改用 `npm run test:coverage`。新增测试：`src/lib/sync/api.test.ts`（11）、`src/lib/engine/generate.worker.test.ts`（2）、`src/lib/image/decode.test.ts`（10）、`src/lib/storage/indexedDb.test.ts`（6）、`src/lib/editor/ops.test.ts` 性能用例（3）。
 - **性能阈值**：200×200 实测 ~0.75-0.79s（多次全量回归），阈值收紧到 spec §7.1 的 2000ms（留 2.5 倍余量）；编辑器 applyBrush/floodFill/clearAll 200×200 单操作实测空闲 3-9ms、高负载 57-68ms，护栏取 <200ms（与仓库既有编辑器性能测试「防负载抖动」口径一致，设计预算 50ms 由引擎级预算测试守护）。
