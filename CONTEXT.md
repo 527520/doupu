@@ -65,7 +65,8 @@
 ## 待定 Open
 
 - 无。全部 21 张任务票已解决；开源仓库 https://github.com/527520/doupu 已发布。
-- 优化计划（`.scratch/optimization/`）：票 01–12 全部完成并全量自测通过（单测 538、覆盖率 src/lib 行 92.9%、E2E 54×3 浏览器、typecheck/lint/build 全绿、350px 移动端走查）。已本地提交，待网络恢复后推送 github.com（4+ 个 commit）。
+- 优化计划（`.scratch/optimization/`）：票 01–12 全部完成并全量自测通过（单测 538、覆盖率 src/lib 行 92.9%、E2E 54×3 浏览器、typecheck/lint/build 全绿、350px 移动端走查），已推送 GitHub（6 个 commit，`497169b..43e5697`）。
+- 网络备注：本机 DNS 被劫持（github.com 解析到不可达 IP），HTTPS 推送失败；改用 SSH（`git push git@github.com:527520/doupu.git main`）推送成功。SSH 22 与 ssh.github.com:443 均可达。
 
 ## 代理负责的工程决策（写入 ADR，用户可反驳）
 
