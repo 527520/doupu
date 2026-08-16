@@ -5,12 +5,15 @@
  * 导致开发/E2E 环境无法保持会话。
  */
 
+import { config } from '@/lib/config';
+
 function secureFlag(): string {
   return process.env.NODE_ENV === 'production' ? '; Secure' : '';
 }
 
 export const SESSION_COOKIE_NAME = 'doupu_session';
-export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 天
+/** 会话时长（票 02 配置化：环境变量 SESSION_TTL_SECONDS，默认 30 天）。 */
+export const SESSION_TTL_SECONDS = config.security.sessionTtlSeconds;
 
 /** 序列化 Set-Cookie 值（供响应头使用）。 */
 export function serializeSessionCookie(token: string, maxAgeSeconds: number = SESSION_TTL_SECONDS): string {

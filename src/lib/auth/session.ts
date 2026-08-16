@@ -4,7 +4,7 @@
  * getVerifiedSessionUserId() 供数据类 API 使用——未验证邮箱的会话一律视为未授权。
  */
 import { cookies } from 'next/headers';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, ne } from 'drizzle-orm';
 import { sessions, users } from '@/../db/schema';
 import type { AnyDatabase } from '@/../db/client';
 import { getDb } from './db';
@@ -34,6 +34,11 @@ export async function deleteSessionByToken(db: AnyDatabase, token: string): Prom
 /** 删除用户的全部会话（找回密码后旧会话全失效，spec E32）。 */
 export async function deleteAllUserSessions(db: AnyDatabase, userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
+/** 吊销用户除当前会话外的全部会话（修改密码后其他设备下线，安全自查 M4）。 */
+export async function revokeOtherSessions(db: AnyDatabase, userId: string, keepToken: string): Promise<void> {
+  await db.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.tokenHash, hashToken(keepToken))));
 }
 
 /**

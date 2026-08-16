@@ -2,14 +2,33 @@
  * PDF 分页拼图的纯布局计算（spec §F7 PDF 部分；边界 E25/E26/E27）。
  * 与 pdf-lib 解耦：几何分页、页眉文本、文本宽度估算/截断、图例排序、文件名规则都在此层，
  * 全部可单测；pdf.ts 只做绘制与文档组装。
+ * 票 02 配置化：分页/尺寸参数经 PdfPageMetrics 传入，默认值来自站点配置（config.ts）。
  */
+import { config } from '@/lib/config';
 
-export const PDF_CELL_MM = 6;
-export const PDF_PAGE_COLS = 31;
-export const PDF_PAGE_ROWS = 45;
+export interface PdfPageMetrics {
+  cellMm: number;
+  marginMm: number;
+  headerMm: number;
+  pageCols: number;
+  pageRows: number;
+}
+
+export const defaultPdfMetrics: PdfPageMetrics = {
+  cellMm: config.exportPdf.cellMm,
+  marginMm: config.exportPdf.marginMm,
+  headerMm: config.exportPdf.headerMm,
+  pageCols: config.exportPdf.pageCols,
+  pageRows: config.exportPdf.pageRows,
+};
+
+// 兼容旧引用（测试与外部依赖既有常量名）
+export const PDF_CELL_MM = defaultPdfMetrics.cellMm;
+export const PDF_PAGE_COLS = defaultPdfMetrics.pageCols;
+export const PDF_PAGE_ROWS = defaultPdfMetrics.pageRows;
 // 物理自洽（常量自洽测试锁定）：2×8 + 10(页眉) + 45×6 = 296 ≤ 297（A4 高）；2×8 + 31×6 = 202 ≤ 210（A4 宽）
-export const PDF_MARGIN_MM = 8;
-export const PDF_HEADER_MM = 10;
+export const PDF_MARGIN_MM = defaultPdfMetrics.marginMm;
+export const PDF_HEADER_MM = defaultPdfMetrics.headerMm;
 export const A4_WIDTH_MM = 210;
 export const A4_HEIGHT_MM = 297;
 export const MM_TO_PT = 72 / 25.4;
@@ -34,25 +53,26 @@ export interface PdfLayout {
   totalPages: number;
 }
 
-/** 分页计算：每页 31 列 × 45 行；页数 = ceil(W/31) × ceil(H/45)；另加 1 页图例清单。 */
-export function computePdfLayout(W: number, H: number): PdfLayout {
+/** 分页计算：每页 pageCols 列 × pageRows 行；页数 = ceil(W/cols) × ceil(H/rows)；另加 1 页图例清单。 */
+export function computePdfLayout(W: number, H: number, metrics: PdfPageMetrics = defaultPdfMetrics): PdfLayout {
   if (!Number.isInteger(W) || !Number.isInteger(H) || W < 1 || H < 1) {
     return { gridPages: [], legendPageIndex: 0, totalPages: 1 };
   }
-  const pageCols = Math.ceil(W / PDF_PAGE_COLS);
-  const pageRows = Math.ceil(H / PDF_PAGE_ROWS);
+  const { pageCols, pageRows } = metrics;
+  const pageColsCount = Math.ceil(W / pageCols);
+  const pageRowsCount = Math.ceil(H / pageRows);
   const gridPages: PdfPageSpec[] = [];
-  for (let pr = 0; pr < pageRows; pr++) {
-    for (let pc = 0; pc < pageCols; pc++) {
-      const colStart = pc * PDF_PAGE_COLS;
-      const rowStart = pr * PDF_PAGE_ROWS;
+  for (let pr = 0; pr < pageRowsCount; pr++) {
+    for (let pc = 0; pc < pageColsCount; pc++) {
+      const colStart = pc * pageCols;
+      const rowStart = pr * pageRows;
       gridPages.push({
         pageIndex: gridPages.length,
-        totalPages: pageCols * pageRows,
+        totalPages: pageColsCount * pageRowsCount,
         colStart,
         rowStart,
-        cols: Math.min(PDF_PAGE_COLS, W - colStart),
-        rows: Math.min(PDF_PAGE_ROWS, H - rowStart),
+        cols: Math.min(pageCols, W - colStart),
+        rows: Math.min(pageRows, H - rowStart),
       });
     }
   }

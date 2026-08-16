@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
+import { cookies } from 'next/headers';
 import { users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { changePasswordSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
-import { getVerifiedSessionUserId } from '@/lib/auth/session';
+import { getVerifiedSessionUserId, revokeOtherSessions } from '@/lib/auth/session';
+import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
@@ -38,6 +40,13 @@ export async function POST(request: Request) {
     .update(users)
     .set({ passwordHash: await hashPassword(newPassword), updatedAt: new Date() })
     .where(eq(users.id, userId));
+
+  // 安全自查 M4：改密后吊销其他设备的会话（当前会话保留），防止旧密码失窃的设备继续在线
+  const jar = await cookies();
+  const currentToken = jar.get(SESSION_COOKIE_NAME)?.value ?? null;
+  if (currentToken) {
+    await revokeOtherSessions(db, userId, currentToken);
+  }
 
   return noContent();
 }

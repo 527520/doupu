@@ -6,7 +6,8 @@ import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import { generatePatternPdf } from '@/lib/export/pdf';
 import { loadPdfCjkFont } from '@/lib/export/pdfFont';
-import { buildExportFilename, computePdfLayout } from '@/lib/export/pdfLayout';
+import { buildExportFilename, computePdfLayout, type PdfPageMetrics } from '@/lib/export/pdfLayout';
+import { usePublicConfig } from '@/components/config/usePublicConfig';
 
 export interface PdfExportButtonProps {
   name: string;
@@ -33,12 +34,24 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 版式参数来自站点公开配置（票 02）：服务端环境变量可覆盖，改配置即生效
+  const pubCfg = usePublicConfig();
+  const metrics = useMemo<PdfPageMetrics>(
+    () => ({
+      cellMm: pubCfg.exportPdf.cellMm,
+      marginMm: pubCfg.exportPdf.marginMm,
+      headerMm: pubCfg.exportPdf.headerMm,
+      pageCols: pubCfg.exportPdf.pageCols,
+      pageRows: pubCfg.exportPdf.pageRows,
+    }),
+    [pubCfg],
+  );
 
   const isEmpty = useMemo(
     () => !pattern.cells.some((cell) => !cell.transparent && !cell.external),
     [pattern],
   );
-  const layout = useMemo(() => computePdfLayout(pattern.width, pattern.height), [pattern]);
+  const layout = useMemo(() => computePdfLayout(pattern.width, pattern.height, metrics), [pattern, metrics]);
 
   const onExportClick = (): void => {
     setError(null);
@@ -54,7 +67,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
     setError(null);
     try {
       const fontBytes = await loadPdfCjkFont();
-      const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes });
+      const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);
     } catch {

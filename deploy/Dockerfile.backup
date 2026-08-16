@@ -1,0 +1,5 @@
+# 备份容器镜像（优化票 03）：postgres:16-alpine + rclone 固化，
+# 避免每次容器启动临时 apk add（依赖外部网络、无持久层）。
+FROM postgres:16-alpine
+
+RUN apk add --no-cache rclone

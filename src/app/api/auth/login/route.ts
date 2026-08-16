@@ -10,8 +10,12 @@ import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, okJson, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
+import { config } from '@/lib/config';
 
-const RATE_LIMIT = 10;
+/** 登录限流阈值（票 02 配置化：环境变量 RATE_LOGIN，默认 10 次/时/IP+邮箱）。 */
+const RATE_LIMIT = config.security.loginRateLimit;
+/** 独立每 IP 上限（安全自查 M2）：防密码喷洒——即使轮换邮箱，同一 IP 也有硬顶。 */
+const IP_RATE_LIMIT = Math.max(20, RATE_LIMIT * 3);
 
 /** 时序对齐用假哈希（懒加载，进程内缓存）：未知邮箱也执行一次 argon2 校验，抹平枚举时序。 */
 let dummyHashPromise: Promise<string> | null = null;
@@ -33,6 +37,9 @@ export async function POST(request: Request) {
 
   const db = getDb();
   if (!(await checkRateLimit(db, rateLimitKey('login', ip, email), RATE_LIMIT))) {
+    return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
+  }
+  if (!(await checkRateLimit(db, rateLimitKey('login-ip', ip), IP_RATE_LIMIT))) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
 

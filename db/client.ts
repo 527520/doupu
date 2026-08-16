@@ -4,7 +4,7 @@
  */
 import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { sql } from 'drizzle-orm';
+import { sql, lt } from 'drizzle-orm';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import * as schema from './schema';
 import { rateLimits } from './schema';
@@ -49,4 +49,14 @@ export async function incrementRateLimit(
     })
     .returning();
   return reset[0].count;
+}
+
+/**
+ * 清理过期限流窗口（优化票 03）：删除 windowStart 早于 olderThan 的行。
+ * 窗口为小时对齐，过期窗口不会再被命中；由 instrumentation 在生产环境每日调用。
+ * 返回删除行数。
+ */
+export async function cleanupRateLimits(db: AnyDatabase, olderThan: Date): Promise<number> {
+  const result = await db.delete(rateLimits).where(lt(rateLimits.windowStart, olderThan)).returning();
+  return result.length;
 }

@@ -84,8 +84,8 @@ export async function POST(request: Request) {
     // 开发邮件模式：链接随响应头返回，前端直接展示（正式环境绝不下发）
     devLink = isDevMailMode() ? link : null;
   } else if (!isDevMailMode()) {
-    // 幽灵账号：补一个与 SMTP 往返同量级的固定延迟，抹平时序枚举（防枚举 E30/E33）
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // 幽灵账号：补一个与真实发信（SES 模板 API 往返）同量级的固定延迟，抹平时序枚举（防枚举 E30/E33）
+    await new Promise((resolve) => setTimeout(resolve, 800));
   }
 
   const headers = devLink ? { [DEV_MAIL_LINK_HEADER]: devLink } : undefined;

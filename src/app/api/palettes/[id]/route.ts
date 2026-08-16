@@ -5,7 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/lib/auth/db';
 import { palettes } from '@/../db/schema';
-import { getSessionUserId } from '@/lib/auth/session';
+import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, okJson, readJson } from '@/lib/auth/http';
 import { palettePutSchema } from '@/lib/schemas';
@@ -20,7 +20,7 @@ function toColors(value: unknown): CustomPaletteColor[] {
 }
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return apiError(new AppError('NOT_FOUND', '色板不存在'));
@@ -42,7 +42,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return apiError(new AppError('VALIDATION', '色板 id 必须为 UUID'));
@@ -90,7 +90,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
-  const userId = await getSessionUserId();
+  const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return noContent();

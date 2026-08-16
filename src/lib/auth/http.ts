@@ -5,10 +5,12 @@ import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { AppError, type ApiErrorBody } from '@/lib/errors';
 import { zodErrorsToStrings } from '@/lib/schemas';
+import { config } from '@/lib/config';
 
 export type JsonResult = { ok: true; data: unknown } | { ok: false; response: NextResponse };
 
-export const DEFAULT_MAX_BODY_BYTES = 64 * 1024; // 认证类端点默认上限
+/** 认证类端点默认上限（票 02 配置化：环境变量 MAX_BODY_BYTES）。 */
+export const DEFAULT_MAX_BODY_BYTES = config.security.maxBodyBytes;
 
 /**
  * 解析 JSON 请求体；失败返回 400 VALIDATION。

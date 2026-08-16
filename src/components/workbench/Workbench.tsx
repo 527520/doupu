@@ -37,6 +37,7 @@ import {
   type StorageAdapter,
 } from '@/lib/storage';
 import { PROJECT_FILE_FORMAT, PROJECT_FILE_VERSION } from '@/lib/appInfo';
+import { usePublicConfig } from '@/components/config/usePublicConfig';
 
 type Step = 'upload' | 'crop' | 'workspace';
 type Tab = 'preview' | 'edit';
@@ -61,6 +62,16 @@ interface WorkbenchProps {
 export default function Workbench({ storage, decodeFn, onSavedStatus }: WorkbenchProps) {
   const t = zhCN.workbench;
   const decode = decodeFn ?? decodeImageFile;
+  // 站点公开配置（票 02）：生成默认参数可被服务端环境变量覆盖，改配置即生效
+  const pubCfg = usePublicConfig();
+  const defaultParams = useMemo<GenerationParams>(
+    () => ({
+      ...DEFAULT_GENERATION_PARAMS,
+      targetWidth: pubCfg.generation.defaultWidth,
+      targetColorCount: pubCfg.generation.defaultColorCount,
+    }),
+    [pubCfg],
+  );
 
   const [step, setStep] = useState<Step>('upload');
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
@@ -297,6 +308,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     onSavedStatus?.(saveState);
   }, [saveState, onSavedStatus]);
 
+  // 上传步骤时应用配置默认参数（站点配置加载完成后/每次回到上传步骤都同步）
+  useEffect(() => {
+    if (step === 'upload') setParams(defaultParams);
+  }, [step, defaultParams]);
+
   // ---------- 恢复最后设计 ----------
 
   useEffect(() => {
@@ -390,11 +406,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     setDesignId(newDesignId());
     setName('');
     setCreatedAt('');
-    setParams(DEFAULT_GENERATION_PARAMS);
+    setParams(defaultParams);
     setPaletteKind({ kind: 'builtin', brand: 'MARD' });
     setCustomPalette([]);
     clearDesignQuery();
-  }, []);
+  }, [defaultParams]);
 
   const projectPalette = useMemo<ProjectFile['palette']>(
     () =>

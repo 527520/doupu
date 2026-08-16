@@ -5,7 +5,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { eq, count } from 'drizzle-orm';
 import { createTestClient } from './testClient';
-import { incrementRateLimit, type AnyDatabase } from './client';
+import { cleanupRateLimits, incrementRateLimit, type AnyDatabase } from './client';
 import { users, sessions, emailTokens, designs, palettes, rateLimits } from './schema';
 
 describe('db models（PGlite）', () => {
@@ -96,6 +96,19 @@ describe('db models（PGlite）', () => {
     expect(await incrementRateLimit(db, 'k1', t1)).toBe(1);
     // 不同 key 独立
     expect(await incrementRateLimit(db, 'k2', t0)).toBe(1);
+  });
+
+  it('cleanupRateLimits：只删过期窗口，保留新窗口（优化票 03）', async () => {
+    await db.delete(rateLimits); // 隔离前序测试的计数行
+    const old = new Date('2026-08-13T00:00:00.000Z');
+    const fresh = new Date('2026-08-15T00:00:00.000Z');
+    await incrementRateLimit(db, 'old1', old);
+    await incrementRateLimit(db, 'old2', old);
+    await incrementRateLimit(db, 'fresh1', fresh);
+    const removed = await cleanupRateLimits(db, new Date('2026-08-14T12:00:00.000Z'));
+    expect(removed).toBe(2);
+    const rows = await db.select().from(rateLimits);
+    expect(rows.map((r) => r.key)).toEqual(['fresh1']);
   });
 
   it('sessions/email_tokens token_hash 唯一约束', async () => {

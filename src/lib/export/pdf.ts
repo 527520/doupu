@@ -14,16 +14,15 @@ import {
   A4_HEIGHT_MM,
   A4_WIDTH_MM,
   MM_TO_PT,
-  PDF_CELL_MM,
-  PDF_HEADER_MM,
-  PDF_MARGIN_MM,
   computePdfLayout,
+  defaultPdfMetrics,
   legendColumns,
   pageHeaderText,
   seamPositionsForPage,
   sortStatsForLegend,
   toWinAnsi,
   truncateTextToWidth,
+  type PdfPageMetrics,
 } from './pdfLayout';
 
 export interface PdfExportInput {
@@ -36,13 +35,12 @@ export interface PdfExportInput {
 export interface PdfExportOptions {
   /** Noto Sans SC 字体字节；null/undefined 时走 ASCII 降级路径 */
   fontBytes?: Uint8Array | null;
+  /** 版式参数（票 02 配置化）；缺省用站点配置默认值 */
+  metrics?: PdfPageMetrics;
 }
 
 const PAGE_W_PT = A4_WIDTH_MM * MM_TO_PT;
 const PAGE_H_PT = A4_HEIGHT_MM * MM_TO_PT;
-const MARGIN_PT = PDF_MARGIN_MM * MM_TO_PT;
-const HEADER_PT = PDF_HEADER_MM * MM_TO_PT;
-const CELL_PT = PDF_CELL_MM * MM_TO_PT;
 
 function drawLegend(
   page: PDFPage,
@@ -50,20 +48,22 @@ function drawLegend(
   name: string,
   stats: PatternStatsItem[],
   cjk: boolean,
+  metrics: PdfPageMetrics,
 ): void {
   const t = zhCN.export;
-  const top = PAGE_H_PT - MARGIN_PT;
+  const marginPt = metrics.marginMm * MM_TO_PT;
+  const top = PAGE_H_PT - marginPt;
   const rawTitle = cjk ? `${t.legendTitle} · ${name.trim()}` : `Legend · ${name.trim()}`;
-  const title = truncateTextToWidth(rawTitle || 'Pattern', 12, PAGE_W_PT - 2 * MARGIN_PT, '...');
-  page.drawText(cjk ? title : toWinAnsi(title), { x: MARGIN_PT, y: top - 14, size: 12, font });
+  const title = truncateTextToWidth(rawTitle || 'Pattern', 12, PAGE_W_PT - 2 * marginPt, '...');
+  page.drawText(cjk ? title : toWinAnsi(title), { x: marginPt, y: top - 14, size: 12, font });
 
   const items = sortStatsForLegend(stats);
   const total = items.reduce((sum, item) => sum + item.count, 0);
   const totalText = cjk ? `总计：${total} ${t.countUnit}` : `Total: ${total} beads`;
-  page.drawText(totalText, { x: MARGIN_PT, y: top - 28, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
+  page.drawText(totalText, { x: marginPt, y: top - 28, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
   if (items.length === 0) return;
 
-  const usableMm = A4_WIDTH_MM - 2 * PDF_MARGIN_MM;
+  const usableMm = A4_WIDTH_MM - 2 * metrics.marginMm;
   const cols = legendColumns(usableMm);
   const itemW = (usableMm * MM_TO_PT) / cols;
   const rowH = 14;
@@ -73,7 +73,7 @@ function drawLegend(
   items.forEach((item, index) => {
     const c = index % cols;
     const r = Math.floor(index / cols);
-    const x = MARGIN_PT + c * itemW;
+    const x = marginPt + c * itemW;
     const y = listTop - r * rowH;
     const parsed = hexToRgb(item.hex);
     if (parsed) {
@@ -100,7 +100,11 @@ export async function generatePatternPdf(
 ): Promise<Uint8Array> {
   const { name, pattern, stats } = input;
   const { width: W, height: H, cells } = pattern;
-  const layout = computePdfLayout(W, H);
+  const metrics = options.metrics ?? defaultPdfMetrics;
+  const marginPt = metrics.marginMm * MM_TO_PT;
+  const headerPt = metrics.headerMm * MM_TO_PT;
+  const cellPt = metrics.cellMm * MM_TO_PT;
+  const layout = computePdfLayout(W, H, metrics);
   if (layout.gridPages.length === 0) {
     throw new Error(`empty pattern (${W}×${H})`);
   }
@@ -120,15 +124,15 @@ export async function generatePatternPdf(
 
   for (const page of layout.gridPages) {
     const pdfPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
-    const gridTop = PAGE_H_PT - MARGIN_PT - HEADER_PT;
-    const gridH = page.rows * CELL_PT;
-    const gridW = page.cols * CELL_PT;
+    const gridTop = PAGE_H_PT - marginPt - headerPt;
+    const gridH = page.rows * cellPt;
+    const gridW = page.cols * cellPt;
     const gridBottom = gridTop - gridH;
 
     // 页眉（第 x/y 页 · 行列区间）
     const header = pageHeaderText(page);
     pdfPage.drawText(cjk ? header : toWinAnsi(header), {
-      x: MARGIN_PT,
+      x: marginPt,
       y: gridTop + 4,
       size: 9,
       font,
@@ -137,7 +141,7 @@ export async function generatePatternPdf(
 
     // 图纸外框
     pdfPage.drawRectangle({
-      x: MARGIN_PT,
+      x: marginPt,
       y: gridBottom,
       width: gridW,
       height: gridH,
@@ -152,25 +156,25 @@ export async function generatePatternPdf(
         if (!cell || cell.transparent || cell.external || cell.hex === null) continue;
         const parsed = hexToRgb(cell.hex);
         if (!parsed) continue;
-        const x = MARGIN_PT + lc * CELL_PT;
-        const y = gridTop - (lr + 1) * CELL_PT;
+        const x = marginPt + lc * cellPt;
+        const y = gridTop - (lr + 1) * cellPt;
         pdfPage.drawRectangle({
           x,
           y,
-          width: CELL_PT,
-          height: CELL_PT,
+          width: cellPt,
+          height: cellPt,
           color: rgb(parsed.r / 255, parsed.g / 255, parsed.b / 255),
           borderColor: rgb(0, 0, 0),
           borderWidth: 0.35,
         });
         if (cell.code) {
-          const label = truncateTextToWidth(cell.code, 4, CELL_PT - 2, '...');
+          const label = truncateTextToWidth(cell.code, 4, cellPt - 2, '...');
           const safe = cjk ? label : toWinAnsi(label);
           const textWidth = font.widthOfTextAtSize(safe, 4);
           const isLight = contrastColor(cell.hex) === '#000000';
           pdfPage.drawText(safe, {
-            x: x + (CELL_PT - textWidth) / 2,
-            y: y + (CELL_PT - 4) / 2,
+            x: x + (cellPt - textWidth) / 2,
+            y: y + (cellPt - 4) / 2,
             size: 4,
             font,
             color: isLight ? rgb(0, 0, 0) : rgb(1, 1, 1),
@@ -182,7 +186,7 @@ export async function generatePatternPdf(
     // 板缝线（每 29 格，全局位置落在本页内）
     const seams = seamPositionsForPage(page);
     for (const s of seams.cols) {
-      const x = MARGIN_PT + (s - page.colStart) * CELL_PT;
+      const x = marginPt + (s - page.colStart) * cellPt;
       pdfPage.drawLine({
         start: { x, y: gridTop },
         end: { x, y: gridBottom },
@@ -191,10 +195,10 @@ export async function generatePatternPdf(
       });
     }
     for (const s of seams.rows) {
-      const y = gridTop - (s - page.rowStart) * CELL_PT;
+      const y = gridTop - (s - page.rowStart) * cellPt;
       pdfPage.drawLine({
-        start: { x: MARGIN_PT, y },
-        end: { x: MARGIN_PT + gridW, y },
+        start: { x: marginPt, y },
+        end: { x: marginPt + gridW, y },
         thickness: 1.2,
         color: rgb(0, 0, 0),
       });
@@ -203,7 +207,7 @@ export async function generatePatternPdf(
 
   // 图例与用量清单页（末页）
   const legendPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
-  drawLegend(legendPage, font, name, stats, cjk);
+  drawLegend(legendPage, font, name, stats, cjk, metrics);
 
   return doc.save();
 }

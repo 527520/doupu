@@ -4,7 +4,44 @@ services:
   app:
     build: .
     restart: unless-stopped
-    env_file: .env
+    # 显式注入变量（安全自查 M5）：不整份 env_file，避免 COS 备份凭据等无关密钥进入 app 容器
+    environment:
+      APP_URL: ${APP_URL:?请在 .env 中设置 APP_URL}
+      DATABASE_URL: ${DATABASE_URL:?请在 .env 中设置 DATABASE_URL}
+      # 邮件（SES 模板模式 / SMTP 二选一；均为可选，未配置时邮件仅打印日志）
+      SES_SECRET_ID: ${SES_SECRET_ID:-}
+      SES_SECRET_KEY: ${SES_SECRET_KEY:-}
+      SES_REGION: ${SES_REGION:-}
+      SES_FROM: ${SES_FROM:-}
+      SES_VERIFY_TEMPLATE_ID: ${SES_VERIFY_TEMPLATE_ID:-}
+      SES_RESET_TEMPLATE_ID: ${SES_RESET_TEMPLATE_ID:-}
+      MAIL_DAILY_SEND_LIMIT: ${MAIL_DAILY_SEND_LIMIT:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      # 备份告警（内部接口鉴权 + 管理员收件邮箱）
+      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      # 站点配置（全部可选，默认值见 .env.example 注释）
+      GEN_DEFAULT_WIDTH: ${GEN_DEFAULT_WIDTH:-}
+      GEN_DEFAULT_COLORS: ${GEN_DEFAULT_COLORS:-}
+      PNG_CELL_PX: ${PNG_CELL_PX:-}
+      PNG_CROP_TO_CONTENT: ${PNG_CROP_TO_CONTENT:-}
+      PNG_INCLUDE_LEGEND: ${PNG_INCLUDE_LEGEND:-}
+      PDF_CELL_MM: ${PDF_CELL_MM:-}
+      PDF_MARGIN_MM: ${PDF_MARGIN_MM:-}
+      PDF_HEADER_MM: ${PDF_HEADER_MM:-}
+      PDF_PAGE_COLS: ${PDF_PAGE_COLS:-}
+      PDF_PAGE_ROWS: ${PDF_PAGE_ROWS:-}
+      RATE_LOGIN: ${RATE_LOGIN:-}
+      RATE_REGISTER: ${RATE_REGISTER:-}
+      RATE_TOKEN: ${RATE_TOKEN:-}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-}
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-}
+      HEIC_WASM: ${HEIC_WASM:-}
+      PDF_FONT_SUBSET: ${PDF_FONT_SUBSET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,7 +85,10 @@ services:
       - app
 
   backup:
-    image: postgres:16-alpine
+    build:
+      context: ./deploy
+      dockerfile: Dockerfile.backup
+    image: doupu-backup:local
     restart: unless-stopped
     # 只注入备份所需变量（安全审查）：不整份 env_file，避免 SMTP/数据库密钥面扩大
     environment:
@@ -60,6 +100,9 @@ services:
       COS_SECRET_KEY: ${COS_SECRET_KEY:-}
       COS_BUCKET: ${COS_BUCKET:-}
       COS_REGION: ${COS_REGION:-}
+      # 失败告警：POST 到 app 容器内部告警端点（共享令牌鉴权）
+      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:-}
+      ALERT_ENDPOINT: ${ALERT_ENDPOINT:-http://app:3000/api/internal/backup-alert}
       # rclone 远程 doupucos（TencentCOS，签名由 rclone 处理）
       RCLONE_CONFIG_DOUPUCOS_TYPE: s3
       RCLONE_CONFIG_DOUPUCOS_PROVIDER: TencentCOS
@@ -69,8 +112,7 @@ services:
       RCLONE_CONFIG_DOUPUCOS_ENDPOINT: https://cos.${COS_REGION:-ap-seoul}.myqcloud.com
     volumes:
       - ./deploy/scripts:/scripts:ro
-    # 装 rclone（上传由 rclone 完成），再进每日备份循环
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache rclone >/dev/null 2>&1 && while true; do /scripts/backup.sh; sleep 86400; done"]
+    entrypoint: ["/bin/sh", "-c", "while true; do /scripts/backup.sh; sleep 86400; done"]
     depends_on:
       - postgres
 

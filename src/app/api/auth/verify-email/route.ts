@@ -8,8 +8,10 @@ import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, okJson, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
+import { config } from '@/lib/config';
 
-const RATE_LIMIT = 60; // 令牌 256-bit 不可爆破，此限流仅防滥用/轻量 DoS
+/** 令牌端点限流（票 02 配置化：环境变量 RATE_TOKEN）；令牌 256-bit 不可爆破，仅防滥用。 */
+const RATE_LIMIT = config.security.tokenRateLimit;
 
 export async function POST(request: Request) {
   const guard = enforceMutatingGuard(request);

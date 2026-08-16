@@ -3,8 +3,9 @@
  * 数据层使用 PGlite 内存库；邮件走 sentMails()；next/headers 的 cookies() 用可控 jar mock。
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTestClient } from '@/../db/testClient';
+import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { setTestDb } from '@/lib/auth/db';
+import { rateLimits } from '@/../db/schema';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
 import { POST as registerPost } from './register/route';
@@ -73,12 +74,16 @@ const email = () => `user-${Math.random().toString(36).slice(2, 10)}@example.com
 const password = 'Passw0rd-测试';
 
 beforeAll(async () => {
-  setTestDb(await createTestClient());
+  testDb = await createTestClient();
+  setTestDb(testDb);
 });
 
-beforeEach(() => {
+let testDb: TestDatabase;
+
+beforeEach(async () => {
   clearMailbox();
   cookieJar.clear();
+  await testDb.delete(rateLimits); // 每 IP 限流计数器跨测试清零，避免用例互相污染
 });
 
 afterEach(() => {
@@ -282,5 +287,42 @@ describe('认证全生命周期', () => {
     const rows = await db.select().from(sessions);
     expect(rows.some((r) => r.tokenHash === token)).toBe(false); // 明文绝不入库
     expect(rows.every((r) => /^[0-9a-f]{64}$/.test(r.tokenHash))).toBe(true);
+  });
+
+  it('每 IP 硬上限：轮换邮箱密码喷洒在第 31 次被 429 拦截（安全自查 M2）', async () => {
+    // 同一 IP 用不同邮箱暴力尝试：邮箱维度限流绕不过，IP 维度硬顶兜底
+    let last: Response | null = null;
+    for (let i = 1; i <= 31; i++) {
+      last = await loginPost(
+        post('/api/auth/login', { email: `spray-${i}@example.com`, password: 'wrong-password', ip: '203.0.113.9' }),
+      );
+    }
+    expect(last!.status).toBe(429);
+    expect((await errorBody(last!)).error.code).toBe('RATE_LIMITED');
+  });
+
+  it('修改密码吊销其他会话，当前会话保留（安全自查 M4）', async () => {
+    const mail = email();
+    await registerPost(post('/api/auth/register', { email: mail, password }));
+    const verifyToken = tokenFromMail(lastMail());
+    await verifyPost(post('/api/auth/verify-email', { token: verifyToken }));
+
+    // 两个设备分别登录
+    const loginA = await loginPost(post('/api/auth/login', { email: mail, password }));
+    const tokenA = setCookieFromResponse(loginA)!;
+    const loginB = await loginPost(post('/api/auth/login', { email: mail, password }));
+    const tokenB = setCookieFromResponse(loginB)!;
+
+    // 设备 A 修改密码
+    cookieJar.set(SESSION_COOKIE_NAME, tokenA);
+    const changed = await changePasswordPost(post('/api/auth/change-password', { currentPassword: password, newPassword: 'NewPass-999' }));
+    expect(changed.status).toBe(204);
+
+    // 设备 A 仍在线；设备 B 被吊销
+    const meA = await meGet();
+    expect(meA.status).toBe(200);
+    cookieJar.set(SESSION_COOKIE_NAME, tokenB);
+    const meB = await meGet();
+    expect(meB.status).toBe(401);
   });
 });

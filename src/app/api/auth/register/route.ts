@@ -11,9 +11,13 @@ import { buildVerifyLink, DEV_MAIL_LINK_HEADER, isDevMailMode, sendMail } from '
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
+import { config } from '@/lib/config';
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
-const RATE_LIMIT = 10;
+/** 注册限流阈值（票 02 配置化：环境变量 RATE_REGISTER）。 */
+const RATE_LIMIT = config.security.registerRateLimit;
+/** 独立每 IP 上限（安全自查 M2）：防批量注册。 */
+const IP_RATE_LIMIT = Math.max(20, RATE_LIMIT * 3);
 
 export async function POST(request: Request) {
   const guard = enforceMutatingGuard(request);
@@ -28,6 +32,9 @@ export async function POST(request: Request) {
 
   const db = getDb();
   if (!(await checkRateLimit(db, rateLimitKey('register', ip, email), RATE_LIMIT))) {
+    return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
+  }
+  if (!(await checkRateLimit(db, rateLimitKey('register-ip', ip), IP_RATE_LIMIT))) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
 

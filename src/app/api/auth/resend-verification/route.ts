@@ -78,8 +78,8 @@ export async function POST(request: Request) {
       return noContent();
     }
   } else if (!isDevMailMode()) {
-    // 幽灵/已验证邮箱：补与 SMTP 往返同量级的固定延迟，抹平时序枚举（防枚举）
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // 幽灵/已验证邮箱：补与真实发信（SES 模板 API 往返）同量级的固定延迟，抹平时序枚举（防枚举）
+    await new Promise((resolve) => setTimeout(resolve, 800));
   }
 
   return noContent();
