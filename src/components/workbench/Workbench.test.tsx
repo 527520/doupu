@@ -215,3 +215,47 @@ describe('Workbench 编辑与导出接缝', () => {
     }
   });
 });
+
+describe('Workbench 云端自定义色板（优化票 06）', () => {
+  it('登录后加载云端色板进下拉，选中后按自定义色板重新生成', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') {
+        return new Response(JSON.stringify({
+          generation: { defaultWidth: 100, defaultColorCount: 40 },
+          exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+          exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+        }), { status: 200 });
+      }
+      if (url === '/api/auth/me') {
+        return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      }
+      if (url === '/api/palettes') {
+        return new Response(JSON.stringify([
+          { id: 'pal-1', name: '粉彩', colors: [{ hex: '#FFAA00', code: 'P1' }], updatedAt: '2026-08-15T00:00:00.000Z' },
+          { id: 'pal-2', name: '空板', colors: [], updatedAt: '2026-08-15T00:00:00.000Z' },
+        ]), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const storage = new FakeStorage();
+    storage.designs.set('id-last', record('id-last', savedProject('初始', '2026-08-14T12:00:00.000Z')));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('初始');
+
+    // 下拉出现「我的·粉彩」；空色板被过滤
+    const select = (await screen.findByLabelText(zhCN.params.brand)) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(select.textContent).toContain('我的·粉彩');
+      expect(select.textContent).not.toContain('空板');
+    });
+
+    // 选中自定义色板 → 头部显示「自定义色板」
+    fireEvent.change(select, { target: { value: 'custom:pal-1' } });
+    expect(screen.getByText(zhCN.workbench.customPaletteLabel)).toBeTruthy();
+
+    vi.unstubAllGlobals();
+  });
+});

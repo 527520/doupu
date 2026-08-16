@@ -38,12 +38,18 @@ export async function canDecodeHeicNatively(): Promise<boolean> {
 }
 
 /**
- * TODO(ticket 07)：HEIC 的 WASM 转码兜底。当前实现直接返回 HEIC_UNSUPPORTED，
+ * HEIC 的 WASM 转码兜底（优化票 05）：接入 heic2any（libheif 内联打包、无外部 CDN 依赖），
  * 由调用方在 canDecodeHeicNatively() 为 false 时调用。
+ * 转换失败（损坏文件/不支持）上抛，由调用方映射为 HEIC_UNSUPPORTED 友好文案。
+ * 动态 import：1.3MB 的转换组件只在真正需要时下载，不进首屏包。
  */
-export async function convertHeicWithWasm(_bytes: Uint8Array): Promise<Uint8Array> {
-  void _bytes; // 占位参数，ticket 07 接入 heic2any 时替换实现
-  throw new Error('HEIC WASM fallback not wired yet (ticket 07)');
+export async function convertHeicWithWasm(bytes: Uint8Array): Promise<Uint8Array> {
+  const { default: heic2any } = await import('heic2any');
+  const blob = new Blob([bytes.slice()], { type: 'image/heic' });
+  const result = await heic2any({ blob, toType: 'image/jpeg', quality: 0.92 });
+  const out = Array.isArray(result) ? result[0] : result;
+  if (!out) throw new Error('HEIC 转换无输出');
+  return new Uint8Array(await out.arrayBuffer());
 }
 
 /**

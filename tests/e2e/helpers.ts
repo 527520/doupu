@@ -77,7 +77,7 @@ export async function uploadFile(page: Page, filePath: string): Promise<void> {
   await expect(async () => {
     await page.getByLabel('图片文件选择器').setInputFiles(filePath);
     await expect(
-      page.getByText(/正在读取|不支持|无法解析|裁剪图片|松开以添加/).first(),
+      page.getByText(/正在读取|正在解码|正在转换|不支持|无法解析|裁剪图片|松开以添加/).first(),
     ).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
 }

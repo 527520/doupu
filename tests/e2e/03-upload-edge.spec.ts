@@ -41,3 +41,12 @@ test('E10：全透明 PNG 生成后统计为 0 且 PNG 导出禁用', async ({ p
   await expect(page.getByText(/共 0 粒/).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: /导出 PNG/ })).toBeDisabled();
 });
+
+test('HEIC：非原生解码浏览器走 WASM 转换（成功进裁剪或友好报错皆合法，优化票 05）', async ({ page }) => {
+  await openApp(page);
+  await uploadFile(page, fixture('fake.heic'));
+  // 伪 HEIC（ftyp 盒 + 垃圾字节）：转换成功则进入裁剪；libheif 拒绝则显示友好错误——两者皆合法
+  const cropScreen = page.getByRole('heading', { name: '裁剪图片' });
+  const heicError = page.getByText(/无法处理 HEIC/).first();
+  await expect(cropScreen.or(heicError).first()).toBeVisible({ timeout: 30_000 });
+});

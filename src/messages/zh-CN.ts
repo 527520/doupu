@@ -175,6 +175,7 @@ export const zhCN = {
     quotaError: '本地存储空间不足，请导出项目文件备份后清理浏览器数据',
     generateFailed: '图纸生成失败，请重试。',
     decoding: '正在解码图片…',
+    heicConverting: '正在转换 HEIC 照片（首次可能需要几秒）…',
     previewTab: '预览',
     editTab: '编辑',
     statsTotal: (total: number) => `共 ${total} 粒`,
@@ -183,6 +184,8 @@ export const zhCN = {
     restart: '重新上传',
     editorHint: '编辑后将自动保存到本机',
     customPaletteLabel: '自定义色板',
+    myPaletteLabel: (name: string) => `我的·${name}`,
+    paletteLoadFailed: '自定义色板加载失败（可稍后在色板管理里重试）',
   },
   auth: {
     emailTaken: '该邮箱已注册，请直接登录或找回密码。',

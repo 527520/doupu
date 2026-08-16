@@ -24,7 +24,7 @@ import { buildBrandPalette } from '@/lib/palettes';
 import { cropImageData, type Rect } from '@/lib/crop/layout';
 import { computeStats, generatePattern } from '@/lib/engine/generate';
 import type { ImageDataLike } from '@/lib/engine/types';
-import { decodeImageFile, type DecodeResult, type DecodedImage } from '@/lib/image/decode';
+import { decodeImageFile, canDecodeHeicNatively, convertHeicWithWasm, type DecodeResult, type DecodedImage } from '@/lib/image/decode';
 import { validatePixelCount } from '@/lib/image/validation';
 import type { ImageType } from '@/lib/image/sniff';
 import {
@@ -78,6 +78,10 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [source, setSource] = useState<ImageDataLike | null>(null);
   const [paletteKind, setPaletteKind] = useState<PaletteKind>({ kind: 'builtin', brand: 'MARD' });
   const [customPalette, setCustomPalette] = useState<PaletteColor[]>([]);
+  /** 当前选中的云端自定义色板 id（null = 导入项目自带的色板或内置品牌）。 */
+  const [customPaletteId, setCustomPaletteId] = useState<string | null>(null);
+  /** 云端自定义色板列表（优化票 06：登录后从 /api/palettes 加载，工作台可选）。 */
+  const [cloudPalettes, setCloudPalettes] = useState<Array<{ id: string; name: string; colors: PaletteColor[] }>>([]);
   const [params, setParams] = useState<GenerationParams>(DEFAULT_GENERATION_PARAMS);
   const [pattern, setPattern] = useState<Pattern | null>(null);
   const [stats, setStats] = useState<PatternStatsItem[]>([]);
@@ -87,6 +91,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [createdAt, setCreatedAt] = useState('');
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [busyText, setBusyText] = useState<string>(zhCN.workbench.decoding);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<{ kind: 'guest' | 'user'; email: string }>({ kind: 'guest', email: '' });
@@ -111,6 +116,38 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
       cancelled = true;
     };
   }, []);
+
+  // 优化票 06：登录后加载云端自定义色板进「色板品牌」下拉；失败静默（内置色板照常可用）
+  useEffect(() => {
+    if (authStatus.kind !== 'user') {
+      setCloudPalettes([]);
+      return;
+    }
+    let cancelled = false;
+    fetch('/api/palettes', { method: 'GET' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const list = Array.isArray(data)
+          ? (data as Array<{ id: string; name: string; colors: Array<{ hex: string; code?: string | null }> }>)
+          : [];
+        setCloudPalettes(
+          list
+            .filter((p) => Array.isArray(p.colors) && p.colors.length > 0)
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              colors: p.colors.map((c) => ({ hex: c.hex, code: c.code || null })),
+            })),
+        );
+      })
+      .catch(() => {
+        // 静默失败
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus.kind]);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [tab, setTab] = useState<Tab>('preview');
 
@@ -143,12 +180,20 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
 
   const paletteOptions = useMemo<PaletteOption[]>(() => {
     const builtin = BRANDS.map((brand) => ({ value: brand, label: brand, kind: 'builtin' as const }));
-    return paletteKind.kind === 'custom'
-      ? [...builtin, { value: '__custom', label: zhCN.workbench.customPaletteLabel, kind: 'custom' as const }]
-      : builtin;
-  }, [paletteKind]);
+    const customEntries = cloudPalettes.map((p) => ({
+      value: `custom:${p.id}`,
+      label: zhCN.workbench.myPaletteLabel(p.name),
+      kind: 'custom' as const,
+    }));
+    // 导入项目自带的自定义色板（无云端 id）保留 '__custom' 占位，不可再切换
+    if (paletteKind.kind === 'custom' && !customPaletteId) {
+      return [...builtin, ...customEntries, { value: '__custom', label: zhCN.workbench.customPaletteLabel, kind: 'custom' as const }];
+    }
+    return [...builtin, ...customEntries];
+  }, [paletteKind.kind, customPaletteId, cloudPalettes]);
 
-  const selectedPalette = paletteKind.kind === 'custom' ? '__custom' : paletteKind.brand;
+  const selectedPalette =
+    paletteKind.kind === 'custom' ? (customPaletteId ? `custom:${customPaletteId}` : '__custom') : paletteKind.brand;
 
   /** 用当前参数在给定源图上重新生成；失败给出可重试提示。 */
   const regenerate = useCallback(
@@ -172,9 +217,23 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const handleUpload = useCallback(
     async ({ bytes, type }: ValidImageFile): Promise<void> => {
       setBusy(true);
+      setBusyText(t.decoding);
       setErrorMsg(null);
       try {
-        const result = await decode(bytes, type);
+        let decodeBytes = bytes;
+        let decodeType: ImageType = type;
+        // 优化票 05：非 Safari 浏览器无法原生解码 HEIC → WASM 转换兜底（带进度文案）
+        if (type === 'heic' && !(await canDecodeHeicNatively())) {
+          setBusyText(t.heicConverting);
+          try {
+            decodeBytes = await convertHeicWithWasm(bytes);
+            decodeType = 'jpeg';
+          } catch {
+            setErrorMsg(zhCN.errors.HEIC_UNSUPPORTED);
+            return;
+          }
+        }
+        const result = await decode(decodeBytes, decodeType);
         if (!result.ok) {
           setErrorMsg(zhCN.errors[result.code]);
           return;
@@ -190,7 +249,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         setBusy(false);
       }
     },
-    [decode],
+    [decode, t.decoding, t.heicConverting],
   );
 
   const handleCropConfirm = useCallback(
@@ -226,12 +285,23 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const handlePaletteSelect = useCallback(
     (value: string): void => {
       if (value === '__custom') return; // 导入的自定义色板不可再切换（T18 提供管理）
+      if (value.startsWith('custom:')) {
+        const paletteId = value.slice('custom:'.length);
+        const found = cloudPalettes.find((p) => p.id === paletteId);
+        if (!found) return;
+        setPaletteKind({ kind: 'custom' });
+        setCustomPalette(found.colors);
+        setCustomPaletteId(found.id);
+        if (source) regenerate(params, source, found.colors);
+        return;
+      }
       const brand = value as Brand;
       setPaletteKind({ kind: 'builtin', brand });
+      setCustomPaletteId(null);
       const pal = buildBrandPalette(brand);
       if (source) regenerate(params, source, pal);
     },
-    [source, params, regenerate],
+    [source, params, regenerate, cloudPalettes],
   );
 
   const handlePatternChange = useCallback((p: Pattern): void => {
@@ -385,6 +455,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
       } else {
         setCustomPalette(project.palette.colors.map((c) => ({ hex: c.hex, code: c.code || null })));
         setPaletteKind({ kind: 'custom' });
+        setCustomPaletteId(null);
       }
       setErrorMsg(null);
       markDirty();
@@ -409,6 +480,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     setParams(defaultParams);
     setPaletteKind({ kind: 'builtin', brand: 'MARD' });
     setCustomPalette([]);
+    setCustomPaletteId(null);
     clearDesignQuery();
   }, [defaultParams]);
 
@@ -467,7 +539,7 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
         )}
       </header>
 
-      {busy && <p className="text-sm text-blue-600">{t.decoding}</p>}
+      {busy && <p className="text-sm text-blue-600" role="status">{busyText}</p>}
       {saveState === 'unavailable' && (
         <div role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.unavailable}
