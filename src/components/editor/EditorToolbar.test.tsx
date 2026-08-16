@@ -26,7 +26,7 @@ function setup(over: Partial<Parameters<typeof EditorToolbar>[0]> = {}) {
 describe('EditorToolbar', () => {
   it('渲染全部工具并高亮当前工具（aria-pressed）', () => {
     setup();
-    expect(screen.getByRole('button', { name: /画笔/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '画笔' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: /橡皮/ }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: /油漆桶/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /吸管/ })).toBeTruthy();
@@ -43,16 +43,19 @@ describe('EditorToolbar', () => {
     expect(props.onToolChange).toHaveBeenCalledWith('fill');
   });
 
-  it('画笔模式下显示尺寸选择，切换尺寸触发回调', () => {
+  it('画笔模式下显示尺寸选择（组名 + 1×1/2×2/3×3），切换尺寸触发回调', () => {
     const props = setup({ tool: 'brush' });
-    const size3 = screen.getByRole('button', { name: '3' });
+    expect(screen.getByText('画笔大小')).toBeTruthy();
+    const size3 = screen.getByRole('button', { name: '画笔大小 3×3' });
+    expect(size3.textContent).toBe('3×3');
     fireEvent.click(size3);
     expect(props.onBrushSizeChange).toHaveBeenCalledWith(3);
   });
 
   it('非画笔模式不显示尺寸选择', () => {
     setup({ tool: 'fill' });
-    expect(screen.queryByRole('button', { name: '2' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '画笔大小 2×2' })).toBeNull();
+    expect(screen.queryByText('画笔大小')).toBeNull();
   });
 
   it('撤销/重做按钮禁用态受 props 控制', () => {

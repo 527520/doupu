@@ -93,7 +93,7 @@ describe('PixelEditorCanvas', () => {
     fireEvent.keyDown(wrapper, { key: 'i' });
     expect(screen.getByRole('button', { name: /吸管/ }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.keyDown(wrapper, { key: 'b' });
-    expect(screen.getByRole('button', { name: /画笔/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '画笔' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('方向键移动光标：状态行显示行列与色号', () => {

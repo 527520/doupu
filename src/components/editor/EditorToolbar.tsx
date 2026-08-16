@@ -96,16 +96,20 @@ export default function EditorToolbar({
       ))}
 
       {tool === 'brush' && (
-        <div className="flex items-center gap-1" aria-label={t.brushSize}>
+        <div className="flex items-center gap-1.5" aria-label={t.brushSize}>
+          {/* 可见组名：画笔大小（1=单格、2=2×2、3=3×3） */}
+          <span className="text-xs text-ink-soft">{t.brushSize}</span>
           {([1, 2, 3] as BrushSize[]).map((size) => (
             <button
               key={size}
               type="button"
               aria-pressed={brushSize === size}
+              aria-label={`${t.brushSize} ${size}×${size}`}
+              title={`${t.brushSize} ${size}×${size}`}
               onClick={() => onBrushSizeChange(size)}
-              className={`h-7 w-7 rounded-lg border text-xs transition-colors ${brushSize === size ? 'border-primary bg-primary text-white' : 'border-lilac/50 hover:bg-lilac-soft'}`}
+              className={`h-7 min-w-7 rounded-lg border px-1.5 text-xs transition-colors ${brushSize === size ? 'border-primary bg-primary text-white' : 'border-lilac/50 hover:bg-lilac-soft'}`}
             >
-              {size}
+              {size}×{size}
             </button>
           ))}
         </div>
