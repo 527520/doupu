@@ -11,12 +11,17 @@ const listPalettes = vi.fn();
 const savePalette = vi.fn();
 const deletePalette = vi.fn();
 const newPaletteId = vi.fn(() => '00000000-0000-4000-8000-000000000001');
+const mockPush = vi.fn();
 
 vi.mock('@/components/palettes/api', () => ({
   listPalettes: (...args: unknown[]) => listPalettes(...args),
   savePalette: (...args: unknown[]) => savePalette(...args),
   deletePalette: (...args: unknown[]) => deletePalette(...args),
   newPaletteId: () => newPaletteId(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const record = (id: string, name: string): PaletteRecord => ({
@@ -75,6 +80,8 @@ describe('PalettesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: t.newPalette }));
     expect(screen.getByLabelText(t.editor.title)).toBeTruthy();
+    // 弹窗宽度（桌面不应过宽：max-w-lg = 512px）
+    expect(screen.getByRole('dialog', { name: t.edit })).toHaveClass('max-w-lg');
 
     fireEvent.change(screen.getByLabelText(t.editor.name), { target: { value: '新建板' } });
     // 编辑器默认一行 C001/#FFFFFF，直接保存
@@ -110,5 +117,34 @@ describe('PalettesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: t.edit }));
     expect((screen.getByLabelText(t.editor.name) as HTMLInputElement).value).toBe('要编辑');
     expect((screen.getByLabelText(`${t.editor.code} 1`) as HTMLInputElement).value).toBe('A');
+  });
+
+  it('游客点「新建色板」：跳登录页（带回跳），不打开弹窗', async () => {
+    const error = new Error('未登录') as Error & { code: string };
+    error.code = 'UNAUTHORIZED';
+    listPalettes.mockRejectedValueOnce(error);
+    render(<PalettesPage />);
+    await waitFor(() => expect(screen.getByText(t.loginRequired)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: t.newPalette }));
+
+    expect(mockPush).toHaveBeenCalledWith('/login?next=/palettes');
+    expect(screen.queryByLabelText(t.editor.title)).toBeNull();
+  });
+
+  it('会话中途失效：保存返回 UNAUTHORIZED → 关闭弹窗并跳登录', async () => {
+    listPalettes.mockResolvedValue([]);
+    render(<PalettesPage />);
+    await waitFor(() => expect(screen.getByText(t.empty)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: t.newPalette }));
+    fireEvent.change(screen.getByLabelText(t.editor.name), { target: { value: '我的色板' } });
+    const error = new Error('未登录') as Error & { code: string };
+    error.code = 'UNAUTHORIZED';
+    savePalette.mockRejectedValueOnce(error);
+    fireEvent.click(screen.getByRole('button', { name: t.editor.save }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/login?next=/palettes'));
+    expect(screen.queryByLabelText(t.editor.title)).toBeNull();
   });
 });

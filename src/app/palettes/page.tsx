@@ -3,6 +3,7 @@
 /** 色板管理页（spec §F6）：内置五套只读展示 + 自定义色板 CRUD。 */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { zhCN } from '@/messages/zh-CN';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
@@ -23,12 +24,19 @@ interface EditingState {
 
 export default function PalettesPage() {
   const t = zhCN.palettes;
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<PaletteRecord[]>([]);
   const [loginRequired, setLoginRequired] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [saving, setSaving] = useState(false);
+
+  /** 未登录（或会话已失效）：跳转登录页，登录后回到本页。 */
+  const goLogin = useCallback((): void => {
+    setEditing(null);
+    router.push('/login?next=/palettes');
+  }, [router]);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -54,6 +62,11 @@ export default function PalettesPage() {
 
   const startCreate = (): void => {
     setPageError(null);
+    // 未登录无法保存自定义色板：直接引导登录（登录后回跳本页），不开空弹窗
+    if (loginRequired) {
+      goLogin();
+      return;
+    }
     setEditing({ id: newPaletteId(), name: '', colors: [] });
   };
 
@@ -75,7 +88,7 @@ export default function PalettesPage() {
       setEditing(null);
     } catch (error) {
       const code = error instanceof Error && 'code' in error ? error.code : null;
-      if (code === 'UNAUTHORIZED') setLoginRequired(true);
+      if (code === 'UNAUTHORIZED') goLogin(); // 会话中途失效：跳登录
       else if (code === 'CONFLICT') setPageError(t.limitReached);
       else setPageError(t.saveFailed);
     } finally {
@@ -91,7 +104,7 @@ export default function PalettesPage() {
       setRecords((prev) => prev.filter((item) => item.id !== record.id));
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'UNAUTHORIZED') {
-        setLoginRequired(true);
+        goLogin();
       } else {
         setPageError(t.deleteFailed);
       }
@@ -128,7 +141,7 @@ export default function PalettesPage() {
       {loginRequired && (
         <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.loginRequired}{' '}
-          <Link href="/login" className="link-soft">
+          <Link href="/login?next=/palettes" className="link-soft">
             {zhCN.nav.login}
           </Link>
         </p>
@@ -180,7 +193,7 @@ export default function PalettesPage() {
       </section>
 
       {editing && (
-        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-2xl max-h-[85vh] overflow-auto">
+        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-lg max-h-[85vh] overflow-auto">
           <PaletteEditor
             initialName={editing.name}
             initialColors={editing.colors}

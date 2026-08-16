@@ -8,6 +8,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
+import { loginRedirectTarget } from './loginRedirect';
 
 export default function LoginPage() {
   const t = zhCN.authPages;
@@ -36,7 +37,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
-        router.push('/designs');
+        router.push(loginRedirectTarget());
         return;
       }
       const body = await res.json().catch(() => null);
