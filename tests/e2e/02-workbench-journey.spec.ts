@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { fillField, uploadFile } from './helpers';
+import { fillField, typeSpin, uploadFile } from './helpers';
 
 const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
@@ -24,9 +24,44 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.getByRole('spinbutton', { name: '目标宽度（格）' }).blur();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
 
-  // 悬停显示格信息（工作台工具提示）
-  await page.locator('canvas').first().hover({ position: { x: 8, y: 8 } });
-  await expect(page.getByRole('status').filter({ hasText: /第 0 行/ }).first()).toBeVisible();
+  // 优化票 07：Worker 后台生成
+  // a) 打开「抖动」（让 200×200 生成 ~0.7-2s，取消按钮有确定性的可见窗口），
+  //    宽度 200 触发大图生成（200×200=40000 粒）：生成期间页面不冻结（输入框立即可交互），
+  //    生成中显示可点击的「取消」按钮。取消用键盘激活（focus+Enter，规避进度重渲染时
+  //    点击坐标命中检测在 Firefox 上的偶发拦截）
+  const widthInput = page.getByRole('spinbutton', { name: '目标宽度（格）' });
+  const cancelBtn = page.getByRole('button', { name: '取消', exact: true });
+  await page.getByRole('checkbox', { name: '抖动' }).check();
+  await typeSpin(page, '目标宽度（格）', '200');
+  await widthInput.blur();
+  await expect(widthInput).toBeEnabled({ timeout: 5_000 });
+  await cancelBtn.waitFor({ timeout: 5_000 });
+  await cancelBtn.focus();
+  await page.keyboard.press('Enter');
+  await expect(cancelBtn).toBeHidden({ timeout: 5_000 });
+
+  // b) 乱序防护：取消后 Workbench 参数仍是宽度 200（其结果被丢弃但参数保留）。
+  //    每一步都用可观测的统计数字确认面板已上抛（等值断言会被旧状态蒙混）
+  const colorsInput = page.getByRole('spinbutton', { name: '目标颜色数' });
+  await typeSpin(page, '目标颜色数', '2');
+  await colorsInput.blur();
+  await expect(page.getByText(/共 40000 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+  await typeSpin(page, '目标宽度（格）', '20');
+  await widthInput.blur();
+  await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+  await typeSpin(page, '目标宽度（格）', '200');
+  await widthInput.blur();
+  await cancelBtn.waitFor({ timeout: 5_000 }); // 大图任务已在 Worker 中运行
+  await typeSpin(page, '目标宽度（格）', '20'); // 生成中改参数（乱序防护；真实键盘输入）
+  await widthInput.blur();
+  await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(cancelBtn).toBeHidden({ timeout: 5_000 }); // 在途生成全部结束：画布/统计为最终状态
+
+  // 悬停显示格信息（工作台工具提示）：带重悬停重试（最终生成的画布重绘可能吞掉首次 mousemove）
+  await expect(async () => {
+    await page.locator('canvas').first().hover({ position: { x: 8, y: 8 } });
+    await expect(page.getByRole('status').filter({ hasText: /第 0 行/ }).first()).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 
   // 编辑：切换编辑页签，画笔点涂后撤销
   await page.getByRole('tab', { name: /编辑/ }).click();

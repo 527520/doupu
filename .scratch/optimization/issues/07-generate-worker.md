@@ -1,6 +1,16 @@
 # 07 生成 Web Worker 化 + 进度 + 取消
 
-Status: ready-for-agent
+Status: done
+
+## Comments（2026-02 实施记录）
+
+- 实现：`src/lib/engine/runGenerate.ts`（任务句柄 `{ promise, cancel }`，无 Worker 环境同步回退，Worker 异常回退主线程同步执行一次并 `console.error` 记录）+ `generate.worker.ts`（协议：progress/done/error）。
+- 进度：`generatePattern` 增加可选 `onProgress` 按管线 8 阶段上报（5→100 单调）；工作台 >300ms 才显示进度条（固定宽度槽位，避免「取消」按钮位移导致误点），快速任务直接出结果。
+- 取消：工作台 token + `task.cancel()`（terminate Worker）；重启/导入/卸载同样终止在途任务。
+- 单测：`runGenerate.test.ts`（8：回退/进度/错误回退/取消/迟到消息）+ `generate.worker.test.ts`（2：协议直测）+ Workbench 既有流程用例全绿。
+- E2E：`02-workbench-journey` 增加「200×200 生成期间输入框可交互 + 取消按钮可点」「大图生成中改参数 → 最终结果与最后一次参数一致」断言（3 浏览器）。
+- 注意：E2E 首轮发现进度条替换文本导致「取消」按钮位置跳动、点击被 `<html>` 拦截（firefox）→ 状态区改为固定宽度槽位解决。
+- **重大发现（Firefox 崩溃）**：E2E 三浏览器回归时 Firefox 出现多种诡异失败（取消按钮不出现/点击被拦截/悬停提示消失），逐层诊断（trace 解析 + 最小复现）定位到：**webpack 模块 worker 在任务执行中调用 `terminate()` 会直接崩溃 Firefox 页面**（blob worker 与「完成后 terminate」均无此问题）。修复：取消改为「丢弃语义」——cancel() 立即以 AbortError 拒绝、断开引用，Worker 自然跑完后在 done/error 处理器中自行销毁（迟到结果被 settle 守卫丢弃）；注释记录了原因。E2E 参数输入也改用真实键盘键入（typeSpin：Ctrl+A + 逐字输入），规避 Firefox 下 Playwright fill 对受控输入偶发不触发 React onChange 的问题。
 
 ## 目标（spec F3 欠账）
 

@@ -71,6 +71,23 @@ export async function fillField(
   }).toPass({ timeout: 15_000 });
 }
 
+/**
+ * 用真实键盘输入替换数字输入框（spinbutton）的值并断言生效（带重试）。
+ * Firefox 下 Playwright fill 对受控输入偶发不触发 React onChange（DOM 值变、
+ * React 状态没变 → blur 提交读到旧值 → 防抖去重吞掉变更）；逐字键入走原生
+ * 键盘路径，每个字符都会触发 onChange，与人类输入一致。配合调用方 blur 提交。
+ */
+export async function typeSpin(page: Page, name: string, value: string): Promise<void> {
+  await waitHydrated(page);
+  await expect(async () => {
+    const input = page.getByRole('spinbutton', { name }).first();
+    await input.click();
+    await input.press('Control+A');
+    await input.pressSequentially(value);
+    expect(await input.inputValue()).toBe(value);
+  }).toPass({ timeout: 15_000 });
+}
+
 /** 抗水合上传：先等水合完成再 setInputFiles，并断言出现响应。 */
 export async function uploadFile(page: Page, filePath: string): Promise<void> {
   await waitHydrated(page);

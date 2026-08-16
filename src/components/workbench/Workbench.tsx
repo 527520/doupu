@@ -22,7 +22,8 @@ import { zhCN } from '@/messages/zh-CN';
 import { DEFAULT_GENERATION_PARAMS, BRANDS, type Brand, type GenerationParams, type PaletteColor, type Pattern, type PatternStatsItem, type ProjectFile } from '@/lib/types';
 import { buildBrandPalette } from '@/lib/palettes';
 import { cropImageData, type Rect } from '@/lib/crop/layout';
-import { computeStats, generatePattern } from '@/lib/engine/generate';
+import { computeStats } from '@/lib/engine/generate';
+import { runGenerate, type GenerateTask } from '@/lib/engine/runGenerate';
 import type { ImageDataLike } from '@/lib/engine/types';
 import { decodeImageFile, canDecodeHeicNatively, convertHeicWithWasm, type DecodeResult, type DecodedImage } from '@/lib/image/decode';
 import { validatePixelCount } from '@/lib/image/validation';
@@ -92,6 +93,15 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>(zhCN.workbench.decoding);
+  const [generating, setGenerating] = useState(false);
+  /** 生成进度（0-100）；null = 不显示进度（快速任务 <300ms 不显示）。 */
+  const [progress, setProgress] = useState<number | null>(null);
+  /** 生成任务令牌：新任务/重启/导入/卸载使旧任务结果作废（取消语义）。 */
+  const genTokenRef = useRef(0);
+  /** 在途生成任务句柄（取消按钮/重启/导入/卸载时终止 Worker）。 */
+  const taskRef = useRef<GenerateTask | null>(null);
+  /** 生成开始时刻：进度条仅当任务超过 300ms 才显示（快速任务直接出结果）。 */
+  const genStartedAtRef = useRef(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<{ kind: 'guest' | 'user'; email: string }>({ kind: 'guest', email: '' });
@@ -195,22 +205,53 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   const selectedPalette =
     paletteKind.kind === 'custom' ? (customPaletteId ? `custom:${customPaletteId}` : '__custom') : paletteKind.brand;
 
-  /** 用当前参数在给定源图上重新生成；失败给出可重试提示。 */
+  /** 用当前参数在给定源图上重新生成；失败给出可重试提示。
+   * 优化票 07：Worker 后台执行（页面不冻结），进度按阶段上报（>300ms 才显示），
+   * 可取消（终止 Worker）；token 防旧结果覆盖新结果（取消语义）。 */
   const regenerate = useCallback(
     (p: GenerationParams, src: ImageDataLike, pal: PaletteColor[]): void => {
-      try {
-        const output = generatePattern(src, p, pal);
-        setPattern(output.pattern);
-        setStats(output.stats);
-        setTotal(output.totalBeadCount);
-        setErrorMsg(null);
-        markDirty();
-      } catch {
-        setErrorMsg(t.generateFailed);
-      }
+      const token = ++genTokenRef.current;
+      genStartedAtRef.current = performance.now();
+      setProgress(null);
+      setGenerating(true);
+      setErrorMsg(null);
+      const task = runGenerate({ src, params: p, palette: pal }, (percent) => {
+        if (token !== genTokenRef.current) return;
+        // 快速任务（<300ms）不显示进度条，直接等结果
+        if (performance.now() - genStartedAtRef.current >= 300) setProgress(percent);
+      });
+      taskRef.current = task;
+      task.promise
+        .then((output) => {
+          if (token !== genTokenRef.current) return; // 已发起新任务/重启：丢弃旧结果
+          setPattern(output.pattern);
+          setStats(output.stats);
+          setTotal(output.totalBeadCount);
+          markDirty();
+        })
+        .catch(() => {
+          if (token !== genTokenRef.current) return;
+          setErrorMsg(t.generateFailed);
+        })
+        .finally(() => {
+          if (token !== genTokenRef.current) return;
+          if (taskRef.current === task) taskRef.current = null;
+          setGenerating(false);
+          setProgress(null);
+        });
     },
     [t.generateFailed, markDirty],
   );
+
+  /** 取消在途生成任务：作废令牌 + 丢弃 Worker 结果（不强制终止——Firefox 模块 worker
+   * 任务执行中 terminate 会崩溃页面，见 runGenerate 注释），立即回到可交互状态。 */
+  const handleCancelGenerate = useCallback((): void => {
+    genTokenRef.current += 1;
+    taskRef.current?.cancel();
+    taskRef.current = null;
+    setGenerating(false);
+    setProgress(null);
+  }, []);
 
   // ---------- 上传/裁剪 ----------
 
@@ -383,6 +424,15 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
     if (step === 'upload') setParams(defaultParams);
   }, [step, defaultParams]);
 
+  // 卸载时作废在途生成任务（Worker 终止，结果丢弃）
+  useEffect(() => {
+    return () => {
+      genTokenRef.current += 1;
+      taskRef.current?.cancel();
+      taskRef.current = null;
+    };
+  }, []);
+
   // ---------- 恢复最后设计 ----------
 
   useEffect(() => {
@@ -442,6 +492,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
 
   const handleImport = useCallback(
     (project: ProjectFile): void => {
+      genTokenRef.current += 1; // 作废在途生成任务
+      taskRef.current?.cancel();
+      taskRef.current = null;
+      setGenerating(false);
+      setProgress(null);
       setDesignId(newDesignId());
       setName(project.name);
       setCreatedAt(project.createdAt);
@@ -466,6 +521,11 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
   );
 
   const handleRestart = useCallback((): void => {
+    genTokenRef.current += 1; // 作废在途生成任务
+    taskRef.current?.cancel();
+    taskRef.current = null;
+    setGenerating(false);
+    setProgress(null);
     dirtyRef.current = false;
     setStep('upload');
     setDecoded(null);
@@ -540,6 +600,30 @@ export default function Workbench({ storage, decodeFn, onSavedStatus }: Workbenc
       </header>
 
       {busy && <p className="text-sm text-blue-600" role="status">{busyText}</p>}
+      {generating && !busy && (
+        <div className="flex items-center gap-3 text-sm text-blue-600" role="status">
+          <span>{t.generating}</span>
+          {/* 进度条与百分比用固定宽度槽位：出现/更新时「取消」按钮位置不跳动（可稳定点击） */}
+          {progress !== null ? (
+            <progress
+              value={progress}
+              max={100}
+              className="h-2 w-48 accent-blue-600"
+              aria-label={t.generatingProgressLabel}
+            />
+          ) : (
+            <span className="inline-block h-2 w-48" aria-hidden="true" />
+          )}
+          <span className="inline-block w-10 tabular-nums">{progress !== null ? `${progress}%` : ''}</span>
+          <button
+            type="button"
+            onClick={handleCancelGenerate}
+            className="underline underline-offset-2 hover:text-blue-800"
+          >
+            {t.cancel}
+          </button>
+        </div>
+      )}
       {saveState === 'unavailable' && (
         <div role="alert" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {t.unavailable}
