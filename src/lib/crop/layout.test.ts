@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyAspectLock,
+  buildCropPreview,
   clampCropRect,
   cropImageData,
+  fitCropPreviewSize,
   MIN_CROP_SIZE,
   resizeEdge,
   type AspectAnchor,
@@ -198,6 +200,73 @@ describe('cropImageData', () => {
     expect(out.height).toBe(1);
     expect(out.data[3]).toBe(255);
   });
+
+  it('超大裁剪可直接缩到工作分辨率，不分配完整裁剪缓冲', () => {
+    const img = makeImage(400, 200);
+    const out = cropImageData(img, { x: 0, y: 0, width: 400, height: 200 }, 40);
+
+    expect(out.width).toBe(40);
+    expect(out.height).toBe(20);
+    expect(out.data).toHaveLength(40 * 20 * 4);
+    expect(out.data.byteLength).toBeLessThan(img.data.byteLength / 50);
+    expect(out.data[3]).toBe(255);
+  });
+
+  it('有上限的缩放使用 alpha 加权，透明像素不会污染可见颜色', () => {
+    const img = {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([
+        255, 0, 0, 255,
+        0, 0, 255, 0,
+      ]),
+    };
+    const out = cropImageData(img, { x: 0, y: 0, width: 2, height: 1 }, 1);
+
+    expect(out).toEqual({
+      width: 1,
+      height: 1,
+      data: new Uint8ClampedArray([255, 0, 0, 128]),
+    });
+  });
+
+  it('大比例缩小时按完整覆盖区域平均，边缘条纹不会因点采样消失', () => {
+    const data = new Uint8ClampedArray(8 * 4);
+    for (let x = 0; x < 8; x++) {
+      const value = x === 0 || x === 7 ? 255 : 0;
+      data[x * 4] = value;
+      data[x * 4 + 1] = value;
+      data[x * 4 + 2] = value;
+      data[x * 4 + 3] = 255;
+    }
+    const out = cropImageData({ data, width: 8, height: 1 }, { x: 0, y: 0, width: 8, height: 1 }, 1);
+    expect([...out.data]).toEqual([64, 64, 64, 255]);
+  });
+});
+
+describe('fitCropPreviewSize', () => {
+  it('超大正方形与极窄长图均限制在 800×800 预览内', () => {
+    expect(fitCropPreviewSize(8000, 8000, 800, 800)).toEqual({ width: 800, height: 800 });
+    expect(fitCropPreviewSize(100, 8000, 800, 800)).toEqual({ width: 10, height: 800 });
+    expect(fitCropPreviewSize(8000, 100, 800, 800)).toEqual({ width: 800, height: 10 });
+  });
+
+  it('预览仅分配目标像素并保留 RGBA 采样', () => {
+    const image = {
+      width: 4,
+      height: 2,
+      data: new Uint8ClampedArray([
+        1, 2, 3, 4, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33,
+        40, 41, 42, 43, 50, 51, 52, 53, 60, 61, 62, 63, 70, 71, 72, 73,
+      ]),
+    };
+    const preview = buildCropPreview(image, 2, 1);
+    expect(preview).toEqual({
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([1, 2, 3, 4, 20, 21, 22, 23]),
+    });
+  });
 });
 
 describe('resizeEdge（边框手柄缩放）', () => {
@@ -226,6 +295,38 @@ describe('resizeEdge（边框手柄缩放）', () => {
     const out = resizeEdge(rect, 'right', { x: 140, y: 50 }, 2);
     // 宽 100 → 高 50，垂直居中：y = 30 + (40-50)/2 = 25
     expect(out).toEqual({ x: 40, y: 25, width: 100, height: 50 });
+  });
+
+  it('比例锁定 1:1：拖底边 → 高度决定宽度，对边固定、水平居中', () => {
+    const out = resizeEdge(rect, 'bottom', { x: 80, y: 90 }, 1);
+    // 高 60 → 宽 60，水平居中：x = 40 + (80-60)/2 = 50
+    expect(out).toEqual({ x: 50, y: 30, width: 60, height: 60 });
+  });
+
+  it('比例锁定 2:1：拖底边保持水平居中', () => {
+    const out = resizeEdge(rect, 'bottom', { x: 80, y: 90 }, 2);
+    // 高 60 → 宽 120，围绕原中心 x=80 展开
+    expect(out).toEqual({ x: 20, y: 30, width: 120, height: 60 });
+  });
+
+  it('比例锁定拖底边贴到图像边界时整体收缩，不由通用钳制破坏比例', () => {
+    const nearEdge: Rect = { x: 20, y: 10, width: 60, height: 30 };
+    const out = resizeEdge(nearEdge, 'bottom', { x: 50, y: 90 }, 2, { width: 100, height: 100 });
+    // 原始中心 x=50；受左右边界约束，最大宽 100、高 50，顶边仍固定在 y=10。
+    expect(out).toEqual({ x: 0, y: 10, width: 100, height: 50 });
+  });
+
+  it('比例锁定四条边贴边时均保持对边/中心线和 2:1', () => {
+    const bounded: Rect = { x: 20, y: 35, width: 60, height: 30 };
+    const bounds = { width: 100, height: 100 };
+    expect(resizeEdge(bounded, 'top', { x: 50, y: 0 }, 2, bounds))
+      .toEqual({ x: 0, y: 15, width: 100, height: 50 });
+    expect(resizeEdge(bounded, 'bottom', { x: 50, y: 100 }, 2, bounds))
+      .toEqual({ x: 0, y: 35, width: 100, height: 50 });
+    expect(resizeEdge(bounded, 'left', { x: 0, y: 50 }, 2, bounds))
+      .toEqual({ x: 0, y: 30, width: 80, height: 40 });
+    expect(resizeEdge(bounded, 'right', { x: 100, y: 50 }, 2, bounds))
+      .toEqual({ x: 20, y: 30, width: 80, height: 40 });
   });
 
   it('非法比例退化为自由模式', () => {

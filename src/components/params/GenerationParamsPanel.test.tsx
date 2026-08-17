@@ -94,6 +94,63 @@ describe('GenerationParamsPanel', () => {
     expect(screen.getByLabelText(/背景容差/)).toBeTruthy();
   });
 
+  it('背景去除可显式指定背景原型颜色并防抖上抛', () => {
+    vi.useFakeTimers();
+    try {
+      const { onChange } = setup();
+      fireEvent.click(screen.getByText('高级选项'));
+      fireEvent.click(screen.getByText('背景去除'));
+      fireEvent.click(screen.getByText('手动指定背景色'));
+      const color = screen.getByLabelText('背景原型颜色');
+      fireEvent.change(color, { target: { value: '#ff0000' } });
+      act(() => vi.advanceTimersByTime(300));
+
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+        backgroundRemoval: true,
+        backgroundPrototype: '#FF0000',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('可直接点击原图预览取样背景原型颜色', () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      render(
+        <GenerationParamsPanel
+          params={DEFAULT_GENERATION_PARAMS}
+          paletteOptions={builtinOptions}
+          selectedPalette="MARD"
+          onParamsChange={onChange}
+          onPaletteSelect={vi.fn()}
+          backgroundSampleSource={{
+            width: 2,
+            height: 1,
+            data: new Uint8ClampedArray([255, 0, 0, 255, 0, 255, 0, 255]),
+          }}
+        />,
+      );
+      fireEvent.click(screen.getByText('高级选项'));
+      fireEvent.click(screen.getByText('背景去除'));
+      fireEvent.click(screen.getByText('手动指定背景色'));
+      const sampler = screen.getByLabelText('在原图中取样背景色');
+      vi.spyOn(sampler, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, left: 0, top: 0, right: 100, bottom: 50, width: 100, height: 50, toJSON: () => ({}),
+      });
+      fireEvent.click(sampler, { clientX: 75, clientY: 25 });
+      act(() => vi.advanceTimersByTime(300));
+
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+        backgroundRemoval: true,
+        backgroundPrototype: '#00FF00',
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('外部参数变化时同步面板（换图场景）', () => {
     const { rerender } = render(
       <GenerationParamsPanel

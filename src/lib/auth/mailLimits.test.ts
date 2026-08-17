@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
-import { checkMailSendLimits } from './mailLimits';
+import { checkMailSendLimits, reserveMailSendLimits } from './mailLimits';
 
 let db: TestDatabase;
 const now = new Date('2026-08-15T08:00:00.000Z');
@@ -22,6 +22,19 @@ afterAll(async () => {
 });
 
 describe('checkMailSendLimits', () => {
+  it('释放失败发送的预占后，不消耗实际发送配额', async () => {
+    const freshDb = await createTestClient();
+    const first = await reserveMailSendLimits(freshDb, {
+      email: 'failed@example.com', ip: '8.8.8.8', emailLimit: 1, now,
+    });
+    expect(first.result).toBe('ok');
+    await first.release();
+    const retry = await reserveMailSendLimits(freshDb, {
+      email: 'failed@example.com', ip: '8.8.8.8', emailLimit: 1, now,
+    });
+    expect(retry.result).toBe('ok');
+  });
+
   it('每邮箱每日：同邮箱不同 IP 换着来，超过上限后返回 emailLimited', async () => {
     const email = 'victim@example.com';
     for (let i = 0; i < 5; i++) {

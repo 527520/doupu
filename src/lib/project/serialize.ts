@@ -6,6 +6,7 @@ import type { ProjectFile } from '@/lib/types';
 export interface ProjectSource {
   name: string;
   createdAt: string;
+  engineVersion: string;
   palette: ProjectFile['palette'];
   params: ProjectFile['params'];
   pattern: ProjectFile['pattern'];
@@ -15,6 +16,7 @@ export function serializeProject(source: ProjectSource, now: Date = new Date()):
   const project: ProjectFile = {
     format: PROJECT_FILE_FORMAT,
     version: PROJECT_FILE_VERSION,
+    engineVersion: source.engineVersion,
     name: source.name,
     createdAt: source.createdAt,
     updatedAt: now.toISOString(),

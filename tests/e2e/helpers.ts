@@ -44,14 +44,14 @@ export async function waitForMailLink(kind: 'verify' | 'reset', email: string): 
 }
 
 /**
- * 等待水合完成：Next Dev Tools 按钮是客户端专属渲染，出现即代表 React 已接管 DOM。
- * （生产环境无此按钮，E2E 仅在 dev 下运行。）
+ * 等待水合完成：应用根布局的客户端 effect 会设置稳定标记。
+ * 非应用页面（例如 setContent 的辅助测试）只需等待 readyState。
  */
 export async function waitHydrated(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Next\.js Dev Tools/ }).waitFor({ timeout: 15_000 }).catch(() => {
-    // 某些页面可能未渲染 dev 覆盖层按钮——回退为 readyState 检查
-  });
   await page.waitForFunction(() => document.readyState === 'complete');
+  if (page.url().startsWith(BASE_URL)) {
+    await page.waitForFunction(() => document.documentElement.dataset.doupuHydrated === 'true', undefined, { timeout: 15_000 });
+  }
 }
 
 /**
@@ -82,7 +82,7 @@ export async function typeSpin(page: Page, name: string, value: string): Promise
   await expect(async () => {
     const input = page.getByRole('spinbutton', { name }).first();
     await input.click();
-    await input.press('Control+A');
+    await input.press('ControlOrMeta+A');
     await input.pressSequentially(value);
     expect(await input.inputValue()).toBe(value);
   }).toPass({ timeout: 15_000 });

@@ -8,7 +8,7 @@ import { createSession } from '@/lib/auth/session';
 import { serializeSessionCookie } from '@/lib/auth/cookies';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
-import { apiError, okJson, readJson } from '@/lib/auth/http';
+import { apiError, okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 import { config } from '@/lib/config';
 
@@ -24,7 +24,7 @@ function dummyPasswordHash(): Promise<string> {
   return dummyHashPromise;
 }
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
@@ -65,3 +65,5 @@ export async function POST(request: Request) {
     { headers: { 'Set-Cookie': serializeSessionCookie(session.token) } },
   );
 }
+
+export const POST = withApiErrors(post);

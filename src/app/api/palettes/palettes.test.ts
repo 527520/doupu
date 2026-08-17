@@ -40,6 +40,12 @@ const colors = (n: number): CustomPaletteColor[] =>
     hex: `#${(0x010101 + i).toString(16).padStart(6, '0').toUpperCase()}`,
   }));
 
+const putBody = (name: string, count: number, baseRevision = 0) => ({ name, colors: colors(count), baseRevision });
+const deleteBody = (baseRevision: number) => ({ baseRevision });
+async function listItems() {
+  return ((await (await listGet()).json()) as { items: Array<Record<string, unknown>> }).items;
+}
+
 let db: TestDatabase;
 
 beforeAll(async () => {
@@ -69,11 +75,32 @@ describe('/api/palettes', () => {
     expect((await listGet()).status).toBe(401);
   });
 
+  it('未知数据库异常统一返回带 request ID 的 JSON', async () => {
+    setTestDb({
+      select: () => {
+        throw new Error('database unavailable');
+      },
+    } as never);
+    try {
+      const response = await listGet(new Request('http://localhost/api/palettes', {
+        headers: { 'x-request-id': 'palettes-test-request' },
+      }));
+      expect(response.status).toBe(500);
+      expect(response.headers.get('x-request-id')).toBe('palettes-test-request');
+      expect(await response.json()).toEqual({
+        error: { code: 'INTERNAL', message: '服务器内部错误' },
+        requestId: 'palettes-test-request',
+      });
+    } finally {
+      setTestDb(db);
+    }
+  });
+
   it('创建/列表/单个往返（含 colors）', async () => {
     const ID = '00000000-0000-4000-8000-0000000000a1';
-    const created = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: '我的色板', colors: colors(3) }), p(ID));
+    const created = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('我的色板', 3)), p(ID));
     expect(created.status).toBe(200);
-    const list = (await (await listGet()).json()) as Array<{ id: string; name: string }>;
+    const list = await listItems() as Array<unknown> as Array<{ id: string; name: string }>;
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('我的色板');
     const one = (await (await getOne(jsonRequest('GET', `/api/palettes/${ID}`), p(ID))).json()) as { colors: CustomPaletteColor[] };
@@ -83,15 +110,15 @@ describe('/api/palettes', () => {
   it('20 上限 → 409；更新既有不受限', async () => {
     for (let i = 1; i <= LIMITS.palettesPerUser; i++) {
       const id = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
-      expect((await putOne(jsonRequest('PUT', `/api/palettes/${id}`, { name: `P${i}`, colors: colors(1) }), p(id))).status).toBe(200);
+      expect((await putOne(jsonRequest('PUT', `/api/palettes/${id}`, putBody(`P${i}`, 1)), p(id))).status).toBe(200);
     }
     const over = await putOne(
-      jsonRequest('PUT', '/api/palettes/00000000-0000-4000-8000-999999999999', { name: 'OVER', colors: colors(1) }),
+      jsonRequest('PUT', '/api/palettes/00000000-0000-4000-8000-999999999999', putBody('OVER', 1)),
       p('00000000-0000-4000-8000-999999999999'),
     );
     expect(over.status).toBe(409);
     const update = await putOne(
-      jsonRequest('PUT', '/api/palettes/00000000-0000-4000-8000-000000000001', { name: 'P1v2', colors: colors(2) }),
+      jsonRequest('PUT', '/api/palettes/00000000-0000-4000-8000-000000000001', putBody('P1v2', 2, 1)),
       p('00000000-0000-4000-8000-000000000001'),
     );
     expect(update.status).toBe(200);
@@ -99,26 +126,40 @@ describe('/api/palettes', () => {
 
   it('501 色 → 400；非法 hex → 400', async () => {
     const ID = '00000000-0000-4000-8000-0000000000b1';
-    const tooMany = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X', colors: colors(501) }), p(ID));
+    const tooMany = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('X', 501)), p(ID));
     expect(tooMany.status).toBe(400);
-    const badHex = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X', colors: [{ code: 'A', hex: 'nope' }] }), p(ID));
+    const badHex = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X', colors: [{ code: 'A', hex: 'nope' }], baseRevision: 0 }), p(ID));
     expect(badHex.status).toBe(400);
   });
 
   it('删除幂等 204；他人色板 404；删除后复活', async () => {
     const ID = '00000000-0000-4000-8000-0000000000b2';
-    await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X', colors: colors(1) }), p(ID));
-    expect((await deleteOne(jsonRequest('DELETE', `/api/palettes/${ID}`), p(ID))).status).toBe(204);
-    expect((await deleteOne(jsonRequest('DELETE', `/api/palettes/${ID}`), p(ID))).status).toBe(204);
+    await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('X', 1)), p(ID));
+    expect((await deleteOne(jsonRequest('DELETE', `/api/palettes/${ID}`, deleteBody(1)), p(ID))).status).toBe(200);
+    const tombstone = (await db.select().from(palettes))[0];
+    expect(tombstone.colors).toBeNull();
+    expect(tombstone.name).toBe('');
+    expect(tombstone.payloadBytes).toBe(0);
+    expect((await deleteOne(jsonRequest('DELETE', `/api/palettes/${ID}`, deleteBody(1)), p(ID))).status).toBe(200);
     expect((await listGet()).status).toBe(200);
-    expect(((await (await listGet()).json()) as unknown[]).length).toBe(0);
+    expect((await listItems()).filter((item) => !item.deleted)).toHaveLength(0);
     expect((await getOne(jsonRequest('GET', `/api/palettes/${ID}`), p(ID))).status).toBe(404);
-    expect((await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'X2', colors: colors(1) }), p(ID))).status).toBe(200);
+    expect((await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('X2', 1, 2)), p(ID))).status).toBe(200);
+  });
+
+  it('并发编辑使用 baseRevision CAS，旧版本返回 409 且不覆盖胜者', async () => {
+    const ID = '00000000-0000-4000-8000-0000000000c1';
+    expect((await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('v1', 1)), p(ID))).status).toBe(200);
+    expect((await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('winner', 2, 1)), p(ID))).status).toBe(200);
+    const stale = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('loser', 3, 1)), p(ID));
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { error: { code: string } }).error.code).toBe('REVISION_CONFLICT');
+    expect((await db.select().from(palettes))[0].name).toBe('winner');
   });
 
   it('IDOR 防护：其他用户的色板 id 不可被覆盖（409 且原数据不变）', async () => {
     const ID = '00000000-0000-4000-8000-0000000000b3';
-    const created = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'A 的色板', colors: colors(2) }), p(ID));
+    const created = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('A 的色板', 2)), p(ID));
     expect(created.status).toBe(200);
 
     // 用户 B 登录并尝试用相同 id 覆盖
@@ -130,7 +171,7 @@ describe('/api/palettes', () => {
     )[0];
     const sessionB = await createSession(db, userB.id);
     cookieJar.set(SESSION_COOKIE_NAME, sessionB.token);
-    const putB = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, { name: 'B 的覆盖', colors: colors(9) }), p(ID));
+    const putB = await putOne(jsonRequest('PUT', `/api/palettes/${ID}`, putBody('B 的覆盖', 9)), p(ID));
     expect(putB.status).toBe(409);
 
     const rows = await db.select().from(palettes);

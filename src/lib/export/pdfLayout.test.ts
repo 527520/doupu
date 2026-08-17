@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   A4_HEIGHT_MM,
   A4_WIDTH_MM,
+  MM_TO_PT,
   PDF_CELL_MM,
   PDF_HEADER_MM,
   PDF_MARGIN_MM,
@@ -10,8 +11,12 @@ import {
   UNTITLED_NAME,
   buildExportFilename,
   computePdfLayout,
+  defaultPdfMetrics,
   estimateTextWidthPt,
+  fitLegendEntryText,
   legendColumns,
+  legendColumnsForItems,
+  paginateLegendItems,
   pageHeaderText,
   sanitizeFilenamePart,
   seamPositionsForPage,
@@ -131,10 +136,10 @@ describe('seamPositionsForPage（板缝线）', () => {
 });
 
 describe('estimateTextWidthPt / truncateTextToWidth（E26/E27 不溢出）', () => {
-  it('CJK 1em、ASCII 0.55em', () => {
+  it('字体未加载时对 CJK 与宽 ASCII 都采用保守 1em', () => {
     expect(estimateTextWidthPt('测', 10)).toBe(10);
-    expect(estimateTextWidthPt('A', 10)).toBeCloseTo(5.5, 6);
-    expect(estimateTextWidthPt('A01', 10)).toBeCloseTo(16.5, 6);
+    expect(estimateTextWidthPt('A', 10)).toBe(10);
+    expect(estimateTextWidthPt('WWW', 10)).toBe(30);
   });
 
   it('未超宽原样返回；超宽截断并加省略号；极窄返回空串', () => {
@@ -188,6 +193,51 @@ describe('legendColumns', () => {
     expect(legendColumns(29)).toBe(1);
     expect(legendColumns(500)).toBe(6);
     expect(legendColumns(0)).toBe(1);
+  });
+});
+
+describe('paginateLegendItems', () => {
+  it('500 色图例分页且每个条目恰好出现一次', () => {
+    const items = Array.from({ length: 500 }, (_, index) => ({ code: `C${index}`, count: 1 }));
+    const pages = paginateLegendItems(items);
+    expect(pages.map((page) => page.length)).toEqual([318, 182]);
+    expect(pages.flat()).toEqual(items);
+    expect(pages.every((page) => page.length > 0)).toBe(true);
+  });
+
+  it('500 色中的 20 字符色号会为四位数量后缀预留列宽', () => {
+    const usableMm = A4_WIDTH_MM - 2 * defaultPdfMetrics.marginMm;
+    const items = Array.from({ length: 500 }, (_, index) => ({
+      code: index === 0 ? 'ABCDEFGHIJKLMNOPQRST' : `C${index}`,
+      count: index === 0 ? 1000 : 1,
+    }));
+
+    const columns = legendColumnsForItems(items, usableMm);
+    const dynamicTextWidthPt = (usableMm * MM_TO_PT) / columns - 16;
+    const rendered = paginateLegendItems(items).flat().map((item) =>
+      fitLegendEntryText(item.code, item.count, 8, dynamicTextWidthPt, '...'));
+
+    expect(rendered).toHaveLength(500);
+    expect(rendered[0]).toBe('ABCDEFGHIJKLMNOPQRST x1000');
+    expect(new Set(rendered.map((text) => text.split(' x')[0])).size).toBe(500);
+    expect(rendered.every((text) => estimateTextWidthPt(text, 8) <= dynamicTextWidthPt)).toBe(true);
+
+    const marginPt = defaultPdfMetrics.marginMm * MM_TO_PT;
+    const pageWidthPt = A4_WIDTH_MM * MM_TO_PT;
+    const pageHeightPt = A4_HEIGHT_MM * MM_TO_PT;
+    const itemWidthPt = (usableMm * MM_TO_PT) / columns;
+    for (const page of paginateLegendItems(items)) {
+      page.forEach((item, index) => {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = marginPt + column * itemWidthPt;
+        const y = pageHeightPt - marginPt - 46 - row * 14;
+        const label = `${item.code} x${item.count}`;
+        expect(x).toBeGreaterThanOrEqual(marginPt);
+        expect(x + 12 + estimateTextWidthPt(label, 8)).toBeLessThanOrEqual(pageWidthPt - marginPt);
+        expect(y - 8).toBeGreaterThanOrEqual(marginPt);
+      });
+    }
   });
 });
 

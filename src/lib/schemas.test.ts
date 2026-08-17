@@ -25,7 +25,8 @@ function transparentCell() {
 function validProject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const project = {
     format: 'doupu-project',
-    version: 1,
+    version: 2,
+    engineVersion: '2.0.0',
     name: '测试设计',
     createdAt: '2026-08-14T10:00:00.000Z',
     updatedAt: '2026-08-14T11:00:00.000Z',
@@ -110,9 +111,9 @@ describe('hex 与单元格', () => {
     }
   });
 
-  it('单元格：透明格不得携带颜色；非透明格必须携带 hex（E10/E11）', () => {
+  it('单元格：透明格不得携带颜色；非透明格必须同时携带 hex 与可采购色号（E10/E11）', () => {
     expect(patternCellSchema.safeParse(transparentCell()).success).toBe(true);
-    expect(patternCellSchema.safeParse(cell('#123456', null)).success).toBe(true);
+    expect(patternCellSchema.safeParse(cell('#123456', null)).success).toBe(false);
     expect(patternCellSchema.safeParse(cell('#123456', 'A'.repeat(20))).success).toBe(true);
     expect(patternCellSchema.safeParse({ hex: '#123456', code: null, transparent: true }).success).toBe(false);
     expect(patternCellSchema.safeParse({ hex: null, code: null, transparent: false }).success).toBe(false);
@@ -120,18 +121,18 @@ describe('hex 与单元格', () => {
   });
 
   it('单元格：external 背景标记为可选项，默认可省略并在解析后保留', () => {
-    expect(patternCellSchema.safeParse({ ...cell('#123456', null), external: true }).success).toBe(true);
-    const parsed = patternCellSchema.parse({ ...cell('#123456', null), external: true });
+    expect(patternCellSchema.safeParse({ ...cell('#123456', 'A'), external: true }).success).toBe(true);
+    const parsed = patternCellSchema.parse({ ...cell('#123456', 'A'), external: true });
     expect(parsed.external).toBe(true);
-    expect(patternCellSchema.parse(cell('#123456', null)).external).toBeUndefined();
-    expect(patternCellSchema.safeParse({ ...cell('#123456', null), external: 'yes' }).success).toBe(false);
+    expect(patternCellSchema.parse(cell('#123456', 'A')).external).toBeUndefined();
+    expect(patternCellSchema.safeParse({ ...cell('#123456', 'A'), external: 'yes' }).success).toBe(false);
   });
 
   it('图纸：cells 数量必须与宽高一致；1×1 与 200×200 合法，201 非法（E7/E14）', () => {
     expect(
-      patternSchema.safeParse({ width: 1, height: 1, cells: [cell('#000000', null)] }).success,
+      patternSchema.safeParse({ width: 1, height: 1, cells: [cell('#000000', 'A')] }).success,
     ).toBe(true);
-    expect(patternSchema.safeParse({ width: 2, height: 1, cells: [cell('#000000', null)] }).success).toBe(false);
+    expect(patternSchema.safeParse({ width: 2, height: 1, cells: [cell('#000000', 'A')] }).success).toBe(false);
     expect(patternSchema.safeParse({ width: 0, height: 1, cells: [] }).success).toBe(false);
     expect(patternSchema.safeParse({ width: 201, height: 1, cells: [] }).success).toBe(false);
   });
@@ -144,7 +145,7 @@ describe('项目文件（§5.3）', () => {
 
   it('拒绝缺字段/未知 version/未知 brand/非法日期/空白名', () => {
     const cases: Record<string, unknown>[] = [
-      validProject({ version: 2 }),
+      validProject({ version: 99 }),
       validProject({ format: 'other' }),
       validProject({ palette: { kind: 'builtin', brand: 'Perler' } }),
       validProject({ name: '   ' }),

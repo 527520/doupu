@@ -5,20 +5,21 @@ import { resendVerificationSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
-import { checkMailSendLimits } from '@/lib/auth/mailLimits';
+import { reserveMailSendLimits } from '@/lib/auth/mailLimits';
 import { buildVerifyLink, isDevMailMode, isMailCircuitOpen, sendMail } from '@/lib/auth/mailer';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
-import { apiError, noContent, readJson } from '@/lib/auth/http';
+import { apiError, noContent, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RATE_LIMIT = 10;
+const IP_RATE_LIMIT = 30;
 
 /**
  * 重发验证邮件：防枚举（spec §F9）——无论邮箱是否存在/是否已验证，恒返回 204。
  * 仅「邮箱格式不合法」返回 400（不含存在性信息）。
  */
-export async function POST(request: Request) {
+async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
   const { email } = parsed.data;
 
   const db = getDb();
+  if (!(await checkRateLimit(db, rateLimitKey('resend-ip', ip), IP_RATE_LIMIT))) {
+    return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
+  }
   if (!(await checkRateLimit(db, rateLimitKey('resend', ip, email), RATE_LIMIT))) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
@@ -40,7 +44,8 @@ export async function POST(request: Request) {
   }
 
   // 发信成本防护：每邮箱日限命中 → 静默 204（照常防枚举，攻击者无法借此确认账号存在）
-  const mailLimit = await checkMailSendLimits(db, { email, ip });
+  const mailReservation = await reserveMailSendLimits(db, { email, ip });
+  const mailLimit = mailReservation.result;
   if (mailLimit === 'emailLimited') {
     console.warn('[mail] resend skipped (email daily limit)');
     return noContent();
@@ -49,38 +54,45 @@ export async function POST(request: Request) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
 
-  const rows = await db
-    .select({ id: users.id, emailVerifiedAt: users.emailVerifiedAt })
-    .from(users)
-    .where(eq(sql`lower(${users.email})`, email));
+  let mailSent = false;
+  try {
+    const rows = await db
+      .select({ id: users.id, emailVerifiedAt: users.emailVerifiedAt })
+      .from(users)
+      .where(eq(sql`lower(${users.email})`, email));
 
-  if (rows.length === 1 && rows[0].emailVerifiedAt === null) {
-    const token = generateToken();
-    await db.insert(emailTokens).values({
-      userId: rows[0].id,
-      purpose: 'verify',
-      tokenHash: hashToken(token),
-      expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
-    });
-    const link = buildVerifyLink(token);
-    try {
-      await sendMail(
-        email,
-        zhCN.auth.verifySubject,
-        zhCN.auth.verifyHtml(link),
-        zhCN.auth.verifyText(link),
-        { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { token } } },
-      );
-    } catch {
-      // 发送失败：保持 204（防枚举——首个失败请求不泄露账号状态；熔断器已打开，
-      // 后续请求统一 503），操作者可从日志排查。
-      console.error('[mail] resend send failed');
-      return noContent();
+    if (rows.length === 1 && rows[0].emailVerifiedAt === null) {
+      const token = generateToken();
+      await db.insert(emailTokens).values({
+        userId: rows[0].id,
+        purpose: 'verify',
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+      });
+      const link = buildVerifyLink(token);
+      try {
+        await sendMail(
+          email,
+          zhCN.auth.verifySubject,
+          zhCN.auth.verifyHtml(link),
+          zhCN.auth.verifyText(link),
+          { sesTemplate: { templateId: process.env.SES_VERIFY_TEMPLATE_ID ?? '', templateData: { token } } },
+        );
+        mailSent = true;
+      } catch {
+        // 发送失败：保持 204（防枚举——首个失败请求不泄露账号状态；熔断器已打开，
+        // 后续请求统一 503），操作者可从日志排查。
+        console.error('[mail] resend send failed');
+        return noContent();
+      }
+    } else if (!isDevMailMode()) {
+      // 幽灵/已验证邮箱：补与真实发信（SES 模板 API 往返）同量级的固定延迟，抹平时序枚举（防枚举）
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
-  } else if (!isDevMailMode()) {
-    // 幽灵/已验证邮箱：补与真实发信（SES 模板 API 往返）同量级的固定延迟，抹平时序枚举（防枚举）
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    return noContent();
+  } finally {
+    if (!mailSent) await mailReservation.release();
   }
-
-  return noContent();
 }
+
+export const POST = withApiErrors(post);

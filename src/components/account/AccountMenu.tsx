@@ -222,9 +222,9 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   }
 
   return (
-    <div className="relative flex items-center gap-3 text-sm">
+    <div className="relative flex max-w-full flex-wrap items-center justify-end gap-2 text-sm">
       {me.state === 'verified' ? (
-        <span className="max-w-[160px] truncate" title={me.email}>
+        <span className="min-w-0 max-w-full truncate sm:max-w-[160px]" title={me.email}>
           {me.email} <span className="text-xs text-green-600">({t.verified})</span>
         </span>
       ) : (
@@ -232,7 +232,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       )}
 
       {me.state === 'unverified' && (
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
           <span className="text-xs text-ink-soft">{t.unverifiedHint}</span>
           <input
             type="email"
@@ -240,7 +240,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             value={resendEmail}
             onChange={(e) => setResendEmail(e.target.value)}
             placeholder={t.resendEmailLabel}
-            className="w-40 rounded-lg border border-lilac/50 px-2 py-1 text-xs"
+            className="w-full min-w-0 rounded-lg border border-lilac/50 px-2 py-1 text-xs sm:w-40"
           />
           <button
             type="button"

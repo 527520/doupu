@@ -9,6 +9,8 @@ export interface PaletteRecord {
   name: string;
   colors: CustomPaletteColor[];
   updatedAt: string;
+  revision: number;
+  deleted?: boolean;
 }
 
 export interface ApiErrorBody {
@@ -38,12 +40,18 @@ async function parseError(response: Response, fallback: string): Promise<never> 
 
 /** 当前用户的自定义色板列表。 */
 export async function listPalettes(): Promise<PaletteRecord[]> {
-  const response = await fetch('/api/palettes', { cache: 'no-store' });
-  if (response.status === 401) {
-    throw new PalettesApiError('UNAUTHORIZED', '未登录');
-  }
-  if (!response.ok) return parseError(response, '加载失败');
-  return (await response.json()) as PaletteRecord[];
+  const records: PaletteRecord[] = [];
+  let cursor: string | null = null;
+  do {
+    const response = await fetch(cursor ? `/api/palettes?cursor=${encodeURIComponent(cursor)}` : '/api/palettes', { cache: 'no-store' });
+    if (response.status === 401) throw new PalettesApiError('UNAUTHORIZED', '未登录');
+    if (!response.ok) return parseError(response, '加载失败');
+    const payload = (await response.json()) as PaletteRecord[] | { items: PaletteRecord[]; nextCursor: string | null };
+    const page = Array.isArray(payload) ? { items: payload, nextCursor: null } : payload;
+    records.push(...page.items.filter((record) => !record.deleted));
+    cursor = page.nextCursor;
+  } while (cursor);
+  return records;
 }
 
 /** 幂等 upsert（客户端 UUID）。 */
@@ -51,21 +59,23 @@ export async function savePalette(
   id: string,
   name: string,
   colors: CustomPaletteColor[],
+  baseRevision = 0,
 ): Promise<PaletteRecord> {
   const response = await fetch(`/api/palettes/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, colors }),
+    body: JSON.stringify({ name, colors, baseRevision }),
   });
   if (!response.ok) return parseError(response, '保存失败');
   return (await response.json()) as PaletteRecord;
 }
 
 /** 墓碑删除（幂等 204）。 */
-export async function deletePalette(id: string): Promise<void> {
+export async function deletePalette(id: string, baseRevision: number): Promise<void> {
   const response = await fetch(`/api/palettes/${id}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ baseRevision }),
   });
   if (!response.ok && response.status !== 404) {
     return parseError(response, '删除失败');

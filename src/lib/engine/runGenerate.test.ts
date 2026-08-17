@@ -1,60 +1,56 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runGenerate, type GenerateRequest, type WorkerResponse } from './runGenerate';
-import type { EngineOutput } from './types';
+import {
+  disposeGenerateWorker,
+  prepareGenerationSource,
+  runGenerate,
+  type GenerateRequest,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './runGenerate';
+import type { EngineOutput, ImageDataLike } from './types';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { buildBrandPalette } from '@/lib/palettes';
 
-/** 8×8 红色不透明测试源图。 */
-function makeSrc(): { data: Uint8ClampedArray; width: number; height: number } {
+function makeSrc(red = 255): ImageDataLike {
   const data = new Uint8ClampedArray(8 * 8 * 4);
   for (let i = 0; i < 8 * 8; i++) {
-    data[i * 4] = 255;
+    data[i * 4] = red;
     data[i * 4 + 3] = 255;
   }
   return { data, width: 8, height: 8 };
 }
 
-function makeRequest(): GenerateRequest {
+function makeRequest(src = makeSrc()): GenerateRequest {
   return {
-    src: makeSrc(),
+    src,
     params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 20 },
     palette: buildBrandPalette('MARD'),
   };
 }
 
 const cannedOutput: EngineOutput = {
-  pattern: {
-    width: 1,
-    height: 1,
-    cells: [{ hex: '#FFFFFF', code: 'W', transparent: false }],
-  },
+  pattern: { width: 1, height: 1, cells: [{ hex: '#FFFFFF', code: 'W', transparent: false }] },
   stats: [{ code: 'W', hex: '#FFFFFF', count: 1 }],
   totalBeadCount: 1,
   mergeThresholdUsed: 0,
 };
 
-/** 可控假 Worker：postMessage 时按注入的行为派发消息。 */
-interface FakeWorkerBehavior {
-  (request: GenerateRequest, worker: FakeWorker): void;
-}
+type FakeWorkerBehavior = (request: WorkerRequest, worker: FakeWorker) => void;
 
 class FakeWorker {
   onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   terminated = false;
-  readonly posted: GenerateRequest[] = [];
-  constructor(
-    readonly scriptUrl: string | URL,
-    private readonly behavior: FakeWorkerBehavior,
-  ) {}
-  postMessage(request: GenerateRequest): void {
+  readonly posted: WorkerRequest[] = [];
+  readonly transferLists: Transferable[][] = [];
+  constructor(readonly scriptUrl: string | URL, private readonly behavior: FakeWorkerBehavior) {}
+  postMessage(request: WorkerRequest, transfer: Transferable[] = []): void {
     this.posted.push(request);
+    this.transferLists.push(transfer);
     this.behavior(request, this);
   }
-  terminate(): void {
-    this.terminated = true;
-  }
+  terminate(): void { this.terminated = true; }
   emit(message: WorkerResponse): void {
     this.onmessage?.({ data: message } as MessageEvent<WorkerResponse>);
   }
@@ -65,111 +61,115 @@ class FakeWorker {
 
 function stubWorker(behavior: FakeWorkerBehavior): FakeWorker[] {
   const created: FakeWorker[] = [];
-  vi.stubGlobal(
-    'Worker',
-    class extends FakeWorker {
-      constructor(scriptUrl: string | URL) {
-        super(scriptUrl, behavior);
-        created.push(this);
-      }
-    },
-  );
+  vi.stubGlobal('Worker', class extends FakeWorker {
+    constructor(scriptUrl: string | URL) {
+      super(scriptUrl, behavior);
+      created.push(this);
+    }
+  });
   return created;
 }
 
 afterEach(() => {
+  disposeGenerateWorker();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('runGenerate 同步回退（无 Worker 环境）', () => {
   it('jsdom 下直接返回正确结果', async () => {
-    const task = runGenerate(makeRequest());
-    const output = await task.promise;
+    const output = await runGenerate(makeRequest()).promise;
     expect(output.pattern.width).toBe(20);
-    expect(output.pattern.height).toBe(20);
-    expect(output.pattern.cells).toHaveLength(400);
     expect(output.totalBeadCount).toBe(400);
   });
 
-  it('onProgress 单调递增且以 100 结束', async () => {
-    const percents: number[] = [];
-    const task = runGenerate(makeRequest(), (p) => percents.push(p));
-    await task.promise;
-    expect(percents.length).toBeGreaterThan(0);
-    expect(percents[0]).toBeGreaterThan(0);
-    for (let i = 1; i < percents.length; i++) {
-      expect(percents[i]).toBeGreaterThanOrEqual(percents[i - 1]);
-    }
-    expect(percents[percents.length - 1]).toBe(100);
-  });
-
-  it('cancel 为 no-op（同步路径不可抢占，结果仍正常返回）', async () => {
+  it('计算开始前取消会立即 AbortError', async () => {
     const task = runGenerate(makeRequest());
     task.cancel();
-    const output = await task.promise;
-    expect(output.pattern.width).toBe(20);
+    await expect(task.promise).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
 
-describe('runGenerate Worker 路径', () => {
-  it('转发进度并解析最终结果', async () => {
-    const workers = stubWorker((_request, worker) => {
-      worker.emit({ type: 'progress', percent: 50 });
-      worker.emit({ type: 'progress', percent: 100 });
-      worker.emit({ type: 'done', output: cannedOutput });
-    });
-    const percents: number[] = [];
-    const task = runGenerate(makeRequest(), (p) => percents.push(p));
-    const output = await task.promise;
-    expect(output).toBe(cannedOutput);
-    expect(percents).toEqual([50, 100]);
-    expect(String(workers[0].scriptUrl)).toContain('generate.worker.ts');
-    expect(workers[0].terminated).toBe(true); // 完成后销毁 Worker
+describe('runGenerate 持久 Worker 协议', () => {
+  it('把有界源图收敛为一份 session/Worker 共享缓冲', () => {
+    const original = makeSrc();
+    const shared = prepareGenerationSource(original);
+    expect(shared.data.buffer).toBeInstanceOf(SharedArrayBuffer);
+    expect(shared.data.buffer).not.toBe(original.data.buffer);
+    expect(shared.data).toEqual(original.data);
+    expect(prepareGenerationSource(shared)).toBe(shared);
   });
 
-  it('worker 执行错误 → 回退主线程同步执行并记录日志', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    stubWorker((_request, worker) => {
-      worker.emit({ type: 'error', error: 'boom' });
+  it('复用一个 Worker，同一 source 只初始化一次', async () => {
+    const workers = stubWorker((request, worker) => {
+      if (request.type === 'generate') worker.emit({ type: 'done', taskId: request.taskId, output: cannedOutput });
     });
-    const task = runGenerate(makeRequest());
-    const output = await task.promise;
-    expect(output.pattern.width).toBe(20); // 保底成功
-    expect(errorSpy).toHaveBeenCalledOnce();
-    expect(String(errorSpy.mock.calls[0][0])).toContain('回退主线程同步执行');
+    const src = makeSrc();
+    await runGenerate(makeRequest(src)).promise;
+    await runGenerate(makeRequest(src)).promise;
+
+    expect(workers).toHaveLength(1);
+    expect(workers[0].posted.map((message) => message.type)).toEqual(['source', 'generate', 'generate']);
+    expect(workers[0].terminated).toBe(false);
   });
 
-  it('worker 脚本错误（onerror）→ 回退主线程同步执行', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    stubWorker((_request, worker) => {
-      worker.emitError('script load failed');
+  it('共享 source 只发送句柄一次，不创建或 transfer 第二份 RGBA', async () => {
+    const workers = stubWorker((request, worker) => {
+      if (request.type === 'generate') worker.emit({ type: 'done', taskId: request.taskId, output: cannedOutput });
     });
-    const task = runGenerate(makeRequest());
-    const output = await task.promise;
-    expect(output.pattern.width).toBe(20);
-    expect(errorSpy).toHaveBeenCalledOnce();
+    const src = prepareGenerationSource(makeSrc());
+    await runGenerate(makeRequest(src)).promise;
+
+    const source = workers[0].posted[0];
+    expect(source.type).toBe('source');
+    if (source.type !== 'source') throw new Error('expected source message');
+    expect(source.src.data.buffer).toBe(src.data.buffer);
+    expect(workers[0].transferLists[0]).toEqual([]);
+    expect(src.data.byteLength).toBe(8 * 8 * 4);
   });
 
-  it('cancel → 立即以 AbortError 拒绝；不强制终止 Worker（Firefox 崩溃规避：丢弃语义）', async () => {
-    const workers = stubWorker(() => {
-      // 永不回复：模拟长任务
+  it('更换 source 只重发 source，不重建 Worker', async () => {
+    const workers = stubWorker((request, worker) => {
+      if (request.type === 'generate') worker.emit({ type: 'done', taskId: request.taskId, output: cannedOutput });
     });
+    await runGenerate(makeRequest(makeSrc(255))).promise;
+    await runGenerate(makeRequest(makeSrc(128))).promise;
+    expect(workers).toHaveLength(1);
+    expect(workers[0].posted.filter((message) => message.type === 'source')).toHaveLength(2);
+  });
+
+  it('原子取消立即拒绝且不排队冗余 cancel 消息，持久 Worker 保留', async () => {
+    const workers = stubWorker(() => undefined);
     const task = runGenerate(makeRequest());
+    const generate = workers[0].posted.find(
+      (request): request is Extract<WorkerRequest, { type: 'generate' }> => request.type === 'generate',
+    );
+    const started = performance.now();
     task.cancel();
     await expect(task.promise).rejects.toMatchObject({ name: 'AbortError' });
-    expect(workers[0].terminated).toBe(false); // 不 terminate（Firefox 会在任务执行中崩溃）
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(generate?.cancelBuffer).toBeInstanceOf(SharedArrayBuffer);
+    expect(Atomics.load(new Int32Array(generate?.cancelBuffer as SharedArrayBuffer), 0)).toBe(1);
+    expect(workers[0].terminated).toBe(false);
+    expect(workers[0].posted.map((message) => message.type)).toEqual(['source', 'generate']);
   });
 
-  it('cancel 后迟到的 done 消息不会覆盖取消语义（结果丢弃，Worker 自行销毁）', async () => {
-    const workers = stubWorker(() => {
-      // 永不回复：模拟长任务
+  it('新任务自动取消旧任务，迟到结果不能覆盖 latest-only 语义', async () => {
+    const workers = stubWorker(() => undefined);
+    const first = runGenerate(makeRequest());
+    const second = runGenerate(makeRequest());
+    await expect(first.promise).rejects.toMatchObject({ name: 'AbortError' });
+    const messages = workers[0].posted.filter((message): message is Extract<WorkerRequest, { type: 'generate' }> => message.type === 'generate');
+    workers[0].emit({ type: 'done', taskId: messages[0].taskId, output: cannedOutput });
+    workers[0].emit({ type: 'done', taskId: messages[1].taskId, output: cannedOutput });
+    await expect(second.promise).resolves.toBe(cannedOutput);
+  });
+
+  it('worker 脚本错误拒绝任务并销毁损坏的 Worker', async () => {
+    const workers = stubWorker((request, worker) => {
+      if (request.type === 'generate') worker.emitError('script load failed');
     });
-    const task = runGenerate(makeRequest());
-    task.cancel();
-    // 迟到的 done 消息：promise 保持 AbortError；Worker 在 done 处理器中自行销毁
-    workers[0].emit({ type: 'done', output: cannedOutput });
-    await expect(task.promise).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(runGenerate(makeRequest()).promise).rejects.toThrow('script load failed');
     expect(workers[0].terminated).toBe(true);
   });
 });

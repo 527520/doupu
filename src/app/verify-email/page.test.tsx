@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { StrictMode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import VerifyEmailPage from './page';
@@ -28,6 +29,14 @@ describe('verify-email 页', () => {
       '/api/auth/verify-email',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'abc123' }) }),
     );
+  });
+
+  it('StrictMode 重放 effect 时只消费一次令牌且保留成功态', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    render(<StrictMode><VerifyEmailPage /></StrictMode>);
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zhCN.authPages.verifySuccess));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('令牌失效/过期 → 统一文案 + 重发入口（spec E30）', async () => {

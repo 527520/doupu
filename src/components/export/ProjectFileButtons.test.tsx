@@ -8,6 +8,7 @@ import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 const source: ProjectSource = {
   name: '测试设计',
   createdAt: '2026-08-14T10:00:00.000Z',
+  engineVersion: '2.0.0',
   palette: { kind: 'builtin', brand: 'MARD' },
   params: { ...DEFAULT_GENERATION_PARAMS },
   pattern: {

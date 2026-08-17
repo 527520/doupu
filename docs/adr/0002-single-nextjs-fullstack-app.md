@@ -9,13 +9,15 @@ The product needs: client-side photo→pattern processing (upstream is a pure cl
 
 ## Decision
 
-One Next.js 15 (App Router) application serves everything:
+One Next.js 16 (App Router) application serves everything:
 
 - Pages for the workspace, design list, palette manager, account flows, help.
 - Route Handlers under `/api/*` are the backend: auth, designs, palettes.
 - All image processing stays client-side (Canvas/OffscreenCanvas); the server stores only JSON documents — original photos are never uploaded (D13).
 
-No separate backend service, no GraphQL, no websockets (sync is pull-based last-write-wins).
+No separate backend service, no GraphQL, no websockets. Synchronization remains pull-based; its
+conflict protocol is defined by [ADR-0009](./0009-revision-cas-local-first-sync.md), which supersedes
+the original last-write-wins choice in this paragraph.
 
 ## Consequences
 

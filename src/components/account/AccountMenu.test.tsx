@@ -24,14 +24,17 @@ class FakeAuthApi implements DoupuApi {
   async listDesigns() {
     return [];
   }
+  async listDesignsPage() {
+    return { items: [], nextCursor: null };
+  }
   async getDesign() {
     return null;
   }
   async putDesign() {
-    return { updatedAt: new Date().toISOString() };
+    return { updatedAt: new Date().toISOString(), revision: 1 };
   }
   async deleteDesign() {
-    // no-op
+    return { updatedAt: new Date().toISOString(), revision: 2 };
   }
   async resendVerification(email: string) {
     this.resendCalls.push(email);

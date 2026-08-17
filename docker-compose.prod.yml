@@ -1,20 +1,22 @@
 # 豆谱生产部署编排（ADR-0005）：app + postgres + caddy + 每日备份
-# 用法：cp .env.example .env && 填写后 docker compose up -d --build
+# 用法：cp .env.example .env，填写已通过 release 门禁的 APP_IMAGE 后执行 deploy.sh
 services:
   app:
-    build: .
+    # 生产只消费 release workflow 推送的稳定 tag/digest；禁止服务器从任意源码本地重建。
+    image: ${APP_IMAGE:?请在 .env 中设置通过门禁的 GHCR APP_IMAGE}
     restart: unless-stopped
     # 显式注入变量（安全自查 M5）：不整份 env_file，避免 COS 备份凭据等无关密钥进入 app 容器
     environment:
       APP_URL: ${APP_URL:?请在 .env 中设置 APP_URL}
       DATABASE_URL: ${DATABASE_URL:?请在 .env 中设置 DATABASE_URL}
-      # 邮件（SES 模板模式 / SMTP 二选一；均为可选，未配置时邮件仅打印日志）
+      # 邮件（SES 模板模式 / SMTP 二选一；生产环境必须完整配置其中一套）
       SES_SECRET_ID: ${SES_SECRET_ID:-}
       SES_SECRET_KEY: ${SES_SECRET_KEY:-}
       SES_REGION: ${SES_REGION:-}
       SES_FROM: ${SES_FROM:-}
       SES_VERIFY_TEMPLATE_ID: ${SES_VERIFY_TEMPLATE_ID:-}
       SES_RESET_TEMPLATE_ID: ${SES_RESET_TEMPLATE_ID:-}
+      SES_ALERT_TEMPLATE_ID: ${SES_ALERT_TEMPLATE_ID:-}
       MAIL_DAILY_SEND_LIMIT: ${MAIL_DAILY_SEND_LIMIT:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
@@ -23,8 +25,8 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       # 备份告警（内部接口鉴权 + 管理员收件邮箱）
-      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:-}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:?请在 .env 中设置 BACKUP_ALERT_TOKEN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?请在 .env 中设置 ADMIN_EMAIL}
       # 站点配置（全部可选，默认值见 .env.example 注释）
       GEN_DEFAULT_WIDTH: ${GEN_DEFAULT_WIDTH:-}
       GEN_DEFAULT_COLORS: ${GEN_DEFAULT_COLORS:-}
@@ -90,20 +92,24 @@ services:
       context: ./deploy
       dockerfile: Dockerfile.backup
     image: doupu-backup:local
-    restart: unless-stopped
+    # 连续失败三次后保持 exited(non-zero)，避免 backup/alert 双失败却显示容器正常。
+    restart: on-failure:3
     # 只注入备份所需变量（安全审查）：不整份 env_file，避免 SMTP/数据库密钥面扩大
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-doupu}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB:-doupu}
-      COS_SECRET_ID: ${COS_SECRET_ID:-}
-      COS_SECRET_KEY: ${COS_SECRET_KEY:-}
-      COS_BUCKET: ${COS_BUCKET:-}
-      COS_REGION: ${COS_REGION:-}
+      COS_SECRET_ID: ${COS_SECRET_ID:?请在 .env 中设置 COS_SECRET_ID}
+      COS_SECRET_KEY: ${COS_SECRET_KEY:?请在 .env 中设置 COS_SECRET_KEY}
+      COS_BUCKET: ${COS_BUCKET:?请在 .env 中设置 COS_BUCKET}
+      COS_REGION: ${COS_REGION:?请在 .env 中设置 COS_REGION}
       # 失败告警：POST 到 app 容器内部告警端点（共享令牌鉴权）
-      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:-}
+      BACKUP_ALERT_TOKEN: ${BACKUP_ALERT_TOKEN:?请在 .env 中设置 BACKUP_ALERT_TOKEN}
       ALERT_ENDPOINT: ${ALERT_ENDPOINT:-http://app:3000/api/internal/backup-alert}
+      APP_HEALTH_ENDPOINT: http://app:3000/
+      BACKUP_STATUS_FILE: /tmp/backup-last-success
+      BACKUP_MAX_AGE_SECONDS: "129600"
       # rclone 远程 doupucos（TencentCOS，签名由 rclone 处理）
       RCLONE_CONFIG_DOUPUCOS_TYPE: s3
       RCLONE_CONFIG_DOUPUCOS_PROVIDER: TencentCOS
@@ -113,9 +119,18 @@ services:
       RCLONE_CONFIG_DOUPUCOS_ENDPOINT: https://cos.${COS_REGION:-ap-seoul}.myqcloud.com
     volumes:
       - ./deploy/scripts:/scripts:ro
-    entrypoint: ["/bin/sh", "-c", "while true; do /scripts/backup.sh; sleep 86400; done"]
+    entrypoint: ["/scripts/backup-loop.sh"]
+    healthcheck:
+      test: ["CMD", "/scripts/backup-healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5m
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
 
 volumes:
   pgdata: {}

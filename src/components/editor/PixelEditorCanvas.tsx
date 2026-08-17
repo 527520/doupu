@@ -1,10 +1,12 @@
 'use client';
 
+/* eslint-disable react-hooks/refs -- The editor deliberately keeps its 40k-cell command model in refs so pointer moves do not trigger React renders. */
+
 /**
  * 像素编辑画布（spec §F5）：画笔/橡皮/油漆桶/吸管/替换/清除 + 撤销重做 + 快捷键 + 触屏。
  * 图纸保存在 ref 中命令式修改（200×200 单操作 <50ms），画布随版本号重绘。
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import EditorToolbar from './EditorToolbar';
 import { zhCN } from '@/messages/zh-CN';
 import type { PaletteColor, Pattern, PatternStatsItem } from '@/lib/types';
@@ -18,6 +20,8 @@ import {
   clearAll,
   floodFill,
   replaceByCode,
+  rasterizeGridLine,
+  rollbackSnapshots,
   type BrushSize,
   type EditSnapshot,
   type ToolId,
@@ -57,13 +61,16 @@ export default function PixelEditorCanvas({
   const stateRef = useRef(createEditorState(pattern));
   const historyRef = useRef(new EditHistory());
   const onPatternChangeRef = useRef(onPatternChange);
-  onPatternChangeRef.current = onPatternChange;
   /** 最近一次经 onPatternChange 回显给父级的图纸引用（区分外部变更与自身回显）。 */
   const lastEmittedRef = useRef<Pattern | null>(null);
+  const availablePalette = useMemo(
+    () => palette.filter((color) => color.code !== null && color.code.trim().length > 0),
+    [palette],
+  );
 
   const [tool, setToolState] = useState<ToolId>('brush');
   const [brushSize, setBrushSizeState] = useState<BrushSize>(1);
-  const [currentColor, setCurrentColorState] = useState<PaletteColor | null>(palette[0] ?? null);
+  const [currentColor, setCurrentColorState] = useState<PaletteColor | null>(availablePalette[0] ?? null);
   const [cursor, setCursor] = useState<{ row: number; col: number } | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -73,6 +80,7 @@ export default function PixelEditorCanvas({
   const [replaceTo, setReplaceTo] = useState('0');
   const [replaceMsg, setReplaceMsg] = useState<string | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
 
   // 容器宽度自适应：窄屏（手机）按实际可用宽度计算格尺寸，画布等比、绝不拉伸
@@ -92,9 +100,13 @@ export default function PixelEditorCanvas({
   const toolRef = useRef(tool);
   const brushSizeRef = useRef(brushSize);
   const colorRef = useRef(currentColor);
-  toolRef.current = tool;
-  brushSizeRef.current = brushSize;
-  colorRef.current = currentColor;
+
+  useEffect(() => {
+    onPatternChangeRef.current = onPatternChange;
+    toolRef.current = tool;
+    brushSizeRef.current = brushSize;
+    colorRef.current = currentColor;
+  }, [onPatternChange, tool, brushSize, currentColor]);
 
   const strokeRef = useRef<{
     active: boolean;
@@ -103,7 +115,8 @@ export default function PixelEditorCanvas({
     startX: number;
     startY: number;
     longPressFired: boolean;
-  }>({ active: false, lastCell: null, snapshots: [], startX: 0, startY: 0, longPressFired: false });
+    touchDragStarted: boolean;
+  }>({ active: false, lastCell: null, snapshots: [], startX: 0, startY: 0, longPressFired: false, touchDragStarted: false });
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { width: W, height: H } = stateRef.current;
@@ -145,11 +158,11 @@ export default function PixelEditorCanvas({
     setCanUndo(false);
     setCanRedo(false);
     setCursor(null); // 新图纸尺寸可能变化，旧光标坐标失效
-    const color = palette[0] ?? null;
+    const color = availablePalette[0] ?? null;
     setCurrentColorState(color);
     onColorChange?.(color);
     setVersion((v) => v + 1);
-  }, [pattern, palette, onColorChange]);
+  }, [pattern, availablePalette, onColorChange]);
 
   // 光标格始终滚入视野：方向键在放大/小格画布上移动时不会「看不见光标」
   useEffect(() => {
@@ -321,6 +334,7 @@ export default function PixelEditorCanvas({
         startX: e.clientX,
         startY: e.clientY,
         longPressFired: false,
+        touchDragStarted: false,
       };
       clearLongPressTimer();
       longPressTimer.current = setTimeout(() => {
@@ -336,6 +350,7 @@ export default function PixelEditorCanvas({
         startX: e.clientX,
         startY: e.clientY,
         longPressFired: false,
+        touchDragStarted: false,
       };
     }
     try {
@@ -353,10 +368,28 @@ export default function PixelEditorCanvas({
       if (moved) {
         clearLongPressTimer();
         stroke.longPressFired = false;
+        if (e.pointerType === 'touch' && !stroke.touchDragStarted && stroke.lastCell !== null) {
+          const startRow = Math.floor(stroke.lastCell / W);
+          const startCol = stroke.lastCell % W;
+          stroke.snapshots.push(...paintAtCell(startRow, startCol));
+          stroke.touchDragStarted = true;
+        }
       }
       if (cell && (stroke.longPressFired || cell.row * W + cell.col !== stroke.lastCell)) {
+        const previous = stroke.lastCell;
         stroke.lastCell = cell.row * W + cell.col;
-        if (!stroke.longPressFired) stroke.snapshots.push(...paintAtCell(cell.row, cell.col));
+        if (!stroke.longPressFired) {
+          if (previous === null) {
+            stroke.snapshots.push(...paintAtCell(cell.row, cell.col));
+          } else {
+            const previousRow = Math.floor(previous / W);
+            const previousCol = previous % W;
+            const path = rasterizeGridLine(previousRow, previousCol, cell.row, cell.col);
+            for (const point of path.slice(1)) {
+              stroke.snapshots.push(...paintAtCell(point.row, point.col));
+            }
+          }
+        }
       }
       return;
     }
@@ -384,9 +417,11 @@ export default function PixelEditorCanvas({
   // 手势被系统打断（来电/下拉通知等）：丢弃进行中的笔迹，不提交
   const onPointerCancel = (): void => {
     clearLongPressTimer();
+    rollbackSnapshots(stateRef.current.cells, strokeRef.current.snapshots);
     strokeRef.current.active = false;
     strokeRef.current.snapshots = [];
     strokeRef.current.lastCell = null;
+    setVersion((value) => value + 1);
   };
 
   // 卸载时清理长按定时器（防悬空定时器触发已卸载组件的回调）
@@ -448,7 +483,7 @@ export default function PixelEditorCanvas({
     e.preventDefault();
     const from = replaceFrom.trim();
     if (!from) return;
-    const target = replaceTo === 'transparent' ? null : (palette[Number(replaceTo)] ?? null);
+    const target = replaceTo === 'transparent' ? null : (availablePalette[Number(replaceTo)] ?? null);
     const count = commit('replace', replaceByCode(stateRef.current.cells, from, target));
     setReplaceMsg(count > 0 ? zhCN.editor.replaceCount(count) : zhCN.editor.replaceNone);
   };
@@ -506,6 +541,11 @@ export default function PixelEditorCanvas({
   };
 
   const t = zhCN.editor;
+  const filteredPalette = availablePalette.filter((color) => {
+    const query = paletteQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${color.code ?? ''} ${color.hex}`.toLowerCase().includes(query);
+  });
 
   return (
     <div className="flex flex-col gap-2">
@@ -528,6 +568,33 @@ export default function PixelEditorCanvas({
         onTransform={onTransform}
       />
 
+      <section aria-label={t.paletteTray} className="rounded-xl border border-lilac/40 bg-white p-2">
+        <input
+          type="search"
+          value={paletteQuery}
+          onChange={(event) => setPaletteQuery(event.target.value)}
+          aria-label={t.paletteSearch}
+          placeholder={t.paletteSearch}
+          className="w-full rounded-lg border border-lilac/50 px-2 py-1 text-sm"
+        />
+        <div className="mt-2 flex max-h-28 flex-wrap gap-1 overflow-auto">
+          {filteredPalette.map((color, index) => (
+            <button
+              type="button"
+              key={`${color.hex}-${color.code ?? index}`}
+              onClick={() => setColor(color)}
+              aria-pressed={currentColor?.hex === color.hex && currentColor?.code === color.code}
+              aria-label={`${color.code ?? color.hex} ${color.hex}`}
+              className="flex items-center gap-1 rounded-lg border border-lilac/40 px-2 py-1 text-xs text-ink-soft hover:bg-lilac-soft aria-pressed:border-primary aria-pressed:bg-primary-soft"
+            >
+              <span className="h-3 w-3 rounded-sm border border-lilac/50" style={{ backgroundColor: color.hex }} />
+              <span className="font-mono">{color.code ?? color.hex}</span>
+            </button>
+          ))}
+          {filteredPalette.length === 0 && <p className="text-xs text-ink-soft">{t.paletteEmpty}</p>}
+        </div>
+      </section>
+
       {replaceOpen && (
         <form onSubmit={onReplaceSubmit} className="flex flex-wrap items-center gap-2 rounded-xl border border-lilac/40 p-2 text-sm">
           <label htmlFor="editor-replace-from" className="text-ink-soft">
@@ -548,7 +615,7 @@ export default function PixelEditorCanvas({
             onChange={(e) => setReplaceTo(e.target.value)}
             className="rounded-lg border border-lilac/50 px-2 py-1"
           >
-            {palette.map((p, i) => (
+            {availablePalette.map((p, i) => (
               <option key={p.hex} value={String(i)}>
                 {p.code ?? p.hex}
               </option>
@@ -568,6 +635,8 @@ export default function PixelEditorCanvas({
         onKeyDown={onKeyDown}
         className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
+        {/* Vertical swipes remain native scrolling; pointercancel rolls back
+            if the browser takes ownership of a gesture. */}
         <canvas
           ref={canvasRef}
           aria-label={t.canvasAria}
@@ -575,7 +644,7 @@ export default function PixelEditorCanvas({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
-          style={{ touchAction: 'none', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
+          style={{ touchAction: 'pan-y pinch-zoom', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>
       <p className="text-xs text-ink-soft/80" role="status">

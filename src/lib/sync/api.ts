@@ -2,8 +2,10 @@
  * 浏览器端 API 客户端（ticket 17）：designs 云同步 + 账号接口的 fetch 实现。
  * fetch 实现可注入（测试用假实现）；错误统一抛 ApiError（含 status/code/field）。
  */
-import { ApiError, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
+import { ApiError, type CloudApi, type CloudDesignFull, type CloudDesignMeta, type CloudDesignPage } from './clientAdapter';
 import type { ProjectFile } from '@/lib/types';
+import { z } from 'zod';
+import { projectFileSchema } from '@/lib/schemas';
 
 export type MeInfo =
   | { state: 'guest' }
@@ -18,10 +20,42 @@ export interface AuthApi {
   logout(): Promise<void>;
 }
 
-export type DoupuApi = ReturnType<typeof createDoupuApi>;
+export type DoupuApi = AuthApi & CloudApi & { listDesigns(): Promise<CloudDesignMeta[]> };
 
 interface ErrorBody {
   error?: { code?: string; message?: string; field?: string };
+}
+
+const cloudDesignMetaSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  width: z.number().int().min(0),
+  height: z.number().int().min(0),
+  updatedAt: z.string().datetime(),
+  deleted: z.boolean(),
+  revision: z.number().int().positive(),
+});
+const cloudDesignPageSchema = z.object({
+  items: z.array(cloudDesignMetaSchema),
+  nextCursor: z.string().min(1).nullable(),
+});
+const cloudDesignFullSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  project: projectFileSchema,
+  updatedAt: z.string().datetime(),
+  revision: z.number().int().positive(),
+  deleted: z.boolean().optional(),
+});
+const revisionResponseSchema = z.object({
+  updatedAt: z.string().datetime(),
+  revision: z.number().int().positive(),
+});
+
+function parseCloudResponse<T>(schema: z.ZodType<T>, payload: unknown): T {
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) throw new ApiError(502, 'INVALID_RESPONSE', '云端返回了不兼容的数据');
+  return parsed.data;
 }
 
 async function throwFor(response: Response): Promise<never> {
@@ -58,28 +92,40 @@ export function createDoupuApi(fetchImpl: typeof fetch = fetch) {
   }
 
   const cloudApi = {
-    async listDesigns(): Promise<CloudDesignMeta[]> {
-      const response = await request('/api/designs');
+    async listDesignsPage(cursor?: string): Promise<CloudDesignPage> {
+      const response = await request(cursor ? `/api/designs?cursor=${encodeURIComponent(cursor)}` : '/api/designs');
       if (!response.ok) await throwFor(response);
-      return (await response.json()) as CloudDesignMeta[];
+      return parseCloudResponse(cloudDesignPageSchema, await response.json());
+    },
+    async listDesigns(): Promise<CloudDesignMeta[]> {
+      const rows: CloudDesignMeta[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await cloudApi.listDesignsPage(cursor);
+        rows.push(...page.items);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+      return rows;
     },
     async getDesign(id: string): Promise<CloudDesignFull | null> {
       const response = await request(`/api/designs/${id}`);
       if (response.status === 404) return null;
       if (!response.ok) await throwFor(response);
-      return (await response.json()) as CloudDesignFull;
+      return parseCloudResponse(cloudDesignFullSchema, await response.json());
     },
-    async putDesign(id: string, name: string, project: ProjectFile): Promise<{ updatedAt: string }> {
+    async putDesign(id: string, name: string, project: ProjectFile, baseRevision: number): Promise<{ updatedAt: string; revision: number }> {
       const response = await request(`/api/designs/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name, project }),
+        body: JSON.stringify({ name, project, baseRevision }),
       });
       if (!response.ok) await throwFor(response);
-      return (await response.json()) as { updatedAt: string };
+      return parseCloudResponse(revisionResponseSchema, await response.json());
     },
-    async deleteDesign(id: string): Promise<void> {
-      const response = await request(`/api/designs/${id}`, { method: 'DELETE' });
-      if (!response.ok && response.status !== 404) await throwFor(response);
+    async deleteDesign(id: string, baseRevision: number): Promise<{ updatedAt: string; revision: number }> {
+      const response = await request(`/api/designs/${id}`, { method: 'DELETE', body: JSON.stringify({ baseRevision }) });
+      if (response.status === 204 || response.status === 404) return { updatedAt: '', revision: baseRevision + 1 };
+      if (!response.ok) await throwFor(response);
+      return parseCloudResponse(revisionResponseSchema, await response.json());
     },
   };
 

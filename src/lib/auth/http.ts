@@ -76,18 +76,66 @@ export function noContent(status: 204 | 200 = 204, init?: ResponseInit): NextRes
 }
 
 /** 统一错误响应：AppError → 对应状态码；ZodError → 400；未知 → 500（不泄露细节）。 */
-export function apiError(error: unknown): NextResponse {
+export function apiError(error: unknown, requestId: string = crypto.randomUUID()): NextResponse {
   if (error instanceof AppError) {
-    const body: ApiErrorBody = { error: { code: error.code, message: error.message } };
+    const body: ApiErrorBody = { error: { code: error.code, message: error.message }, requestId };
     if (error.field) body.error.field = error.field;
-    return NextResponse.json(body, { status: error.status });
+    return NextResponse.json(body, { status: error.status, headers: { 'x-request-id': requestId } });
   }
   if (error instanceof ZodError) {
+    const messages = zodErrorsToStrings(error);
+    const limited = messages.slice(0, 5);
+    if (messages.length > limited.length) limited.push(`另有 ${messages.length - limited.length} 项错误`);
     const body: ApiErrorBody = {
-      error: { code: 'VALIDATION', message: zodErrorsToStrings(error).join('；') },
+      error: { code: 'VALIDATION', message: limited.join('；').slice(0, 512) },
+      requestId,
     };
-    return NextResponse.json(body, { status: 400 });
+    return NextResponse.json(body, { status: 400, headers: { 'x-request-id': requestId } });
   }
-  console.error('[api] unexpected error:', error);
-  return NextResponse.json({ error: { code: 'INTERNAL', message: '服务器内部错误' } }, { status: 500 });
+  console.error(`[api] unexpected error requestId=${requestId}:`, error);
+  return NextResponse.json(
+    { error: { code: 'INTERNAL', message: '服务器内部错误' }, requestId },
+    { status: 500, headers: { 'x-request-id': requestId } },
+  );
+}
+
+/**
+ * 路由最外层异常边界：捕获未知异常，并确保每个响应都携带同一个 request ID。
+ * 错误 JSON 同时携带 requestId，便于用户报障与服务端日志关联。
+ */
+export function withApiErrors<Args extends unknown[]>(
+  handler: (...args: Args) => Response | Promise<Response>,
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args): Promise<Response> => {
+    const request = args[0] instanceof Request ? args[0] : null;
+    const incomingId = request?.headers.get('x-request-id') ?? '';
+    const requestId = /^[A-Za-z0-9._-]{1,64}$/.test(incomingId) ? incomingId : crypto.randomUUID();
+    try {
+      return await attachRequestId(await handler(...args), requestId);
+    } catch (error) {
+      return apiError(error, requestId);
+    }
+  };
+}
+
+async function attachRequestId(response: Response, requestId: string): Promise<Response> {
+  if (response.status < 400 || !response.headers.get('content-type')?.includes('application/json')) {
+    response.headers.set('x-request-id', requestId);
+    return response;
+  }
+  let body: unknown;
+  try {
+    body = await response.clone().json();
+  } catch {
+    response.headers.set('x-request-id', requestId);
+    return response;
+  }
+  if (typeof body !== 'object' || body === null || !('error' in body)) {
+    response.headers.set('x-request-id', requestId);
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  headers.set('x-request-id', requestId);
+  return NextResponse.json({ ...body, requestId }, { status: response.status, headers });
 }

@@ -11,17 +11,18 @@
   --color-cream-deep: #f6ede3;
 
   /* 主粉（主操作/强调） */
-  --color-primary: #e885a8;
-  --color-primary-deep: #d96a92;
+  --color-primary: #b84f78;
+  --color-primary-deep: #ad3f6d;
   --color-primary-soft: #fbeaf0;
 
   /* 墨紫（正文/标题） */
   --color-ink: #4b4356;
-  --color-ink-soft: #7e7589;
+  --color-ink-soft: #4b4356;
+  --color-ink-muted: #61586c;
 
   /* 丁香紫（次级点缀/装饰） */
-  --color-lilac: #b9a7d9;
-  --color-lilac-deep: #a08cc9;
+  --color-lilac: #8b75b4;
+  --color-lilac-deep: #765a9e;
   --color-lilac-soft: #f0eaf8;
 
   /* 柔和粉色阴影（卡片/主按钮） */
@@ -81,12 +82,17 @@
   }
   /* 粉色文字链接 */
   .link-soft {
-    @apply text-primary-deep underline-offset-4 hover:underline;
+    @apply text-primary-deep underline decoration-1 underline-offset-4 hover:decoration-2;
   }
   /* 页标题 */
   .page-title {
     @apply text-2xl font-semibold tracking-wide text-ink;
   }
+
+  .site-header {
+    @apply flex w-full flex-wrap items-center gap-2 sm:gap-3;
+  }
+
 }
 
 /* 触屏设备：小按钮抬升到 ≥44px 触控目标 */
@@ -101,4 +107,21 @@ body {
   color: var(--color-ink);
   background: var(--color-cream);
   font-family: var(--font-sans);
+}
+
+/* 历史 class 仍表达“次要文字/柔和描边”，但不再用透明度牺牲对比度。
+   统一覆盖可让全部调用点同时满足 WCAG，而无需每个页面复制颜色判断。 */
+[class~='text-ink-soft/80'],
+[class~='text-ink-soft/60'],
+[class~='placeholder:text-ink-soft/60']::placeholder {
+  color: var(--color-ink-muted);
+}
+
+[class~='border-lilac/30'],
+[class~='border-lilac/40'],
+[class~='border-lilac/50'],
+[class~='border-lilac/60'],
+[class~='border-lilac/70'],
+[class~='border-primary/60'] {
+  border-color: var(--color-lilac);
 }

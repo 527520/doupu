@@ -15,6 +15,16 @@ export const SESSION_COOKIE_NAME = 'doupu_session';
 /** 会话时长（票 02 配置化：环境变量 SESSION_TTL_SECONDS，默认 30 天）。 */
 export const SESSION_TTL_SECONDS = config.security.sessionTtlSeconds;
 
+export function sessionCookieOptions(maxAgeSeconds: number = SESSION_TTL_SECONDS) {
+  return {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: Math.max(0, Math.floor(maxAgeSeconds)),
+  };
+}
+
 /** 序列化 Set-Cookie 值（供响应头使用）。 */
 export function serializeSessionCookie(token: string, maxAgeSeconds: number = SESSION_TTL_SECONDS): string {
   return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax${secureFlag()}; Max-Age=${maxAgeSeconds}`;

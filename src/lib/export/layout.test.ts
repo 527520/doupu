@@ -6,6 +6,8 @@ import {
   EXPORT_CELL_PX_MIN,
   LEGEND_TEXT_GAP,
   clampCellPx,
+  computePngCanvasLayout,
+  pngCanvasWithinLimits,
   contentBounds,
   legendColumnWidth,
   legendColumns,
@@ -162,5 +164,26 @@ describe('图例布局', () => {
 
   it('图例文本格式（色号 × 数量）', () => {
     expect(legendEntryText({ code: 'A01', hex: '#000000', count: 5 })).toBe('A01 × 5');
+  });
+
+  it('极短图纸的 200 个长色号图例在图纸下方换行，不产生超宽 Canvas', () => {
+    const layout = computePngCanvasLayout({
+      patternWidthPx: 9600,
+      patternHeightPx: 48,
+      legendCount: 200,
+      cellPx: 48,
+      legendTextPx: 432,
+    });
+    expect(layout.legend?.columns).toBeGreaterThan(1);
+    expect(layout.legend?.rows).toBeGreaterThan(1);
+    expect(layout.width).toBe(9600);
+    expect(layout.height).toBeLessThan(1000);
+  });
+
+  it('在创建 Canvas 前拒绝超过跨浏览器尺寸或像素上限的布局', () => {
+    expect(pngCanvasWithinLimits({ width: 65_535, height: 1 })).toBe(true);
+    expect(pngCanvasWithinLimits({ width: 65_536, height: 1 })).toBe(false);
+    expect(pngCanvasWithinLimits({ width: 8192, height: 8192 })).toBe(true);
+    expect(pngCanvasWithinLimits({ width: 8193, height: 8193 })).toBe(false);
   });
 });

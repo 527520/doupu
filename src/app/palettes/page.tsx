@@ -8,6 +8,7 @@ import { zhCN } from '@/messages/zh-CN';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
 import Modal from '@/components/ui/Modal';
+import SiteHeader from '@/components/layout/SiteHeader';
 import {
   deletePalette,
   listPalettes,
@@ -20,6 +21,7 @@ interface EditingState {
   id: string;
   name: string;
   colors: PaletteRecord['colors'];
+  revision: number;
 }
 
 export default function PalettesPage() {
@@ -57,7 +59,8 @@ export default function PalettesPage() {
   }, [t.loadFailed]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const startCreate = (): void => {
@@ -67,12 +70,12 @@ export default function PalettesPage() {
       goLogin();
       return;
     }
-    setEditing({ id: newPaletteId(), name: '', colors: [] });
+    setEditing({ id: newPaletteId(), name: '', colors: [], revision: 0 });
   };
 
   const startEdit = (record: PaletteRecord): void => {
     setPageError(null);
-    setEditing({ id: record.id, name: record.name, colors: record.colors });
+    setEditing({ id: record.id, name: record.name, colors: record.colors, revision: record.revision });
   };
 
   const handleSave = async (name: string, colors: EditingState['colors']): Promise<void> => {
@@ -80,7 +83,7 @@ export default function PalettesPage() {
     setSaving(true);
     setPageError(null);
     try {
-      const saved = await savePalette(editing.id, name, colors);
+      const saved = await savePalette(editing.id, name, colors, editing.revision);
       setRecords((prev) => {
         const next = prev.filter((record) => record.id !== saved.id);
         return [saved, ...next];
@@ -89,7 +92,11 @@ export default function PalettesPage() {
     } catch (error) {
       const code = error instanceof Error && 'code' in error ? error.code : null;
       if (code === 'UNAUTHORIZED') goLogin(); // 会话中途失效：跳登录
-      else if (code === 'CONFLICT') setPageError(t.limitReached);
+      else if (code === 'REVISION_CONFLICT') {
+        setPageError(t.revisionConflict);
+        setEditing(null);
+        await load();
+      } else if (code === 'CONFLICT') setPageError(t.limitReached);
       else setPageError(t.saveFailed);
     } finally {
       setSaving(false);
@@ -100,7 +107,7 @@ export default function PalettesPage() {
     if (typeof window !== 'undefined' && !window.confirm(t.deleteConfirm)) return;
     setPageError(null);
     try {
-      await deletePalette(record.id);
+      await deletePalette(record.id, record.revision);
       setRecords((prev) => prev.filter((item) => item.id !== record.id));
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'UNAUTHORIZED') {
@@ -113,12 +120,10 @@ export default function PalettesPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-lilac/30 pb-3">
-        <h1 className="text-lg font-semibold text-ink">{t.title}</h1>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link href="/app" className="link-soft">
-            {zhCN.nav.workbench}
-          </Link>
+      <SiteHeader
+        title={t.title}
+        currentPath="/palettes"
+        primaryActions={
           <button
             type="button"
             onClick={startCreate}
@@ -126,8 +131,8 @@ export default function PalettesPage() {
           >
             {t.newPalette}
           </button>
-        </nav>
-      </header>
+        }
+      />
 
       {pageError && (
         <p role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -163,7 +168,7 @@ export default function PalettesPage() {
       <section aria-label={t.customTitle} className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-ink-soft">{t.customTitle}</h2>
         {loading ? (
-          <p className="text-sm text-ink-soft/80">…</p>
+          <p role="status" className="text-sm text-ink-soft/80">{t.loading}</p>
         ) : records.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-lilac/50 p-6 text-center text-sm text-ink-soft">
             {t.empty}

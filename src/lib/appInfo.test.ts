@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { APP_NAME, APP_VERSION, LIMITS, PROJECT_FILE_FORMAT, PROJECT_FILE_VERSION, SOURCE_REPO_URL } from './appInfo';
+import { APP_NAME, APP_VERSION, ENGINE_VERSION, LIMITS, PROJECT_FILE_FORMAT, PROJECT_FILE_VERSION, SOURCE_REPO_URL } from './appInfo';
 
 describe('appInfo', () => {
   it('exposes the product identity', () => {
     expect(APP_NAME).toBe('豆谱');
     expect(PROJECT_FILE_FORMAT).toBe('doupu-project');
-    expect(PROJECT_FILE_VERSION).toBe(1);
+    expect(PROJECT_FILE_VERSION).toBe(2);
+    expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it('exposes spec limits consistently', () => {

@@ -21,6 +21,23 @@ interface Props {
   onCellHover?: (info: CellHoverInfo | null) => void;
 }
 
+function PreviewToggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-center gap-1 text-xs text-ink-soft">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
 export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -100,16 +117,17 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
   );
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>): void => {
+    // 普通滚轮交给页面/滚动容器；仅显式的浏览器缩放手势调整图纸。
+    if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    if (e.shiftKey) {
-      const container = containerRef.current;
-      if (container) container.scrollLeft += e.deltaY;
-    } else {
-      setZoom((prev) => clampZoom(prev * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
-    }
+    setZoom((prev) => clampZoom(prev * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (e.pointerType === 'touch') {
+      longPressTimer.current = setTimeout(() => emitHover(e.clientX, e.clientY), 500);
+      return;
+    }
     const container = containerRef.current;
     dragState.current = {
       startX: e.clientX,
@@ -118,12 +136,16 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
       offsetY: container?.scrollTop ?? 0,
     };
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    if (e.pointerType === 'touch') {
-      longPressTimer.current = setTimeout(() => emitHover(e.clientX, e.clientY), 500);
-    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>): void => {
+    if (e.pointerType === 'touch') {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      return;
+    }
     if (dragState.current) {
       if (longPressTimer.current) {
         clearTimeout(longPressTimer.current);
@@ -134,7 +156,7 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
         container.scrollLeft = dragState.current.offsetX - (e.clientX - dragState.current.startX);
         container.scrollTop = dragState.current.offsetY - (e.clientY - dragState.current.startY);
       }
-    } else if (e.pointerType !== 'touch') {
+    } else {
       emitHover(e.clientX, e.clientY);
     }
   };
@@ -169,12 +191,6 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
   };
 
   const t = zhCN.preview;
-  const Toggle = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <label className="flex items-center gap-1 text-xs text-ink-soft">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -186,9 +202,9 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
         <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
           +
         </button>
-        <Toggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
-        <Toggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
-        <Toggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
+        <PreviewToggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
+        <PreviewToggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
+        <PreviewToggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
         <span className="text-ink-soft/80">{t.panHint}</span>
       </div>
       <div ref={containerRef} className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2">
@@ -200,7 +216,7 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
           onPointerLeave={onPointerLeave}
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: 'pan-x pan-y' }}
         />
       </div>
     </div>

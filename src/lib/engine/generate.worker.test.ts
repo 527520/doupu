@@ -1,74 +1,77 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GenerateRequest, WorkerResponse } from './runGenerate';
+import type { WorkerRequest, WorkerResponse } from './runGenerate';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { buildBrandPalette } from '@/lib/palettes';
 
 interface WorkerSelfMock {
-  onmessage: ((event: MessageEvent<unknown>) => void) | null;
-  postMessage: (message: unknown) => void;
+  onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage: (message: WorkerResponse) => void;
 }
 
 let selfMock: WorkerSelfMock;
 
-/** 8×8 红色不透明测试源图。 */
-function makeRequest(palette = buildBrandPalette('MARD')): GenerateRequest {
+const source = (): Extract<WorkerRequest, { type: 'source' }> => {
   const data = new Uint8ClampedArray(8 * 8 * 4);
   for (let i = 0; i < 8 * 8; i++) {
     data[i * 4] = 255;
     data[i * 4 + 3] = 255;
   }
+  return { type: 'source', sourceId: 1, src: { data, width: 8, height: 8 } };
+};
+
+const generate = (taskId = 1, palette = buildBrandPalette('MARD'), cancelled = false): Extract<WorkerRequest, { type: 'generate' }> => {
+  const cancelBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  if (cancelled) Atomics.store(new Int32Array(cancelBuffer), 0, 1);
   return {
-    src: { data, width: 8, height: 8 },
+    type: 'generate',
+    taskId,
+    sourceId: 1,
     params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 20 },
     palette,
+    cancelBuffer,
   };
-}
+};
 
 beforeEach(async () => {
-  vi.resetModules(); // 每次重新执行模块顶层 self.onmessage 赋值
+  vi.resetModules();
   selfMock = { onmessage: null, postMessage: vi.fn() };
   vi.stubGlobal('self', selfMock);
   await import('./generate.worker');
 });
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+afterEach(() => vi.unstubAllGlobals());
 
-function dispatch(request: GenerateRequest): void {
-  selfMock.onmessage?.({ data: request } as MessageEvent<unknown>);
-}
+const dispatch = (request: WorkerRequest): void => {
+  selfMock.onmessage?.({ data: request } as MessageEvent<WorkerRequest>);
+};
+const posted = (): WorkerResponse[] =>
+  (selfMock.postMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
 
-function posted(): WorkerResponse[] {
-  return (selfMock.postMessage as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0]);
-}
-
-describe('generate.worker 消息协议', () => {
-  it('成功：按阶段回发单调 progress 并以 done 收尾', () => {
-    dispatch(makeRequest());
+describe('generate.worker 持久消息协议', () => {
+  it('缓存 source，多次 generate 均带 taskId 且进度单调', () => {
+    dispatch(source());
+    dispatch(generate(7));
+    dispatch(generate(8));
     const messages = posted();
-    expect(messages.length).toBeGreaterThan(1);
-    const percents = messages.filter((m) => m.type === 'progress').map((m) => (m as { percent: number }).percent);
-    expect(percents[0]).toBeGreaterThan(0);
-    for (let i = 1; i < percents.length; i++) {
-      expect(percents[i]).toBeGreaterThanOrEqual(percents[i - 1]);
-    }
-    expect(percents[percents.length - 1]).toBe(100);
-
-    const last = messages[messages.length - 1];
-    expect(last.type).toBe('done');
-    if (last.type === 'done') {
-      expect(last.output.pattern.width).toBe(20);
-      expect(last.output.pattern.height).toBe(20);
-      expect(last.output.totalBeadCount).toBe(400);
-    }
+    const first = messages.filter((message) => message.taskId === 7);
+    const percents = first.filter((message) => message.type === 'progress').map((message) => message.percent);
+    expect(percents.at(-1)).toBe(100);
+    expect(first.at(-1)).toMatchObject({ type: 'done', taskId: 7 });
+    expect(messages.at(-1)).toMatchObject({ type: 'done', taskId: 8 });
   });
 
-  it('空色板：回发 error 消息（不抛穿 Worker 边界）', () => {
-    dispatch(makeRequest([]));
-    const messages = posted();
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toEqual({ type: 'error', error: 'palette is empty' });
+  it('原子取消标记使引擎在工作中止点退出，不产生 done/progress', () => {
+    dispatch(source());
+    dispatch(generate(9, buildBrandPalette('MARD'), true));
+    expect(posted()).toEqual([{ type: 'cancelled', taskId: 9 }]);
+  });
+
+  it('无 source 和空色板均返回稳定领域错误', () => {
+    dispatch(generate(1));
+    expect(posted()).toEqual([{ type: 'error', taskId: 1, error: 'generation source is unavailable' }]);
+    dispatch(source());
+    dispatch(generate(2, []));
+    expect(posted().at(-1)).toEqual({ type: 'error', taskId: 2, error: 'palette is empty' });
   });
 });

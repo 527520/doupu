@@ -54,6 +54,31 @@ async function firstDesignId(page: import('@playwright/test').Page): Promise<str
   });
 }
 
+async function localSyncSnapshot(page: import('@playwright/test').Page): Promise<{
+  records: Array<{ id: string; revision?: number; syncState?: string }>;
+  tombstones: Array<{ id: string; baseRevision: number }>;
+}> {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('doupu', 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = db.transaction(['designs', 'meta'], 'readonly');
+    const recordsRequest = transaction.objectStore('designs').getAll();
+    const tombstonesRequest = transaction.objectStore('meta').get('sync-tombstones-v2');
+    const records = await new Promise<Array<{ id: string; revision?: number; syncState?: string }>>((resolve, reject) => {
+      recordsRequest.onsuccess = () => resolve(recordsRequest.result as Array<{ id: string; revision?: number; syncState?: string }>);
+      recordsRequest.onerror = () => reject(recordsRequest.error);
+    });
+    const raw = await new Promise<string | undefined>((resolve, reject) => {
+      tombstonesRequest.onsuccess = () => resolve((tombstonesRequest.result as { value?: string } | undefined)?.value);
+      tombstonesRequest.onerror = () => reject(tombstonesRequest.error);
+    });
+    return { records, tombstones: raw ? JSON.parse(raw) as Array<{ id: string; baseRevision: number }> : [] };
+  });
+}
+
 test('双设备同步：设备 A 保存 → 设备 B 登录后可见同一设计', async ({ browser }) => {
   // 两个隔离的浏览器上下文模拟两台设备
   const contextA = await browser.newContext();
@@ -108,8 +133,13 @@ test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打
   // A：删除（此前 DELETE 被守卫 400 拦截导致删除失败——本用例守护该回归）
   await pageA.goto('/designs');
   await expect(pageA.getByText('待删除设计').first()).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => (await localSyncSnapshot(pageA)).records.find((record) => record.id === designId)).toMatchObject({
+    revision: 1,
+    syncState: 'synced',
+  });
   await pageA.getByRole('button', { name: '删除' }).first().click();
   await pageA.getByRole('dialog').getByRole('button', { name: '删除' }).click();
+  await expect.poll(async () => await localSyncSnapshot(pageA)).toMatchObject({ records: [], tombstones: [] });
   await expect(pageA.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
   await expect(pageA.getByText('加载失败')).toHaveCount(0);
 
@@ -117,7 +147,7 @@ test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打
   await pageA.reload();
   await expect(pageA.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
   await pageA.goto(`/app?id=${designId}`);
-  await expect(pageA.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageA.getByRole('button', { name: '选择图片文件' })).toBeVisible({ timeout: 15_000 });
   await expect(pageA.getByLabel('设计名称')).toHaveCount(0);
 
   // 设备 B：删除已同步——列表为空，直链同样打不开
@@ -126,7 +156,7 @@ test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打
   await pageB.goto('/designs');
   await expect(pageB.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });
   await pageB.goto(`/app?id=${designId}`);
-  await expect(pageB.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageB.getByRole('button', { name: '选择图片文件' })).toBeVisible({ timeout: 15_000 });
   await expect(pageB.getByLabel('设计名称')).toHaveCount(0);
 
   await contextA.close();
@@ -155,7 +185,7 @@ test('越权防护：他人设计的 id 直链打不开（本地无副本 → �
   const pageB = await contextB.newPage();
   await login(pageB, accountB.email, accountB.password);
   await pageB.goto(`/app?id=${designId}`);
-  await expect(pageB.getByText(/拖拽图片到此处/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(pageB.getByRole('button', { name: '选择图片文件' })).toBeVisible({ timeout: 15_000 });
   await expect(pageB.getByLabel('设计名称')).toHaveCount(0);
 
   await contextA.close();

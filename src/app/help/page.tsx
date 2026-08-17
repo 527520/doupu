@@ -1,15 +1,16 @@
 import { zhCN } from '@/messages/zh-CN';
 import Link from 'next/link';
 import ArcSignature from '@/components/ui/ArcSignature';
+import SiteHeader from '@/components/layout/SiteHeader';
 
 export default function HelpPage() {
   const t = zhCN.help;
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col items-center gap-3 text-center">
+      <SiteHeader title={t.title} currentPath="/help" />
+      <div className="flex flex-col items-center gap-3 text-center">
         <ArcSignature className="w-24" />
-        <h1 className="text-3xl font-semibold tracking-wide text-ink">{t.title}</h1>
-      </header>
+      </div>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-ink">{t.uploadTitle}</h2>

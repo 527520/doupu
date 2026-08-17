@@ -15,6 +15,7 @@ interface Props {
   cellPx?: number;
   cropToContent?: boolean;
   includeLegend?: boolean;
+  disabled?: boolean;
 }
 
 const CELL_CHOICES = [8, 16, 24, 32, 48] as const;
@@ -25,6 +26,7 @@ export default function PngExportButton({
   cellPx,
   cropToContent,
   includeLegend,
+  disabled,
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +45,7 @@ export default function PngExportButton({
   const t = zhCN.exportPng;
 
   const handleClick = (): void => {
-    if (empty || busy) return;
+    if (disabled || empty || busy) return;
     setError(null);
     setOptCellPx(defaultCellPx);
     setOptCrop(defaultCrop);
@@ -52,7 +54,7 @@ export default function PngExportButton({
   };
 
   const confirm = async (): Promise<void> => {
-    if (empty || busy) return;
+    if (disabled || empty || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -86,7 +88,7 @@ export default function PngExportButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={empty || busy}
+        disabled={disabled || empty || busy}
         className="rounded-full bg-primary px-3 py-1.5 text-sm text-white shadow-soft transition-colors hover:bg-primary-deep disabled:cursor-not-allowed disabled:bg-lilac/50"
       >
         {busy ? '…' : zhCN.export.pngExport}

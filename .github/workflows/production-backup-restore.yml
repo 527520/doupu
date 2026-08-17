@@ -1,0 +1,63 @@
+name: Production backup restore drill
+
+on:
+  schedule:
+    - cron: "23 4 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-restore
+  cancel-in-progress: false
+
+jobs:
+  restore-latest-cos-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: doupu
+          POSTGRES_PASSWORD: restore-drill-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U doupu -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the pinned restore environment
+        run: docker build -f deploy/Dockerfile.backup -t doupu-backup-restore:local deploy
+      - name: Download latest promoted COS archive and restore into disposable PostgreSQL 16
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
+          COS_REGION: ${{ secrets.COS_REGION }}
+        run: |
+          test -n "$COS_SECRET_ID" && test -n "$COS_SECRET_KEY" && test -n "$COS_BUCKET" && test -n "$COS_REGION"
+          docker run --rm --network host --entrypoint /bin/sh \
+            -e PGHOST=127.0.0.1 -e PGUSER=doupu -e PGPASSWORD=restore-drill-password -e PGDATABASE=postgres \
+            -e RESTORE_DATABASE=doupu_restore_test \
+            -e "RESTORE_CANARY_SQL=SELECT count(*) FROM users" \
+            -e RCLONE_CONFIG_DOUPUCOS_TYPE=s3 \
+            -e RCLONE_CONFIG_DOUPUCOS_PROVIDER=TencentCOS \
+            -e RCLONE_CONFIG_DOUPUCOS_ENV_AUTH=true \
+            -e RCLONE_CONFIG_DOUPUCOS_ACCESS_KEY_ID="$COS_SECRET_ID" \
+            -e RCLONE_CONFIG_DOUPUCOS_SECRET_ACCESS_KEY="$COS_SECRET_KEY" \
+            -e RCLONE_CONFIG_DOUPUCOS_ENDPOINT="https://cos.${COS_REGION}.myqcloud.com" \
+            -e BACKUP_REMOTE="doupucos:${COS_BUCKET}/doupu-backup" \
+            -v "$PWD/deploy/scripts:/scripts:ro" \
+            doupu-backup-restore:local -ec '
+              latest=$(rclone lsf "$BACKUP_REMOTE" --files-only --include "doupu-*.dump.gz" --max-age 36h | sort | tail -n 1)
+              test -n "$latest"
+              rclone copyto "$BACKUP_REMOTE/$latest" /tmp/latest.dump.gz
+              test -s /tmp/latest.dump.gz
+              /scripts/restore-drill.sh /tmp/latest.dump.gz
+            '

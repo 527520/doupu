@@ -50,13 +50,13 @@ npm run dev        # http://localhost:3000
 
 ## 部署
 
-国内单机方案（腾讯云轻量 + Docker + Caddy + 每日 COS 备份）：
+海外节点单机方案（腾讯云轻量 + Docker + Caddy + 每日 COS 备份）：
 
-1. 按 [deploy/CHECKLIST.md](deploy/CHECKLIST.md) 完成购机、域名、个人 ICP 备案、SES、COS（仅本人可操作）。
-2. 服务器上克隆本仓库 → `cp .env.example .env` 并填写 → `bash deploy/scripts/deploy.sh`。
+1. 按 [deploy/CHECKLIST.md](deploy/CHECKLIST.md) 完成海外地域购机、域名、SES、COS（仅本人可操作）。
+2. 推送稳定 tag 并等待 release workflow 全绿；服务器同步部署编排文件，设置 `.env` 的稳定 `APP_IMAGE`，再执行 `bash deploy/scripts/deploy.sh`。
 3. 恢复演练见 [deploy/restore.md](deploy/restore.md)。
 
-镜像也可由 tag 触发的 CI 构建到 GitHub Container Registry（`ghcr.io/527520/doupu`）。
+应用镜像必须使用 tag 触发、通过完整 CI 后推送到 GitHub Container Registry 的稳定 tag/digest（`ghcr.io/527520/doupu`）；生产服务器不从任意源码重建 app。
 
 ## 项目结构
 
@@ -66,7 +66,7 @@ src/components/  UI 组件（上传/裁剪/参数/预览/编辑器/导出/设计
 src/app/       Next.js 页面与 /api 路由（账号、设计、色板）
 db/            Drizzle schema、迁移、生产/测试客户端
 tests/         测试 fixture 与全局设置；tests/e2e 为 Playwright 用例
-deploy/        部署脚本、备份与备案检查单
+deploy/        部署脚本、备份与上线检查单
 docs/adr/      架构决策记录
 ```
 

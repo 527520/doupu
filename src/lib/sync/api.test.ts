@@ -6,7 +6,8 @@ import type { ProjectFile } from '@/lib/types';
 
 const minimalProject: ProjectFile = {
   format: 'doupu-project',
-  version: 1,
+  version: 2,
+  engineVersion: '2.0.0',
   name: '测试设计',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -40,11 +41,19 @@ describe('createDoupuApi 云端设计接口', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const api = createDoupuApi(async (input, init) => {
       calls.push({ url: String(input), init });
-      return jsonResponse(200, [{ id: 'd1', name: '设计一', updatedAt: '2026-01-01' }]);
+      return jsonResponse(200, {
+        items: [{ id: 'd1', name: '设计一', width: 1, height: 1, updatedAt: '2026-01-01T00:00:00.000Z', deleted: false, revision: 1 }],
+        nextCursor: null,
+      });
     });
     const list = await api.listDesigns();
     expect(list).toHaveLength(1);
     expect(calls[0].url).toBe('/api/designs');
+  });
+
+  it('拒绝无 revision 的旧数组列表协议', async () => {
+    const api = createDoupuApi(async () => jsonResponse(200, [{ id: 'legacy' }]));
+    await expect(api.listDesigns()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('getDesign 404 返回 null，其他错误抛 ApiError', async () => {
@@ -63,20 +72,23 @@ describe('createDoupuApi 云端设计接口', () => {
 
   it('getDesign 成功返回完整设计', async () => {
     const api = createDoupuApi(async () =>
-      jsonResponse(200, { id: 'd1', name: 'n', updatedAt: 't', project: { format: 'doupu-project' } }),
+      jsonResponse(200, { id: 'd1', name: 'n', updatedAt: '2026-01-01T00:00:00.000Z', revision: 1, project: minimalProject }),
     );
     const design = await api.getDesign('d1');
-    expect(design?.project).toEqual({ format: 'doupu-project' });
+    expect(design?.project).toEqual({
+      ...minimalProject,
+      params: { ...minimalProject.params, backgroundPrototype: null },
+    });
   });
 
   it('putDesign 携带 JSON Content-Type 并返回 updatedAt', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const api = createDoupuApi(async (input, init) => {
       calls.push({ url: String(input), init });
-      return jsonResponse(200, { updatedAt: '2026-02-02' });
+      return jsonResponse(200, { updatedAt: '2026-02-02T00:00:00.000Z', revision: 1 });
     });
-    const result = await api.putDesign('d1', '名字', minimalProject);
-    expect(result.updatedAt).toBe('2026-02-02');
+    const result = await api.putDesign('d1', '名字', minimalProject, 0);
+    expect(result.updatedAt).toBe('2026-02-02T00:00:00.000Z');
     expect(calls[0].url).toBe('/api/designs/d1');
     expect(calls[0].init?.method).toBe('PUT');
     const headers = calls[0].init?.headers as Record<string, string>;
@@ -85,13 +97,13 @@ describe('createDoupuApi 云端设计接口', () => {
 
   it('deleteDesign 404 静默成功（幂等），5xx 抛错', async () => {
     const ok = createDoupuApi(async () => new Response(null, { status: 204 }));
-    await expect(ok.deleteDesign('d1')).resolves.toBeUndefined();
+    await expect(ok.deleteDesign('d1', 1)).resolves.toEqual({ updatedAt: '', revision: 2 });
 
     const notFound = createDoupuApi(async () => new Response(null, { status: 404 }));
-    await expect(notFound.deleteDesign('d1')).resolves.toBeUndefined();
+    await expect(notFound.deleteDesign('d1', 1)).resolves.toEqual({ updatedAt: '', revision: 2 });
 
     const boom = createDoupuApi(async () => jsonResponse(500, { error: { code: 'INTERNAL' } }));
-    await expect(boom.deleteDesign('d1')).rejects.toBeInstanceOf(ApiError);
+    await expect(boom.deleteDesign('d1', 1)).rejects.toBeInstanceOf(ApiError);
   });
 });
 
@@ -166,7 +178,7 @@ describe('createDoupuApi 账号接口', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const api = createDoupuApi(async (input, init) => {
       calls.push({ url: String(input), init });
-      return jsonResponse(200, []);
+      return jsonResponse(200, { items: [], nextCursor: null });
     });
     await api.listDesigns();
     const headers = (calls[0].init?.headers ?? {}) as Record<string, string>;

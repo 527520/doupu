@@ -2,17 +2,18 @@ import { zhCN } from '@/messages/zh-CN';
 import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, CONTACT_EMAIL, ISSUES_URL, SOURCE_REPO_URL } from '@/lib/appInfo';
 import Link from 'next/link';
 import ArcSignature from '@/components/ui/ArcSignature';
+import SiteHeader from '@/components/layout/SiteHeader';
 
 export default function AboutPage() {
   const t = zhCN.about;
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col items-center gap-2 text-center">
+      <SiteHeader title={t.title} currentPath="/about" />
+      <div className="flex flex-col items-center gap-2 text-center">
         <ArcSignature className="w-24" />
-        <h1 className="text-3xl font-semibold tracking-wide text-ink">{t.title}</h1>
         <p className="text-sm text-ink-soft/80">v{APP_VERSION}</p>
         <p className="text-sm leading-6 text-ink-soft">{t.intro}</p>
-      </header>
+      </div>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-ink">{t.featuresTitle}</h2>

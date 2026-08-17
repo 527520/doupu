@@ -14,6 +14,46 @@ export interface EditSnapshot {
   after: PatternCell;
 }
 
+/** Bresenham grid traversal used to make sparse pointer events a continuous stroke. */
+export function rasterizeGridLine(
+  fromRow: number,
+  fromCol: number,
+  toRow: number,
+  toCol: number,
+): Array<{ row: number; col: number }> {
+  const points: Array<{ row: number; col: number }> = [];
+  let x = fromCol;
+  let y = fromRow;
+  const dx = Math.abs(toCol - fromCol);
+  const sx = fromCol < toCol ? 1 : -1;
+  const dy = -Math.abs(toRow - fromRow);
+  const sy = fromRow < toRow ? 1 : -1;
+  let error = dx + dy;
+
+  while (true) {
+    points.push({ row: y, col: x });
+    if (x === toCol && y === toRow) break;
+    const doubled = 2 * error;
+    if (doubled >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubled <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+  return points;
+}
+
+/** Restores a cancelled edit transaction, including overlapping brush cells. */
+export function rollbackSnapshots(cells: PatternCell[], snapshots: readonly EditSnapshot[]): void {
+  for (let index = snapshots.length - 1; index >= 0; index--) {
+    const snapshot = snapshots[index];
+    cells[snapshot.index] = snapshot.before;
+  }
+}
+
 /** 单元格相等性（hex/code/transparent/external 全同）。 */
 export function sameCell(a: PatternCell, b: PatternCell): boolean {
   return (

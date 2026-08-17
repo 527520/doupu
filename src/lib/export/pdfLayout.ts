@@ -99,16 +99,14 @@ export function seamPositionsForPage(page: PdfPageSpec): { cols: number[]; rows:
   return { cols, rows };
 }
 
-const CJK_RE = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+export type PdfTextMeasurer = (text: string, fontSizePt: number) => number;
 
 /**
- * 文本宽度估算（pt）：CJK 全角记 1em，其余记 0.55em。
- * 用于无字体测量环境（纯模块）下的截断判定；pdf.ts 中另有 pdf-lib 精确宽度兜底。
+ * 字体尚未加载时采用保守 1em 上界。布局宁可少排一列，也不能因把
+ * `W/M` 当成平均窄字而跨列；真正绘制时 pdf.ts 会注入字体精确测量。
  */
 export function estimateTextWidthPt(text: string, fontSizePt: number): number {
-  let units = 0;
-  for (const ch of text) units += CJK_RE.test(ch) ? 1 : 0.55;
-  return units * fontSizePt;
+  return [...text].length * fontSizePt;
 }
 
 /** 超宽文本截断（附加省略号，保证估算宽度 ≤ maxWidthPt；连省略号都放不下时返回 ''）。 */
@@ -117,15 +115,40 @@ export function truncateTextToWidth(
   fontSizePt: number,
   maxWidthPt: number,
   ellipsis = '…',
+  measure: PdfTextMeasurer = estimateTextWidthPt,
 ): string {
-  if (estimateTextWidthPt(text, fontSizePt) <= maxWidthPt) return text;
-  if (estimateTextWidthPt(ellipsis, fontSizePt) > maxWidthPt) return '';
+  if (measure(text, fontSizePt) <= maxWidthPt) return text;
+  if (measure(ellipsis, fontSizePt) > maxWidthPt) return '';
   let out = '';
   for (const ch of text) {
-    if (estimateTextWidthPt(out + ch + ellipsis, fontSizePt) > maxWidthPt) break;
+    if (measure(out + ch + ellipsis, fontSizePt) > maxWidthPt) break;
     out += ch;
   }
   return out + ellipsis;
+}
+
+/** Fit a complete legend label, reserving width for its mandatory quantity suffix. */
+export function fitLegendEntryText(
+  code: string,
+  count: number,
+  fontSizePt: number,
+  maxWidthPt: number,
+  ellipsis = '…',
+  measure: PdfTextMeasurer = estimateTextWidthPt,
+): string {
+  const suffix = ` x${count}`;
+  const suffixWidth = measure(suffix, fontSizePt);
+  if (suffixWidth > maxWidthPt) {
+    return truncateTextToWidth(suffix.trimStart(), fontSizePt, maxWidthPt, ellipsis, measure);
+  }
+  const fittedCode = truncateTextToWidth(
+    code,
+    fontSizePt,
+    Math.max(0, maxWidthPt - suffixWidth),
+    ellipsis,
+    measure,
+  );
+  return `${fittedCode}${suffix}`;
 }
 
 /**
@@ -152,6 +175,43 @@ export function sortStatsForLegend<T extends { count: number; hex: string }>(sta
 /** 图例列数：每项 ≥30mm 宽，最多 6 列（保证 291 色单页放得下）。 */
 export function legendColumns(usableMm: number): number {
   return Math.min(6, Math.max(1, Math.floor(usableMm / 30)));
+}
+
+/** Choose enough column width for every complete `code xcount` label. */
+export function legendColumnsForItems<T extends { code: string; count: number }>(
+  items: readonly T[],
+  usableMm: number,
+  fontSizePt = 8,
+  measure: PdfTextMeasurer = estimateTextWidthPt,
+): number {
+  const maximum = legendColumns(usableMm);
+  if (items.length === 0) return maximum;
+  const usableWidthPt = Math.max(0, usableMm * MM_TO_PT);
+  const requiredItemWidthPt = Math.max(
+    ...items.map((item) => 16 + measure(`${item.code} x${item.count}`, fontSizePt)),
+  );
+  return Math.max(1, Math.min(maximum, Math.floor(usableWidthPt / Math.max(1, requiredItemWidthPt))));
+}
+
+/**
+ * 图例页分页：标题/总计区固定占 53pt，每行 14pt，条目按行填充。
+ * 返回的每页条目都能完整落在 A4 页边距内。
+ */
+export function paginateLegendItems<T extends { code: string; count: number }>(
+  items: readonly T[],
+  metrics: PdfPageMetrics = defaultPdfMetrics,
+  measure: PdfTextMeasurer = estimateTextWidthPt,
+): T[][] {
+  if (items.length === 0) return [[]];
+  const usableWidthMm = Math.max(0, A4_WIDTH_MM - 2 * metrics.marginMm);
+  const usableHeightPt = Math.max(0, (A4_HEIGHT_MM - 2 * metrics.marginMm) * MM_TO_PT);
+  const rows = Math.max(1, Math.floor((usableHeightPt - 53) / 14));
+  const capacity = rows * legendColumnsForItems(items, usableWidthMm, 8, measure);
+  const pages: T[][] = [];
+  for (let offset = 0; offset < items.length; offset += capacity) {
+    pages.push(items.slice(offset, offset + capacity));
+  }
+  return pages;
 }
 
 const ILLEGAL_FILENAME_RE = /[\\/:*?"<>|\u0000-\u001f]/g;

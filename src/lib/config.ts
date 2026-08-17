@@ -89,7 +89,37 @@ const DEFAULTS: SiteConfig = {
   features: { heicWasm: true, pdfFontSubset: true },
 };
 
+/** PDF 版式参数必须作为整组落在 A4 可见区内，否则整组回退。 */
+export function normalizePdfMetrics(
+  candidate: PublicConfig['exportPdf'],
+  fallback: PublicConfig['exportPdf'],
+): PublicConfig['exportPdf'] {
+  const fieldsAreValid = Number.isFinite(candidate.cellMm)
+    && Number.isFinite(candidate.marginMm)
+    && Number.isFinite(candidate.headerMm)
+    && candidate.cellMm > 0
+    && candidate.marginMm > 0
+    && candidate.headerMm > 0
+    && Number.isInteger(candidate.pageCols)
+    && Number.isInteger(candidate.pageRows)
+    && candidate.pageCols > 0
+    && candidate.pageRows > 0;
+  const fitsWidth = 2 * candidate.marginMm + candidate.pageCols * candidate.cellMm <= 210;
+  const fitsHeight = 2 * candidate.marginMm + candidate.headerMm + candidate.pageRows * candidate.cellMm <= 297;
+  return { ...(fieldsAreValid && fitsWidth && fitsHeight ? candidate : fallback) };
+}
+
 function compute(): SiteConfig {
+  const exportPdf = normalizePdfMetrics(
+    {
+      cellMm: readInt('PDF_CELL_MM', DEFAULTS.exportPdf.cellMm, 2, 20),
+      marginMm: readInt('PDF_MARGIN_MM', DEFAULTS.exportPdf.marginMm, 2, 30),
+      headerMm: readInt('PDF_HEADER_MM', DEFAULTS.exportPdf.headerMm, 4, 30),
+      pageCols: readInt('PDF_PAGE_COLS', DEFAULTS.exportPdf.pageCols, 5, 100),
+      pageRows: readInt('PDF_PAGE_ROWS', DEFAULTS.exportPdf.pageRows, 5, 100),
+    },
+    DEFAULTS.exportPdf,
+  );
   return {
     generation: {
       defaultWidth: readInt('GEN_DEFAULT_WIDTH', DEFAULTS.generation.defaultWidth, LIMITS.targetWidth.min, LIMITS.targetWidth.max),
@@ -100,13 +130,7 @@ function compute(): SiteConfig {
       cropToContent: readBool('PNG_CROP_TO_CONTENT', DEFAULTS.exportPng.cropToContent),
       includeLegend: readBool('PNG_INCLUDE_LEGEND', DEFAULTS.exportPng.includeLegend),
     },
-    exportPdf: {
-      cellMm: readInt('PDF_CELL_MM', DEFAULTS.exportPdf.cellMm, 2, 20),
-      marginMm: readInt('PDF_MARGIN_MM', DEFAULTS.exportPdf.marginMm, 2, 30),
-      headerMm: readInt('PDF_HEADER_MM', DEFAULTS.exportPdf.headerMm, 4, 30),
-      pageCols: readInt('PDF_PAGE_COLS', DEFAULTS.exportPdf.pageCols, 5, 100),
-      pageRows: readInt('PDF_PAGE_ROWS', DEFAULTS.exportPdf.pageRows, 5, 100),
-    },
+    exportPdf,
     security: {
       loginRateLimit: readInt('RATE_LOGIN', DEFAULTS.security.loginRateLimit, 1),
       registerRateLimit: readInt('RATE_REGISTER', DEFAULTS.security.registerRateLimit, 1),

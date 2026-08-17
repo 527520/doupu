@@ -7,14 +7,12 @@ import { boardSeamPositions, contrastColor, labelVisible } from '@/lib/render/la
 import type { Pattern } from '@/lib/types';
 import {
   EXPORT_CELL_PX_DEFAULT,
-  LEGEND_GAP,
+  LEGEND_TEXT_GAP,
   clampCellPx,
+  computePngCanvasLayout,
   contentBounds,
-  legendColumnWidth,
-  legendColumns,
-  legendEntriesPerColumn,
-  legendEntryHeight,
   legendEntryText,
+  pngCanvasWithinLimits,
   pngFileName,
 } from './layout';
 
@@ -23,13 +21,13 @@ export interface ExportPngOptions {
   cellPx?: number;
   /** 裁剪至内容（外部格包围盒），默认开 */
   cropToContent?: boolean;
-  /** 右侧图例（色块+色号+数量），默认关 */
+  /** 下方换行图例（色块+色号+数量），默认关 */
   includeLegend?: boolean;
 }
 
 export type ExportPngResult =
   | { ok: true; blob: Blob; fileName: string }
-  | { ok: false; code: 'EMPTY_PATTERN' | 'ENCODE_FAILED' };
+  | { ok: false; code: 'EMPTY_PATTERN' | 'CANVAS_TOO_LARGE' | 'ENCODE_FAILED' };
 
 const LABEL_FONT_FAMILY = 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
 
@@ -58,14 +56,9 @@ export function exportPngBlob(
   const font = `${fontPx}px ${LABEL_FONT_FAMILY}`;
 
   // 图例宽度（需要文本测量，仅 DOM 环境可用；无 DOM 时按保守估计）
-  let legendWidth = 0;
-  let legendCols = 0;
-  let legendEntriesPerCol = 0;
   /** 图例列宽依据的最长文本宽度（px）——宽度计算与绘制两处必须用同一个值，避免长色号越界 */
   let legendTextPx = 0;
   if (includeLegend && stats.length > 0) {
-    legendCols = legendColumns(stats.length, cellPx, patternPxH);
-    legendEntriesPerCol = legendEntriesPerColumn(cellPx, patternPxH);
     let maxTextPx = 0;
     if (typeof document !== 'undefined') {
       const measurer = document.createElement('canvas').getContext('2d');
@@ -82,12 +75,22 @@ export function exportPngBlob(
       maxTextPx = cellPx * 4;
     }
     legendTextPx = Math.max(maxTextPx, 1);
-    legendWidth = legendCols * legendColumnWidth(cellPx, legendTextPx) + LEGEND_GAP;
+  }
+
+  const canvasLayout = computePngCanvasLayout({
+    patternWidthPx: patternPxW,
+    patternHeightPx: patternPxH,
+    legendCount: includeLegend ? stats.length : 0,
+    cellPx,
+    legendTextPx,
+  });
+  if (!pngCanvasWithinLimits(canvasLayout)) {
+    return Promise.resolve({ ok: false, code: 'CANVAS_TOO_LARGE' });
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = patternPxW + legendWidth;
-  canvas.height = Math.max(patternPxH, 1);
+  canvas.width = canvasLayout.width;
+  canvas.height = Math.max(canvasLayout.height, 1);
   const ctx = canvas.getContext('2d');
   if (!ctx) return Promise.resolve({ ok: false, code: 'ENCODE_FAILED' });
 
@@ -147,23 +150,28 @@ export function exportPngBlob(
         const cell = pattern.cells[(y + y0) * pattern.width + (x + x0)];
         if (cell.transparent || cell.external || cell.code === null || cell.code === undefined) continue;
         ctx.fillStyle = contrastColor(cell.hex!);
-        ctx.fillText(cell.code, x * cellPx + cellPx / 2, y * cellPx + cellPx / 2);
+        // Canvas' maxWidth contract horizontally condenses long custom colour
+        // codes, keeping every label inside its own cell in all target engines.
+        ctx.fillText(
+          cell.code,
+          x * cellPx + cellPx / 2,
+          y * cellPx + cellPx / 2,
+          Math.max(1, cellPx - 2),
+        );
       }
     }
   }
 
-  // 图例（右侧，按列排布，确定性顺序来自 computeStats）
-  if (includeLegend && stats.length > 0) {
-    const entryH = legendEntryHeight(cellPx);
-    const colWidth = legendColumnWidth(cellPx, legendTextPx);
-    const legendX0 = patternPxW + LEGEND_GAP;
+  // 图例（图纸下方按行换行，确定性顺序来自 computeStats）
+  if (includeLegend && stats.length > 0 && canvasLayout.legend) {
+    const legend = canvasLayout.legend;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     for (let i = 0; i < stats.length; i++) {
-      const col = Math.floor(i / legendEntriesPerCol);
-      const row = i % legendEntriesPerCol;
-      const x = legendX0 + col * colWidth;
-      const y = row * entryH + entryH / 2;
+      const col = i % legend.columns;
+      const row = Math.floor(i / legend.columns);
+      const x = legend.x + col * legend.columnWidth;
+      const y = legend.y + row * legend.entryHeight + legend.entryHeight / 2;
       const item = stats[i];
       ctx.fillStyle = item.hex;
       ctx.fillRect(x, y - cellPx / 2, cellPx, cellPx);
@@ -171,7 +179,7 @@ export function exportPngBlob(
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y - cellPx / 2 + 0.5, cellPx - 1, cellPx - 1);
       ctx.fillStyle = '#1f2937';
-      ctx.fillText(legendEntryText(item), x + cellPx + LEGEND_GAP / 2, y);
+      ctx.fillText(legendEntryText(item), x + cellPx + LEGEND_TEXT_GAP, y);
     }
   }
 

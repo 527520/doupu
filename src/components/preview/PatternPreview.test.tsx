@@ -65,4 +65,37 @@ describe('PatternPreview', () => {
       expect.objectContaining({ row: 1, col: 2, cell: expect.objectContaining({ transparent: true }) }),
     );
   });
+
+  it('普通滚轮保留给页面滚动，只有 Ctrl/Command + 滚轮才缩放图纸', () => {
+    render(<PatternPreview pattern={pattern} defaultCellPx={10} />);
+    const canvas = document.querySelector('canvas')!;
+    const zoom = screen.getByLabelText('缩放');
+
+    const ordinaryWheel = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    fireEvent(canvas, ordinaryWheel);
+    expect(ordinaryWheel.defaultPrevented).toBe(false);
+    expect(zoom).toHaveTextContent('100%');
+
+    const zoomWheel = new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, cancelable: true, bubbles: true });
+    fireEvent(canvas, zoomWheel);
+    expect(zoom).toHaveTextContent('110%');
+  });
+
+  it('触摸手势交给原生滚动，不捕获指针或用脚本拖动画布', () => {
+    render(<PatternPreview pattern={pattern} defaultCellPx={10} />);
+    const canvas = document.querySelector('canvas')!;
+    const container = canvas.parentElement!;
+    const setPointerCapture = vi.fn();
+    Object.assign(canvas, { setPointerCapture });
+    container.scrollLeft = 10;
+    container.scrollTop = 12;
+
+    fireEvent.pointerDown(canvas, { clientX: 100, clientY: 100, pointerType: 'touch', pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 80, clientY: 70, pointerType: 'touch', pointerId: 1 });
+
+    expect(setPointerCapture).not.toHaveBeenCalled();
+    expect(container.scrollLeft).toBe(10);
+    expect(container.scrollTop).toBe(12);
+    expect(canvas).toHaveStyle({ touchAction: 'pan-x pan-y' });
+  });
 });

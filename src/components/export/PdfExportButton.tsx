@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import { loadPdfCjkFont } from '@/lib/export/pdfFont';
-import { buildExportFilename, computePdfLayout, type PdfPageMetrics } from '@/lib/export/pdfLayout';
+import { buildExportFilename, computePdfLayout, paginateLegendItems, type PdfPageMetrics } from '@/lib/export/pdfLayout';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
 
 export interface PdfExportButtonProps {
@@ -51,6 +51,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
     [pattern],
   );
   const layout = useMemo(() => computePdfLayout(pattern.width, pattern.height, metrics), [pattern, metrics]);
+  const legendPageCount = useMemo(() => paginateLegendItems(stats, metrics).length, [stats, metrics]);
 
   const onExportClick = (): void => {
     setError(null);
@@ -100,7 +101,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
       {open && (
         <section aria-label={t.dialogTitle} className="rounded-2xl border border-lilac/40 bg-white p-4 shadow-soft">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
-          <p className="text-sm text-ink">{t.pageCount(layout.gridPages.length)}</p>
+          <p className="text-sm text-ink">{t.pageCount(layout.gridPages.length, legendPageCount)}</p>
           {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-ink-soft">{t.largeHint}</p>}
           {error && (
             <p role="alert" className="mt-2 text-sm text-red-600">

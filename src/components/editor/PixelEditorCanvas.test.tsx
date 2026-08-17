@@ -53,6 +53,47 @@ describe('PixelEditorCanvas', () => {
     );
   });
 
+  it('快速拖动会插值连续笔画，pointercancel 会完整回滚且不提交', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(8, 1, { onPatternChange });
+    pointer(canvas, 'pointerDown', { clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { clientX: 71, clientY: 1 });
+    fireEvent.pointerCancel(canvas, { pointerType: 'mouse' });
+
+    expect(onPatternChange).not.toHaveBeenCalled();
+
+    pointer(canvas, 'pointerDown', { clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { clientX: 71, clientY: 1 });
+    pointer(canvas, 'pointerUp', { clientX: 71, clientY: 1 });
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.every((cell) => cell.code === 'B')).toBe(true);
+  });
+
+  it('可搜索选择未出现在图纸中的色板颜色', () => {
+    const green: PaletteColor = { hex: '#00FF00', code: 'C99' };
+    const onColorChange = vi.fn();
+    setup(3, 2, { palette: [BLUE, RED, green], onColorChange });
+
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索色板颜色' }), {
+      target: { value: 'C99' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /C99/ }));
+
+    expect(onColorChange).toHaveBeenLastCalledWith(green);
+  });
+
+  it('不可采购的无色号颜色不会出现在托盘、画笔或替换目标中', () => {
+    const unavailable: PaletteColor = { hex: '#123456', code: null };
+    const onColorChange = vi.fn();
+    setup(3, 2, { palette: [unavailable, BLUE], onColorChange });
+
+    expect(screen.queryByRole('button', { name: /#123456/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /B #0000FF/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /颜色替换/ }));
+    expect(screen.getByLabelText('替换为')).toHaveTextContent('B');
+    expect(screen.getByLabelText('替换为')).not.toHaveTextContent('#123456');
+  });
+
   it('橡皮点击置透明，统计减一', () => {
     const { onStatsChange, canvas } = setup();
     fireEvent.click(screen.getByRole('button', { name: /橡皮/ }));
@@ -130,6 +171,11 @@ describe('PixelEditorCanvas', () => {
     expect(document.activeElement).toBe(wrapper);
   });
 
+  it('触屏画布保留纵向页面滚动与双指缩放能力', () => {
+    const { canvas } = setup();
+    expect(canvas).toHaveStyle({ touchAction: 'pan-y pinch-zoom' });
+  });
+
   it('触屏长按 500ms 吸色（fake timers）', () => {
     vi.useFakeTimers();
     const { onColorChange, canvas } = setup();
@@ -155,6 +201,26 @@ describe('PixelEditorCanvas', () => {
       6,
     );
     vi.useRealTimers();
+  });
+
+  it('触屏拖动在同格超过阈值也会落下首格', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(3, 1, { onPatternChange });
+    fireEvent.pointerDown(canvas, { pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerType: 'touch', clientX: 8, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerType: 'touch', clientX: 8, clientY: 1 });
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells[0].code).toBe('B');
+  });
+
+  it('触屏快速跨格拖动包含首格且连续插值', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { onPatternChange });
+    fireEvent.pointerDown(canvas, { pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerType: 'touch', clientX: 31, clientY: 1 });
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.every((cell) => cell.code === 'B')).toBe(true);
   });
 
   it('颜色替换：命中显示数量，未命中显示提示（E23）', () => {

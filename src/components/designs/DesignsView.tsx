@@ -7,8 +7,10 @@ import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { createDoupuApi, type DoupuApi, type MeInfo } from '@/lib/sync/api';
 import { createSyncClient, type CloudDesignMeta, type SyncClient } from '@/lib/sync/clientAdapter';
+import { enqueueDesignSync, withDesignStorageLock } from '@/lib/sync/queue';
 import { openIndexedDb, parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
 import AccountMenu from '@/components/account/AccountMenu';
+import SiteHeader from '@/components/layout/SiteHeader';
 import Modal from '@/components/ui/Modal';
 import { fillDeleteHint, formatDateTime } from './format';
 
@@ -19,6 +21,9 @@ export interface DisplayDesign {
   height: number;
   updatedAt: string;
   thumbnail: string | null;
+  revision: number;
+  localPresent: boolean;
+  cloudPresent: boolean;
   status: 'synced' | 'unsynced' | 'localOnly' | 'conflict';
 }
 
@@ -39,16 +44,15 @@ function buildDisplay(
   for (const meta of cloud) {
     // 云端墓碑只参与同步 LWW，不显示在列表里
     if (meta.deleted) continue;
-    map.set(meta.id, { ...meta, thumbnail: null, status: 'synced' });
+    map.set(meta.id, { ...meta, thumbnail: null, status: 'synced', localPresent: false, cloudPresent: true });
   }
   for (const record of local) {
     const project = parseStoredProject(record.projectJson);
     const cloudEntry = map.get(record.id);
     let status: DisplayDesign['status'];
-    if (conflicts.includes(record.id)) status = 'conflict';
+    if (conflicts.includes(record.id) || record.syncState === 'conflict') status = 'conflict';
     else if (!cloudEntry) status = meInfo.state === 'guest' ? 'localOnly' : 'unsynced';
-    else if (cloudEntry.updatedAt === record.updatedAt) status = 'synced';
-    else if (record.updatedAt > cloudEntry.updatedAt) status = 'unsynced';
+    else if (record.syncState === 'dirty') status = 'unsynced';
     else status = 'synced';
     map.set(record.id, {
       id: record.id,
@@ -57,6 +61,9 @@ function buildDisplay(
       height: project?.pattern.height ?? 0,
       updatedAt: record.updatedAt,
       thumbnail: record.thumbnail,
+      revision: Math.max(record.revision ?? 0, cloudEntry?.revision ?? 0),
+      localPresent: true,
+      cloudPresent: Boolean(cloudEntry),
       status,
     });
   }
@@ -103,21 +110,19 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       let cloud: CloudDesignMeta[] = [];
       let conflictIds: string[] = [];
       let refreshedLocal = localRecords;
-      if (meInfo.state === 'verified' && client) {
+      if (meInfo.state === 'verified' && st && client) {
         try {
-          cloud = await api.listDesigns();
-          const outcome = await client.sync();
-          conflictIds = outcome.overwrittenByCloud;
-          cloud = await api.listDesigns();
+          // Join any Workbench save already syncing in this browser runtime;
+          // this prevents duplicate baseRevision PUTs during SPA navigation.
+          const outcome = await enqueueDesignSync(st, api);
+          if (!outcome) throw new Error('已验证账号的同步未启动');
+          conflictIds = outcome.conflictCopies.map((conflict) => conflict.conflictId);
+          cloud = outcome.cloud;
           // 同步可能改写本地存储（拉取覆盖/采纳服务端时间戳），重新读取后再构建列表
           refreshedLocal = st ? await st.getAll().catch(() => localRecords) : localRecords;
         } catch {
           setCloudFailed(true);
-          try {
-            cloud = await api.listDesigns().catch(() => []);
-          } catch {
-            cloud = [];
-          }
+          cloud = await api.listDesigns().catch(() => []);
         }
       }
       if (cancelled.value) return;
@@ -133,8 +138,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const loadCancelRef = useRef<{ value: boolean } | null>(null);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
     return () => {
+      window.clearTimeout(timer);
       if (loadCancelRef.current) loadCancelRef.current.value = true;
     };
   }, [load]);
@@ -145,7 +151,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
     const local = await st.getAll().catch(() => [] as DesignRecord[]);
     if (local.some((r) => r.id === id)) return true;
     try {
-      await syncClient.pullDesign(id);
+      await withDesignStorageLock(() => syncClient.pullDesign(id));
       return true;
     } catch {
       setError(t.loadFailed);
@@ -166,7 +172,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
     const ok = await ensureLocal(renaming.id);
     if (!ok || !syncClient) return;
     try {
-      await syncClient.renameLocal(renaming.id, name, new Date().toISOString());
+      await withDesignStorageLock(() => syncClient.renameLocal(renaming.id, name, new Date().toISOString()));
       setRenaming(null);
       await load();
     } catch {
@@ -177,18 +183,36 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const handleDelete = async (): Promise<void> => {
     if (!deleting) return;
     const st = storage;
-    const client = syncClient;
+    const client = syncClient ?? (st ? createSyncClient(st, api) : null);
     const nowIso = new Date().toISOString();
     try {
       if (st) {
-        const local = await st.getAll().catch(() => [] as DesignRecord[]);
-        if (local.some((r) => r.id === deleting.id)) {
-          if (client) await client.deleteLocal(deleting.id, nowIso);
-        } else {
-          await api.deleteDesign(deleting.id);
+        let cloudRevision = deleting.cloudPresent ? deleting.revision : 0;
+        const currentIdentity = await api.me().catch((): MeInfo => ({ state: 'guest' }));
+        if (cloudRevision <= 0 && currentIdentity.state === 'verified') {
+          let currentCloud = await api.getDesign(deleting.id);
+          if (!currentCloud) {
+            // A save started by the previous document may still be crossing the
+            // navigation boundary. Drain a full repository sync before deciding
+            // that this is truly local-only, then probe once more.
+            await enqueueDesignSync(st, api);
+            currentCloud = await api.getDesign(deleting.id);
+          }
+          cloudRevision = currentCloud?.revision ?? 0;
+        }
+        if (cloudRevision > 0) {
+          // A user-confirmed online delete is a conditional cloud mutation, not a
+          // background best-effort write. Commit the CAS delete before removing
+          // the local copy so a navigation or a late sync cannot resurrect it.
+          await api.deleteDesign(deleting.id, cloudRevision);
+          await withDesignStorageLock(() => st.delete(deleting.id));
+        } else if (client) {
+          // Local-only designs still use a durable tombstone so an earlier cloud
+          // revision discovered on the next sync cannot silently reappear.
+          await withDesignStorageLock(() => client.deleteLocal(deleting.id, nowIso, deleting.revision));
         }
       } else {
-        await api.deleteDesign(deleting.id);
+        await api.deleteDesign(deleting.id, deleting.revision);
       }
       setDeleting(null);
       await load();
@@ -200,7 +224,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const retrySync = async (): Promise<void> => {
     setSyncing(true);
     try {
-      if (syncClient) await syncClient.sync();
+      if (storage) await enqueueDesignSync(storage, api);
     } catch {
       setCloudFailed(true);
     }
@@ -210,15 +234,24 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-lilac/30 pb-3">
-        <h1 className="text-lg font-semibold text-ink">{t.title}</h1>
-        <div className="flex items-center gap-4">
+      <SiteHeader
+        title={t.title}
+        currentPath="/designs"
+        primaryActions={
           <Link href="/app?new=1" className="rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-deep">
             {t.newDesign}
           </Link>
+        }
+        overflowActions={
           <AccountMenu api={api} me={me} onAuthChanged={() => void load()} />
-        </div>
-      </header>
+        }
+      />
+
+      {(me === 'loading' || syncing) && designs.length === 0 && (
+        <p role="status" className="rounded-xl bg-lilac-soft/60 p-3 text-sm text-ink-soft">
+          {t.loading}
+        </p>
+      )}
 
       {me !== 'loading' && me.state === 'guest' && (
         <div className="rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm text-ink">
@@ -253,7 +286,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         </div>
       )}
 
-      {!error && designs.length === 0 && (
+      {me !== 'loading' && !syncing && !error && designs.length === 0 && (
         <div className="flex flex-col items-center gap-2 rounded-3xl border-2 border-dashed border-lilac/50 p-10 text-center">
           <p className="font-medium text-ink">{t.emptyTitle}</p>
           <p className="text-sm text-ink-soft">{t.emptyHint}</p>
@@ -277,6 +310,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
             <p className="text-xs text-ink-soft">{t.size(design.width, design.height)}</p>
             <p className="text-xs text-ink-soft/80">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
             <div className="flex flex-wrap items-center gap-1 text-xs">
+              <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">
+                {design.localPresent ? t.localSaved : t.localMissing}
+              </span>
               {design.status === 'synced' && <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-green-700">{t.synced}</span>}
               {design.status === 'unsynced' && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700">{t.unsynced}</span>}
               {design.status === 'localOnly' && <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">{t.localOnly}</span>}

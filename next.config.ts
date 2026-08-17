@@ -1,6 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Playwright intentionally opens the dev server through the IPv4 loopback
+  // address so Chromium, Firefox and WebKit exercise the same origin.
+  allowedDevOrigins: ["127.0.0.1"],
+  async headers() {
+    return [
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
+    ];
+  },
   // Docker 部署使用 standalone 输出（ADR-0005）
   output: "standalone",
   // 运行时以 require 加载的包需保持为服务端外部包，确保被 nft 追踪进 standalone/node_modules：

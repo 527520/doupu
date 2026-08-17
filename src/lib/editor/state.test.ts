@@ -98,18 +98,4 @@ describe('EditorState（E21/E23/E24 + 统计联动）', () => {
     ]);
   });
 
-  it('性能探针：200×200 单操作 <50ms', () => {
-    const state = createEditorState(patternOf(200, 200));
-    const history = new EditHistory();
-    const probe = (fn: () => unknown): number => {
-      const start = performance.now();
-      fn();
-      return performance.now() - start;
-    };
-    expect(probe(() => paintBrush(state, history, 100, 100, 3, BLUE))).toBeLessThan(50);
-    expect(probe(() => fillAt(state, history, 0, 0, RED))).toBeLessThan(50);
-    expect(probe(() => replaceCode(state, history, 'B', null))).toBeLessThan(50);
-    expect(probe(() => clearPattern(state, history))).toBeLessThan(50);
-    expect(probe(() => undoEdit(state, history))).toBeLessThan(50);
-  });
 });

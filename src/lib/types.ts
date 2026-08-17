@@ -36,6 +36,8 @@ export interface GenerationParams {
   backgroundRemoval: boolean;
   /** 背景容差，0–40 */
   bgTolerance: number;
+  /** 手动背景原型；null/省略时使用四角共识自动检测。 */
+  backgroundPrototype?: string | null;
 }
 
 export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
@@ -47,6 +49,7 @@ export const DEFAULT_GENERATION_PARAMS: GenerationParams = {
   contrast: 0,
   backgroundRemoval: false,
   bgTolerance: 8,
+  backgroundPrototype: null,
 };
 
 /** 图纸单元格：透明格 hex/code 均为 null；非透明格 hex 必填。external 为背景去除标记（默认 false）。 */
@@ -93,7 +96,9 @@ export type ProjectPalette =
 /** 项目文件（spec §5.3）。 */
 export interface ProjectFile {
   format: 'doupu-project';
-  version: 1;
+  version: 2;
+  /** Engine semantics used to produce the committed pattern. */
+  engineVersion: string;
   name: string;
   createdAt: string;
   updatedAt: string;

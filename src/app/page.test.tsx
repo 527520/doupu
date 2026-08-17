@@ -19,6 +19,7 @@ describe('首页', () => {
   it('渲染标题、引导与上传入口', async () => {
     render(<Home />);
     expect(screen.getByRole('heading', { name: '豆谱' })).toBeTruthy();
+    expect(screen.getByRole('status')).toHaveTextContent('正在检查登录状态…');
     expect(screen.getByText(/拖拽图片到此处/)).toBeTruthy();
     expect(screen.getByRole('link', { name: '工作台' })).toBeTruthy();
     await screen.findByRole('link', { name: '登录' }); // 等待登录态探测完成

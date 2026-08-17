@@ -8,11 +8,11 @@ import { verifyPassword } from '@/lib/auth/password';
 import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { clearSessionCookie } from '@/lib/auth/cookies';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
-import { apiError, readJson } from '@/lib/auth/http';
+import { apiError, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 
 /** 注销账号：需会话与密码；删除用户及其全部数据（级联），并清除会话 Cookie。 */
-export async function DELETE(request: Request): Promise<NextResponse> {
+async function deleteAccount(request: Request): Promise<NextResponse> {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
@@ -41,3 +41,5 @@ export async function DELETE(request: Request): Promise<NextResponse> {
     headers: { 'Set-Cookie': clearSessionCookie() },
   });
 }
+
+export const DELETE = withApiErrors(deleteAccount);

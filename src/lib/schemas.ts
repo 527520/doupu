@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import { LIMITS } from './appInfo';
-import { BRANDS } from './types';
+import { BRANDS, type ProjectFile } from './types';
 
 // ---------- 基础 ----------
 
@@ -54,6 +54,7 @@ export const generationParamsSchema = z.object({
   contrast: z.number().int().min(-100).max(100),
   backgroundRemoval: z.boolean(),
   bgTolerance: z.number().int().min(0).max(40),
+  backgroundPrototype: hexSchema.nullable().optional().default(null),
 });
 
 /** 解析生成参数；非法输入给出字段级错误。 */
@@ -81,8 +82,13 @@ export const patternCellSchema = z
       if (cell.hex !== null || cell.code !== null) {
         ctx.addIssue({ code: 'custom', message: '透明格不应携带颜色' });
       }
-    } else if (cell.hex === null) {
-      ctx.addIssue({ code: 'custom', message: '非透明格必须携带 hex' });
+    } else {
+      if (cell.hex === null) {
+        ctx.addIssue({ code: 'custom', message: '非透明格必须携带 hex' });
+      }
+      if (cell.code === null) {
+        ctx.addIssue({ code: 'custom', message: '非透明格必须携带可采购色号' });
+      }
     }
   });
 
@@ -151,17 +157,23 @@ export const projectPaletteSchema = z.discriminatedUnion('kind', [
 
 export const projectFileSchema = z.object({
   format: z.literal('doupu-project'),
-  version: z.literal(1),
+  version: z.literal(2),
+  engineVersion: z.string().min(1).max(50),
   name: designNameSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   palette: projectPaletteSchema,
   params: generationParamsSchema,
   pattern: patternSchema,
+}).strict();
+
+/** v1 is read-only input. Successful imports are immediately normalized to v2. */
+const legacyProjectFileSchema = projectFileSchema.omit({ engineVersion: true }).extend({
+  version: z.literal(1),
 });
 
 export type ProjectFileParseResult =
-  | { ok: true; value: z.infer<typeof projectFileSchema> }
+  | { ok: true; value: ProjectFile }
   | { ok: false; errors: string[] };
 
 /**
@@ -180,10 +192,22 @@ export function parseProjectFile(input: string): ProjectFileParseResult {
   } catch {
     return { ok: false, errors: ['不是有效的 JSON 文件'] };
   }
-  const result = projectFileSchema.safeParse(json);
-  return result.success
-    ? { ok: true, value: result.data }
-    : { ok: false, errors: zodErrorsToStrings(result.error) };
+  const current = projectFileSchema.safeParse(json);
+  if (current.success) return { ok: true, value: current.data };
+
+  const legacy = legacyProjectFileSchema.safeParse(json);
+  if (legacy.success) {
+    return {
+      ok: true,
+      value: {
+        ...legacy.data,
+        version: 2,
+        engineVersion: 'legacy-v1',
+      },
+    };
+  }
+
+  return { ok: false, errors: zodErrorsToStrings(current.error) };
 }
 
 // ---------- API DTO ----------
@@ -216,11 +240,17 @@ export const deleteAccountSchema = z.object({
 export const designPutSchema = z.object({
   name: designNameSchema,
   project: projectFileSchema,
+  baseRevision: z.number().int().min(0),
 });
 
 export const palettePutSchema = z.object({
   name: designNameSchema,
   colors: customPaletteColorsSchema,
+  baseRevision: z.number().int().min(0),
+});
+
+export const revisionDeleteSchema = z.object({
+  baseRevision: z.number().int().min(1),
 });
 
 // ---------- 工具 ----------

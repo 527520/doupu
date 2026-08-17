@@ -23,12 +23,17 @@ export function importProjectFile(text: string): ImportProjectResult {
 export function conflictName(name: string, existingNames: readonly string[]): string {
   const limit = LIMITS.designNameLength;
   const existing = new Set(existingNames);
-  if (!existing.has(name)) return name;
+  // Conflict labels are often appended to an already-maximal user name. Clamp
+  // before the first uniqueness check as well as before numbered suffixes.
+  const clamped = name.length > limit ? name.slice(0, limit).trimEnd() : name;
+  if (!existing.has(clamped)) return clamped;
   for (let i = 2; i <= 9999; i++) {
     const suffix = ` (${i})`;
-    const base = name.length + suffix.length > limit ? name.slice(0, limit - suffix.length).trimEnd() : name;
+    const base = clamped.length + suffix.length > limit
+      ? clamped.slice(0, limit - suffix.length).trimEnd()
+      : clamped;
     const candidate = `${base}${suffix}`;
     if (!existing.has(candidate)) return candidate;
   }
-  return name; // 防御性回退（正常不可能到达：后缀序列唯一）
+  return clamped; // 防御性回退（正常不可能到达：后缀序列唯一）
 }

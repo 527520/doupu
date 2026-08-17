@@ -1,26 +1,49 @@
-/**
- * 生成 Web Worker（优化票 07）：把 generatePattern 移到后台线程，页面不冻结。
- * 协议：接收 GenerateRequest；按阶段回发 { type:'progress', percent }（0→100 单调）；
- * 成功回发 { type:'done', output }；异常回发 { type:'error', error }。
- */
+/** Persistent worker protocol: source is cached once; only task parameters repeat. */
 import { generatePattern } from './generate';
-import type { GenerateRequest, WorkerResponse } from './runGenerate';
+import type { ImageDataLike } from './types';
+import type { WorkerRequest, WorkerResponse } from './runGenerate';
+
+let source: ImageDataLike | null = null;
+let currentSourceId = 0;
+const cancelledTasks = new Set<number>();
 
 const post = (message: WorkerResponse): void => {
   (self as unknown as Worker).postMessage(message);
 };
 
-self.onmessage = (event: MessageEvent<GenerateRequest>) => {
+self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+  const request = event.data;
+  if (request.type === 'source') {
+    source = request.src;
+    currentSourceId = request.sourceId;
+    return;
+  }
+  if (request.type === 'cancel') {
+    cancelledTasks.add(request.taskId);
+    return;
+  }
+
+  const { taskId } = request;
+  if (!source || request.sourceId !== currentSourceId) {
+    post({ type: 'error', taskId, error: 'generation source is unavailable' });
+    return;
+  }
+  const cancelView = request.cancelBuffer ? new Int32Array(request.cancelBuffer) : null;
+  const shouldCancel = (): boolean =>
+    cancelledTasks.has(taskId) || (cancelView !== null && Atomics.load(cancelView, 0) === 1);
   try {
-    const { src, params, palette } = event.data;
-    const output = generatePattern(src, params, palette, (percent) => {
-      post({ type: 'progress', percent });
-    });
-    post({ type: 'done', output });
+    const output = generatePattern(source, request.params, request.palette, (percent) => {
+      if (!shouldCancel()) post({ type: 'progress', taskId, percent });
+    }, shouldCancel);
+    if (shouldCancel()) post({ type: 'cancelled', taskId });
+    else post({ type: 'done', taskId, output });
   } catch (error) {
-    post({
-      type: 'error',
-      error: error instanceof Error ? error.message : '生成失败',
-    });
+    if (shouldCancel() || (error instanceof Error && error.name === 'AbortError')) {
+      post({ type: 'cancelled', taskId });
+    } else {
+      post({ type: 'error', taskId, error: error instanceof Error ? error.message : '生成失败' });
+    }
+  } finally {
+    cancelledTasks.delete(taskId);
   }
 };

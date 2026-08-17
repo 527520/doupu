@@ -1,7 +1,7 @@
 'use client';
 
 /** 邮箱验证页（spec §F9、边界 E30）：读取 ?token=，POST 验证；失败统一文案 + 重发入口（60s 冷却）。 */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
 import FormError from '@/components/auth/FormError';
@@ -18,31 +18,36 @@ function tokenFromLocation(): string | null {
 function VerifyInner() {
   const t = zhCN.authPages;
   const token = tokenFromLocation();
+  // Keep the server and first client render identical; the URL is unavailable
+  // during SSR and is resolved by the effect after hydration.
   const [state, setState] = useState<State>('loading');
   const [resendEmail, setResendEmail] = useState('');
   const [resendPending, setResendPending] = useState(false);
   const [resendDone, setResendDone] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const verificationRef = useRef<{ token: string; result: Promise<boolean> } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const verify = async (): Promise<void> => {
-      if (!token) {
-        setState('error');
-        return;
-      }
-      try {
-        const res = await fetch('/api/auth/verify-email', {
+    if (!token) {
+      queueMicrotask(() => {
+        if (!cancelled) setState('error');
+      });
+      return;
+    }
+    if (!verificationRef.current || verificationRef.current.token !== token) {
+      verificationRef.current = {
+        token,
+        result: fetch('/api/auth/verify-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token }),
-        });
-        if (!cancelled) setState(res.ok ? 'success' : 'error');
-      } catch {
-        if (!cancelled) setState('error');
-      }
-    };
-    void verify();
+        }).then((response) => response.ok, () => false),
+      };
+    }
+    void verificationRef.current.result.then((ok) => {
+      if (!cancelled) setState(ok ? 'success' : 'error');
+    });
     return () => {
       cancelled = true;
     };

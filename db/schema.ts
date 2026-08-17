@@ -38,6 +38,9 @@ export const sessions = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     tokenHash: text('token_hash').unique().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now() + interval '90 days'`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('sessions_user_idx').on(table.userId)],
@@ -67,7 +70,9 @@ export const designs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    project: jsonb('project').notNull(),
+    project: jsonb('project'),
+    revision: integer('revision').notNull().default(1),
+    payloadBytes: integer('payload_bytes').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
@@ -85,7 +90,9 @@ export const palettes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    colors: jsonb('colors').notNull(),
+    colors: jsonb('colors'),
+    revision: integer('revision').notNull().default(1),
+    payloadBytes: integer('payload_bytes').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },

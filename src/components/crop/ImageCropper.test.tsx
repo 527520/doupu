@@ -92,4 +92,35 @@ describe('ImageCropper', () => {
     // 30×30 保持，x 钳制在 [0,70] → 60，y 钳制在 [0,20] → 20
     expect(screen.getByText(zhCN.crop.sizeLabel(30, 30))).toBeTruthy();
   });
+
+  it('极窄长图预览的宽高和背板都不超过 800px', () => {
+    const image: DecodedImage = {
+      data: new Uint8ClampedArray(100 * 8000 * 4),
+      width: 100,
+      height: 8000,
+      mime: 'image/png',
+    };
+    render(<ImageCropper image={image} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
+    expect(canvas.style.width).toBe('10px');
+    expect(canvas.style.height).toBe('800px');
+    expect(canvas.width).toBeLessThanOrEqual(800 * (window.devicePixelRatio || 1));
+    expect(canvas.height).toBeLessThanOrEqual(800 * (window.devicePixelRatio || 1));
+  });
+
+  it('有界预览仍以自然尺寸作为裁剪坐标并返回完整选区', () => {
+    const onConfirm = vi.fn();
+    const image: DecodedImage = {
+      data: new Uint8ClampedArray(800 * 400 * 4),
+      width: 800,
+      height: 400,
+      naturalWidth: 8000,
+      naturalHeight: 4000,
+      mime: 'image/png',
+    };
+    render(<ImageCropper image={image} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    expect(screen.getByText(zhCN.crop.sizeLabel(8000, 4000))).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.useWholeImage }));
+    expect(onConfirm).toHaveBeenCalledWith({ x: 0, y: 0, width: 8000, height: 4000 });
+  });
 });

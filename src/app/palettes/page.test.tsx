@@ -29,6 +29,7 @@ const record = (id: string, name: string): PaletteRecord => ({
   name,
   colors: [{ code: 'A', hex: '#FF0000' }],
   updatedAt: '2026-08-14T00:00:00.000Z',
+  revision: 1,
 });
 
 beforeEach(() => {
@@ -36,6 +37,12 @@ beforeEach(() => {
 });
 
 describe('PalettesPage', () => {
+  it('加载中提供明确的 live region 反馈', () => {
+    listPalettes.mockReturnValue(new Promise(() => {}));
+    render(<PalettesPage />);
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载色板…');
+  });
+
   it('加载列表：渲染内置五品牌（各 291 色）与自定义色板卡片', async () => {
     listPalettes.mockResolvedValue([record('id-1', '我的色板')]);
     render(<PalettesPage />);
@@ -89,7 +96,7 @@ describe('PalettesPage', () => {
     await waitFor(() => expect(savePalette).toHaveBeenCalledTimes(1));
     expect(savePalette).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001', '新建板', [
       { code: 'C001', hex: '#FFFFFF' },
-    ]);
+    ], 0);
     await waitFor(() => expect(screen.getByText('新建板')).toBeTruthy());
     expect(screen.queryByLabelText(t.editor.title)).toBeNull();
   });
@@ -105,7 +112,7 @@ describe('PalettesPage', () => {
     confirmSpy.mockReturnValue(true);
     deletePalette.mockResolvedValue(undefined);
     fireEvent.click(screen.getByRole('button', { name: t.delete }));
-    await waitFor(() => expect(deletePalette).toHaveBeenCalledWith('id-1'));
+    await waitFor(() => expect(deletePalette).toHaveBeenCalledWith('id-1', 1));
     await waitFor(() => expect(screen.queryByText('待删')).toBeNull());
     confirmSpy.mockRestore();
   });

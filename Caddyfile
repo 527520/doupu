@@ -17,9 +17,8 @@ www.{$SITE_DOMAIN} {
 		Referrer-Policy strict-origin-when-cross-origin
 		Permissions-Policy "camera=(self), microphone=()"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		# 注：Next.js 的 RSC 载荷需要内联脚本；script-src 'unsafe-inline' 是权衡后的妥协，
-		# 全仓库无 dangerouslySetInnerHTML，XSS 面由 React 转义兜底。
-		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; script-src 'self' 'unsafe-inline'"
+		# CSP 由 Next.js Proxy 按请求生成 nonce。Caddy 必须透传上游响应头，
+		# 不能在此处以静态策略覆盖，否则框架/RSC 脚本将失去对应 nonce。
 		-Server
 	}
 

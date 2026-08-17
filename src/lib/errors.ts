@@ -6,6 +6,7 @@ export type AppErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'REVISION_CONFLICT'
   | 'RATE_LIMITED'
   | 'MAIL_UNAVAILABLE'
   | 'INTERNAL';
@@ -16,6 +17,7 @@ export const HTTP_STATUS: Record<AppErrorCode, number> = {
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  REVISION_CONFLICT: 409,
   RATE_LIMITED: 429,
   MAIL_UNAVAILABLE: 503,
   INTERNAL: 500,
@@ -40,4 +42,5 @@ export class AppError extends Error {
 /** API 统一错误响应体。 */
 export interface ApiErrorBody {
   error: { code: AppErrorCode; message: string; field?: string };
+  requestId: string;
 }

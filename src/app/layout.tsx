@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { zhCN } from '@/messages/zh-CN';
 import { APP_NAME } from '@/lib/appInfo';
+import ClientReadyMarker from '@/components/system/ClientReadyMarker';
 
 const appUrl = () => process.env.APP_URL ?? 'http://localhost:3000';
 
@@ -38,14 +40,22 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Reading request headers opts the entire tree into dynamic rendering. This
+  // is required for Next.js to attach the request-scoped CSP nonce to its RSC
+  // and framework scripts.
+  await headers();
+
   return (
     <html lang="zh-CN">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <ClientReadyMarker />
+        {children}
+      </body>
     </html>
   );
 }

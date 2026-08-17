@@ -7,7 +7,9 @@ export const AUTHOR_NAME = 'wuqian';
 export const AUTHOR_GITHUB_URL = 'https://github.com/527520';
 export const CONTACT_EMAIL = 'wqa527520@qq.com';
 export const PROJECT_FILE_FORMAT = 'doupu-project' as const;
-export const PROJECT_FILE_VERSION = 1 as const;
+export const PROJECT_FILE_VERSION = 2 as const;
+/** Changes whenever generation semantics can produce a materially different pattern. */
+export const ENGINE_VERSION = '2.0.0' as const;
 
 /** 规格约束（spec §F1/F3/F6/F8），全项目唯一来源。 */
 export const LIMITS = {
@@ -19,7 +21,12 @@ export const LIMITS = {
   designNameLength: 100,
   projectFileBytes: 5 * 1024 * 1024,
   designsPerUser: 100,
+  /** Includes active rows and compact tombstones retained for sync. */
+  designRowsPerUser: 200,
+  designBytesPerUser: 50 * 1024 * 1024,
   palettesPerUser: 20,
+  paletteRowsPerUser: 40,
+  paletteBytesPerUser: 5 * 1024 * 1024,
   customPaletteColors: 500,
   customPaletteCodeLength: 20,
   password: { min: 8, max: 72 },

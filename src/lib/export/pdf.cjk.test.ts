@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { generatePatternPdf } from './pdf';
+import { A4_HEIGHT_MM, A4_WIDTH_MM, MM_TO_PT, defaultPdfMetrics, paginateLegendItems } from './pdfLayout';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 
 const fontBytes = new Uint8Array(
@@ -43,6 +46,23 @@ function decompressedText(bytes: Uint8Array): string {
   return parts.join('');
 }
 
+function drawnAsciiText(bytes: Uint8Array): string[] {
+  const commands = decompressedText(bytes);
+  return [...commands.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)].map((match) =>
+    Buffer.from(match[1], 'hex').toString('latin1'));
+}
+
+function drawnAsciiPlacements(bytes: Uint8Array): Array<{ text: string; size: number; x: number; y: number }> {
+  const commands = decompressedText(bytes);
+  return [...commands.matchAll(/\/\S+\s+([\d.]+)\s+Tf[\s\S]*?1 0 0 1 ([\d.]+) ([\d.]+) Tm\s*<([0-9A-Fa-f]+)>\s*Tj/g)]
+    .map((match) => ({
+      size: Number(match[1]),
+      x: Number(match[2]),
+      y: Number(match[3]),
+      text: Buffer.from(match[4], 'hex').toString('latin1'),
+    }));
+}
+
 describe('generatePatternPdf（CJK 字体嵌入）', () => {
   it(
     '嵌入 Noto Sans SC 子集：中文页眉/图例不抛错，PDF 含嵌入字体',
@@ -72,5 +92,102 @@ describe('generatePatternPdf（CJK 字体嵌入）', () => {
       { fontBytes: new Uint8Array(0) },
     );
     expect(bytes[0]).toBe(0x25);
+  }, 30000);
+
+  it('500 色用量清单会增加图例页，不在单页外裁切', async () => {
+    const manyStats = Array.from({ length: 500 }, (_, index) => ({
+      code: index === 0 ? 'ABCDEFGHIJKLMNOPQRST' : `C${index}`,
+      hex: `#${index.toString(16).padStart(6, '0')}`,
+      count: index === 0 ? 1000 : 1,
+    }));
+    const manyPattern: Pattern = {
+      width: 25,
+      height: 20,
+      cells: manyStats.map((item) => ({ hex: item.hex, code: item.code, transparent: false })),
+    };
+    const bytes = await generatePatternPdf({ name: '500 colors', pattern: manyPattern, stats: manyStats });
+    const document = await PDFDocument.load(bytes);
+    const measureDocument = await PDFDocument.create();
+    const helvetica = await measureDocument.embedFont(StandardFonts.Helvetica);
+    const measure = (text: string, size: number): number => helvetica.widthOfTextAtSize(text, size);
+    expect(document.getPageCount()).toBe(1 + paginateLegendItems(manyStats, defaultPdfMetrics, measure).length);
+    const text = new Set(drawnAsciiText(bytes));
+    for (const item of manyStats) expect(text.has(`${item.code} x${item.count}`)).toBe(true);
+  }, 30000);
+
+  it('从 PDF 绘制指令校验宽字形色号与长标题均处于 A4 可见边界', async () => {
+    const manyStats = Array.from({ length: 500 }, (_, index) => ({
+      code: `${'W'.repeat(17)}${String(index).padStart(3, '0')}`,
+      hex: `#${index.toString(16).padStart(6, '0')}`,
+      count: index === 0 ? 1000 : 1,
+    }));
+    const manyPattern: Pattern = {
+      width: 25,
+      height: 20,
+      cells: manyStats.map((item) => ({ hex: item.hex, code: item.code, transparent: false })),
+    };
+    const bytes = await generatePatternPdf({ name: 'W'.repeat(100), pattern: manyPattern, stats: manyStats });
+    const placements = drawnAsciiPlacements(bytes);
+    const measureDocument = await PDFDocument.create();
+    const helvetica = await measureDocument.embedFont(StandardFonts.Helvetica);
+    const marginPt = defaultPdfMetrics.marginMm * MM_TO_PT;
+    const right = A4_WIDTH_MM * MM_TO_PT - marginPt;
+    const top = A4_HEIGHT_MM * MM_TO_PT - marginPt;
+
+    for (const item of manyStats) {
+      const label = `${item.code} x${item.count}`;
+      const placement = placements.find((candidate) => candidate.text === label);
+      expect(placement, label).toBeDefined();
+      expect(placement!.x + helvetica.widthOfTextAtSize(label, placement!.size)).toBeLessThanOrEqual(right + 0.01);
+      expect(placement!.y).toBeGreaterThanOrEqual(marginPt);
+    }
+    const titles = placements.filter((placement) => placement.size === 12 && placement.text.startsWith('Legend'));
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      expect(title.x + helvetica.widthOfTextAtSize(title.text, title.size)).toBeLessThanOrEqual(right + 0.01);
+      expect(title.y).toBeLessThanOrEqual(top);
+    }
+  }, 30000);
+
+  it('Noto 真实宽度驱动 500 色图例列数，产物 Tm 坐标不跨列或页边界', async () => {
+    const manyStats = Array.from({ length: 500 }, (_, index) => ({
+      code: `${'W'.repeat(17)}${String(index).padStart(3, '0')}`,
+      hex: `#${index.toString(16).padStart(6, '0')}`,
+      count: index === 0 ? 1000 : 1,
+    }));
+    const manyPattern: Pattern = {
+      width: 25,
+      height: 20,
+      cells: manyStats.map((item) => ({ hex: item.hex, code: item.code, transparent: false })),
+    };
+    const bytes = await generatePatternPdf({ name: 'Noto wide glyphs', pattern: manyPattern, stats: manyStats }, { fontBytes });
+    const placements = drawnAsciiPlacements(bytes).filter((placement) => placement.size === 8);
+    const measureDocument = await PDFDocument.create();
+    measureDocument.registerFontkit(fontkit);
+    const noto = await measureDocument.embedFont(fontBytes, { subset: true });
+    const marginPt = defaultPdfMetrics.marginMm * MM_TO_PT;
+    const right = A4_WIDTH_MM * MM_TO_PT - marginPt;
+
+    expect(placements).toHaveLength(manyStats.length);
+    placements.forEach((placement, index) => {
+      const item = manyStats[index];
+      const label = `${item.code} x${item.count}`;
+      expect(placement.x + noto.widthOfTextAtSize(label, 8)).toBeLessThanOrEqual(right + 0.01);
+      expect(placement.y).toBeGreaterThanOrEqual(marginPt);
+    });
+  }, 30000);
+
+  it('直接调用传入超出 A4 的整组 metrics 也会回退安全默认值', async () => {
+    const widePattern: Pattern = {
+      width: 32,
+      height: 1,
+      cells: Array.from({ length: 32 }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+    const bytes = await generatePatternPdf(
+      { name: 'metrics', pattern: widePattern, stats: [{ code: 'A', hex: '#000000', count: 32 }] },
+      { metrics: { cellMm: 20, marginMm: 30, headerMm: 30, pageCols: 100, pageRows: 100 } },
+    );
+    const document = await PDFDocument.load(bytes);
+    expect(document.getPageCount()).toBe(3); // 回退后 32 列 = 2 页图纸 + 1 页图例
   }, 30000);
 });

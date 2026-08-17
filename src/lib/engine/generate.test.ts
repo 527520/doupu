@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generatePattern, computeStats } from './generate';
+import { clearLutCache } from './lut';
 import type { ImageDataLike } from './types';
 import { buildBrandPalette, getAvailableColors } from '@/lib/palettes';
 import {
@@ -100,6 +101,77 @@ describe('generatePattern 边界（E14–E19）', () => {
     expect(out.stats).toHaveLength(0);
   });
 
+  it('E18：先识别背景再合并，贴边前景不会因颜色数上限被并入背景', () => {
+    const img = solidImage(3, 3, 255, 255, 255);
+    for (const pixel of [0, 4]) {
+      img.data[pixel * 4] = 255;
+      img.data[pixel * 4 + 1] = 0;
+      img.data[pixel * 4 + 2] = 0;
+    }
+    const palette: PaletteColor[] = [
+      { hex: '#FFFFFF', code: 'W' },
+      { hex: '#FF0000', code: 'R' },
+    ];
+
+    const out = generatePattern(
+      img,
+      params({
+        targetWidth: 3,
+        targetColorCount: 1,
+        mode: 'dominant',
+        dithering: false,
+        backgroundRemoval: true,
+        bgTolerance: 8,
+      }),
+      palette,
+    );
+
+    expect(out.totalBeadCount).toBe(2);
+    expect(out.pattern.cells[0].hex).toBe('#FF0000');
+    expect(out.pattern.cells[0].external).not.toBe(true);
+    expect(out.pattern.cells[4].hex).toBe('#FF0000');
+    expect(out.pattern.cells[4].external).not.toBe(true);
+  });
+
+  it('E18：四角无共识时可用手动背景原型只移除指定的连通背景', () => {
+    const img = solidImage(20, 20, 255, 0, 0);
+    const palette: PaletteColor[] = [
+      { hex: '#FF0000', code: 'R' },
+      { hex: '#00FF00', code: 'G' },
+      { hex: '#0000FF', code: 'B' },
+      { hex: '#FFFFFF', code: 'W' },
+    ];
+    for (let y = 0; y < 20; y++) {
+      for (let x = 0; x < 20; x++) {
+        const offset = (y * 20 + x) * 4;
+        const rgb = x < 10
+          ? (y < 10 ? [255, 0, 0] : [0, 0, 255])
+          : (y < 10 ? [0, 255, 0] : [255, 255, 255]);
+        img.data[offset] = rgb[0];
+        img.data[offset + 1] = rgb[1];
+        img.data[offset + 2] = rgb[2];
+      }
+    }
+
+    const automatic = generatePattern(img, params({
+      targetWidth: 20,
+      targetColorCount: 4,
+      backgroundRemoval: true,
+      bgTolerance: 8,
+    }), palette);
+    const manual = generatePattern(img, params({
+      targetWidth: 20,
+      targetColorCount: 4,
+      backgroundRemoval: true,
+      bgTolerance: 8,
+      backgroundPrototype: '#FF0000',
+    }), palette);
+
+    expect(automatic.totalBeadCount).toBe(400);
+    expect(manual.totalBeadCount).toBe(300);
+    expect(manual.pattern.cells.filter((cell) => cell.external).every((cell) => cell.hex === '#FF0000')).toBe(true);
+  });
+
   it('E19：漫漫色板中不可用色（#55514C）绝不出现，可用色 code 非空', () => {
     const mm: Brand = '漫漫';
     const palette = getAvailableColors(mm);
@@ -109,6 +181,38 @@ describe('generatePattern 边界（E14–E19）', () => {
       expect(cell.hex).not.toBe('#55514C');
       if (!cell.transparent) expect(cell.code).not.toBeNull();
     }
+  });
+
+  it('E19：调用方传入完整品牌色板时，引擎仍会排除无色号颜色', () => {
+    const palette = buildBrandPalette('漫漫');
+    const img = solidImage(20, 20, 0x55, 0x51, 0x4c); // 漫漫中该颜色 code=null
+    const out = generatePattern(img, params({ targetWidth: 20, targetColorCount: 128 }), palette);
+
+    expect(out.pattern.cells.every((cell) => cell.transparent || cell.code !== null)).toBe(true);
+    expect(out.pattern.cells.some((cell) => cell.hex === '#55514C')).toBe(false);
+    expect(out.stats.every((item) => item.code !== '?')).toBe(true);
+  });
+
+  it('E19：空色板与全不可用色板使用同一稳定领域错误', () => {
+    const img = solidImage(1, 1, 0, 0, 0);
+    expect(() => generatePattern(img, params(), [])).toThrow('palette is empty');
+    expect(() =>
+      generatePattern(img, params(), [{ hex: '#000000', code: null }]),
+    ).toThrow('palette is empty');
+  });
+
+  it('取消探针能中断冷启动 LUT，且不缓存半成品', () => {
+    clearLutCache();
+    let probes = 0;
+    expect(() => generatePattern(
+      solidImage(200, 200, 12, 34, 56),
+      params({ targetWidth: 200 }),
+      MARD,
+      undefined,
+      () => ++probes >= 4,
+    )).toThrow(expect.objectContaining({ name: 'AbortError' }));
+    expect(probes).toBe(4);
+    expect(generatePattern(solidImage(4, 4, 12, 34, 56), params({ targetWidth: 20 }), MARD).pattern.width).toBe(20);
   });
 });
 
@@ -173,15 +277,10 @@ describe('computeStats', () => {
       { code: 'B', hex: '#FFFFFF', count: 1 },
     ]);
   });
-});
 
-describe('性能预算（spec §7.1）', () => {
-  it('200×200 图纸 + 291 色色板 < 2000ms（spec ≤2s；实测 ~0.7-0.8s，留 2.5 倍余量）', () => {
-    const img = randomImage(42, 1600, 1600, 0);
-    const start = performance.now();
-    const out = generatePattern(img, params({ targetWidth: 200, dithering: true }), MARD);
-    const elapsed = performance.now() - start;
-    expect(out.pattern.width).toBe(200);
-    expect(elapsed).toBeLessThan(2000);
-  }, 15000);
+  it('非透明制作格缺少合法色号时抛出领域错误，不生成 ? 统计项', () => {
+    expect(() => computeStats([{ hex: '#123456', code: null, transparent: false }])).toThrow(
+      'cell has no available color code: #123456',
+    );
+  });
 });

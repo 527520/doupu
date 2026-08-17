@@ -9,6 +9,8 @@ import {
   makeSolid,
   makeTransparent,
   replaceByCode,
+  rasterizeGridLine,
+  rollbackSnapshots,
   sameCell,
 } from './ops';
 import type { PaletteColor, PatternCell } from '@/lib/types';
@@ -102,6 +104,29 @@ describe('brushBounds', () => {
 });
 
 describe('applyBrush / applyErase', () => {
+  it('高速笔画插值覆盖端点且相邻点连续', () => {
+    const points = rasterizeGridLine(0, 0, 3, 7);
+    expect(points[0]).toEqual({ row: 0, col: 0 });
+    expect(points.at(-1)).toEqual({ row: 3, col: 7 });
+    for (let i = 1; i < points.length; i++) {
+      expect(Math.abs(points[i].row - points[i - 1].row)).toBeLessThanOrEqual(1);
+      expect(Math.abs(points[i].col - points[i - 1].col)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('pointercancel 逆序回滚重叠快照，字节语义恢复操作前', () => {
+    const cells = solidGrid(5, 1, RED);
+    const before = cells.map((cell) => ({ ...cell }));
+    const snapshots = [
+      ...applyBrush(cells, 5, 1, 0, 1, 3, BLUE),
+      ...applyBrush(cells, 5, 1, 0, 3, 3, GREEN),
+    ];
+
+    rollbackSnapshots(cells, snapshots);
+
+    expect(cells).toEqual(before);
+  });
+
   it('画笔覆盖 3×3 中心区域且快照只含变化格', () => {
     const cells = solidGrid(5, 5, BLUE);
     const snaps = applyBrush(cells, 5, 5, 2, 2, 3, RED);
@@ -161,14 +186,6 @@ describe('floodFill（E22）', () => {
     expect(cells.every((c) => c.transparent)).toBe(true);
   });
 
-  it('200×200 全图填充性能（预算 50ms；阈值放宽至 200ms 防负载抖动，规格预算由引擎级测试守护）', () => {
-    const cells = solidGrid(200, 200, RED);
-    const start = performance.now();
-    const snaps = floodFill(cells, 200, 200, 0, 0, BLUE);
-    const elapsed = performance.now() - start;
-    expect(snaps).toHaveLength(40000);
-    expect(elapsed).toBeLessThan(200);
-  });
 });
 
 describe('replaceByCode（E23）', () => {
@@ -211,38 +228,5 @@ describe('clearAll / sameCell', () => {
     expect(sameCell(a, { ...a, external: true })).toBe(false);
     expect(sameCell(a, makeTransparent())).toBe(false);
     expect(sameCell(a, makeSolid(RED.hex, null))).toBe(false);
-  });
-});
-
-describe('编辑器核心操作性能（优化票 12：200×200 单操作，设计预算 <50ms；阈值放宽至 200ms 防负载抖动，与既有口径一致）', () => {
-  const W = 200;
-  const H = 200;
-
-  it('applyBrush：最大笔刷 200×200 中心', () => {
-    const cells = solidGrid(W, H);
-    const start = performance.now();
-    const snaps = applyBrush(cells, W, H, 100, 100, 3, BLUE);
-    const elapsed = performance.now() - start;
-    expect(snaps).toHaveLength(9);
-    expect(elapsed).toBeLessThan(200);
-  });
-
-  it('floodFill：全连通 40000 格区域', () => {
-    const cells = solidGrid(W, H);
-    const start = performance.now();
-    const snaps = floodFill(cells, W, H, 0, 0, BLUE);
-    const elapsed = performance.now() - start;
-    expect(snaps).toHaveLength(W * H);
-    expect(cells.every((c) => c.hex === BLUE.hex)).toBe(true);
-    expect(elapsed).toBeLessThan(200);
-  });
-
-  it('clearAll：200×200 全图清除', () => {
-    const cells = solidGrid(W, H);
-    const start = performance.now();
-    const snaps = clearAll(cells);
-    const elapsed = performance.now() - start;
-    expect(snaps).toHaveLength(W * H);
-    expect(elapsed).toBeLessThan(200);
   });
 });

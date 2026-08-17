@@ -7,7 +7,7 @@ import { Pool } from 'pg';
 import { sql, lt } from 'drizzle-orm';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import * as schema from './schema';
-import { rateLimits } from './schema';
+import { designs, palettes, rateLimits } from './schema';
 
 export type ProdDatabase = NodePgDatabase<typeof schema>;
 /** 生产/测试两种客户端共用的联合类型（PGlite 仅为 type-only 导入，不进打包链）。 */
@@ -33,22 +33,24 @@ export async function incrementRateLimit(
     .values({ key, count: 1, windowStart })
     .onConflictDoUpdate({
       target: rateLimits.key,
-      set: { count: sql`${rateLimits.count} + 1` },
-      // 窗口过期则重置计数（由调用方保证 windowStart 语义一致）
-      where: sql`${rateLimits.windowStart} = ${windowStart.toISOString()}`,
+      // One UPSERT owns both same-window increments and rollover. The previous
+      // two-statement fallback let concurrent first requests in a new window
+      // repeatedly reset each other back to one. A delayed request from an
+      // older bucket is deliberately ignored instead of rolling state back.
+      set: {
+        count: sql`case
+          when ${rateLimits.windowStart} > ${windowStart.toISOString()} then ${rateLimits.count}
+          when ${rateLimits.windowStart} = ${windowStart.toISOString()} then ${rateLimits.count} + 1
+          else 1
+        end`,
+        windowStart: sql`case
+          when ${rateLimits.windowStart} > ${windowStart.toISOString()} then ${rateLimits.windowStart}
+          else ${windowStart.toISOString()}
+        end`,
+      },
     })
     .returning();
-  if (result.length > 0) return result[0].count;
-  // 窗口过期分支：更新为新窗口、计数 1
-  const reset = await db
-    .insert(rateLimits)
-    .values({ key, count: 1, windowStart })
-    .onConflictDoUpdate({
-      target: rateLimits.key,
-      set: { count: 1, windowStart },
-    })
-    .returning();
-  return reset[0].count;
+  return result[0].count;
 }
 
 /**
@@ -59,4 +61,17 @@ export async function incrementRateLimit(
 export async function cleanupRateLimits(db: AnyDatabase, olderThan: Date): Promise<number> {
   const result = await db.delete(rateLimits).where(lt(rateLimits.windowStart, olderThan)).returning();
   return result.length;
+}
+
+/** Daily hard-delete for compact sync tombstones after the 90-day propagation window. */
+export async function cleanupSyncTombstones(
+  db: AnyDatabase,
+  now: Date,
+): Promise<{ designs: number; palettes: number }> {
+  const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const [removedDesigns, removedPalettes] = await Promise.all([
+    db.delete(designs).where(lt(designs.deletedAt, cutoff)).returning(),
+    db.delete(palettes).where(lt(palettes.deletedAt, cutoff)).returning(),
+  ]);
+  return { designs: removedDesigns.length, palettes: removedPalettes.length };
 }

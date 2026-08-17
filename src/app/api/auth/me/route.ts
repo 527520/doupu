@@ -3,11 +3,11 @@ import { users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { getDb } from '@/lib/auth/db';
 import { getSessionUserId } from '@/lib/auth/session';
-import { apiError, okJson } from '@/lib/auth/http';
+import { apiError, okJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 
 /** 当前用户信息；未登录 401；未验证邮箱 403 EMAIL_UNVERIFIED 语义（spec E29）。 */
-export async function GET() {
+async function get(_request: Request) {
   const userId = await getSessionUserId();
   if (userId === null) {
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.loginRequired));
@@ -29,3 +29,5 @@ export async function GET() {
     createdAt: user.createdAt.toISOString(),
   });
 }
+
+export const GET = withApiErrors(get);

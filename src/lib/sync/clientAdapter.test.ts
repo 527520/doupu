@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { createSyncClient, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
+import { describe, expect, it, vi } from 'vitest';
+import { ApiError, createSyncClient, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
 import type { DesignRecord, StorageAdapter } from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
 function makeProject(name: string, updatedAt: string): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 1,
+    version: 2,
+    engineVersion: '2.0.0',
     name,
     createdAt: updatedAt,
     updatedAt,
@@ -29,8 +30,8 @@ function makeProject(name: string, updatedAt: string): ProjectFile {
   };
 }
 
-function record(id: string, project: ProjectFile, updatedAt: string): DesignRecord {
-  return { id, name: project.name, projectJson: JSON.stringify(project), thumbnail: null, updatedAt };
+function record(id: string, project: ProjectFile, updatedAt: string, revision = 0, syncState: DesignRecord['syncState'] = 'dirty'): DesignRecord {
+  return { id, name: project.name, projectJson: JSON.stringify(project), thumbnail: null, updatedAt, revision, syncState };
 }
 
 class FakeStorage implements StorageAdapter {
@@ -57,32 +58,39 @@ class FakeApi {
   cloud = new Map<string, CloudDesignFull>();
   deleted: string[] = [];
   putCalls: string[] = [];
-  constructor(entries: CloudDesignFull[] = []) {
-    for (const entry of entries) this.cloud.set(entry.id, entry);
+  constructor(entries: Array<Omit<CloudDesignFull, 'revision'> & { revision?: number }> = []) {
+    for (const entry of entries) this.cloud.set(entry.id, { ...entry, revision: entry.revision ?? 1 });
   }
-  async listDesigns(): Promise<CloudDesignMeta[]> {
-    return [...this.cloud.values()].map((d) => ({
+  async listDesignsPage(): Promise<{ items: CloudDesignMeta[]; nextCursor: null }> {
+    return { items: [...this.cloud.values()].map((d) => ({
       id: d.id,
       name: d.name,
       width: d.project.pattern.width,
       height: d.project.pattern.height,
       updatedAt: d.updatedAt,
       deleted: d.deleted ?? false,
-    }));
+      revision: d.revision,
+    })), nextCursor: null };
   }
   async getDesign(id: string): Promise<CloudDesignFull | null> {
     return this.cloud.get(id) ?? null;
   }
-  async putDesign(id: string, name: string, project: ProjectFile): Promise<{ updatedAt: string }> {
+  async putDesign(id: string, name: string, project: ProjectFile, baseRevision: number): Promise<{ updatedAt: string; revision: number }> {
+    const current = this.cloud.get(id);
+    if ((current?.revision ?? 0) !== baseRevision) throw new ApiError(409, 'REVISION_CONFLICT', 'conflict');
     // 模拟服务端时间戳总比客户端新 1 秒
     const updatedAt = new Date(Date.parse(project.updatedAt) + 1000).toISOString();
-    this.cloud.set(id, { id, name, project: { ...project, updatedAt }, updatedAt });
+    const revision = baseRevision + 1;
+    this.cloud.set(id, { id, name, project: { ...project, updatedAt }, updatedAt, revision, deleted: false });
     this.putCalls.push(id);
-    return { updatedAt };
+    return { updatedAt, revision };
   }
-  async deleteDesign(id: string): Promise<void> {
+  async deleteDesign(id: string, baseRevision: number): Promise<{ updatedAt: string; revision: number }> {
+    const current = this.cloud.get(id);
+    if (!current || (current.revision ?? 1) !== baseRevision) throw new Error('conflict');
     this.deleted.push(id);
     this.cloud.delete(id);
+    return { updatedAt: new Date().toISOString(), revision: baseRevision + 1 };
   }
 }
 
@@ -109,12 +117,69 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(second.errors).toEqual([]);
   });
 
+  it('并发创建返回 409 但内容相同时，结果必须立即包含已确认的云端 revision', async () => {
+    const project = makeProject('同一设计', '2026-08-15T00:00:00.000Z');
+    const normalizedRemote: ProjectFile = {
+      ...project,
+      pattern: {
+        ...project.pattern,
+        cells: project.pattern.cells.map((cell) => ({
+          ...cell,
+          hex: cell.hex?.toLowerCase() ?? null,
+          external: false,
+        })),
+      },
+    };
+    const api = new FakeApi([{ id: 'same-1', name: project.name, project: normalizedRemote, updatedAt: project.updatedAt, revision: 1 }]);
+    api.listDesignsPage = async () => ({ items: [], nextCursor: null });
+    const storage = new FakeStorage();
+    await storage.put(record('same-1', project, project.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(outcome.conflictCopies).toEqual([]);
+    expect(outcome.cloud).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, deleted: false })]);
+    expect(await storage.getAll()).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, syncState: 'synced' })]);
+  });
+
+  it('手动背景原型不同必须创建冲突副本，不能被内容等价判断静默覆盖', async () => {
+    const remoteProject = makeProject('背景设计', '2026-08-15T00:00:00.000Z');
+    remoteProject.params.backgroundPrototype = '#FFFFFF';
+    const localProject = structuredClone(remoteProject);
+    localProject.params.backgroundPrototype = '#000000';
+    const api = new FakeApi([{ id: 'background-1', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 1 }]);
+    api.listDesignsPage = async () => ({ items: [], nextCursor: null });
+    const storage = new FakeStorage();
+    await storage.put(record('background-1', localProject, localProject.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api, { newId: () => 'background-conflict' }).sync();
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'background-1', conflictId: 'background-conflict' }]);
+    expect((await storage.getAll()).find((item) => item.id === 'background-conflict')).toBeTruthy();
+  });
+
+  it('普通 409 业务冲突不能被误当作 revision 冲突', async () => {
+    const api = new FakeApi();
+    api.putDesign = async () => {
+      throw new ApiError(409, 'CONFLICT', '用户存储配额已满');
+    };
+    const storage = new FakeStorage();
+    const project = makeProject('超额设计', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('quota-1', project, project.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api, { newId: () => 'must-not-exist' }).sync();
+
+    expect(outcome.conflictCopies).toEqual([]);
+    expect(outcome.errors).toEqual(['quota-1: 用户存储配额已满']);
+    expect((await storage.getAll()).map((item) => item.id)).toEqual(['quota-1']);
+  });
+
   it('E36：云端较新 → 拉取覆盖本地并报告 overwrittenByCloud', async () => {
     const cloudProject = makeProject('云端版', '2026-08-15T10:00:00.000Z');
-    const api = new FakeApi([{ id: 'b1', name: '云端版', project: cloudProject, updatedAt: cloudProject.updatedAt }]);
+    const api = new FakeApi([{ id: 'b1', name: '云端版', project: cloudProject, updatedAt: cloudProject.updatedAt, revision: 2 }]);
     const storage = new FakeStorage();
     const localProject = makeProject('本地版', '2026-08-15T09:00:00.000Z');
-    await storage.put(record('b1', localProject, localProject.updatedAt));
+    await storage.put(record('b1', localProject, localProject.updatedAt, 1, 'synced'));
     const client = createSyncClient(storage, api);
 
     const outcome = await client.sync();
@@ -137,37 +202,112 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(api.cloud.get('c1')!.name).toBe('离线编辑');
   });
 
-  it('时钟偏差防护：上次同步后的本地编辑早于服务器时间 → 钳制后推送并采纳服务端时间戳', async () => {
+  it('revision CAS 不依赖客户端时钟：落后时钟的脏编辑仍按 baseRevision 提交', async () => {
     // 上次同步基准 10:00；期间另一设备推送到 12:00（服务器 max）；本机时钟落后，编辑记作 11:00
     const cloudProject = makeProject('云端编辑', '2026-08-15T12:00:00.000Z');
-    const api = new FakeApi([{ id: 'g1', name: '云端编辑', project: cloudProject, updatedAt: cloudProject.updatedAt }]);
+    const api = new FakeApi([{ id: 'g1', name: '云端编辑', project: cloudProject, updatedAt: cloudProject.updatedAt, revision: 1 }]);
     const storage = new FakeStorage();
     await storage.setMeta('sync-last-server-time', '2026-08-15T10:00:00.000Z');
     const localProject = makeProject('本地编辑', '2026-08-15T11:00:00.000Z');
-    await storage.put(record('g1', localProject, localProject.updatedAt));
+    await storage.put(record('g1', localProject, localProject.updatedAt, 1, 'dirty'));
     const client = createSyncClient(storage, api);
 
     const outcome = await client.sync();
-    // 钳制为 12:00:00.001 → 严格较新 → 本地编辑胜出（LWW 不丢编辑）
+    // 客户端时间不参与胜负；CAS 只认 baseRevision。
     expect(outcome.pushed).toBe(1);
     expect(outcome.pulled).toBe(0);
     expect(outcome.overwrittenByCloud).toEqual([]);
     expect(api.cloud.get('g1')!.name).toBe('本地编辑');
-    expect(api.cloud.get('g1')!.updatedAt).toBe('2026-08-15T12:00:01.001Z');
+    expect(api.cloud.get('g1')!.updatedAt).toBe('2026-08-15T11:00:01.000Z');
 
     // 本地采纳服务端时间戳，下一轮同步幂等
     const local = await storage.getAll();
-    expect(local[0].updatedAt).toBe('2026-08-15T12:00:01.001Z');
+    expect(local[0].updatedAt).toBe('2026-08-15T11:00:01.000Z');
     const again = await client.sync();
     expect(again.pushed).toBe(0);
     expect(again.pulled).toBe(0);
   });
 
-  it('本地墓碑：deleteLocal 后同步调用云端 DELETE 并清理墓碑', async () => {
+  it('同步 PUT 在途发生的新本地编辑不会被旧快照回写覆盖', async () => {
     const api = new FakeApi();
+    let release!: () => void;
+    api.putDesign = async (id, name, project, baseRevision) => new Promise((resolve) => {
+      release = () => {
+        const revision = baseRevision + 1;
+        const updatedAt = '2026-08-15T00:00:01.000Z';
+        api.cloud.set(id, { id, name, project: { ...project, updatedAt }, updatedAt, revision, deleted: false });
+        resolve({ updatedAt, revision });
+      };
+    });
     const storage = new FakeStorage();
+    const original = makeProject('第一次保存', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('racing', original, original.updatedAt, 0, 'dirty'));
+
+    const syncing = createSyncClient(storage, api).sync();
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const newer = makeProject('同步期间的新编辑', '2026-08-15T00:00:02.000Z');
+    await storage.put(record('racing', newer, newer.updatedAt, 0, 'dirty'));
+    release();
+    await syncing;
+
+    const [local] = await storage.getAll();
+    expect(local.name).toBe('同步期间的新编辑');
+    expect(local.revision).toBe(1);
+    expect(local.syncState).toBe('dirty');
+  });
+
+  it('同步 GET 在途发生的新本地编辑会进入冲突副本，不能被云端回写覆盖', async () => {
+    const remoteProject = makeProject('云端新版', '2026-08-15T00:00:03.000Z');
+    const api = new FakeApi([{ id: 'pull-race', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 2 }]);
+    let releaseGet!: () => void;
+    api.getDesign = async (id) => new Promise((resolve) => {
+      releaseGet = () => resolve(api.cloud.get(id) ?? null);
+    });
+    const storage = new FakeStorage();
+    const original = makeProject('同步基线', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('pull-race', original, original.updatedAt, 1, 'synced'));
+
+    const syncing = createSyncClient(storage, api, { newId: () => 'pull-race-conflict' }).sync();
+    await vi.waitFor(() => expect(releaseGet).toBeTypeOf('function'));
+    const newer = makeProject('GET 期间的新编辑', '2026-08-15T00:00:04.000Z');
+    await storage.put(record('pull-race', newer, newer.updatedAt, 1, 'dirty'));
+    releaseGet();
+    const outcome = await syncing;
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'pull-race', conflictId: 'pull-race-conflict' }]);
+    expect((await storage.getAll()).find((item) => item.id === 'pull-race')?.name).toBe('云端新版');
+    expect((await storage.getAll()).find((item) => item.id === 'pull-race-conflict')?.name).toContain('GET 期间的新编辑');
+  });
+
+  it('409 冲突取云端详情期间的新编辑会完整保存在冲突副本', async () => {
+    const remoteProject = makeProject('另一设备', '2026-08-15T00:00:03.000Z');
+    const api = new FakeApi([{ id: 'put-race', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 1 }]);
+    api.listDesignsPage = async () => ({ items: [], nextCursor: null });
+    let releaseGet!: () => void;
+    api.getDesign = async (id) => new Promise((resolve) => {
+      releaseGet = () => resolve(api.cloud.get(id) ?? null);
+    });
+    const storage = new FakeStorage();
+    const original = makeProject('第一次编辑', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('put-race', original, original.updatedAt, 0, 'dirty'));
+
+    const syncing = createSyncClient(storage, api, { newId: () => 'put-race-conflict' }).sync();
+    await vi.waitFor(() => expect(releaseGet).toBeTypeOf('function'));
+    const newest = makeProject('冲突判断期间的新编辑', '2026-08-15T00:00:04.000Z');
+    await storage.put(record('put-race', newest, newest.updatedAt, 0, 'dirty'));
+    releaseGet();
+    const outcome = await syncing;
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'put-race', conflictId: 'put-race-conflict' }]);
+    expect((await storage.getAll()).find((item) => item.id === 'put-race')?.name).toBe('另一设备');
+    expect((await storage.getAll()).find((item) => item.id === 'put-race-conflict')?.name).toContain('冲突判断期间的新编辑');
+  });
+
+  it('本地墓碑：deleteLocal 后同步调用云端 DELETE 并清理墓碑', async () => {
     const project = makeProject('待删', '2026-08-15T00:00:00.000Z');
-    await storage.put(record('d1', project, project.updatedAt));
+    const api = new FakeApi([{ id: 'd1', name: project.name, project, updatedAt: project.updatedAt, revision: 1 }]);
+    const storage = new FakeStorage();
+    await storage.put(record('d1', project, project.updatedAt, 1, 'synced'));
     const client = createSyncClient(storage, api);
 
     await client.deleteLocal('d1', '2026-08-15T13:00:00.000Z');
@@ -182,6 +322,23 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(again.pulled).toBe(0);
   });
 
+  it('本地 revision 尚未回写时，使用已知云端 revision 删除且不会被云端复活', async () => {
+    const project = makeProject('刚同步完成', '2026-08-15T00:00:00.000Z');
+    const api = new FakeApi([{ id: 'd2', name: project.name, project, updatedAt: project.updatedAt, revision: 1 }]);
+    const storage = new FakeStorage();
+    await storage.put(record('d2', project, project.updatedAt, 0, 'dirty'));
+    const client = createSyncClient(storage, api);
+
+    await client.deleteLocal('d2', '2026-08-15T13:00:00.000Z', 1);
+    expect(await storage.getAll()).toEqual([]);
+
+    const outcome = await client.sync();
+    expect(api.deleted).toEqual(['d2']);
+    expect(outcome.pushed).toBe(1);
+    expect(outcome.pulled).toBe(0);
+    expect(api.cloud.has('d2')).toBe(false);
+  });
+
   it('时钟落后的本地删除：墓碑钳制后仍推送（删除不因时钟偏差被云端复活）', async () => {
     // 云端设计 12:00；上次同步基准 12:00；本机时钟落后，删除记作 11:00
     const cloudProject = makeProject('云端版', '2026-08-15T12:00:00.000Z');
@@ -189,7 +346,7 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const storage = new FakeStorage();
     await storage.setMeta('sync-last-server-time', '2026-08-15T12:00:00.000Z');
     const localProject = makeProject('本地副本', '2026-08-15T12:00:00.000Z');
-    await storage.put(record('j1', localProject, localProject.updatedAt));
+    await storage.put(record('j1', localProject, localProject.updatedAt, 1, 'synced'));
     const client = createSyncClient(storage, api);
 
     await client.deleteLocal('j1', '2026-08-15T11:00:00.000Z');
@@ -208,11 +365,11 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
   it('云端墓碑较新：拉取删除本地副本（跨设备删除收敛）', async () => {
     const cloudProject = makeProject('已删', '2026-08-15T12:00:00.000Z');
     const api = new FakeApi([
-      { id: 'h1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true },
+      { id: 'h1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true, revision: 2 },
     ]);
     const storage = new FakeStorage();
     const localProject = makeProject('本地副本', '2026-08-15T10:00:00.000Z');
-    await storage.put(record('h1', localProject, localProject.updatedAt));
+    await storage.put(record('h1', localProject, localProject.updatedAt, 1, 'synced'));
     const client = createSyncClient(storage, api);
 
     const outcome = await client.sync();
@@ -221,14 +378,42 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(await storage.getAll()).toEqual([]);
   });
 
+  it('云端墓碑列表在途时的新本地编辑会保存为冲突副本', async () => {
+    const cloudProject = makeProject('云端已删', '2026-08-15T12:00:00.000Z');
+    const api = new FakeApi([
+      { id: 'delete-race', name: '云端已删', project: cloudProject, updatedAt: cloudProject.updatedAt, deleted: true, revision: 2 },
+    ]);
+    let releaseList!: () => void;
+    api.listDesignsPage = async () => new Promise((resolve) => {
+      releaseList = () => resolve({
+        items: [{ id: 'delete-race', name: '', width: 0, height: 0, updatedAt: cloudProject.updatedAt, deleted: true, revision: 2 }],
+        nextCursor: null,
+      });
+    });
+    const storage = new FakeStorage();
+    const baseline = makeProject('旧基线', '2026-08-15T10:00:00.000Z');
+    await storage.put(record('delete-race', baseline, baseline.updatedAt, 1, 'synced'));
+
+    const syncing = createSyncClient(storage, api, { newId: () => 'delete-race-conflict' }).sync();
+    await vi.waitFor(() => expect(releaseList).toBeTypeOf('function'));
+    const newest = makeProject('列表期间的新编辑', '2026-08-15T13:00:00.000Z');
+    await storage.put(record('delete-race', newest, newest.updatedAt, 1, 'dirty'));
+    releaseList();
+    const outcome = await syncing;
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'delete-race', conflictId: 'delete-race-conflict' }]);
+    expect((await storage.getAll()).find((item) => item.id === 'delete-race')).toBeUndefined();
+    expect((await storage.getAll()).find((item) => item.id === 'delete-race-conflict')?.name).toContain('列表期间的新编辑');
+  });
+
   it('本地较新编辑可复活云端墓碑（E37 扩展：删除与编辑的 LWW）', async () => {
     const cloudProject = makeProject('已删', '2026-08-15T10:00:00.000Z');
     const api = new FakeApi([
-      { id: 'i1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true },
+      { id: 'i1', name: '已删', project: cloudProject, updatedAt: '2026-08-15T12:00:00.000Z', deleted: true, revision: 1 },
     ]);
     const storage = new FakeStorage();
     const localProject = makeProject('本地复活', '2026-08-15T13:00:00.000Z');
-    await storage.put(record('i1', localProject, localProject.updatedAt));
+    await storage.put(record('i1', localProject, localProject.updatedAt, 1, 'dirty'));
     const client = createSyncClient(storage, api);
 
     const outcome = await client.sync();

@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { projectFileName, serializeProject, type ProjectSource } from './serialize';
 import { importProjectFile, conflictName } from './parse';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
-import { LIMITS } from '@/lib/appInfo';
+import { ENGINE_VERSION, LIMITS } from '@/lib/appInfo';
 
 const source: ProjectSource = {
   name: '测试设计',
   createdAt: '2026-08-14T10:00:00.000Z',
+  engineVersion: ENGINE_VERSION,
   palette: { kind: 'builtin', brand: 'MARD' },
   params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 60, dithering: true },
   pattern: {
@@ -28,7 +29,8 @@ describe('serializeProject / importProjectFile round-trip', () => {
     if (!result.ok) return;
     const project = result.project;
     expect(project.format).toBe('doupu-project');
-    expect(project.version).toBe(1);
+    expect(project.version).toBe(2);
+    expect(project.engineVersion).toBe(ENGINE_VERSION);
     expect(project.name).toBe(source.name);
     expect(project.createdAt).toBe(source.createdAt);
     expect(project.updatedAt).toBe(before.toISOString());
@@ -74,6 +76,33 @@ describe('importProjectFile 坏文件矩阵（§5.3 / E38）', () => {
     const json = JSON.parse(valid()) as Record<string, unknown>;
     json.version = 99;
     expect(importProjectFile(JSON.stringify(json)).ok).toBe(false);
+  });
+
+  it('v1 只允许导入并迁移成带 legacy 引擎标记的 v2', () => {
+    const legacy = JSON.parse(valid()) as Record<string, unknown>;
+    legacy.version = 1;
+    delete legacy.engineVersion;
+
+    const result = importProjectFile(JSON.stringify(legacy));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.project.version).toBe(2);
+    expect(result.project.engineVersion).toBe('legacy-v1');
+  });
+
+  it('v1 携带 v2 engineVersion 的混代文件必须拒绝', () => {
+    const mixed = JSON.parse(valid()) as Record<string, unknown>;
+    mixed.version = 1;
+
+    expect(importProjectFile(JSON.stringify(mixed)).ok).toBe(false);
+  });
+
+  it('v2 顶层未知字段必须拒绝', () => {
+    const withUnknownField = JSON.parse(valid()) as Record<string, unknown>;
+    withUnknownField.futureFormatFlag = true;
+
+    expect(importProjectFile(JSON.stringify(withUnknownField)).ok).toBe(false);
   });
 
   it('未知 brand 拒绝', () => {
@@ -135,6 +164,11 @@ describe('conflictName', () => {
     expect(result.length).toBe(LIMITS.designNameLength);
     expect(result.endsWith(' (2)')).toBe(true);
     expect(result.startsWith('豆')).toBe(true);
+  });
+
+  it('追加冲突标签后即使尚未重名也必须先钳制到 100 字符', () => {
+    const result = conflictName(`${'豆'.repeat(100)} (冲突副本)`, []);
+    expect(result.length).toBe(LIMITS.designNameLength);
   });
 
   it('后缀序列唯一：连续冲突跳到下一个空位', () => {

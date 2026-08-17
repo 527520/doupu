@@ -2,4 +2,4 @@
 # 避免每次容器启动临时 apk add（依赖外部网络、无持久层）。
 FROM postgres:16-alpine
 
-RUN apk add --no-cache rclone
+RUN apk add --no-cache curl jq rclone

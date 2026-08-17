@@ -51,6 +51,31 @@ function buildPng(width, height, rgba) {
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+/** Compact indexed PNG for exercising huge natural dimensions without a huge fixture file. */
+function buildIndexedPng(width, height) {
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 1; // one bit per pixel
+  ihdr[9] = 3; // indexed color
+  const rowBytes = Math.ceil(width / 8);
+  const raw = Buffer.alloc((rowBytes + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const offset = y * (rowBytes + 1);
+    raw[offset] = 0;
+    raw.fill(y % 2 === 0 ? 0xaa : 0x55, offset + 1, offset + 1 + rowBytes);
+  }
+  const palette = Buffer.from([0x34, 0x48, 0x95, 0xf3, 0x8b, 0xb4]);
+  return Buffer.concat([
+    sig,
+    chunk('IHDR', ihdr),
+    chunk('PLTE', palette),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 function fcTL(seq) {
   const d = Buffer.alloc(26);
   d.writeUInt32BE(seq, 0);
@@ -72,6 +97,9 @@ const staticPng = buildPng(2, 1, pixelRow);
 write('static-2x2.png', buildPng(2, 2, Buffer.concat([pixelRow, pixelRow])));
 write('static.png', staticPng);
 write('truncated.png', staticPng.subarray(0, Math.floor(staticPng.length * 0.6)));
+// 最大合法自然尺寸与极端纵横比：浏览器必须只产生有界 RGBA 工作缓冲。
+write('max-8000-square.png', buildIndexedPng(8000, 8000));
+write('max-100x8000.png', buildIndexedPng(100, 8000));
 
 // APNG：IHDR + acTL(2帧) + fcTL0 + IDAT + fcTL1 + fdAT + IEND
 {

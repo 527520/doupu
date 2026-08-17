@@ -1,10 +1,11 @@
 'use client';
 
 /** 生成参数面板（spec §F3）：核心参数 + 高级折叠；300ms 防抖上抛；UI 层无法输入非法值。 */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Brand, GenerationParams } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
+import type { ImageDataLike } from '@/lib/engine/types';
 
 export interface PaletteOption {
   value: string;
@@ -18,6 +19,8 @@ interface Props {
   selectedPalette: string;
   onParamsChange: (params: GenerationParams) => void;
   onPaletteSelect: (value: string) => void;
+  backgroundSampleSource?: ImageDataLike | null;
+  disabled?: boolean;
 }
 
 /** 参数浅比较（全部为原始字段）。 */
@@ -30,7 +33,8 @@ function paramsEqual(a: GenerationParams, b: GenerationParams): boolean {
     a.brightness === b.brightness &&
     a.contrast === b.contrast &&
     a.backgroundRemoval === b.backgroundRemoval &&
-    a.bgTolerance === b.bgTolerance
+    a.bgTolerance === b.bgTolerance &&
+    (a.backgroundPrototype ?? null) === (b.backgroundPrototype ?? null)
   );
 }
 
@@ -40,21 +44,26 @@ export default function GenerationParamsPanel({
   selectedPalette,
   onParamsChange,
   onPaletteSelect,
-}: Props) {  const [local, setLocal] = useState<GenerationParams>(params);
+  backgroundSampleSource,
+  disabled,
+}: Props) {
+  const [local, setLocal] = useState<GenerationParams>(params);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [widthText, setWidthText] = useState(String(params.targetWidth));
   const [colorsText, setColorsText] = useState(String(params.targetColorCount));
   /** 最近一次已上抛（或已确认为当前外部值）的参数：跳过无变化的重复上抛（StrictMode 安全）。 */
   const lastEmittedRef = useRef<GenerationParams>(params);
+  const samplerRef = useRef<HTMLCanvasElement>(null);
 
   // 外部重置（换图/导入/恢复设计）时同步
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- This controlled debounced editor must discard a rejected draft when the parent supplies a reset identity. */
     setLocal(params);
     setWidthText(String(params.targetWidth));
     setColorsText(String(params.targetColorCount));
     lastEmittedRef.current = params;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.targetWidth, params.targetColorCount, params.mode, params.brightness, params.contrast, params.backgroundRemoval, params.bgTolerance, params.dithering]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [params]);
 
   // 防抖 300ms 上抛；与上次上抛值相同时不上抛（避免首挂载与回显的冗余 regenerate）
   useEffect(() => {
@@ -89,9 +98,45 @@ export default function GenerationParamsPanel({
 
   const paletteValue = useMemo(() => selectedPalette, [selectedPalette]);
   const t = zhCN.params;
+  const samplerWidth = backgroundSampleSource ? Math.min(240, backgroundSampleSource.width) : 0;
+  const samplerHeight = backgroundSampleSource
+    ? Math.max(1, Math.round((backgroundSampleSource.height * samplerWidth) / backgroundSampleSource.width))
+    : 0;
+
+  useEffect(() => {
+    const source = backgroundSampleSource;
+    const canvas = samplerRef.current;
+    if (!source || !canvas || typeof ImageData === 'undefined') return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const backing = document.createElement('canvas');
+    backing.width = source.width;
+    backing.height = source.height;
+    const backingContext = backing.getContext('2d');
+    if (!backingContext) return;
+    backingContext.putImageData(new ImageData(source.data.slice(), source.width, source.height), 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(backing, 0, 0, samplerWidth, samplerHeight);
+  }, [backgroundSampleSource, samplerHeight, samplerWidth]);
+
+  const sampleBackground = (event: MouseEvent<HTMLCanvasElement>): void => {
+    const source = backgroundSampleSource;
+    if (!source) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const x = Math.min(source.width - 1, Math.max(0, Math.floor(((event.clientX - bounds.left) / bounds.width) * source.width)));
+    const y = Math.min(source.height - 1, Math.max(0, Math.floor(((event.clientY - bounds.top) / bounds.height) * source.height)));
+    const index = (y * source.width + x) * 4;
+    const hex = `#${[source.data[index], source.data[index + 1], source.data[index + 2]]
+      .map((channel) => channel.toString(16).padStart(2, '0'))
+      .join('')}`.toUpperCase();
+    patch({ backgroundPrototype: hex });
+  };
 
   return (
     <section aria-label={t.title} className="card-surface flex flex-col gap-4 p-4">
+      <fieldset disabled={disabled} className="contents">
       <div>
         <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-ink-soft">
           {t.targetWidth}（{LIMITS.targetWidth.min}–{LIMITS.targetWidth.max}）
@@ -246,24 +291,62 @@ export default function GenerationParamsPanel({
           </label>
 
           {local.backgroundRemoval && (
-            <div>
-              <label htmlFor="param-bgtolerance" className="mb-1 block text-sm text-ink-soft">
-                {t.bgTolerance}（{local.bgTolerance}）
+            <div className="flex flex-col gap-3">
+              <div>
+                <label htmlFor="param-bgtolerance" className="mb-1 block text-sm text-ink-soft">
+                  {t.bgTolerance}（{local.bgTolerance}）
+                </label>
+                <input
+                  id="param-bgtolerance"
+                  type="range"
+                  min={0}
+                  max={40}
+                  step={1}
+                  value={local.bgTolerance}
+                  onChange={(e) => patch({ bgTolerance: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={local.backgroundPrototype !== null && local.backgroundPrototype !== undefined}
+                  onChange={(event) => patch({ backgroundPrototype: event.target.checked ? '#FFFFFF' : null })}
+                />
+                {t.manualBackground}
               </label>
-              <input
-                id="param-bgtolerance"
-                type="range"
-                min={0}
-                max={40}
-                step={1}
-                value={local.bgTolerance}
-                onChange={(e) => patch({ bgTolerance: Number(e.target.value) })}
-                className="w-full"
-              />
+              {local.backgroundPrototype && (
+                <>
+                  <label className="flex items-center justify-between gap-3 text-sm text-ink-soft">
+                    {t.backgroundPrototype}
+                    <input
+                      type="color"
+                      aria-label={t.backgroundPrototype}
+                      value={local.backgroundPrototype}
+                      onChange={(event) => patch({ backgroundPrototype: event.target.value.toUpperCase() })}
+                      className="h-9 w-14 rounded-lg border border-lilac/50 bg-white p-1"
+                    />
+                  </label>
+                  {backgroundSampleSource && (
+                    <div className="flex flex-col gap-1 text-xs text-ink-soft">
+                      <span>{t.backgroundPickHint}</span>
+                      <canvas
+                        ref={samplerRef}
+                        width={samplerWidth}
+                        height={samplerHeight}
+                        aria-label={t.backgroundSampler}
+                        onClick={sampleBackground}
+                        className="max-h-40 max-w-full cursor-crosshair rounded-lg border border-lilac/50"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
       )}
+      </fieldset>
     </section>
   );
 }

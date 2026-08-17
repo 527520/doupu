@@ -1,10 +1,9 @@
-/** E2E 全局清理：结束 dev 服务器。 */
-import { spawnSync } from 'node:child_process';
+/** E2E 全局清理：跨平台结束 dev 服务器进程树，并确认端口已释放。 */
+import { E2E_PORT, stopProcessTree } from './serverProcess';
 
 export default async function globalTeardown(): Promise<void> {
   const pid = process.env.E2E_SERVER_PID;
   if (pid) {
-    // Windows 下结束进程树
-    spawnSync('taskkill', ['/pid', pid, '/T', '/F'], { stdio: 'ignore' });
+    await stopProcessTree(Number(pid), E2E_PORT);
   }
 }

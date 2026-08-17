@@ -11,6 +11,7 @@ const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
 test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复', async ({ page }) => {
   await page.goto('/app');
+  expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
   await uploadFile(page, PHOTO);
 
   // 裁剪步骤：默认全图，直接确认
@@ -24,38 +25,73 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.getByRole('spinbutton', { name: '目标宽度（格）' }).blur();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
 
-  // 优化票 07：Worker 后台生成
-  // a) 打开「抖动」（让 200×200 生成 ~0.7-2s，取消按钮有确定性的可见窗口），
-  //    宽度 200 触发大图生成（200×200=40000 粒）：生成期间页面不冻结（输入框立即可交互），
-  //    生成中显示可点击的「取消」按钮。取消用键盘激活（focus+Enter，规避进度重渲染时
-  //    点击坐标命中检测在 Firefox 上的偶发拦截）
+  // 持久 Worker + SharedArrayBuffer 协作式取消：生成期间编辑/保存/导出锁定，
+  // 取消后恢复到上一个已提交快照。
   const widthInput = page.getByRole('spinbutton', { name: '目标宽度（格）' });
   const cancelBtn = page.getByRole('button', { name: '取消', exact: true });
   await page.getByRole('checkbox', { name: '抖动' }).check();
   await typeSpin(page, '目标宽度（格）', '200');
+  // The optimized engine can finish before a second Playwright command starts.
+  // Observe the transient generating UI before blur, capture its locked state,
+  // and click Cancel in the same browser task as soon as React mounts it.
+  const cancellation = page.evaluate(() => new Promise<{
+    widthDisabled: boolean;
+    pngDisabled: boolean;
+    saveDisabled: boolean;
+    cancelUiMs: number;
+  }>((resolve) => {
+    const inspect = (): boolean => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const cancel = buttons.find((button) => button.textContent?.trim() === '取消');
+      if (!cancel) return false;
+      const width = document.querySelector<HTMLInputElement>('input[aria-label="目标宽度（格）"]');
+      const png = buttons.find((button) => button.textContent?.includes('导出 PNG'));
+      const save = buttons.find((button) => button.textContent?.includes('保存'));
+      const observed = {
+        // The input is effectively disabled by its ancestor fieldset.
+        widthDisabled: Boolean(width?.matches(':disabled')),
+        pngDisabled: Boolean(png?.disabled),
+        saveDisabled: Boolean(save?.disabled),
+      };
+      const cancelledAt = performance.now();
+      cancel.click();
+      const waitForSettledUi = (): void => {
+        if (!document.body.contains(cancel)) {
+          observer.disconnect();
+          resolve({ ...observed, cancelUiMs: performance.now() - cancelledAt });
+          return;
+        }
+        requestAnimationFrame(waitForSettledUi);
+      };
+      requestAnimationFrame(waitForSettledUi);
+      return true;
+    };
+    const observer = new MutationObserver(() => void inspect());
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    inspect();
+  }));
   await widthInput.blur();
-  await expect(widthInput).toBeEnabled({ timeout: 5_000 });
-  await cancelBtn.waitFor({ timeout: 5_000 });
-  await cancelBtn.focus();
-  await page.keyboard.press('Enter');
-  await expect(cancelBtn).toBeHidden({ timeout: 5_000 });
+  const cancelled = await cancellation;
+  expect(cancelled).toEqual(expect.objectContaining({ widthDisabled: true, pngDisabled: true, saveDisabled: true }));
+  expect(cancelled.cancelUiMs).toBeLessThan(100);
+  await expect(cancelBtn).toBeHidden({ timeout: 1_000 });
+  await expect(widthInput).toHaveValue('20');
+  await expect(widthInput).toBeEnabled();
+  await expect(page.getByText(/共 400 粒/).first()).toBeVisible();
 
-  // b) 乱序防护：取消后 Workbench 参数仍是宽度 200（其结果被丢弃但参数保留）。
-  //    每一步都用可观测的统计数字确认面板已上抛（等值断言会被旧状态蒙混）
+  // latest-only 任务协议的乱序在单测精确覆盖；浏览器这里验证取消后可再生成。
   const colorsInput = page.getByRole('spinbutton', { name: '目标颜色数' });
+  const restartStarted = Date.now();
   await typeSpin(page, '目标颜色数', '2');
   await colorsInput.blur();
+  await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+  expect(Date.now() - restartStarted).toBeLessThan(2_000);
+  await typeSpin(page, '目标宽度（格）', '200');
+  await widthInput.blur();
   await expect(page.getByText(/共 40000 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
   await typeSpin(page, '目标宽度（格）', '20');
   await widthInput.blur();
   await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
-  await typeSpin(page, '目标宽度（格）', '200');
-  await widthInput.blur();
-  await cancelBtn.waitFor({ timeout: 5_000 }); // 大图任务已在 Worker 中运行
-  await typeSpin(page, '目标宽度（格）', '20'); // 生成中改参数（乱序防护；真实键盘输入）
-  await widthInput.blur();
-  await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
-  await expect(cancelBtn).toBeHidden({ timeout: 5_000 }); // 在途生成全部结束：画布/统计为最终状态
 
   // 悬停显示格信息（工作台工具提示）：带重悬停重试（最终生成的画布重绘可能吞掉首次 mousemove）
   await expect(async () => {
@@ -66,7 +102,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   // 编辑：切换编辑页签，画笔点涂后撤销
   await page.getByRole('tab', { name: /编辑/ }).click();
   await page.locator('canvas').first().click({ position: { x: 4, y: 4 } });
-  await page.keyboard.press('Control+z');
+  await page.keyboard.press('ControlOrMeta+z');
 
   // 导出 PNG（选项面板确认后断言下载）
   await page.getByRole('button', { name: /导出 PNG/ }).click();

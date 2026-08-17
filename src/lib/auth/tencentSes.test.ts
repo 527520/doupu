@@ -180,6 +180,20 @@ describe('mailer SES 分支与熔断器', () => {
     expect(isMailCircuitOpen(Date.now() + 61_000)).toBe(false);
   });
 
+  it('熔断期间统一入口快速失败，不再触发 provider 请求', async () => {
+    process.env.SES_SECRET_ID = creds.secretId;
+    process.env.SES_SECRET_KEY = creds.secretKey;
+    process.env.SES_FROM = creds.from;
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ Response: {} }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchImpl);
+    openMailCircuit();
+
+    await expect(sendMail(mail.to, '主题', '<p>hi</p>', 'hi', {
+      sesTemplate: { templateId: mail.templateId, templateData: mail.templateData },
+    })).rejects.toThrow('邮件通道暂时不可用');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('无任何发信通道：走日志分支、不上抛、不打开熔断器', async () => {
     delete process.env.SMTP_HOST;
     delete process.env.SES_SECRET_ID;

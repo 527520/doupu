@@ -6,6 +6,7 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import { normalizePdfMetrics } from '@/lib/config';
 import { hexToRgb } from '@/lib/engine/color';
 import { contrastColor } from '@/lib/render/layout';
 import { zhCN } from '@/messages/zh-CN';
@@ -16,13 +17,16 @@ import {
   MM_TO_PT,
   computePdfLayout,
   defaultPdfMetrics,
-  legendColumns,
+  fitLegendEntryText,
+  legendColumnsForItems,
   pageHeaderText,
+  paginateLegendItems,
   seamPositionsForPage,
   sortStatsForLegend,
   toWinAnsi,
   truncateTextToWidth,
   type PdfPageMetrics,
+  type PdfTextMeasurer,
 } from './pdfLayout';
 
 export interface PdfExportInput {
@@ -49,22 +53,27 @@ function drawLegend(
   stats: PatternStatsItem[],
   cjk: boolean,
   metrics: PdfPageMetrics,
+  totalCount: number,
+  pageNumber: number,
+  pageCount: number,
+  columnCount: number,
+  measure: PdfTextMeasurer,
 ): void {
   const t = zhCN.export;
   const marginPt = metrics.marginMm * MM_TO_PT;
   const top = PAGE_H_PT - marginPt;
-  const rawTitle = cjk ? `${t.legendTitle} · ${name.trim()}` : `Legend · ${name.trim()}`;
-  const title = truncateTextToWidth(rawTitle || 'Pattern', 12, PAGE_W_PT - 2 * marginPt, '...');
+  const pageSuffix = pageCount > 1 ? ` (${pageNumber}/${pageCount})` : '';
+  const rawTitle = cjk ? `${t.legendTitle} · ${name.trim()}${pageSuffix}` : `Legend · ${name.trim()}${pageSuffix}`;
+  const title = truncateTextToWidth(rawTitle || 'Pattern', 12, PAGE_W_PT - 2 * marginPt, '...', measure);
   page.drawText(cjk ? title : toWinAnsi(title), { x: marginPt, y: top - 14, size: 12, font });
 
   const items = sortStatsForLegend(stats);
-  const total = items.reduce((sum, item) => sum + item.count, 0);
-  const totalText = cjk ? `总计：${total} ${t.countUnit}` : `Total: ${total} beads`;
+  const totalText = cjk ? `总计：${totalCount} ${t.countUnit}` : `Total: ${totalCount} beads`;
   page.drawText(totalText, { x: marginPt, y: top - 28, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
   if (items.length === 0) return;
 
   const usableMm = A4_WIDTH_MM - 2 * metrics.marginMm;
-  const cols = legendColumns(usableMm);
+  const cols = columnCount;
   const itemW = (usableMm * MM_TO_PT) / cols;
   const rowH = 14;
   const listTop = top - 46;
@@ -87,9 +96,8 @@ function drawLegend(
         borderWidth: 0.4,
       });
     }
-    const code = truncateTextToWidth(item.code, 8, maxTextWidth, '...');
-    const text = `${cjk ? code : toWinAnsi(code)} x${item.count}`;
-    page.drawText(text, { x: x + 12, y: y - 7, size: 8, font });
+    const text = fitLegendEntryText(item.code, item.count, 8, maxTextWidth, '...', measure);
+    page.drawText(cjk ? text : toWinAnsi(text), { x: x + 12, y: y - 7, size: 8, font });
   });
 }
 
@@ -100,7 +108,7 @@ export async function generatePatternPdf(
 ): Promise<Uint8Array> {
   const { name, pattern, stats } = input;
   const { width: W, height: H, cells } = pattern;
-  const metrics = options.metrics ?? defaultPdfMetrics;
+  const metrics = normalizePdfMetrics(options.metrics ?? defaultPdfMetrics, defaultPdfMetrics);
   const marginPt = metrics.marginMm * MM_TO_PT;
   const headerPt = metrics.headerMm * MM_TO_PT;
   const cellPt = metrics.cellMm * MM_TO_PT;
@@ -121,6 +129,7 @@ export async function generatePatternPdf(
   } else {
     font = await doc.embedFont(StandardFonts.Helvetica);
   }
+  const measure: PdfTextMeasurer = (text, size) => font.widthOfTextAtSize(cjk ? text : toWinAnsi(text), size);
 
   for (const page of layout.gridPages) {
     const pdfPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
@@ -168,7 +177,7 @@ export async function generatePatternPdf(
           borderWidth: 0.35,
         });
         if (cell.code) {
-          const label = truncateTextToWidth(cell.code, 4, cellPt - 2, '...');
+          const label = truncateTextToWidth(cell.code, 4, cellPt - 2, '...', measure);
           const safe = cjk ? label : toWinAnsi(label);
           const textWidth = font.widthOfTextAtSize(safe, 4);
           const isLight = contrastColor(cell.hex) === '#000000';
@@ -205,9 +214,27 @@ export async function generatePatternPdf(
     }
   }
 
-  // 图例与用量清单页（末页）
-  const legendPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
-  drawLegend(legendPage, font, name, stats, cjk, metrics);
+  // 图例与用量清单（超过单页可见容量时分页）
+  const sortedStats = sortStatsForLegend(stats);
+  const legendPages = paginateLegendItems(sortedStats, metrics, measure);
+  const legendColumnCount = legendColumnsForItems(sortedStats, A4_WIDTH_MM - 2 * metrics.marginMm, 8, measure);
+  const totalCount = sortedStats.reduce((sum, item) => sum + item.count, 0);
+  legendPages.forEach((pageStats, index) => {
+    const legendPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
+    drawLegend(
+      legendPage,
+      font,
+      name,
+      pageStats,
+      cjk,
+      metrics,
+      totalCount,
+      index + 1,
+      legendPages.length,
+      legendColumnCount,
+      measure,
+    );
+  });
 
   return doc.save();
 }

@@ -18,13 +18,31 @@ export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opt
   const totalH = H * cellPx;
   ctx.clearRect(0, 0, totalW, totalH);
 
-  // 色块
+  // 色块：同一行的连续同色格合并为一个矩形。最大图纸有 40,000 格，
+  // 逐格 fillRect 会在低端设备上形成 >50ms 主线程任务；行程合并保持
+  // 完全相同的像素边界，同时让照片中的色块区域和纯色图大幅减少调用数。
+  let activeFill = '';
   for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
+    let x = 0;
+    while (x < W) {
       const cell = cells[y * W + x];
-      if (cell.transparent) continue;
-      ctx.fillStyle = cell.external ? (opts.externalColor ?? '#d1d5db') : cell.hex!;
-      ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+      if (cell.transparent) {
+        x++;
+        continue;
+      }
+      const color = cell.external ? (opts.externalColor ?? '#d1d5db') : cell.hex!;
+      const start = x++;
+      while (x < W) {
+        const next = cells[y * W + x];
+        const nextColor = next.external ? (opts.externalColor ?? '#d1d5db') : next.hex;
+        if (next.transparent || nextColor !== color) break;
+        x++;
+      }
+      if (activeFill !== color) {
+        ctx.fillStyle = color;
+        activeFill = color;
+      }
+      ctx.fillRect(start * cellPx, y * cellPx, (x - start) * cellPx, cellPx);
     }
   }
 

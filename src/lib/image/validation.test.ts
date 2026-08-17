@@ -33,12 +33,31 @@ describe('validateImageFile（边界 E1–E4/E8/E13）', () => {
     expect(r).toEqual({ ok: false, code: 'TOO_LARGE_FILE' });
   });
 
+  it('E8：从 PNG 文件头发现像素超限，在解码前拒绝', () => {
+    const bytes = new Uint8Array(24);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+    bytes.set([0x00, 0x00, 0x1f, 0x41, 0x00, 0x00, 0x1f, 0x40], 16); // 8001×8000
+    expect(validateImageFile({ bytes, name: 'oversized.png' }))
+      .toEqual({ ok: false, code: 'TOO_MANY_PIXELS' });
+  });
+
+  it('E8：从 HEIC ispe 发现像素超限，在原生/WASM 解码前拒绝', () => {
+    const bytes = new Uint8Array(64);
+    bytes.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63], 0);
+    bytes.set([0, 0, 0, 20, 0x69, 0x73, 0x70, 0x65, 0, 0, 0, 0, 0, 0, 0x1f, 0x41, 0, 0, 0x1f, 0x40], 24);
+    expect(validateImageFile({ bytes, name: 'oversized.heic' }))
+      .toEqual({ ok: false, code: 'TOO_MANY_PIXELS' });
+  });
+
   it('合法静态图全部通过并返回正确类型', () => {
     const cases: Array<[string, string]> = [
       ['static.png', 'png'],
       ['static.webp', 'webp'],
       ['static.gif', 'gif'],
-      ['fake.heic', 'heic'],
+      ['static-real.heic', 'heic'],
+      ['max-8000-square.png', 'png'],
+      ['max-100x8000.png', 'png'],
     ];
     for (const [name, type] of cases) {
       const r = validateImageFile({ bytes: fixture(name), name });
@@ -46,9 +65,15 @@ describe('validateImageFile（边界 E1–E4/E8/E13）', () => {
     }
   });
 
-  it('E2：截断 PNG 通过文件校验（嗅探正常），由解码层报 DECODE_FAILED', () => {
+  it('E2：已知安全尺寸但像素截断的 PNG 交给有界解码层报错', () => {
     const r = validateImageFile({ bytes: fixture('truncated.png'), name: 'broken.png' });
     expect(r).toEqual({ ok: true, type: 'png' });
+  });
+
+  it('无法从受支持格式读取自然尺寸时在解码前 fail closed', () => {
+    const signatureOnly = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect(validateImageFile({ bytes: signatureOnly, name: 'header-only.png' }))
+      .toEqual({ ok: false, code: 'DECODE_FAILED' });
   });
 });
 

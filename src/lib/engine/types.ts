@@ -14,6 +14,15 @@ export interface EngineOutput {
   mergeThresholdUsed: number;
 }
 
+export type CancellationProbe = () => boolean;
+
+export function assertGenerationActive(probe?: CancellationProbe): void {
+  if (!probe?.()) return;
+  const error = new Error('生成任务已取消');
+  error.name = 'AbortError';
+  throw error;
+}
+
 export function clamp255(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }

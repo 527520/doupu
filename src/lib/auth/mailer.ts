@@ -8,6 +8,7 @@
 import nodemailer from 'nodemailer';
 import { DEV_MAIL_LINK_HEADER } from './mailMeta';
 import { sendViaTencentSes } from './tencentSes';
+import { resolveMailAdapter } from './runtimeConfig';
 
 export { DEV_MAIL_LINK_HEADER };
 
@@ -55,7 +56,7 @@ export function appUrl(): string {
  * 安全自查 L4：SES 也算真实渠道——仅 SMTP 未配置就判定 dev 模式，
  * 会导致「测试环境配了 SES」时把验证链接经 x-dev-mail-link 响应头外泄。 */
 export function isDevMailMode(): boolean {
-  return process.env.NODE_ENV !== 'production' && !process.env.SMTP_HOST && !process.env.SES_SECRET_ID;
+  return resolveMailAdapter() === 'fake';
 }
 
 export function buildVerifyLink(token: string): string {
@@ -74,13 +75,14 @@ export async function sendMail(
   options?: MailOptions,
 ): Promise<void> {
   const mail: Mail = { to, subject, html, text };
-  sent.push(mail);
-  if (sent.length > 100) sent.shift();
-
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
   const { SES_SECRET_ID, SES_SECRET_KEY, SES_FROM } = process.env;
+  const adapter = resolveMailAdapter();
+  if (adapter !== 'fake' && isMailCircuitOpen()) {
+    throw new Error('邮件通道暂时不可用，请稍后重试');
+  }
   try {
-    if (SMTP_HOST) {
+    if (adapter === 'smtp') {
       const transport = nodemailer.createTransport({
         host: SMTP_HOST,
         port: Number(SMTP_PORT ?? 465),
@@ -94,9 +96,11 @@ export async function sendMail(
         auth: { user: SMTP_USER, pass: SMTP_PASS },
       });
       await transport.sendMail({ from: SMTP_FROM ?? SMTP_USER, to, subject, html, text });
+      recordSent(mail);
       return;
     }
-    if (SES_SECRET_ID && SES_SECRET_KEY && SES_FROM) {
+    if (adapter === 'ses') {
+      if (!SES_SECRET_ID || !SES_SECRET_KEY || !SES_FROM) throw new Error('SES adapter 配置不完整');
       const templateId = options?.sesTemplate?.templateId;
       if (!templateId) {
         throw new Error('SES 发信缺少模板 ID（SES_VERIFY_TEMPLATE_ID / SES_RESET_TEMPLATE_ID 未配置）');
@@ -110,12 +114,14 @@ export async function sendMail(
         },
         { to, subject, templateId, templateData: options?.sesTemplate?.templateData ?? {} },
       );
+      recordSent(mail);
       return;
     }
     // dev：控制台输出（含验证/重置链接，供 E2E 钩子解析）
     console.log(`[dev-mail] to=${to} subject=${subject}\n${text}`);
+    recordSent(mail);
   } catch (error) {
-    if (SMTP_HOST || (SES_SECRET_ID && SES_SECRET_KEY)) {
+    if (adapter !== 'fake') {
       // 打开熔断器：60 秒内后续发信请求统一快速失败，不再烧配额
       openMailCircuit();
       // 只记录渠道类型与错误摘要（code + 官方 Message），绝不落凭证/正文
@@ -124,4 +130,9 @@ export async function sendMail(
     }
     throw error;
   }
+}
+
+function recordSent(mail: Mail): void {
+  sent.push(mail);
+  if (sent.length > 100) sent.shift();
 }

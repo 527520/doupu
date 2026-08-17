@@ -63,6 +63,17 @@ describe('PdfExportButton', () => {
     expect(screen.getByText('共 2 页：图纸 1 页 + 图例清单 1 页')).toBeTruthy();
   });
 
+  it('500 色图例分页时预览页数与实际分页一致', () => {
+    const manyStats = Array.from({ length: 500 }, (_, index) => ({
+      code: `C${index}`,
+      hex: `#${index.toString(16).padStart(6, '0')}`,
+      count: 1,
+    }));
+    setup({ stats: manyStats });
+    fireEvent.click(screen.getByRole('button', { name: '导出 PDF' }));
+    expect(screen.getByText('共 3 页：图纸 1 页 + 图例清单 2 页')).toBeTruthy();
+  });
+
   it('确认后生成并下载 PDF（文件名规则 + 内容为 %PDF）', async () => {
     // 替换 URL.createObjectURL（jsdom 未实现）并拦截真实下载
     const createObjectURL = vi.fn(() => 'blob:mock');

@@ -85,5 +85,9 @@ export default function HomeAuthNav() {
     );
   }
 
-  return <span className="px-5 py-2 text-sm text-ink-soft/60">…</span>;
+  return (
+    <span role="status" className="px-5 py-2 text-sm text-ink-soft/60">
+      {zhCN.nav.checkingAccount}
+    </span>
+  );
 }

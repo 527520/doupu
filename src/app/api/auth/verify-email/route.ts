@@ -1,19 +1,18 @@
-import { and, eq, gt, isNull } from 'drizzle-orm';
-import { emailTokens, users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { verifyEmailSchema } from '@/lib/schemas';
 import { getDb } from '@/lib/auth/db';
 import { hashToken } from '@/lib/auth/tokens';
+import { verifyEmailWithToken } from '@/lib/auth/transitions';
 import { checkRateLimit, clientIp, rateLimitKey } from '@/lib/auth/rateLimit';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
-import { apiError, okJson, readJson } from '@/lib/auth/http';
+import { apiError, okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
 import { config } from '@/lib/config';
 
 /** 令牌端点限流（票 02 配置化：环境变量 RATE_TOKEN）；令牌 256-bit 不可爆破，仅防滥用。 */
 const RATE_LIMIT = config.security.tokenRateLimit;
 
-export async function POST(request: Request) {
+async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
 
@@ -27,30 +26,15 @@ export async function POST(request: Request) {
   if (!(await checkRateLimit(db, rateLimitKey('verify', ip), RATE_LIMIT))) {
     return apiError(new AppError('RATE_LIMITED', zhCN.auth.tooManyRequests));
   }
-  const now = new Date();
-  // 原子消费：条件更新（usedAt IS NULL 且未过期），并发双 POST 只有一次生效（安全审查 P2）
-  const consumed = await db
-    .update(emailTokens)
-    .set({ usedAt: now })
-    .where(
-      and(
-        eq(emailTokens.tokenHash, hashToken(parsed.data.token)),
-        eq(emailTokens.purpose, 'verify'),
-        isNull(emailTokens.usedAt),
-        gt(emailTokens.expiresAt, now),
-      ),
-    )
-    .returning();
-
-  // 过期/重用/伪造统一文案（spec 边界 E30）
-  if (consumed.length === 0) {
+  const verified = await verifyEmailWithToken(db, {
+    tokenHash: hashToken(parsed.data.token),
+    now: new Date(),
+  });
+  if (!verified) {
     return apiError(new AppError('VALIDATION', zhCN.auth.linkInvalid));
   }
 
-  await db
-    .update(users)
-    .set({ emailVerifiedAt: now, updatedAt: now })
-    .where(eq(users.id, consumed[0].userId));
-
   return okJson({ ok: true });
 }
+
+export const POST = withApiErrors(post);

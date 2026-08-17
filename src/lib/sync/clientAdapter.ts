@@ -1,11 +1,5 @@
-/**
- * 浏览器侧同步适配（ticket 17）：把 src/lib/sync/engine.ts 的纯函数接到
- * 本地存储（src/lib/storage）与云端 designs API 之间。
- * 纯逻辑、可注入（storage/api 均由调用方传入），单测无需 DOM/网络。
- */
-import { reconcile, sanitizeClientTimestamp, type SyncRecord } from './engine';
-import { parseStoredProject } from '@/lib/storage';
-import type { DesignRecord, StorageAdapter } from '@/lib/storage';
+import { conflictName } from '@/lib/project/parse';
+import { parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
 export interface CloudDesignMeta {
@@ -14,8 +8,8 @@ export interface CloudDesignMeta {
   width: number;
   height: number;
   updatedAt: string;
-  /** 云端墓碑（已删除）：updatedAt 即删除时间，供 LWW 传播删除 */
   deleted: boolean;
+  revision: number;
 }
 
 export interface CloudDesignFull {
@@ -23,15 +17,20 @@ export interface CloudDesignFull {
   name: string;
   project: ProjectFile;
   updatedAt: string;
+  revision: number;
   deleted?: boolean;
 }
 
-/** 云端 designs API（fetch 实现见 ./api.ts；测试用假实现）。 */
+export interface CloudDesignPage {
+  items: CloudDesignMeta[];
+  nextCursor: string | null;
+}
+
 export interface CloudApi {
-  listDesigns(): Promise<CloudDesignMeta[]>;
+  listDesignsPage(cursor?: string): Promise<CloudDesignPage>;
   getDesign(id: string): Promise<CloudDesignFull | null>;
-  putDesign(id: string, name: string, project: ProjectFile): Promise<{ updatedAt: string }>;
-  deleteDesign(id: string): Promise<void>;
+  putDesign(id: string, name: string, project: ProjectFile, baseRevision: number): Promise<{ updatedAt: string; revision: number }>;
+  deleteDesign(id: string, baseRevision: number): Promise<{ updatedAt: string; revision: number }>;
 }
 
 export class ApiError extends Error {
@@ -50,209 +49,357 @@ export class ApiError extends Error {
 export interface SyncOutcome {
   pushed: number;
   pulled: number;
-  /** 云端较新、覆盖本地修改的设计 id（「已在其他设备更新」提示依据） */
   overwrittenByCloud: string[];
+  conflictCopies: Array<{ originalId: string; conflictId: string }>;
   errors: string[];
+  cloud: CloudDesignMeta[];
 }
 
-const TOMBSTONES_META_KEY = 'sync-tombstones';
-const LAST_SERVER_TIME_KEY = 'sync-last-server-time';
+interface TombstoneShape { id: string; baseRevision: number }
+interface SyncClientOptions { newId?: () => string; now?: () => Date }
+const TOMBSTONES_META_KEY = 'sync-tombstones-v2';
 
-interface TombstoneShape {
-  id: string;
-  updatedAt: string;
+function normalizeRecord(record: DesignRecord): DesignRecord {
+  return { ...record, revision: record.revision ?? 0, syncState: record.syncState ?? ((record.revision ?? 0) > 0 ? 'synced' : 'dirty') };
 }
 
-/** 本地设计记录 → 同步记录（损坏的项目 JSON 记入 errors 并跳过）。 */
-function localToSync(records: DesignRecord[]): { records: SyncRecord[]; errors: string[] } {
-  const out: SyncRecord[] = [];
-  const errors: string[] = [];
-  for (const record of records) {
-    const project = parseStoredProject(record.projectJson);
-    if (!project) {
-      errors.push(`${record.id}: 本地数据无法解析，已跳过同步`);
-      continue;
+function projectsMatch(local: ProjectFile, remote: ProjectFile): boolean {
+  return JSON.stringify(canonicalProject(local)) === JSON.stringify(canonicalProject(remote));
+}
+
+function canonicalProject(project: ProjectFile): unknown {
+  return {
+    format: project.format,
+    version: project.version,
+    engineVersion: project.engineVersion,
+    name: project.name,
+    createdAt: project.createdAt,
+    palette: project.palette.kind === 'builtin'
+      ? { kind: 'builtin', brand: project.palette.brand }
+      : {
+          kind: 'custom',
+          colors: project.palette.colors.map((color) => ({ code: color.code, hex: color.hex.toUpperCase() })),
+        },
+    params: {
+      targetWidth: project.params.targetWidth,
+      targetColorCount: project.params.targetColorCount,
+      dithering: project.params.dithering,
+      mode: project.params.mode,
+      brightness: project.params.brightness,
+      contrast: project.params.contrast,
+      backgroundRemoval: project.params.backgroundRemoval,
+      bgTolerance: project.params.bgTolerance,
+      backgroundPrototype: project.params.backgroundPrototype?.toUpperCase() ?? null,
+    },
+    pattern: {
+      width: project.pattern.width,
+      height: project.pattern.height,
+      cells: project.pattern.cells.map((cell) => ({
+        hex: cell.hex?.toUpperCase() ?? null,
+        code: cell.code,
+        transparent: cell.transparent,
+        external: Boolean(cell.external),
+      })),
+    },
+  };
+}
+
+function remoteMeta(remote: CloudDesignFull): CloudDesignMeta {
+  return {
+    id: remote.id,
+    name: remote.name,
+    width: remote.project.pattern.width,
+    height: remote.project.pattern.height,
+    updatedAt: remote.updatedAt,
+    deleted: remote.deleted ?? false,
+    revision: remote.revision,
+  };
+}
+
+function upsertOutcomeCloud(outcome: SyncOutcome, remote: CloudDesignFull): void {
+  const meta = remoteMeta(remote);
+  const index = outcome.cloud.findIndex((item) => item.id === remote.id);
+  if (index >= 0) outcome.cloud[index] = meta;
+  else outcome.cloud.push(meta);
+}
+
+function defaultNewId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function listAllDesigns(api: CloudApi): Promise<CloudDesignMeta[]> {
+  const rows: CloudDesignMeta[] = [];
+  const ids = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await api.listDesignsPage(cursor);
+    for (const item of page.items) {
+      if (ids.has(item.id)) throw new ApiError(502, 'INVALID_PAGE', `分页结果包含重复设计 ${item.id}`);
+      ids.add(item.id);
+      rows.push(item);
     }
-    out.push({ id: record.id, updatedAt: record.updatedAt, deleted: false, project, name: record.name });
+    if (!page.nextCursor) return rows;
+    if (cursors.has(page.nextCursor)) throw new ApiError(502, 'INVALID_PAGE', '分页游标形成循环');
+    cursors.add(page.nextCursor);
+    cursor = page.nextCursor;
   }
-  return { records: out, errors };
 }
 
-export function createSyncClient(storage: StorageAdapter, api: CloudApi) {
-  async function loadTombstones(): Promise<SyncRecord[]> {
+export function createSyncClient(storage: StorageAdapter, api: CloudApi, options: SyncClientOptions = {}) {
+  const newId = options.newId ?? defaultNewId;
+  const now = options.now ?? (() => new Date());
+
+  async function loadTombstones(): Promise<TombstoneShape[]> {
     const raw = await storage.getMeta(TOMBSTONES_META_KEY);
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as TombstoneShape[];
-      return parsed.map((t) => ({ id: t.id, updatedAt: t.updatedAt, deleted: true }));
-    } catch {
-      return [];
-    }
+      return parsed.filter((item) => typeof item.id === 'string' && Number.isInteger(item.baseRevision) && item.baseRevision > 0);
+    } catch { return []; }
   }
-
-  async function saveTombstones(tombstones: SyncRecord[]): Promise<void> {
-    const shapes: TombstoneShape[] = tombstones.map((t) => ({ id: t.id, updatedAt: t.updatedAt }));
-    await storage.setMeta(TOMBSTONES_META_KEY, JSON.stringify(shapes));
+  async function saveTombstones(tombstones: TombstoneShape[]): Promise<void> {
+    await storage.setMeta(TOMBSTONES_META_KEY, JSON.stringify(tombstones));
+  }
+  async function storeRemote(remote: CloudDesignFull): Promise<void> {
+    await storage.put({ id: remote.id, name: remote.name, projectJson: JSON.stringify(remote.project), thumbnail: null, updatedAt: remote.updatedAt, revision: remote.revision, syncState: 'synced' });
+  }
+  const matchesSnapshot = (latest: DesignRecord, snapshot: DesignRecord): boolean =>
+    latest.projectJson === snapshot.projectJson
+    && latest.name === snapshot.name
+    && latest.updatedAt === snapshot.updatedAt;
+  async function recordDeleteIntent(id: string, baseRevision: number): Promise<void> {
+    const tombstones = await loadTombstones();
+    await saveTombstones([
+      ...tombstones.filter((item) => item.id !== id),
+      { id, baseRevision },
+    ]);
+  }
+  async function createConflictCopy(
+    source: DesignRecord,
+    project: ProjectFile,
+    outcome: SyncOutcome,
+  ): Promise<string> {
+    const conflictId = newId();
+    const names = (await storage.getAll()).map((item) => item.name);
+    const name = conflictName(`${source.name} (冲突副本)`, names);
+    const updatedAt = now().toISOString();
+    const conflictProject: ProjectFile = { ...project, name, updatedAt };
+    await storage.put({
+      ...source,
+      id: conflictId,
+      name,
+      projectJson: JSON.stringify(conflictProject),
+      updatedAt,
+      revision: 0,
+      syncState: 'conflict',
+    });
+    outcome.conflictCopies.push({ originalId: source.id, conflictId });
+    return conflictId;
+  }
+  async function storePutResult(
+    local: DesignRecord,
+    project: ProjectFile,
+    response: { updatedAt: string; revision: number },
+  ): Promise<void> {
+    const latest = (await storage.getAll()).find((record) => record.id === local.id);
+    if (!latest) {
+      // The user deleted the row while PUT was in flight. Convert that intent
+      // into a tombstone based on the newly-created cloud revision.
+      await recordDeleteIntent(local.id, response.revision);
+      return;
+    }
+    if (matchesSnapshot(latest, local)) {
+      await storage.put({
+        ...latest,
+        projectJson: JSON.stringify({ ...project, updatedAt: response.updatedAt }),
+        updatedAt: response.updatedAt,
+        revision: response.revision,
+        // A conflict copy is a real independent cloud design, but it keeps its
+        // visible conflict marker until the user explicitly edits/resolves it.
+        syncState: local.syncState === 'conflict' ? 'conflict' : 'synced',
+      });
+      return;
+    }
+    // A newer local edit arrived after this pass took its snapshot. Preserve it
+    // and advance only its base revision so the mandatory tail pass can CAS it.
+    await storage.put({ ...latest, revision: response.revision, syncState: 'dirty' });
+  }
+  async function resolvePutConflict(local: DesignRecord, project: ProjectFile, outcome: SyncOutcome): Promise<void> {
+    const remote = await api.getDesign(local.id);
+    const latest = (await storage.getAll()).find((record) => record.id === local.id);
+    if (remote && remote.name === local.name && projectsMatch(project, remote.project)) {
+      upsertOutcomeCloud(outcome, remote);
+      if (!latest) await recordDeleteIntent(local.id, remote.revision);
+      else if (matchesSnapshot(latest, local)) await storeRemote(remote);
+      else await storage.put({ ...latest, revision: remote.revision, syncState: 'dirty' });
+      return;
+    }
+    if (!latest) {
+      if (remote) {
+        await recordDeleteIntent(local.id, remote.revision);
+        upsertOutcomeCloud(outcome, remote);
+      }
+      return;
+    }
+    const latestProject = parseStoredProject(latest.projectJson);
+    if (!latestProject) {
+      outcome.errors.push(`${local.id}: 冲突时本地数据无法解析`);
+      return;
+    }
+    await createConflictCopy(latest, latestProject, outcome);
+    if (remote) {
+      await storeRemote(remote);
+      upsertOutcomeCloud(outcome, remote);
+    } else await storage.delete(local.id);
+    outcome.overwrittenByCloud.push(local.id);
+  }
+  async function storePulledRemote(
+    snapshot: DesignRecord,
+    remote: CloudDesignFull,
+    outcome: SyncOutcome,
+  ): Promise<void> {
+    const latest = (await storage.getAll()).find((record) => record.id === snapshot.id);
+    if (!latest) {
+      await recordDeleteIntent(snapshot.id, remote.revision);
+      return;
+    }
+    if (matchesSnapshot(latest, snapshot)) {
+      await storeRemote(remote);
+      return;
+    }
+    const latestProject = parseStoredProject(latest.projectJson);
+    if (!latestProject) {
+      outcome.errors.push(`${snapshot.id}: 拉取时本地数据无法解析`);
+      return;
+    }
+    await createConflictCopy(latest, latestProject, outcome);
+    await storeRemote(remote);
+  }
+  async function applyRemoteDeletion(snapshot: DesignRecord, outcome: SyncOutcome): Promise<void> {
+    const latest = (await storage.getAll()).find((record) => record.id === snapshot.id);
+    if (!latest) return;
+    if (matchesSnapshot(latest, snapshot)) {
+      await storage.delete(snapshot.id);
+      return;
+    }
+    // A user edit landed while the cloud listing was in flight. The cloud
+    // tombstone remains authoritative for the original id, but the newer local
+    // bytes must survive under a conflict id.
+    const latestProject = parseStoredProject(latest.projectJson);
+    if (!latestProject) {
+      outcome.errors.push(`${snapshot.id}: 删除冲突时本地数据无法解析`);
+      return;
+    }
+    await createConflictCopy(latest, latestProject, outcome);
+    await storage.delete(snapshot.id);
   }
 
   return {
-    /**
-     * 一次完整同步（spec §F8，E35–E37）：
-     * 本地（含墓碑）与云端列表 LWW 比对 → 推送/拉取 → 采纳服务端 updatedAt（幂等）。
-     */
     async sync(): Promise<SyncOutcome> {
-      const all = await storage.getAll();
-      const { records: local, errors } = localToSync(all);
+      const all = (await storage.getAll()).map(normalizeRecord);
       const tombstones = await loadTombstones();
-      const cloudMeta = await api.listDesigns();
-      const cloud: SyncRecord[] = cloudMeta.map((m) => ({
-        id: m.id,
-        updatedAt: m.updatedAt,
-        deleted: m.deleted,
-        project: null,
-        name: m.name,
-      }));
+      const cloud = await listAllDesigns(api);
+      const cloudById = new Map(cloud.map((row) => [row.id, row]));
+      const outcome: SyncOutcome = { pushed: 0, pulled: 0, overwrittenByCloud: [], conflictCopies: [], errors: [], cloud };
 
-      // 时钟偏差防护（安全审查 P2-8）：仅保护「上次同步之后」的本地编辑——
-      // 若本地时间戳早于已知服务器时间（本机时钟落后），钳制为 maxServer+1ms；
-      // 旧快照（≤ lastServer）与首次同步保持原样，交 LWW 判定（保守信任服务器）。
-      // 本地墓碑同样参与钳制：否则落后时钟下删除会被云端较新内容覆盖而丢失。
-      const lastServer = await storage.getMeta(LAST_SERVER_TIME_KEY);
-      const maxServer = cloudMeta.reduce<string | null>(
-        (max, m) => (max === null || m.updatedAt > max ? m.updatedAt : max),
-        null,
-      );
-      let tombstonesChanged = false;
-      for (const record of [...local, ...tombstones]) {
-        // 本地墓碑（删除意图）不受 lastServer 门控：删除必须能赢过旧快照。
-        // 若客户端时钟落后，sanitize 会钳制到 maxServer+1ms；否则按原时间参与 LWW。
-        // （普通本地记录仍保留门控：≤ lastServer 的旧快照保守信任服务器，避免误判脏数据。）
-        if (!record.deleted && (!lastServer || record.updatedAt <= lastServer)) continue;
-        const sanitized = sanitizeClientTimestamp(record.updatedAt, maxServer);
-        if (sanitized === record.updatedAt) continue;
-        record.updatedAt = sanitized;
-        if (record.deleted) {
-          tombstonesChanged = true;
+      for (const local of all) {
+        const project = parseStoredProject(local.projectJson);
+        if (!project) { outcome.errors.push(`${local.id}: 本地数据无法解析，已跳过同步`); continue; }
+        const remoteMeta = cloudById.get(local.id);
+        const baseRevision = local.revision ?? 0;
+        if (local.syncState === 'dirty' || (local.syncState === 'conflict' && baseRevision === 0)) {
+          try {
+            const response = await api.putDesign(local.id, local.name, project, baseRevision);
+            await storePutResult(local, project, response);
+            const meta: CloudDesignMeta = { id: local.id, name: local.name, width: project.pattern.width, height: project.pattern.height, updatedAt: response.updatedAt, deleted: false, revision: response.revision };
+            cloudById.set(local.id, meta);
+            const index = outcome.cloud.findIndex((item) => item.id === local.id);
+            if (index >= 0) outcome.cloud[index] = meta; else outcome.cloud.push(meta);
+            outcome.pushed++;
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 409 && error.code === 'REVISION_CONFLICT') {
+              await resolvePutConflict(local, project, outcome);
+            }
+            else outcome.errors.push(`${local.id}: ${error instanceof Error ? error.message : '推送失败'}`);
+          }
           continue;
         }
-        if (record.project) record.project.updatedAt = sanitized;
-        const existing = all.find((r) => r.id === record.id);
-        if (existing) {
-          existing.updatedAt = sanitized;
-          if (record.project) existing.projectJson = JSON.stringify(record.project);
-          await storage.put(existing);
+        if (!remoteMeta) {
+          if (baseRevision > 0) {
+            await applyRemoteDeletion(local, outcome);
+            outcome.pulled++;
+            outcome.overwrittenByCloud.push(local.id);
+          }
+          continue;
         }
+        if (remoteMeta.revision <= baseRevision) continue;
+        if (remoteMeta.deleted) await applyRemoteDeletion(local, outcome);
+        else {
+          const remote = await api.getDesign(local.id);
+          if (remote) await storePulledRemote(local, remote, outcome);
+        }
+        outcome.pulled++;
+        outcome.overwrittenByCloud.push(local.id);
       }
-      if (tombstonesChanged) await saveTombstones(tombstones);
 
-      const result = reconcile([...local, ...tombstones], cloud);
-      const outcome: SyncOutcome = { pushed: 0, pulled: 0, overwrittenByCloud: result.overwrittenByCloud, errors: [...errors] };
+      const localIds = new Set([...all.map((row) => row.id), ...tombstones.map((row) => row.id)]);
+      for (const remoteMeta of cloud) {
+        if (localIds.has(remoteMeta.id) || remoteMeta.deleted) continue;
+        const remote = await api.getDesign(remoteMeta.id);
+        if (remote) { await storeRemote(remote); outcome.pulled++; }
+      }
 
-      // 推送
-      const pushedTombstoneIds: string[] = [];
-      let maxAdopted: string | null = null; // 本轮推送中服务端回显的最大时间戳
-      for (const record of result.toPush) {
+      const remainingTombstones: TombstoneShape[] = [];
+      for (const tombstone of tombstones) {
+        const remote = cloudById.get(tombstone.id);
+        if (!remote) continue;
         try {
-          if (record.deleted) {
-            await api.deleteDesign(record.id);
-            pushedTombstoneIds.push(record.id);
-          } else if (record.project) {
-            const name = record.name ?? record.project.name;
-            const response = await api.putDesign(record.id, name, record.project);
-            if (!maxAdopted || response.updatedAt > maxAdopted) maxAdopted = response.updatedAt;
-            // 采纳服务端 updatedAt：本地内容与云端时间戳对齐，下次比对准幂等
-            const existing = all.find((r) => r.id === record.id);
-            if (existing) {
-              const project: ProjectFile = { ...record.project, updatedAt: response.updatedAt };
-              existing.projectJson = JSON.stringify(project);
-              existing.updatedAt = response.updatedAt;
-              existing.name = name;
-              await storage.put(existing);
-            }
-          } else {
-            outcome.errors.push(`${record.id}: 缺少项目数据，已跳过推送`);
-            continue;
+          const response = await api.deleteDesign(tombstone.id, tombstone.baseRevision);
+          const current = cloudById.get(tombstone.id);
+          if (current) {
+            const deleted = { ...current, name: '', width: 0, height: 0, deleted: true, revision: response.revision, updatedAt: response.updatedAt };
+            cloudById.set(tombstone.id, deleted);
+            const index = outcome.cloud.findIndex((item) => item.id === tombstone.id);
+            if (index >= 0) outcome.cloud[index] = deleted;
           }
           outcome.pushed++;
-        } catch (error) {
-          outcome.errors.push(`${record.id}: ${error instanceof Error ? error.message : '推送失败'}`);
         }
-      }
-
-      // 清理已推送的墓碑
-      if (pushedTombstoneIds.length > 0) {
-        await saveTombstones(tombstones.filter((t) => !pushedTombstoneIds.includes(t.id)));
-      }
-
-      // 拉取
-      for (const record of result.toPull) {
-        try {
-          if (record.deleted) {
-            await storage.delete(record.id);
+        catch (error) {
+          if (error instanceof ApiError && error.status === 409 && error.code === 'REVISION_CONFLICT') {
+            const current = await api.getDesign(tombstone.id);
+            if (current) await storeRemote(current);
+            outcome.overwrittenByCloud.push(tombstone.id);
           } else {
-            const full = await api.getDesign(record.id);
-            if (full) {
-              await storage.put({
-                id: full.id,
-                name: full.name,
-                projectJson: JSON.stringify(full.project),
-                thumbnail: null,
-                updatedAt: full.updatedAt,
-              });
-            }
+            remainingTombstones.push(tombstone);
+            outcome.errors.push(`${tombstone.id}: ${error instanceof Error ? error.message : '删除失败'}`);
           }
-          outcome.pulled++;
-        } catch (error) {
-          outcome.errors.push(`${record.id}: ${error instanceof Error ? error.message : '拉取失败'}`);
         }
       }
-
-      // 记录本次同步后的服务器时间基准（时钟偏差防护的门控依据）。
-      // 必须包含本轮推送回显的时间戳：否则下次同步会把「已对齐的相等时间戳」再钳制 +1ms，
-      // 造成每轮都误判为脏数据而无限推送。
-      let newBaseline = maxServer ?? lastServer;
-      if (maxAdopted && (!newBaseline || maxAdopted > newBaseline)) newBaseline = maxAdopted;
-      if (newBaseline) {
-        await storage.setMeta(LAST_SERVER_TIME_KEY, newBaseline);
-      }
-
+      await saveTombstones(remainingTombstones);
       return outcome;
     },
-
-    /** 拉取单个云端设计到本地（云端独有的设计在打开/重命名前调用）。 */
     async pullDesign(id: string): Promise<void> {
       const full = await api.getDesign(id);
       if (!full) throw new ApiError(404, 'NOT_FOUND', '设计不存在');
-      await storage.put({
-        id: full.id,
-        name: full.name,
-        projectJson: JSON.stringify(full.project),
-        thumbnail: null,
-        updatedAt: full.updatedAt,
-      });
+      await storeRemote(full);
     },
-
-    /** 本地删除（ticket 语义）：写本地墓碑，由下一次 sync 推送墓碑并调云端 DELETE。 */
-    async deleteLocal(id: string, nowIso: string): Promise<void> {
-      const tombstones = await loadTombstones();
-      await saveTombstones([...tombstones.filter((t) => t.id !== id), { id, updatedAt: nowIso, deleted: true }]);
+    async deleteLocal(id: string, _nowIso?: string, baseRevisionHint = 0): Promise<void> {
+      const local = (await storage.getAll()).find((record) => record.id === id);
+      const baseRevision = Math.max(local?.revision ?? 0, baseRevisionHint);
+      if (baseRevision > 0) {
+        const tombstones = await loadTombstones();
+        await saveTombstones([...tombstones.filter((item) => item.id !== id), { id, baseRevision }]);
+      }
       await storage.delete(id);
     },
-
-    /** 本地重命名：更新项目名与时间戳（下次 sync 推送）。 */
     async renameLocal(id: string, name: string, nowIso: string): Promise<void> {
-      const all = await storage.getAll();
-      const record = all.find((r) => r.id === id);
+      const record = (await storage.getAll()).find((item) => item.id === id);
       if (!record) throw new ApiError(404, 'NOT_FOUND', '设计不存在');
       const project = parseStoredProject(record.projectJson);
       if (!project) throw new ApiError(400, 'VALIDATION', '本地数据无法解析');
-      const updated: ProjectFile = { ...project, name, updatedAt: nowIso };
-      await storage.put({
-        ...record,
-        name,
-        projectJson: JSON.stringify(updated),
-        updatedAt: nowIso,
-      });
+      await storage.put({ ...record, name, projectJson: JSON.stringify({ ...project, name, updatedAt: nowIso }), updatedAt: nowIso, syncState: 'dirty' });
     },
   };
 }

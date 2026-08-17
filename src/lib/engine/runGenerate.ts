@@ -1,13 +1,4 @@
-/**
- * 生成任务运行器（优化票 07）：
- * - 浏览器：Web Worker 中执行 generatePattern（不冻结页面），返回可取消的 GenerateTask；
- * - 无 Worker 环境（jsdom 单测/降级）：同步执行；
- * - 失败回退：Worker 异常（脚本错误/执行错误）→ 主线程同步执行一次保底，并 console.error 记录。
- * 取消语义：cancel() 立即以 AbortError 拒绝 promise、UI 恢复可交互；
- * Worker **不**强制终止——Firefox 对 webpack 模块 worker 在任务执行中调用 terminate()
- * 会直接崩溃页面（E2E 实测复现），因此改为「丢弃语义」：Worker 自然跑完后在 done/error
- * 处理器中销毁自己，迟到结果由调用方 token 丢弃。调用方另持 token 防旧结果覆盖新结果。
- */
+/** Persistent latest-only generation worker client. */
 import { generatePattern, type ProgressReporter } from './generate';
 import { type EngineOutput, type ImageDataLike } from './types';
 import type { GenerationParams, PaletteColor } from '@/lib/types';
@@ -18,100 +9,230 @@ export interface GenerateRequest {
   palette: PaletteColor[];
 }
 
-/** Worker → 主线程消息协议。 */
+export type WorkerRequest =
+  | { type: 'source'; sourceId: number; src: ImageDataLike }
+  | {
+      type: 'generate';
+      taskId: number;
+      sourceId: number;
+      params: GenerationParams;
+      palette: PaletteColor[];
+      cancelBuffer?: SharedArrayBuffer;
+    }
+  | { type: 'cancel'; taskId: number };
+
 export type WorkerResponse =
-  | { type: 'progress'; percent: number }
-  | { type: 'done'; output: EngineOutput }
-  | { type: 'error'; error: string };
+  | { type: 'progress'; taskId: number; percent: number }
+  | { type: 'done'; taskId: number; output: EngineOutput }
+  | { type: 'error'; taskId: number; error: string }
+  | { type: 'cancelled'; taskId: number };
 
 export interface GenerateTask {
   promise: Promise<EngineOutput>;
-  /** 取消在途任务：promise 立即以 AbortError 拒绝；Worker 自然跑完后自行销毁（结果被丢弃）。 */
   cancel: () => void;
 }
 
-export function runGenerate(
-  request: GenerateRequest,
-  onProgress?: ProgressReporter,
-): GenerateTask {
-  if (typeof Worker === 'undefined') {
-    // jsdom 单测与极老浏览器：同步回退（无法抢占；结果由调用方 token 丢弃）
-    return {
-      promise: new Promise<EngineOutput>((resolve, reject) => {
-        try {
-          resolve(generatePattern(request.src, request.params, request.palette, onProgress));
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error('生成失败'));
-        }
-      }),
-      cancel: () => {
-        // 同步路径不可抢占：保持 no-op（调用方 token 已作废结果）
-      },
-    };
+const isSharedSource = (src: ImageDataLike): boolean =>
+  typeof SharedArrayBuffer !== 'undefined' && src.data.buffer instanceof SharedArrayBuffer;
+
+/**
+ * Move the bounded crop into one cross-thread shared allocation. The session
+ * and persistent Worker then reference the same immutable bytes, so changing
+ * parameters never clones or retransmits the RGBA source. Older/non-isolated
+ * browsers fall back to the transfer-copy path inside runGenerate.
+ */
+export function prepareGenerationSource(src: ImageDataLike): ImageDataLike {
+  if (isSharedSource(src)) return src;
+  try {
+    if (typeof SharedArrayBuffer === 'undefined') return src;
+    const shared = new Uint8ClampedArray(new SharedArrayBuffer(src.data.byteLength));
+    shared.set(src.data);
+    return { ...src, data: shared };
+  } catch {
+    return src;
   }
+}
 
-  const holder: { current: Worker | null } = { current: new Worker(new URL('./generate.worker.ts', import.meta.url)) };
-  let rejectPromise: ((reason: Error) => void) | null = null;
-  let settled = false;
+interface ActiveWorkerTask {
+  taskId: number;
+  settled: boolean;
+  cancelView: Int32Array | null;
+  onProgress?: ProgressReporter;
+  resolve: (output: EngineOutput) => void;
+  reject: (error: Error) => void;
+  cancel: () => void;
+}
 
-  const promise = new Promise<EngineOutput>((resolve, reject) => {
-    rejectPromise = reject;
-    const w = holder.current;
-    if (!w) {
-      reject(new Error('worker 不可用'));
+let persistentWorker: Worker | null = null;
+let persistentSource: ImageDataLike | null = null;
+let sourceId = 0;
+let taskId = 0;
+let activeTask: ActiveWorkerTask | null = null;
+
+const abortError = (): Error => {
+  const error = new Error('生成任务已取消');
+  error.name = 'AbortError';
+  return error;
+};
+
+function terminatePersistentWorker(): void {
+  persistentWorker?.terminate();
+  persistentWorker = null;
+  persistentSource = null;
+  sourceId += 1;
+}
+
+function rejectActive(error: Error): void {
+  const task = activeTask;
+  if (!task || task.settled) return;
+  task.settled = true;
+  activeTask = null;
+  task.reject(error);
+}
+
+function ensureWorker(): Worker {
+  if (persistentWorker) return persistentWorker;
+  const worker = new Worker(new URL('./generate.worker.ts', import.meta.url));
+  worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+    const message = event.data;
+    const task = activeTask;
+    if (!task || task.settled || task.taskId !== message.taskId) return;
+    if (message.type === 'progress') {
+      task.onProgress?.(message.percent);
       return;
     }
-    const settleResolve = (output: EngineOutput): void => {
-      if (settled) return;
-      settled = true;
-      resolve(output);
-    };
-    const settleReject = (error: Error): void => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    };
+    task.settled = true;
+    activeTask = null;
+    if (message.type === 'done') task.resolve(message.output);
+    else if (message.type === 'cancelled') task.reject(abortError());
+    else task.reject(new Error(message.error));
+  };
+  worker.onerror = (event) => {
+    rejectActive(new Error(event.message || 'worker 生成失败'));
+    terminatePersistentWorker();
+  };
+  persistentWorker = worker;
+  return worker;
+}
 
-    /** Worker 异常 → 主线程同步执行一次保底（优化票 07 要求 4），并记录日志。 */
-    const fallbackToMainThread = (reason: string): void => {
-      holder.current = null;
-      console.error(`[runGenerate] ${reason}，回退主线程同步执行`);
+function createCancelView(): Int32Array | null {
+  try {
+    if (typeof SharedArrayBuffer === 'undefined') return null;
+    return new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+  } catch {
+    return null;
+  }
+}
+
+function synchronousTask(request: GenerateRequest, onProgress?: ProgressReporter): GenerateTask {
+  let settled = false;
+  let cancelled = false;
+  let rejectPromise: (error: Error) => void = () => undefined;
+  const promise = new Promise<EngineOutput>((resolve, reject) => {
+    rejectPromise = reject;
+    queueMicrotask(() => {
+      if (settled || cancelled) return;
       try {
-        settleResolve(generatePattern(request.src, request.params, request.palette, onProgress));
+        const output = generatePattern(request.src, request.params, request.palette, onProgress, () => cancelled);
+        if (settled || cancelled) return;
+        settled = true;
+        resolve(output);
       } catch (error) {
-        settleReject(error instanceof Error ? error : new Error('生成失败'));
+        if (settled) return;
+        settled = true;
+        reject(error instanceof Error ? error : new Error('生成失败'));
       }
-    };
-
-    w.onmessage = (event: MessageEvent<WorkerResponse>) => {
-      const data = event.data;
-      if (data.type === 'progress') {
-        onProgress?.(data.percent);
-        return;
-      }
-      // done/error 消息本身就是任务结束信号：此刻 terminate 是安全的
-      // （Firefox 仅在任务执行中 terminate 会崩溃）
-      w.terminate();
-      holder.current = null;
-      if (data.type === 'done') settleResolve(data.output);
-      else fallbackToMainThread(`worker 执行失败：${data.error}`);
-    };
-    w.onerror = (event) => {
-      // 不 terminate：Worker 脚本级错误后其任务已停止；规避 Firefox 模块 worker terminate 崩溃风险
-      holder.current = null;
-      fallbackToMainThread(`worker 错误：${event.message || '未知错误'}`);
-    };
-    w.postMessage(request);
+    });
   });
-
   return {
     promise,
     cancel: () => {
-      if (!holder.current) return; // 已结束或已取消
-      holder.current = null; // 断开引用：Worker 自然跑完后自行销毁，迟到结果被 settle 守卫丢弃
-      const error = new Error('生成任务已取消');
-      error.name = 'AbortError';
-      rejectPromise?.(error);
+      if (settled) return;
+      cancelled = true;
+      settled = true;
+      rejectPromise(abortError());
     },
   };
+}
+
+export function runGenerate(request: GenerateRequest, onProgress?: ProgressReporter): GenerateTask {
+  if (typeof Worker === 'undefined') return synchronousTask(request, onProgress);
+
+  // The module owns exactly one latest task. Starting a replacement always
+  // aborts the previous promise before any new messages can be observed.
+  activeTask?.cancel();
+  const worker = ensureWorker();
+  const nextTaskId = ++taskId;
+  if (persistentSource !== request.src) {
+    persistentSource = request.src;
+    sourceId += 1;
+    if (isSharedSource(request.src)) {
+      // Shared source is immutable after crop: structured clone carries only
+      // the SAB handle and retains exactly one RGBA allocation.
+      worker.postMessage({ type: 'source', sourceId, src: request.src } satisfies WorkerRequest);
+    } else {
+      // Compatibility path: transfer one independent copy so the session can
+      // still recreate a Worker after a crash without a detached source.
+      const workerData = new Uint8ClampedArray(request.src.data);
+      const workerSource = { ...request.src, data: workerData };
+      worker.postMessage(
+        { type: 'source', sourceId, src: workerSource } satisfies WorkerRequest,
+        [workerData.buffer],
+      );
+    }
+  }
+  const currentSourceId = sourceId;
+  const cancelView = createCancelView();
+  let resolvePromise: (output: EngineOutput) => void = () => undefined;
+  let rejectPromise: (error: Error) => void = () => undefined;
+  const promise = new Promise<EngineOutput>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
+  const task: ActiveWorkerTask = {
+    taskId: nextTaskId,
+    settled: false,
+    cancelView,
+    onProgress,
+    resolve: resolvePromise,
+    reject: rejectPromise,
+    cancel: () => {
+      if (task.settled) return;
+      task.settled = true;
+      if (activeTask === task) activeTask = null;
+      if (task.cancelView) Atomics.store(task.cancelView, 0, 1);
+      try {
+        // A busy worker observes the shared atomic flag synchronously. Posting a
+        // second cancel event would only run after generation unwinds and leave
+        // a stale task id in its cancellation set forever.
+        if (!task.cancelView) {
+          worker.postMessage({ type: 'cancel', taskId: task.taskId } satisfies WorkerRequest);
+        }
+      } finally {
+        task.reject(abortError());
+        // Without a shared atomic flag, a busy worker cannot receive the
+        // cancel message until computation ends; termination is the only true
+        // cancellation fallback. The next request creates and re-initializes it.
+        if (!task.cancelView) terminatePersistentWorker();
+      }
+    },
+  };
+  activeTask = task;
+  worker.postMessage({
+    type: 'generate',
+    taskId: nextTaskId,
+    sourceId: currentSourceId,
+    params: request.params,
+    palette: request.palette,
+    cancelBuffer: cancelView?.buffer as SharedArrayBuffer | undefined,
+  } satisfies WorkerRequest);
+  return { promise, cancel: task.cancel };
+}
+
+/** Explicit lifecycle seam for tests and future app-level disposal. */
+export function disposeGenerateWorker(): void {
+  activeTask?.cancel();
+  activeTask = null;
+  terminatePersistentWorker();
 }

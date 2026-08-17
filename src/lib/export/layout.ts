@@ -8,6 +8,8 @@ export const LEGEND_GAP = 16; // 图例区与图纸的间距（px）
 export const LEGEND_TEXT_GAP = 8; // 色块与文字间距（px）
 export const LEGEND_ENTRY_PADDING = 6; // 每个图例条目的上下留白
 export const DEFAULT_DESIGN_NAME = '未命名设计';
+export const MAX_EXPORT_CANVAS_DIMENSION = 65_535;
+export const MAX_EXPORT_CANVAS_PIXELS = 8192 * 8192;
 
 /** 内容包围盒（含端点）：非透明且非外部格的最小矩形；无内容返回 null。 */
 export interface ContentBounds {
@@ -89,4 +91,49 @@ export function legendColumnWidth(cellPx: number, maxTextWidthPx: number): numbe
 /** 图例文本（色号 × 数量）。 */
 export function legendEntryText(item: PatternStatsItem): string {
   return `${item.code} × ${item.count}`;
+}
+
+export interface PngCanvasLayout {
+  width: number;
+  height: number;
+  legend: null | {
+    x: number;
+    y: number;
+    columns: number;
+    rows: number;
+    columnWidth: number;
+    entryHeight: number;
+  };
+}
+
+/** 保守取 Chromium/Firefox/WebKit 可靠交集，避免让浏览器先分配超大背板再失败。 */
+export function pngCanvasWithinLimits(size: { width: number; height: number }): boolean {
+  return Number.isInteger(size.width)
+    && Number.isInteger(size.height)
+    && size.width > 0
+    && size.height > 0
+    && size.width <= MAX_EXPORT_CANVAS_DIMENSION
+    && size.height <= MAX_EXPORT_CANVAS_DIMENSION
+    && size.width * size.height <= MAX_EXPORT_CANVAS_PIXELS;
+}
+
+/** PNG 图例放在图纸下方并按图纸宽度换行，避免极短图纸产生超宽 Canvas。 */
+export function computePngCanvasLayout(input: {
+  patternWidthPx: number;
+  patternHeightPx: number;
+  legendCount: number;
+  cellPx: number;
+  legendTextPx: number;
+}): PngCanvasLayout {
+  const { patternWidthPx, patternHeightPx, legendCount, cellPx, legendTextPx } = input;
+  if (legendCount <= 0) return { width: patternWidthPx, height: patternHeightPx, legend: null };
+  const columnWidth = legendColumnWidth(cellPx, legendTextPx);
+  const entryHeight = legendEntryHeight(cellPx);
+  const columns = Math.min(legendCount, Math.max(1, Math.floor(patternWidthPx / columnWidth)));
+  const rows = Math.ceil(legendCount / columns);
+  return {
+    width: Math.max(patternWidthPx, columns * columnWidth),
+    height: patternHeightPx + LEGEND_GAP + rows * entryHeight,
+    legend: { x: 0, y: patternHeightPx + LEGEND_GAP, columns, rows, columnWidth, entryHeight },
+  };
 }

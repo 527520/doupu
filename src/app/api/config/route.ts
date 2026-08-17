@@ -4,9 +4,11 @@
  * 安全阈值等敏感项绝不在此下发。
  * 公开接口，无需登录；禁用缓存头由 Next 默认处理（动态路由）。
  */
-import { okJson } from '@/lib/auth/http';
+import { okJson, withApiErrors } from '@/lib/auth/http';
 import { publicConfig } from '@/lib/config';
 
-export async function GET() {
+async function get(_request: Request) {
   return okJson(publicConfig());
 }
+
+export const GET = withApiErrors(get);

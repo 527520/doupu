@@ -18,6 +18,10 @@ export interface DesignRecord {
   /** ≤256px 缩略图 data URL；生成失败时为 null */
   thumbnail: string | null;
   updatedAt: string;
+  /** Last cloud revision observed. Zero means the row has never been created remotely. */
+  revision?: number;
+  /** Explicit dirty state avoids relying on clocks to detect unsynced local edits. */
+  syncState?: 'dirty' | 'synced' | 'conflict';
 }
 
 export interface StorageAdapter {
@@ -89,13 +93,21 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
     },
     async put(record) {
       const tx = db.transaction(STORE_DESIGNS, 'readwrite');
-      await wrapRequest(tx.objectStore(STORE_DESIGNS).put(record));
-      await txComplete(tx);
+      const completed = txComplete(tx);
+      const store = tx.objectStore(STORE_DESIGNS);
+      const existing = (await wrapRequest(store.get(record.id))) as DesignRecord | undefined;
+      const next =
+        record.syncState === 'dirty' && (record.revision ?? 0) === 0 && (existing?.revision ?? 0) > 0
+          ? { ...record, revision: existing!.revision }
+          : record;
+      await wrapRequest(store.put(next));
+      await completed;
     },
     async delete(id) {
       const tx = db.transaction(STORE_DESIGNS, 'readwrite');
+      const completed = txComplete(tx);
       await wrapRequest(tx.objectStore(STORE_DESIGNS).delete(id));
-      await txComplete(tx);
+      await completed;
     },
     async getMeta(key) {
       const tx = db.transaction(STORE_META, 'readonly');
@@ -104,8 +116,9 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
     },
     async setMeta(key, value) {
       const tx = db.transaction(STORE_META, 'readwrite');
+      const completed = txComplete(tx);
       await wrapRequest(tx.objectStore(STORE_META).put({ key, value }));
-      await txComplete(tx);
+      await completed;
     },
   };
 }
@@ -174,6 +187,8 @@ export function createDesignRecord(
     projectJson: JSON.stringify(project),
     thumbnail,
     updatedAt: project.updatedAt,
+    revision: 0,
+    syncState: 'dirty',
   };
 }
 

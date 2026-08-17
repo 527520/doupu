@@ -1,45 +1,25 @@
-# 备份恢复演练（ADR-0005，spec §9 交付物）
+# 备份恢复与定期演练
 
-> 目标：验证「每日 pg_dump → COS」的备份可以真正恢复业务数据。建议每季度演练一次。
+备份不再是 SQL 管道的“命令成功”，而是 custom-format dump 经 `pg_restore --list` 校验、压缩、上传临时 key、字节数校验和原子 promote 后才算成功。任一阶段失败都返回非零并调用告警链。
 
-## 1. 获取备份文件
+## 自动恢复演练
 
-- 登录腾讯云 COS 控制台 → 桶 `COS_BUCKET` → `doupu-backup/` 目录，下载最近的 `doupu-YYYYMMDD-HHMMSS.sql.gz`。
-
-## 2. 恢复到临时库（演练，不触碰生产库）
+从 COS 下载最新的 `doupu-YYYYMMDD-HHMMSS.dump.gz`，在备份容器中执行：
 
 ```bash
-# 在服务器上
-gunzip -k doupu-YYYYMMDD-HHMMSS.sql.gz
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  psql -U doupu -d postgres -c "CREATE DATABASE doupu_restore_test;"
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  psql -U doupu -d doupu_restore_test < doupu-YYYYMMDD-HHMMSS.sql
+docker compose -f docker-compose.prod.yml run --rm \
+  -e RESTORE_DATABASE=doupu_restore_test \
+  backup /scripts/restore-drill.sh /backup/doupu-YYYYMMDD-HHMMSS.dump.gz
 ```
 
-## 3. 校验
+`RESTORE_DATABASE` 必须以 `_restore_test` 结尾，脚本会先校验 dump manifest，再创建隔离数据库并完整 restore。可用 `RESTORE_CANARY_SQL` 指定必须返回非空结果的 canary 查询。CI 对每次改动执行临时备份闭环；`.github/workflows/production-backup-restore.yml` 每月只接受 36 小时内最新 promote 的生产归档，在隔离 PostgreSQL 16 中完整恢复并检查核心 `users` 表。缺少 COS secrets、没有新鲜归档、下载/校验/恢复任一步失败都会让定时任务失败并进入 GitHub Actions 告警面板。
 
-```sql
--- 表结构完整
-SELECT count(*) FROM users;
-SELECT count(*) FROM designs;
-SELECT count(*) FROM palettes;
-```
+## 灾难恢复
 
-- 抽查 1 个用户的 designs 列表与生产 UI 显示一致（数量、updated_at 排序）。
-- 抽查 1 个 design 的 project JSON 可被导入工作台（项目文件格式无损）。
+1. 停止 Caddy 和 app，保留 PostgreSQL：`docker compose -f docker-compose.prod.yml stop caddy app`。
+2. 对现场库再做一份 dump，禁止直接覆盖唯一数据。
+3. `gzip -dc` 解压并以 `pg_restore --list` 校验。
+4. 在新数据库中 restore，检查 users/designs/palettes 数量和 canary。
+5. 更新 `DATABASE_URL`，执行迁移和健康检查，最后恢复 Caddy 流量。
 
-## 4. 清理
-
-```bash
-docker compose -f docker-compose.prod.yml exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
-  psql -U doupu -d postgres -c "DROP DATABASE doupu_restore_test;"
-rm doupu-YYYYMMDD-HHMMSS.sql
-```
-
-## 恢复生产库（仅在真实灾难时）
-
-1. 停服：`docker compose -f docker-compose.prod.yml stop app`
-2. 用第 2 步命令把 dump 导入 **doupu** 库（覆盖前先 `pg_dump` 留现场快照）。
-3. 起服：`docker compose -f docker-compose.prod.yml up -d`
-4. 验证首页可访问、登录可用、设计列表完整。
+不要在未完成隔离 restore 校验时向生产库执行 `--clean` 或 drop。

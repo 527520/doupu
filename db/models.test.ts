@@ -5,7 +5,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { eq, count } from 'drizzle-orm';
 import { createTestClient } from './testClient';
-import { cleanupRateLimits, incrementRateLimit, type AnyDatabase } from './client';
+import { cleanupRateLimits, cleanupSyncTombstones, incrementRateLimit, type AnyDatabase } from './client';
 import { users, sessions, emailTokens, designs, palettes, rateLimits } from './schema';
 
 describe('db models（PGlite）', () => {
@@ -98,6 +98,36 @@ describe('db models（PGlite）', () => {
     expect(await incrementRateLimit(db, 'k2', t0)).toBe(1);
   });
 
+  it('rate_limits 新窗口并发首批请求不会互相重置丢计数', async () => {
+    const oldWindow = new Date('2026-08-14T00:00:00.000Z');
+    const newWindow = new Date('2026-08-14T01:00:00.000Z');
+    await incrementRateLimit(db, 'rollover-race', oldWindow);
+
+    const counts = await Promise.all(
+      Array.from({ length: 8 }, () => incrementRateLimit(db, 'rollover-race', newWindow)),
+    );
+
+    expect(counts.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const [stored] = await db.select().from(rateLimits).where(eq(rateLimits.key, 'rollover-race'));
+    expect(stored.count).toBe(8);
+    expect(stored.windowStart.toISOString()).toBe(newWindow.toISOString());
+  });
+
+  it('rate_limits 忽略迟到的旧窗口且不会把当前窗口计数回拨', async () => {
+    const oldWindow = new Date('2026-08-14T00:00:00.000Z');
+    const currentWindow = new Date('2026-08-14T01:00:00.000Z');
+
+    expect(await incrementRateLimit(db, 'late-window', currentWindow)).toBe(1);
+    // A delayed request from the previous bucket must not move the persisted
+    // bucket backwards or create extra capacity in the current bucket.
+    expect(await incrementRateLimit(db, 'late-window', oldWindow)).toBe(1);
+    expect(await incrementRateLimit(db, 'late-window', currentWindow)).toBe(2);
+
+    const [stored] = await db.select().from(rateLimits).where(eq(rateLimits.key, 'late-window'));
+    expect(stored.count).toBe(2);
+    expect(stored.windowStart.toISOString()).toBe(currentWindow.toISOString());
+  });
+
   it('cleanupRateLimits：只删过期窗口，保留新窗口（优化票 03）', async () => {
     await db.delete(rateLimits); // 隔离前序测试的计数行
     const old = new Date('2026-08-13T00:00:00.000Z');
@@ -109,6 +139,21 @@ describe('db models（PGlite）', () => {
     expect(removed).toBe(2);
     const rows = await db.select().from(rateLimits);
     expect(rows.map((r) => r.key)).toEqual(['fresh1']);
+  });
+
+  it('cleanupSyncTombstones：设计与色板墓碑到 90 天后硬删除', async () => {
+    const userId = await insertUser('tombstone-cleanup@example.com');
+    const old = new Date('2026-05-01T00:00:00.000Z');
+    const fresh = new Date('2026-08-16T00:00:00.000Z');
+    await db.insert(designs).values([
+      { id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', userId, name: '', project: null, payloadBytes: 0, deletedAt: old },
+      { id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', userId, name: '', project: null, payloadBytes: 0, deletedAt: fresh },
+    ]);
+    await db.insert(palettes).values([
+      { id: 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', userId, name: '', colors: null, payloadBytes: 0, deletedAt: old },
+      { id: 'e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', userId, name: '', colors: null, payloadBytes: 0, deletedAt: fresh },
+    ]);
+    expect(await cleanupSyncTombstones(db, new Date('2026-08-17T00:00:00.000Z'))).toEqual({ designs: 1, palettes: 1 });
   });
 
   it('sessions/email_tokens token_hash 唯一约束', async () => {

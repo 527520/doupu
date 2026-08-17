@@ -30,11 +30,23 @@ export function rgbToHex(rgb: Rgb): string {
     .join('')}`.toUpperCase();
 }
 
-function srgbChannelToLinear(channel: number): number {
+function computeSrgbChannelToLinear(channel: number): number {
   const normalized = channel / 255;
   return normalized <= 0.04045
     ? normalized / 12.92
     : Math.pow((normalized + 0.055) / 1.055, 2.4);
+}
+
+// 引擎热路径只传入 8-bit 通道；预计算避免每次精确查询重复执行 3 次幂运算。
+// 非整数调用仍走原公式，保持颜色工具的通用行为。
+const SRGB_TO_LINEAR = Float64Array.from({ length: 256 }, (_, channel) =>
+  computeSrgbChannelToLinear(channel),
+);
+
+function srgbChannelToLinear(channel: number): number {
+  return Number.isInteger(channel) && channel >= 0 && channel <= 255
+    ? SRGB_TO_LINEAR[channel]
+    : computeSrgbChannelToLinear(channel);
 }
 
 /** RGB → Oklab（供 LUT 构建预计算使用）。 */

@@ -1,6 +1,7 @@
 /** 图片输入校验（spec §F1，边界 E1–E4/E8/E13）。 */
 import { LIMITS } from '@/lib/appInfo';
 import { isAnimatedImage } from './animation';
+import { readImageDimensions } from './dimensions';
 import { sniffImageType, type ImageType } from './sniff';
 
 export type ImageErrorCode =
@@ -25,6 +26,14 @@ export function validateImageFile(file: ImageFileInput): ValidationResult {
   if (file.bytes.length > LIMITS.maxFileBytes) return { ok: false, code: 'TOO_LARGE_FILE' };
   const type = sniffImageType(file.bytes);
   if (type === 'unknown') return { ok: false, code: 'UNSUPPORTED_TYPE' };
+  const dimensions = readImageDimensions(file.bytes, type);
+  // Every accepted format has a bounded header-level dimension parser. If it
+  // cannot establish dimensions, fail closed before any browser/WASM decoder
+  // can allocate a full pixel surface for a malformed input.
+  if (!dimensions) return { ok: false, code: 'DECODE_FAILED' };
+  if (!validatePixelCount(dimensions.width, dimensions.height).ok) {
+    return { ok: false, code: 'TOO_MANY_PIXELS' };
+  }
   if (isAnimatedImage(file.bytes, type)) return { ok: false, code: 'ANIMATED' };
   return { ok: true, type };
 }

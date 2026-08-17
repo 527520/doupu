@@ -7,6 +7,7 @@ import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { setTestDb } from '@/lib/auth/db';
 import { rateLimits } from '@/../db/schema';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
+import * as mailer from '@/lib/auth/mailer';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
 import { POST as registerPost } from './register/route';
 import { POST as verifyPost } from './verify-email/route';
@@ -125,14 +126,14 @@ describe('认证全生命周期', () => {
     expect(token1).toMatch(/^[A-Za-z0-9_-]{43}$/);
     cookieJar.set(SESSION_COOKIE_NAME, token1);
 
-    const meUnverified = await meGet();
+    const meUnverified = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meUnverified.status).toBe(403);
     expect((await errorBody(meUnverified)).error.message).toContain('邮箱未验证');
 
     // 4. 验证邮箱 → 200；me → 200
     const verify = await verifyPost(post('/api/auth/verify-email', { token: verifyToken }));
     expect(verify.status).toBe(200);
-    const meOk = await meGet();
+    const meOk = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meOk.status).toBe(200);
     expect(await meOk.json()).toMatchObject({ email: mail, emailVerified: true });
 
@@ -176,7 +177,7 @@ describe('认证全生命周期', () => {
     // 8. 重置密码 → 204；旧会话全部失效（E32）
     const reset = await resetPost(post('/api/auth/reset-password', { token: resetToken, password: 'ResetPass-111' }));
     expect(reset.status).toBe(204);
-    const meAfterReset = await meGet();
+    const meAfterReset = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meAfterReset.status).toBe(401);
     cookieJar.clear();
     const loginAfterReset = await loginPost(post('/api/auth/login', { email: mail, password: 'ResetPass-111' }));
@@ -188,7 +189,7 @@ describe('认证全生命周期', () => {
     expect(logout.status).toBe(204);
     expect(logout.headers.get('set-cookie')).toContain('Max-Age=0');
     cookieJar.clear();
-    expect((await meGet()).status).toBe(401);
+    expect((await meGet(new Request(`${ORIGIN}/api/auth/me`))).status).toBe(401);
   });
 
   it('注销账号：密码校验 → 级联删除 → 无法再登录（E34）', async () => {
@@ -227,6 +228,39 @@ describe('认证全生命周期', () => {
 
     const badFormat = await resendPost(post('/api/auth/resend-verification', { email: 'not-an-email' }));
     expect(badFormat.status).toBe(400);
+  });
+
+  it('找回密码发信失败时旧 reset 链接仍可使用', async () => {
+    const mail = email();
+    await registerPost(post('/api/auth/register', { email: mail, password }));
+
+    expect((await forgotPost(post('/api/auth/forgot-password', { email: mail }))).status).toBe(204);
+    const oldResetToken = tokenFromMail(lastMail());
+
+    vi.spyOn(mailer, 'sendMail').mockRejectedValueOnce(new Error('injected mail failure'));
+    expect((await forgotPost(post('/api/auth/forgot-password', { email: mail }))).status).toBe(204);
+
+    const reset = await resetPost(post('/api/auth/reset-password', {
+      token: oldResetToken,
+      password: 'OldLinkStillWorks-123',
+    }));
+    expect(reset.status).toBe(204);
+  });
+
+  it('找回与重发按 IP 独立限制请求，轮换幽灵邮箱也不能绕过', async () => {
+    const ip = '198.51.100.77';
+    for (let index = 0; index < 30; index++) {
+      const ghost = `ghost-${index}@example.com`;
+      expect((await forgotPost(post('/api/auth/forgot-password', { email: ghost }, { ip }))).status).toBe(204);
+    }
+    expect((await forgotPost(post('/api/auth/forgot-password', { email: 'ghost-over@example.com' }, { ip }))).status).toBe(429);
+
+    await testDb.delete(rateLimits);
+    for (let index = 0; index < 30; index++) {
+      const ghost = `resend-${index}@example.com`;
+      expect((await resendPost(post('/api/auth/resend-verification', { email: ghost }, { ip }))).status).toBe(204);
+    }
+    expect((await resendPost(post('/api/auth/resend-verification', { email: 'resend-over@example.com' }, { ip }))).status).toBe(429);
   });
 
   it('密码策略边界（E31）：7 字符拒绝、8 字符通过、首尾空白拒绝', async () => {
@@ -319,10 +353,10 @@ describe('认证全生命周期', () => {
     expect(changed.status).toBe(204);
 
     // 设备 A 仍在线；设备 B 被吊销
-    const meA = await meGet();
+    const meA = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meA.status).toBe(200);
     cookieJar.set(SESSION_COOKIE_NAME, tokenB);
-    const meB = await meGet();
+    const meB = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meB.status).toBe(401);
   });
 });
