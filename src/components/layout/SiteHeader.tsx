@@ -22,8 +22,8 @@ const navigation = [
 ] as const;
 
 /**
- * 全站页头 module：主操作始终可见，主导航与低频账号操作在窄屏收进
- * 可展开面板；桌面端用 CSS 展开同一份内容，避免重复挂载有状态操作。
+ * 全站页头 module：站点导航行与页面上下文/主操作行严格分开，避免中间宽度
+ * 下工作台名称、保存状态和导航互相挤压；低频账号操作在窄屏收进可展开面板。
  */
 export default function SiteHeader({
   title,
@@ -56,42 +56,48 @@ export default function SiteHeader({
 
   return (
     <header className="site-header border-b border-lilac/40 pb-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Link
-          href="/"
-          onClick={(event) => navigate(event, '/')}
-          className="shrink-0 rounded-full px-2 py-1 text-sm font-semibold text-primary-deep hover:bg-primary-soft"
-        >
-          {zhCN.app.name}
-        </Link>
-        <span aria-hidden="true" className="text-lilac-deep">/</span>
-        <h1 className="min-w-0 truncate text-lg font-semibold text-ink">{title}</h1>
-        {context && <div className="min-w-0 text-xs text-ink-soft">{context}</div>}
-      </div>
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Link
+            href="/"
+            onClick={(event) => navigate(event, '/')}
+            className="shrink-0 rounded-full px-2 py-1 text-sm font-semibold text-primary-deep hover:bg-primary-soft"
+          >
+            {zhCN.app.name}
+          </Link>
+          <span aria-hidden="true" className="text-lilac-deep">/</span>
+          <h1 className="min-w-0 truncate text-lg font-semibold text-ink">{title}</h1>
+        </div>
 
-      {primaryActions && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{primaryActions}</div>}
+        {links('hidden shrink-0 flex-wrap items-center gap-1 md:flex')}
 
-      {links('hidden w-full flex-wrap items-center gap-1 md:flex md:w-auto')}
-
-      <div className="site-overflow relative md:ml-auto">
-        <button
-          type="button"
-          aria-expanded={overflowOpen}
-          aria-controls="site-overflow-panel"
-          onClick={() => setOverflowOpen((open) => !open)}
-          className="btn-outline px-3 py-2 text-xs md:hidden"
-        >
-          {zhCN.nav.more}
-        </button>
-        <div
-          id="site-overflow-panel"
-          data-testid="site-overflow-panel"
-          className={`${overflowOpen ? 'flex' : 'hidden'} site-overflow-panel absolute right-0 top-full z-20 mt-2 min-w-56 flex-col gap-2 rounded-2xl border border-lilac/40 bg-white p-2 shadow-soft md:static md:mt-0 md:flex md:min-w-0 md:flex-row md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
-        >
-          {links('flex flex-col md:hidden')}
-          {overflowActions && <div className="flex flex-wrap items-center gap-2 p-1 md:p-0">{overflowActions}</div>}
+        <div className="site-overflow relative shrink-0">
+          <button
+            type="button"
+            aria-expanded={overflowOpen}
+            aria-controls="site-overflow-panel"
+            onClick={() => setOverflowOpen((open) => !open)}
+            className="btn-outline px-3 py-2 text-xs md:hidden"
+          >
+            {zhCN.nav.more}
+          </button>
+          <div
+            id="site-overflow-panel"
+            data-testid="site-overflow-panel"
+            className={`${overflowOpen ? 'flex' : 'hidden'} site-overflow-panel absolute right-0 top-full z-20 mt-2 min-w-56 flex-col gap-2 rounded-2xl border border-lilac/40 bg-white p-2 shadow-soft md:static md:mt-0 md:flex md:min-w-0 md:flex-row md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
+          >
+            {links('flex flex-col md:hidden')}
+            {overflowActions && <div className="flex flex-wrap items-center gap-2 p-1 md:p-0">{overflowActions}</div>}
+          </div>
         </div>
       </div>
+
+      {(context || primaryActions) && (
+        <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          {context && <div className="min-w-0 flex-1 text-xs text-ink-soft">{context}</div>}
+          {primaryActions && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{primaryActions}</div>}
+        </div>
+      )}
     </header>
   );
 }

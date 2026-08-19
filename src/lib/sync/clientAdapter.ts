@@ -1,5 +1,13 @@
 import { conflictName } from '@/lib/project/parse';
-import { parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
+import {
+  CLEAR_GENERATION_SOURCE,
+  PRESERVE_GENERATION_SOURCE,
+  parseStoredProject,
+  replaceGenerationSource,
+  type DesignRecord,
+  type GenerationSourceWrite,
+  type StorageAdapter,
+} from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
 export interface CloudDesignMeta {
@@ -162,8 +170,14 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
   async function saveTombstones(tombstones: TombstoneShape[]): Promise<void> {
     await storage.setMeta(TOMBSTONES_META_KEY, JSON.stringify(tombstones));
   }
-  async function storeRemote(remote: CloudDesignFull): Promise<void> {
-    await storage.put({ id: remote.id, name: remote.name, projectJson: JSON.stringify(remote.project), thumbnail: null, updatedAt: remote.updatedAt, revision: remote.revision, syncState: 'synced' });
+  async function storeRemote(
+    remote: CloudDesignFull,
+    sourceWrite: GenerationSourceWrite = CLEAR_GENERATION_SOURCE,
+  ): Promise<void> {
+    await storage.put(
+      { id: remote.id, name: remote.name, projectJson: JSON.stringify(remote.project), thumbnail: null, updatedAt: remote.updatedAt, revision: remote.revision, syncState: 'synced' },
+      sourceWrite,
+    );
   }
   const matchesSnapshot = (latest: DesignRecord, snapshot: DesignRecord): boolean =>
     latest.projectJson === snapshot.projectJson
@@ -182,19 +196,25 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     outcome: SyncOutcome,
   ): Promise<string> {
     const conflictId = newId();
+    const generationSource = await storage.getGenerationSource(source.id);
     const names = (await storage.getAll()).map((item) => item.name);
     const name = conflictName(`${source.name} (冲突副本)`, names);
     const updatedAt = now().toISOString();
     const conflictProject: ProjectFile = { ...project, name, updatedAt };
-    await storage.put({
-      ...source,
-      id: conflictId,
-      name,
-      projectJson: JSON.stringify(conflictProject),
-      updatedAt,
-      revision: 0,
-      syncState: 'conflict',
-    });
+    await storage.put(
+      {
+        ...source,
+        id: conflictId,
+        name,
+        projectJson: JSON.stringify(conflictProject),
+        updatedAt,
+        revision: 0,
+        syncState: 'conflict',
+      },
+      generationSource
+        ? replaceGenerationSource(generationSource)
+        : CLEAR_GENERATION_SOURCE,
+    );
     outcome.conflictCopies.push({ originalId: source.id, conflictId });
     return conflictId;
   }
@@ -232,7 +252,7 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     if (remote && remote.name === local.name && projectsMatch(project, remote.project)) {
       upsertOutcomeCloud(outcome, remote);
       if (!latest) await recordDeleteIntent(local.id, remote.revision);
-      else if (matchesSnapshot(latest, local)) await storeRemote(remote);
+      else if (matchesSnapshot(latest, local)) await storeRemote(remote, PRESERVE_GENERATION_SOURCE);
       else await storage.put({ ...latest, revision: remote.revision, syncState: 'dirty' });
       return;
     }
@@ -266,7 +286,13 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
       return;
     }
     if (matchesSnapshot(latest, snapshot)) {
-      await storeRemote(remote);
+      const snapshotProject = parseStoredProject(snapshot.projectJson);
+      await storeRemote(
+        remote,
+        snapshotProject && projectsMatch(snapshotProject, remote.project)
+          ? PRESERVE_GENERATION_SOURCE
+          : CLEAR_GENERATION_SOURCE,
+      );
       return;
     }
     const latestProject = parseStoredProject(latest.projectJson);

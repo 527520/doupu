@@ -43,12 +43,16 @@ import {
 import { validatePixelCount } from '@/lib/image/validation';
 import type { ImageType } from '@/lib/image/sniff';
 import {
+  createLocalGenerationSource,
   createDesignRecord,
+  imageDataFromLocalGenerationSource,
   isQuotaError,
   newDesignId,
   openIndexedDb,
   parseStoredProject,
+  replaceGenerationSource,
   renderThumbnail,
+  type LocalGenerationSourceV1,
   type StorageAdapter,
 } from '@/lib/storage';
 import { conflictName } from '@/lib/project/parse';
@@ -106,6 +110,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const encodedSourceRef = useRef<{ bytes: Uint8Array; type: ImageType } | null>(null);
   /** Restored projects rebind an original image without becoming a new design. */
   const rebindRestoredSourceRef = useRef(false);
+  /** 新裁剪的生成源，等待首次与设计记录原子写入。 */
+  const pendingGenerationSourceRef = useRef<ImageDataLike | null>(null);
   /** 当前选中的云端自定义色板 id（null = 导入项目自带的色板或内置品牌）。 */
   const [customPaletteId, setCustomPaletteId] = useState<string | null>(null);
   /** 云端自定义色板列表（优化票 06：登录后从 /api/palettes 加载，工作台可选）。 */
@@ -310,6 +316,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     if (cancelled.stableDraft) restoreDraftControls(cancelled.stableDraft);
     setShowProgress(false);
     if (!cancelled.hadCommit) {
+      pendingGenerationSourceRef.current = null;
       uploadGenerationSource(null, initialGenerationDraft);
       setStep('upload');
     }
@@ -396,14 +403,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       // Keep one immutable cross-thread RGBA allocation for the entire
       // generation session; subsequent parameter changes send only params.
       cropped = prepareGenerationSource(cropped);
+      pendingGenerationSourceRef.current = cropped;
       setDecoded(null);
       encodedSourceRef.current = null;
       activeImageDecoder.clear();
       const rebindRestoredSource = rebindRestoredSourceRef.current;
       if (!rebindRestoredSource) setCreatedAt(new Date().toISOString());
       const draft = { params, palette, projectPalette };
-      if (rebindRestoredSource) reuploadGenerationSource(cropped, draft);
-      else uploadGenerationSource(cropped, draft);
+      if (rebindRestoredSource) {
+        reuploadGenerationSource(cropped, draft);
+        // 绑定生成源本身就是可持久化变更；即使随后取消或生成失败，刷新也不应再次锁定。
+        markDirty();
+      } else uploadGenerationSource(cropped, draft);
       regenerate();
       setStep('workspace');
       rebindRestoredSourceRef.current = false;
@@ -411,7 +422,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         clearDesignQuery(); // 普通上传生成新设计；恢复项目的原图重绑保留原 id。
       }
     },
-    [activeImageDecoder, decodeFn, decodeRegionFn, decoded, params, palette, projectPalette, regenerate, reuploadGenerationSource, uploadGenerationSource, t.decoding],
+    [activeImageDecoder, decodeFn, decodeRegionFn, decoded, markDirty, params, palette, projectPalette, regenerate, reuploadGenerationSource, uploadGenerationSource, t.decoding],
   );
 
   const handleCropCancel = useCallback((): void => {
@@ -520,7 +531,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     buildProjectRef.current = buildProject;
   }, [buildProject]);
 
-  const loadCommittedProject = useCallback((project: ProjectFile): void => {
+  const loadCommittedProject = useCallback((project: ProjectFile, localSource: LocalGenerationSourceV1 | null = null): void => {
     const restoredPalette = project.palette.kind === 'builtin'
       ? buildBrandPalette(project.palette.brand)
       : project.palette.colors.map((color) => ({ hex: color.hex, code: color.code || null }));
@@ -542,10 +553,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     activeImageDecoder.clear();
     setCustomPaletteId(null);
     restoreGeneration(commit);
+    if (localSource) {
+      const restoredSource = prepareGenerationSource(imageDataFromLocalGenerationSource(localSource));
+      reuploadGenerationSource(restoredSource, commit);
+    }
+    pendingGenerationSourceRef.current = null;
     dirtyRef.current = false;
     setSaveState('saved');
     setStep('workspace');
-  }, [activeImageDecoder, restoreGeneration]);
+  }, [activeImageDecoder, restoreGeneration, reuploadGenerationSource]);
 
   const consumeSyncOutcome = useCallback(async (adapter: StorageAdapter, outcome: SyncOutcome): Promise<void> => {
       const activeId = designIdRef.current;
@@ -561,7 +577,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           await adapter.put({
             ...createDesignRecord(conflict.conflictId, latestProject, renderThumbnail(latestProject.pattern, 256)),
             syncState: 'conflict',
-          });
+          }, source
+            ? replaceGenerationSource(createLocalGenerationSource(source))
+            : undefined);
+          if (pendingGenerationSourceRef.current === source) pendingGenerationSourceRef.current = null;
         }
         setActiveDesignId(conflict.conflictId);
         if (conflictProject) setName(conflictProject.name);
@@ -582,7 +601,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             await adapter.put({
               ...createDesignRecord(conflictId, conflictProject, renderThumbnail(conflictProject.pattern, 256)),
               syncState: 'conflict',
-            });
+            }, source
+              ? replaceGenerationSource(createLocalGenerationSource(source))
+              : undefined);
+            if (pendingGenerationSourceRef.current === source) pendingGenerationSourceRef.current = null;
             setActiveDesignId(conflictId);
             setName(conflictProjectName);
             window.history.replaceState(null, '', `/app?id=${encodeURIComponent(conflictId)}`);
@@ -595,10 +617,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         }
         const remoteProject = record ? parseStoredProject(record.projectJson) : null;
         if (remoteProject) {
-          loadCommittedProject(remoteProject);
+          const localSource = await adapter.getGenerationSource(activeId);
+          loadCommittedProject(remoteProject, localSource);
           setSyncNotice(t.syncCloudUpdated);
         } else {
           // A clean active design was deleted on another device.
+          pendingGenerationSourceRef.current = null;
           setActiveDesignId(newDesignId());
           uploadGenerationSource(null, initialGenerationDraft);
           setStep('upload');
@@ -607,7 +631,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         }
       }
       setCloudSaveState('synced');
-  }, [initialGenerationDraft, loadCommittedProject, setActiveDesignId, t, uploadGenerationSource]);
+  }, [initialGenerationDraft, loadCommittedProject, setActiveDesignId, source, t, uploadGenerationSource]);
 
   const syncCloud = useCallback(async (adapter: StorageAdapter): Promise<void> => {
     if (authStatus.kind !== 'user') return;
@@ -633,11 +657,26 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     }
     const project = buildProject();
     if (!project) return false;
+    const saveDesignId = designIdRef.current;
+    const pendingSource = pendingGenerationSourceRef.current;
     const genBefore = editGenRef.current;
     setSaveState('saving');
     try {
       const thumbnail = renderThumbnail(project.pattern, 256);
-      await withDesignStorageLock(() => adapter.put(createDesignRecord(designIdRef.current, project, thumbnail)));
+      await withDesignStorageLock(async () => {
+        const shouldWriteSource = pendingSource !== null
+          && pendingGenerationSourceRef.current === pendingSource
+          && designIdRef.current === saveDesignId;
+        await adapter.put(
+          createDesignRecord(saveDesignId, project, thumbnail),
+          shouldWriteSource
+            ? replaceGenerationSource(createLocalGenerationSource(pendingSource))
+            : undefined,
+        );
+        if (shouldWriteSource && pendingGenerationSourceRef.current === pendingSource) {
+          pendingGenerationSourceRef.current = null;
+        }
+      });
       // Local persistence is authoritative. Cloud sync is durable, coalesced,
       // and deliberately cannot turn an offline cloud into a failed save.
       void syncCloud(adapter);
@@ -733,26 +772,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         if (!last) return;
         const project = parseStoredProject(last.projectJson);
         if (!project) return;
+        const localSource = await adapter.getGenerationSource(last.id);
+        if (cancelled) return;
         setActiveDesignId(last.id);
-        setName(project.name);
-        setCreatedAt(project.createdAt);
-        const computed = computeStats(project.pattern.cells);
-        const restoredTotal = computed.reduce((sum, item) => sum + item.count, 0);
         setSavedNames(records.map((r) => r.name));
-        const restoredPalette = project.palette.kind === 'builtin'
-          ? buildBrandPalette(project.palette.brand)
-          : project.palette.colors.map((c) => ({ hex: c.hex, code: c.code || null }));
-        const restoredCommit = {
-          params: project.params,
-          palette: restoredPalette,
-          projectPalette: project.palette,
-          pattern: project.pattern,
-          stats: computed,
-          total: restoredTotal,
-          engineVersion: project.engineVersion,
-        };
-        restoreGeneration(restoredCommit);
-        setStep('workspace');
+        loadCommittedProject(project, localSource);
       } catch {
         adapterRef.current = null;
         setStorageReady(false);
@@ -763,13 +787,14 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => {
       cancelled = true;
     };
-  }, [restoreGeneration, setActiveDesignId, storage]);
+  }, [loadCommittedProject, setActiveDesignId, storage]);
 
   // ---------- 导入 ----------
 
   const handleImport = useCallback(
     (project: ProjectFile): void => {
       rebindRestoredSourceRef.current = false;
+      pendingGenerationSourceRef.current = null;
       cancelGeneration();
       disposeGenerateWorker();
       setShowProgress(false);
@@ -804,6 +829,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   const resetWorkbench = useCallback((): void => {
     rebindRestoredSourceRef.current = false;
+    pendingGenerationSourceRef.current = null;
     cancelGeneration();
     disposeGenerateWorker();
     setShowProgress(false);
@@ -943,7 +969,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         </div>
       )}
 
-      {step === 'upload' && <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} mobile />}
+      {step === 'upload' && <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} />}
 
       {step === 'crop' && decoded && (
         <ImageCropper image={decoded} onConfirm={handleCropConfirm} onCancel={handleCropCancel} />
@@ -1000,6 +1026,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   <PixelEditorCanvas
                     pattern={pattern}
                     palette={palette}
+                    autoFocus
                     onPatternChange={handlePatternChange}
                   />
                 </div>

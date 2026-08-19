@@ -25,12 +25,19 @@ the system cannot prove that an update is based on the latest server state.
   as an unconditional overwrite.
 - Collection reads use 50-item cursor pages. Deletions keep only synchronization metadata in a
   tombstone and are hard-deleted after 90 days.
-- Original photos never enter the synchronization record or the server.
+- Original photos and bounded local generation sources never enter the synchronization record or
+  the server. The latter lives in a separate IndexedDB store keyed by design ID.
+- Synchronization preserves a source only when the design content is unchanged. A different remote
+  design replacing the original ID clears that ID's source; conflict handling writes the divergent
+  design and its source to the copy before replacing or deleting the original ID.
 
 ## Consequences
 
 - Conflicts become explicit and recoverable instead of depending on unsynchronized wall clocks.
 - API, database adapters, IndexedDB adapters and fakes must implement the same revision contract.
+- Every individual source write or clear is atomic with its design record. Conflict reconciliation
+  is serialized by the origin-wide design lock and copies before clearing; an interruption may
+  leave a recoverable duplicate, but never binds the old source to newly pulled pattern content.
 - A local-save indicator and a cloud-sync indicator are separate states; “saved locally” does not
   imply “synced to cloud”.
 - Clients created before this protocol must migrate imported v1 data once and then write only the

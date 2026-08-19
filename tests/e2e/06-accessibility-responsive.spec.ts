@@ -1,8 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { devices, expect, test } from '@playwright/test';
-import { BASE_URL, waitHydrated } from './helpers';
+import { resolve } from 'node:path';
+import { BASE_URL, uploadFile, waitHydrated } from './helpers';
 
-const widths = [350, 390, 768, 1280, 1440] as const;
+const widths = [350, 390, 768, 944, 1180, 1280, 1440] as const;
+const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
 for (const width of widths) {
   test(`工作台 ${width}px 无横向溢出且关键操作可见`, async ({ page }) => {
@@ -27,7 +29,7 @@ for (const width of widths) {
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-    await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+    await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
     if (width < 768) {
       await page.waitForLoadState('networkidle');
       const unexpectedConsoleErrors = consoleErrors.filter(
@@ -49,6 +51,59 @@ for (const width of widths) {
     expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport);
   });
 }
+
+test('工作区页头在全部目标宽度下导航行与设计操作行不相交', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await page.setViewportSize({ width: widths[0], height: 800 });
+  await page.goto('/app');
+  await uploadFile(page, PHOTO);
+  await page.getByRole('button', { name: '使用整张图片' }).click();
+  const designName = page.getByLabel('设计名称').first();
+  const save = page.getByRole('button', { name: '保存', exact: true });
+  await expect(designName).toBeVisible({ timeout: 20_000 });
+
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()))));
+
+    const geometry = await page.locator('header').evaluate((header) => {
+      const visibleRect = (element: Element | null): DOMRect | null => {
+        if (!(element instanceof HTMLElement) || element.offsetParent === null) return null;
+        return element.getBoundingClientRect();
+      };
+      const topRow = [
+        visibleRect(header.querySelector('h1')),
+        ...Array.from(header.querySelectorAll('nav[aria-label="主导航"]')).map(visibleRect),
+        visibleRect(header.querySelector('button[aria-controls="site-overflow-panel"]')),
+      ].filter((rect): rect is DOMRect => rect !== null);
+      const workspaceRow = [
+        visibleRect(header.querySelector('input[aria-label="设计名称"]')),
+        ...Array.from(header.querySelectorAll('[role="status"]')).map(visibleRect),
+        visibleRect(Array.from(header.querySelectorAll('button')).find((button) => button.textContent?.trim() === '保存') ?? null),
+      ].filter((rect): rect is DOMRect => rect !== null);
+      const intersections = workspaceRow.flatMap((first, firstIndex) => workspaceRow
+        .slice(firstIndex + 1)
+        .map((second) => first.left < second.right
+          && first.right > second.left
+          && first.top < second.bottom
+          && first.bottom > second.top));
+      return {
+        topBottom: Math.max(...topRow.map((rect) => rect.bottom)),
+        workspaceTop: Math.min(...workspaceRow.map((rect) => rect.top)),
+        workspaceIntersects: intersections.some(Boolean),
+        workspaceRight: Math.max(...workspaceRow.map((rect) => rect.right)),
+        headerRight: header.getBoundingClientRect().right,
+        viewportWidth: document.documentElement.clientWidth,
+      };
+    });
+
+    expect(geometry.workspaceTop, `${width}px 工作区操作应位于导航行下方`).toBeGreaterThanOrEqual(geometry.topBottom);
+    expect(geometry.workspaceIntersects, `${width}px 名称、状态和保存按钮不得重叠`).toBe(false);
+    expect(geometry.workspaceRight, `${width}px 工作区操作不得越出页头`).toBeLessThanOrEqual(geometry.headerRight);
+    expect(geometry.headerRight, `${width}px 页头不应越出视口`).toBeLessThanOrEqual(geometry.viewportWidth);
+    await expect(save).toBeVisible();
+  }
+});
 
 for (const route of ['/', '/app', '/designs', '/palettes', '/help', '/about'] as const) {
   test(`${route} 无 axe 严重或关键问题`, async ({ page }) => {
@@ -77,7 +132,7 @@ test('iOS Safari 触屏环境可上传且页面可滚动', async ({ browser }, t
   const response = await page.goto(`${BASE_URL}/app`);
   expect(response?.status(), await page.locator('body').innerText()).toBe(200);
   await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-  await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+  await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   await context.close();
@@ -90,7 +145,7 @@ test('Android Chrome 触屏环境可上传且页面可滚动', async ({ browser 
   const response = await page.goto(`${BASE_URL}/app`);
   expect(response?.status(), await page.locator('body').innerText()).toBe(200);
   await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-  await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+  await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   await context.close();

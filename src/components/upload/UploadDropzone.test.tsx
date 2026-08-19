@@ -28,16 +28,7 @@ describe('UploadDropzone', () => {
     expect(screen.getByText(zhCN.upload.hint)).toBeTruthy();
     const input = screen.getByLabelText(zhCN.upload.inputLabel) as HTMLInputElement;
     expect(input.accept).toBe('image/jpeg,image/png,image/webp,image/heic');
-    // 非 mobile 模式下 React 不渲染 capture 属性
-    expect(input.capture).toBeUndefined();
-  });
-
-  it('mobile 模式附加 capture 属性', () => {
-    render(<UploadDropzone onValid={vi.fn()} mobile />);
-    const input = screen.getByLabelText(zhCN.upload.inputLabel) as HTMLInputElement;
-    // jsdom 的 HTMLInputElement.capture 属性未实现，断言属性节点
-    expect(input.getAttribute('capture')).toBe('environment');
-    expect(screen.getByText(zhCN.upload.mobileHint)).toBeTruthy();
+    expect(input).not.toHaveAttribute('capture');
   });
 
   it('合法 PNG 触发 onValid（type/bytes/name 正确）', async () => {

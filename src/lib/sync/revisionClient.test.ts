@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createSyncClient, ApiError, type CloudApi, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
-import type { DesignRecord, StorageAdapter } from '@/lib/storage';
+import type {
+  DesignRecord,
+  GenerationSourceWrite,
+  LocalGenerationSourceV1,
+  StorageAdapter,
+} from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
 const at = (second: number) => `2026-08-17T00:00:${String(second).padStart(2, '0')}.000Z`;
@@ -18,9 +23,18 @@ function project(name: string, updatedAt: string): ProjectFile {
 class MemoryStorage implements StorageAdapter {
   records = new Map<string, DesignRecord>();
   meta = new Map<string, string>();
+  sources = new Map<string, LocalGenerationSourceV1>();
   async getAll() { return [...this.records.values()]; }
-  async put(record: DesignRecord) { this.records.set(record.id, structuredClone(record)); }
-  async delete(id: string) { this.records.delete(id); }
+  async getGenerationSource(id: string) {
+    const source = this.sources.get(id);
+    return source ? structuredClone(source) : null;
+  }
+  async put(record: DesignRecord, sourceWrite: GenerationSourceWrite = { mode: 'preserve' }) {
+    this.records.set(record.id, structuredClone(record));
+    if (sourceWrite.mode === 'replace') this.sources.set(record.id, structuredClone(sourceWrite.source));
+    if (sourceWrite.mode === 'clear') this.sources.delete(record.id);
+  }
+  async delete(id: string) { this.records.delete(id); this.sources.delete(id); }
   async getMeta(key: string) { return this.meta.get(key) ?? null; }
   async setMeta(key: string, value: string) { this.meta.set(key, value); }
 }
@@ -99,7 +113,13 @@ describe('revision/CAS client contract', () => {
   it('timeout after successful PUT is recognized as idempotent on retry, not a conflict copy', async () => {
     const api = new RevisionCloud();
     const storage = new MemoryStorage();
-    await storage.put(local('retry', '只提交一次', 0));
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([1, 2, 3, 255]).buffer,
+    };
+    await storage.put(local('retry', '只提交一次', 0), { mode: 'replace', source });
     api.failAfterCommit = true;
     const client = createSyncClient(storage, api, { newId: () => 'must-not-create' });
 
@@ -109,6 +129,7 @@ describe('revision/CAS client contract', () => {
     expect(storage.records.has('must-not-create')).toBe(false);
     expect(storage.records.get('retry')?.revision).toBe(1);
     expect(storage.records.get('retry')?.syncState).toBe('synced');
+    expect(await storage.getGenerationSource('retry')).toEqual(source);
   });
 
   it('uploads a new conflict copy once while preserving its visible conflict state', async () => {

@@ -8,6 +8,7 @@ function storage(records: Awaited<ReturnType<StorageAdapter['getAll']>> = []): S
   const meta = new Map<string, string>();
   return {
     async getAll() { return records; }, async put() {}, async delete() {},
+    async getGenerationSource() { return null; },
     async getMeta(key) { return meta.get(key) ?? null; },
     async setMeta(key, value) { meta.set(key, value); },
   };

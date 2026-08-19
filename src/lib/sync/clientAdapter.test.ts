@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, createSyncClient, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
-import type { DesignRecord, StorageAdapter } from '@/lib/storage';
+import type {
+  DesignRecord,
+  GenerationSourceWrite,
+  LocalGenerationSourceV1,
+  StorageAdapter,
+} from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
 function makeProject(name: string, updatedAt: string): ProjectFile {
@@ -37,14 +42,22 @@ function record(id: string, project: ProjectFile, updatedAt: string, revision = 
 class FakeStorage implements StorageAdapter {
   records = new Map<string, DesignRecord>();
   meta = new Map<string, string>();
+  sources = new Map<string, LocalGenerationSourceV1>();
   async getAll(): Promise<DesignRecord[]> {
     return [...this.records.values()];
   }
-  async put(r: DesignRecord): Promise<void> {
+  async put(r: DesignRecord, sourceWrite: GenerationSourceWrite = { mode: 'preserve' }): Promise<void> {
     this.records.set(r.id, { ...r });
+    if (sourceWrite.mode === 'replace') this.sources.set(r.id, structuredClone(sourceWrite.source));
+    if (sourceWrite.mode === 'clear') this.sources.delete(r.id);
   }
   async delete(id: string): Promise<void> {
     this.records.delete(id);
+    this.sources.delete(id);
+  }
+  async getGenerationSource(id: string): Promise<LocalGenerationSourceV1 | null> {
+    const source = this.sources.get(id);
+    return source ? structuredClone(source) : null;
   }
   async getMeta(key: string): Promise<string | null> {
     return this.meta.get(key) ?? null;
@@ -58,6 +71,7 @@ class FakeApi {
   cloud = new Map<string, CloudDesignFull>();
   deleted: string[] = [];
   putCalls: string[] = [];
+  putProjects: ProjectFile[] = [];
   constructor(entries: Array<Omit<CloudDesignFull, 'revision'> & { revision?: number }> = []) {
     for (const entry of entries) this.cloud.set(entry.id, { ...entry, revision: entry.revision ?? 1 });
   }
@@ -76,6 +90,7 @@ class FakeApi {
     return this.cloud.get(id) ?? null;
   }
   async putDesign(id: string, name: string, project: ProjectFile, baseRevision: number): Promise<{ updatedAt: string; revision: number }> {
+    this.putProjects.push(structuredClone(project));
     const current = this.cloud.get(id);
     if ((current?.revision ?? 0) !== baseRevision) throw new ApiError(409, 'REVISION_CONFLICT', 'conflict');
     // 模拟服务端时间戳总比客户端新 1 秒
@@ -95,6 +110,27 @@ class FakeApi {
 }
 
 describe('createSyncClient（E35–E37 适配层行为）', () => {
+  it('成功 push 只上传 ProjectFile 并保留本地生成源', async () => {
+    const storage = new FakeStorage();
+    const api = new FakeApi();
+    const project = makeProject('含本地源的设计', '2026-08-15T00:00:00.000Z');
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([255, 0, 0, 255]).buffer,
+    };
+    await storage.put(record('source-push', project, project.updatedAt), { mode: 'replace', source });
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(outcome.pushed).toBe(1);
+    expect(await storage.getGenerationSource('source-push')).toEqual(source);
+    expect(api.putProjects).toHaveLength(1);
+    expect(api.putProjects[0]).not.toHaveProperty('source');
+    expect(JSON.parse(storage.records.get('source-push')!.projectJson)).not.toHaveProperty('source');
+  });
+
   it('E35：本地独有设计推送到云端，采纳服务端时间戳；重复同步幂等', async () => {
     const storage = new FakeStorage();
     const api = new FakeApi();
@@ -133,13 +169,20 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const api = new FakeApi([{ id: 'same-1', name: project.name, project: normalizedRemote, updatedAt: project.updatedAt, revision: 1 }]);
     api.listDesignsPage = async () => ({ items: [], nextCursor: null });
     const storage = new FakeStorage();
-    await storage.put(record('same-1', project, project.updatedAt, 0, 'dirty'));
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([10, 20, 30, 255]).buffer,
+    };
+    await storage.put(record('same-1', project, project.updatedAt, 0, 'dirty'), { mode: 'replace', source });
 
     const outcome = await createSyncClient(storage, api).sync();
 
     expect(outcome.conflictCopies).toEqual([]);
     expect(outcome.cloud).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, deleted: false })]);
     expect(await storage.getAll()).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, syncState: 'synced' })]);
+    expect(await storage.getGenerationSource('same-1')).toEqual(source);
   });
 
   it('手动背景原型不同必须创建冲突副本，不能被内容等价判断静默覆盖', async () => {
@@ -156,6 +199,27 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
 
     expect(outcome.conflictCopies).toEqual([{ originalId: 'background-1', conflictId: 'background-conflict' }]);
     expect((await storage.getAll()).find((item) => item.id === 'background-conflict')).toBeTruthy();
+  });
+
+  it('CAS 冲突副本接管本地生成源，原 ID 切换到远端内容后清源', async () => {
+    const remoteProject = makeProject('另一设备', '2026-08-15T00:00:03.000Z');
+    const localProject = makeProject('本地编辑', '2026-08-15T00:00:02.000Z');
+    const api = new FakeApi([{ id: 'source-conflict', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 2 }]);
+    const storage = new FakeStorage();
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([80, 90, 100, 255]).buffer,
+    };
+    await storage.put(record('source-conflict', localProject, localProject.updatedAt, 1, 'dirty'), { mode: 'replace', source });
+
+    const outcome = await createSyncClient(storage, api, { newId: () => 'source-conflict-copy' }).sync();
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'source-conflict', conflictId: 'source-conflict-copy' }]);
+    expect(await storage.getGenerationSource('source-conflict-copy')).toEqual(source);
+    expect(await storage.getGenerationSource('source-conflict')).toBeNull();
+    expect(storage.records.get('source-conflict')?.name).toBe('另一设备');
   });
 
   it('普通 409 业务冲突不能被误当作 revision 冲突', async () => {
@@ -188,6 +252,45 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const local = await storage.getAll();
     expect(local[0].name).toBe('云端版');
     expect(local[0].updatedAt).toBe(cloudProject.updatedAt);
+  });
+
+  it('远端不同内容覆盖原 ID 时清除仅属于旧内容的本地生成源', async () => {
+    const cloudProject = makeProject('云端新版', '2026-08-15T10:00:00.000Z');
+    const api = new FakeApi([{ id: 'source-overwrite', name: cloudProject.name, project: cloudProject, updatedAt: cloudProject.updatedAt, revision: 2 }]);
+    const storage = new FakeStorage();
+    const localProject = makeProject('本地旧版', '2026-08-15T09:00:00.000Z');
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([0, 255, 0, 255]).buffer,
+    };
+    await storage.put(record('source-overwrite', localProject, localProject.updatedAt, 1, 'synced'), { mode: 'replace', source });
+
+    await createSyncClient(storage, api).sync();
+
+    expect(storage.records.get('source-overwrite')?.name).toBe('云端新版');
+    expect(await storage.getGenerationSource('source-overwrite')).toBeNull();
+  });
+
+  it('远端 revision 前移但项目内容相同时保留本地生成源', async () => {
+    const localProject = makeProject('同内容设计', '2026-08-15T09:00:00.000Z');
+    const remoteProject = { ...structuredClone(localProject), updatedAt: '2026-08-15T10:00:00.000Z' };
+    const api = new FakeApi([{ id: 'source-same-pull', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 2 }]);
+    const storage = new FakeStorage();
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([4, 5, 6, 255]).buffer,
+    };
+    await storage.put(record('source-same-pull', localProject, localProject.updatedAt, 1, 'synced'), { mode: 'replace', source });
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(outcome.pulled).toBe(1);
+    expect(storage.records.get('source-same-pull')?.revision).toBe(2);
+    expect(await storage.getGenerationSource('source-same-pull')).toEqual(source);
   });
 
   it('E37：本地较新编辑（云端已删/较旧）→ 推送复活', async () => {
@@ -241,12 +344,24 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     });
     const storage = new FakeStorage();
     const original = makeProject('第一次保存', '2026-08-15T00:00:00.000Z');
-    await storage.put(record('racing', original, original.updatedAt, 0, 'dirty'));
+    const originalSource: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([1, 1, 1, 255]).buffer,
+    };
+    await storage.put(record('racing', original, original.updatedAt, 0, 'dirty'), { mode: 'replace', source: originalSource });
 
     const syncing = createSyncClient(storage, api).sync();
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     const newer = makeProject('同步期间的新编辑', '2026-08-15T00:00:02.000Z');
-    await storage.put(record('racing', newer, newer.updatedAt, 0, 'dirty'));
+    const newerSource: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([2, 2, 2, 255]).buffer,
+    };
+    await storage.put(record('racing', newer, newer.updatedAt, 0, 'dirty'), { mode: 'replace', source: newerSource });
     release();
     await syncing;
 
@@ -254,6 +369,7 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(local.name).toBe('同步期间的新编辑');
     expect(local.revision).toBe(1);
     expect(local.syncState).toBe('dirty');
+    expect(await storage.getGenerationSource('racing')).toEqual(newerSource);
   });
 
   it('同步 GET 在途发生的新本地编辑会进入冲突副本，不能被云端回写覆盖', async () => {
@@ -270,13 +386,21 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const syncing = createSyncClient(storage, api, { newId: () => 'pull-race-conflict' }).sync();
     await vi.waitFor(() => expect(releaseGet).toBeTypeOf('function'));
     const newer = makeProject('GET 期间的新编辑', '2026-08-15T00:00:04.000Z');
-    await storage.put(record('pull-race', newer, newer.updatedAt, 1, 'dirty'));
+    const newerSource: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([3, 3, 3, 255]).buffer,
+    };
+    await storage.put(record('pull-race', newer, newer.updatedAt, 1, 'dirty'), { mode: 'replace', source: newerSource });
     releaseGet();
     const outcome = await syncing;
 
     expect(outcome.conflictCopies).toEqual([{ originalId: 'pull-race', conflictId: 'pull-race-conflict' }]);
     expect((await storage.getAll()).find((item) => item.id === 'pull-race')?.name).toBe('云端新版');
     expect((await storage.getAll()).find((item) => item.id === 'pull-race-conflict')?.name).toContain('GET 期间的新编辑');
+    expect(await storage.getGenerationSource('pull-race-conflict')).toEqual(newerSource);
+    expect(await storage.getGenerationSource('pull-race')).toBeNull();
   });
 
   it('409 冲突取云端详情期间的新编辑会完整保存在冲突副本', async () => {
@@ -307,11 +431,18 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const project = makeProject('待删', '2026-08-15T00:00:00.000Z');
     const api = new FakeApi([{ id: 'd1', name: project.name, project, updatedAt: project.updatedAt, revision: 1 }]);
     const storage = new FakeStorage();
-    await storage.put(record('d1', project, project.updatedAt, 1, 'synced'));
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([1, 2, 3, 255]).buffer,
+    };
+    await storage.put(record('d1', project, project.updatedAt, 1, 'synced'), { mode: 'replace', source });
     const client = createSyncClient(storage, api);
 
     await client.deleteLocal('d1', '2026-08-15T13:00:00.000Z');
     expect(await storage.getAll()).toEqual([]);
+    expect(await storage.getGenerationSource('d1')).toBeNull();
 
     const outcome = await client.sync();
     expect(api.deleted).toEqual(['d1']);
@@ -434,6 +565,7 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const local = await storage.getAll();
     expect(local[0].name).toBe('云端设计');
     expect(local[0].thumbnail).toBeNull();
+    expect(await storage.getGenerationSource('e1')).toBeNull();
   });
 
   it('本地数据损坏：跳过并记录错误，不影响其余设计同步', async () => {

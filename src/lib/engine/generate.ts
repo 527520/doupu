@@ -13,13 +13,14 @@ import { removeBackground } from './background';
 import { hexToRgb } from './color';
 import { assertGenerationActive, type CancellationProbe, type EngineOutput, type ImageDataLike } from './types';
 import type { GenerationParams, PaletteColor, PatternCell, PatternStatsItem } from '@/lib/types';
+import { LIMITS } from '@/lib/appInfo';
 
 /** 每格最多取 4×4 源像素；16 个连续覆盖样本足以保留格内主色/均值，
  * 同时给 200×200 + 291 色的精确 Oklab 抖动留出稳定的 2 秒硬预算。 */
 const MAX_SOURCE_PIXELS_PER_CELL = 4;
 
 /** 工作台裁剪可提前收敛到此上限；引擎的最大合法图纸无需更多源像素。 */
-export const MAX_GENERATION_SOURCE_DIMENSION = 200 * MAX_SOURCE_PIXELS_PER_CELL;
+export const MAX_GENERATION_SOURCE_DIMENSION = LIMITS.generationSourceDimension;
 
 /** 进度上报（优化票 07）：0→100，按管线阶段单调递增。 */
 export type ProgressReporter = (percent: number) => void;

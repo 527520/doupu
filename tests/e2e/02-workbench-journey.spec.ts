@@ -99,10 +99,46 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
     await expect(page.getByRole('status').filter({ hasText: /第 0 行/ }).first()).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 15_000 });
 
-  // 编辑：切换编辑页签，画笔点涂后撤销
+  // 编辑：切换页签即自动聚焦；同一光标格验证四种工具的 Enter 语义。
   await page.getByRole('tab', { name: /编辑/ }).click();
-  await page.locator('canvas').first().click({ position: { x: 4, y: 4 } });
-  await page.keyboard.press('ControlOrMeta+z');
+  const editorRegion = page.getByLabel('编辑画布区域');
+  await expect(editorRegion).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const cursorStatus = page.getByRole('status').filter({ hasText: /光标：第 1 行 第 2 列/ }).first();
+  await expect(cursorStatus).toBeVisible();
+  const cursorText = (await cursorStatus.textContent()) ?? '';
+  const originalCode = cursorText.match(/· ([^（·]+)（回车落笔）/)?.[1]?.trim();
+  expect(originalCode).toBeTruthy();
+
+  await page.keyboard.press('i');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status', { name: `当前颜色: ${originalCode}` })).toBeVisible();
+
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText(/共 399 粒/).first()).toBeVisible();
+
+  await page.keyboard.press('g');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText(/共 400 粒/).first()).toBeVisible();
+
+  const paletteButtons = page.getByRole('region', { name: '选择画笔颜色' }).getByRole('button');
+  const paletteCount = await paletteButtons.count();
+  let keyboardBrushCode = '';
+  for (let index = 0; index < paletteCount; index += 1) {
+    const label = await paletteButtons.nth(index).getAttribute('aria-label');
+    const code = label?.split(' ')[0] ?? '';
+    if (code && code !== originalCode) {
+      keyboardBrushCode = code;
+      await paletteButtons.nth(index).click();
+      break;
+    }
+  }
+  expect(keyboardBrushCode).toBeTruthy();
+  await editorRegion.focus();
+  await page.keyboard.press('b');
+  await page.keyboard.press('Enter');
+  await expect(cursorStatus).toContainText(`· ${keyboardBrushCode}（回车落笔）`);
 
   // 导出 PNG（选项面板确认后断言下载）
   await page.getByRole('button', { name: /导出 PNG/ }).click();
@@ -134,6 +170,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   const project = JSON.parse(readFileSync(projectPath!, 'utf8'));
   expect(project.format).toBe('doupu-project');
   expect(project.pattern.width).toBe(20);
+  expect(project.pattern.cells[1].code).toBe(keyboardBrushCode);
 
   // 保存并刷新恢复
   await page.getByRole('button', { name: /保存/ }).click();
@@ -141,4 +178,9 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.reload();
   await expect(page.getByLabel('设计名称').first()).toBeVisible();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
+  const restoredWidth = page.getByRole('spinbutton', { name: '目标宽度（格）' });
+  await expect(restoredWidth).toBeEnabled();
+  await typeSpin(page, '目标宽度（格）', '21');
+  await restoredWidth.blur();
+  await expect(page.getByText(/共 441 粒/).first()).toBeVisible({ timeout: 20_000 });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 上传落点（spec §F1/F2）：拖拽 + 点击选择 + 移动端拍照入口。
+ * 上传落点（spec §F1/F2）：拖拽 + 点击选择。
  * 只做文件级校验（大小/类型/动图），解码交由父级处理；多文件取第一张。
  */
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
@@ -18,12 +18,10 @@ export interface ValidImageFile {
 export interface UploadDropzoneProps {
   /** 校验通过（未解码）时回调。 */
   onValid: (file: ValidImageFile) => void;
-  /** 移动端：input 附加 capture 属性以便直接拍照。 */
-  mobile?: boolean;
   disabled?: boolean;
 }
 
-export function UploadDropzone({ onValid, mobile = false, disabled = false }: UploadDropzoneProps) {
+export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
@@ -97,8 +95,6 @@ export function UploadDropzone({ onValid, mobile = false, disabled = false }: Up
   useEffect(() => () => reset(), [reset]);
 
   const { upload } = zhCN;
-  const hint = mobile ? upload.mobileHint : upload.hint;
-
   return (
     <div className="flex w-full flex-col gap-3">
       <div
@@ -127,7 +123,7 @@ export function UploadDropzone({ onValid, mobile = false, disabled = false }: Up
           <p>{upload.reading}</p>
         ) : (
           <>
-            <p>{dragging ? upload.dragActive : hint}</p>
+            <p>{dragging ? upload.dragActive : upload.hint}</p>
             <p className="text-xs text-ink-soft/80">{upload.formatHint}</p>
           </>
         )}
@@ -137,7 +133,6 @@ export function UploadDropzone({ onValid, mobile = false, disabled = false }: Up
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic"
-        capture={mobile ? 'environment' : undefined}
         disabled={disabled}
         className="sr-only"
         aria-label={upload.inputLabel}

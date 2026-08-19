@@ -49,6 +49,28 @@ describe('ImageCropper', () => {
     expect(screen.getByRole('button', { name: zhCN.crop.modeOriginal })).toBeTruthy();
   });
 
+  it('按下裁剪画布会主动获取键盘焦点', () => {
+    render(<ImageCropper image={makeImage()} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
+    canvas.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'mouse', clientX: 10, clientY: 10 });
+    expect(document.activeElement).toBe(canvas);
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'mouse', clientX: 10, clientY: 10 });
+  });
+
+  it('状态区同时显示选区起点坐标和尺寸', () => {
+    render(
+      <ImageCropper
+        image={makeImage()}
+        initialRect={{ x: 10, y: 5, width: 40, height: 30 }}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('选区起点：X 10 · Y 5')).toBeTruthy();
+    expect(screen.getByText(zhCN.crop.sizeLabel(40, 30))).toBeTruthy();
+  });
+
   it('1:1 锁定产生正方形选区，确认回调传递合法矩形', () => {
     const onConfirm = vi.fn();
     render(<ImageCropper image={makeImage()} onConfirm={onConfirm} onCancel={vi.fn()} />);

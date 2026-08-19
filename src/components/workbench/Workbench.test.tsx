@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Workbench from './Workbench';
 import type { DecodedImage, DecodeResult, ImageDecoder } from '@/lib/image/decode';
-import type { DesignRecord, StorageAdapter } from '@/lib/storage';
+import type {
+  DesignRecord,
+  GenerationSourceWrite,
+  LocalGenerationSourceV1,
+  StorageAdapter,
+} from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 import { zhCN } from '@/messages/zh-CN';
 import { runGenerate, type GenerateTask } from '@/lib/engine/runGenerate';
@@ -35,16 +40,28 @@ vi.mock('@/lib/sync/queue', () => ({
 /** 内存版存储假实现（测试专用）。 */
 class FakeStorage implements StorageAdapter {
   readonly designs = new Map<string, DesignRecord>();
+  readonly sources = new Map<string, LocalGenerationSourceV1>();
+  sourceReplaceCount = 0;
   quotaExceeded = false;
   async getAll(): Promise<DesignRecord[]> {
     return [...this.designs.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
-  async put(record: DesignRecord): Promise<void> {
+  async getGenerationSource(id: string): Promise<LocalGenerationSourceV1 | null> {
+    const source = this.sources.get(id);
+    return source ? structuredClone(source) : null;
+  }
+  async put(record: DesignRecord, sourceWrite: GenerationSourceWrite = { mode: 'preserve' }): Promise<void> {
     if (this.quotaExceeded) throw new DOMException('quota', 'QuotaExceededError');
     this.designs.set(record.id, { ...record });
+    if (sourceWrite.mode === 'replace') {
+      this.sourceReplaceCount += 1;
+      this.sources.set(record.id, structuredClone(sourceWrite.source));
+    }
+    if (sourceWrite.mode === 'clear') this.sources.delete(record.id);
   }
   async delete(id: string): Promise<void> {
     this.designs.delete(id);
+    this.sources.delete(id);
   }
   async getMeta(): Promise<string | null> {
     return null;
@@ -294,6 +311,58 @@ describe('Workbench 全流程', () => {
 });
 
 describe('Workbench 本地保存', () => {
+  it('保存裁剪后的生成源，刷新后恢复并可继续调参，项目 JSON 不携带源', async () => {
+    window.history.replaceState(null, '', '/app');
+    const storage = new FakeStorage();
+    const first = render(<Workbench storage={storage} decodeFn={fakeDecode} generateFn={instantGenerate} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+
+    await waitFor(() => expect(storage.sources.size).toBe(1));
+    const [[savedId, savedSource]] = [...storage.sources.entries()];
+    expect(savedSource.width).toBe(8);
+    expect(savedSource.height).toBe(8);
+    expect([...new Uint8ClampedArray(savedSource.rgba)]).toEqual([...fakeImage.data]);
+    const storedProject = storage.designs.get(savedId)!;
+    expect(storedProject.projectJson).not.toContain('generationSource');
+    expect(storedProject.projectJson).not.toContain('rgba');
+    expect(storage.sourceReplaceCount).toBe(1);
+
+    fireEvent.change(screen.getByLabelText(zhCN.workbench.designName), { target: { value: '只改名称' } });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => expect(storage.designs.get(savedId)?.name).toBe('只改名称'));
+    expect(storage.sourceReplaceCount).toBe(1);
+
+    first.unmount();
+    render(<Workbench storage={storage} generateFn={instantGenerate} />);
+    await screen.findByDisplayValue('只改名称');
+    expect(screen.queryByText(zhCN.workbench.sourceRequired)).toBeNull();
+    const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
+    expect(widthInput.disabled).toBe(false);
+    fireEvent.change(widthInput, { target: { value: '20' } });
+    fireEvent.blur(widthInput);
+    await screen.findByText(/共 400 粒/);
+  });
+
+  it('首次保存生成源遇到配额失败时不落半份数据，也不显示已保存', async () => {
+    const storage = new FakeStorage();
+    render(<Workbench storage={storage} decodeFn={fakeDecode} generateFn={instantGenerate} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+    storage.quotaExceeded = true;
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+
+    await screen.findByText(zhCN.workbench.quotaError);
+    expect(storage.designs.size).toBe(0);
+    expect(storage.sources.size).toBe(0);
+    expect(screen.queryByText(zhCN.workbench.saved)).toBeNull();
+  });
+
   it('恢复最后设计：刷新后进入工作台并显示名称', async () => {
     const storage = new FakeStorage();
     await renderRestored(storage);
@@ -407,6 +476,34 @@ describe('Workbench 本地保存', () => {
     expect(JSON.parse(storage.designs.get('id-last')!.projectJson).createdAt).toBe(original.createdAt);
     expect(window.location.search).toBe('?id=id-last');
   });
+
+  it('恢复项目重新绑定生成源后取消生成，仍会自动保存源并在刷新后保持解锁', async () => {
+    window.history.replaceState(null, '', '/app?id=id-last');
+    const storage = new FakeStorage();
+    storage.designs.set('id-last', record('id-last', savedProject('取消重绑生成', '2026-08-14T12:00:00.000Z')));
+    const cancel = vi.fn();
+    const pendingGenerate: typeof runGenerate = () => ({
+      promise: new Promise(() => undefined),
+      cancel,
+    });
+    const first = render(<Workbench storage={storage} decodeFn={fakeDecode} generateFn={pendingGenerate} />);
+    await screen.findByDisplayValue('取消重绑生成');
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    fireEvent.change(await screen.findByLabelText(zhCN.upload.inputLabel), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.cancel }));
+
+    expect(cancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(storage.sources.has('id-last')).toBe(true), { timeout: 3000 });
+    first.unmount();
+
+    render(<Workbench storage={storage} generateFn={instantGenerate} />);
+    await screen.findByDisplayValue('取消重绑生成');
+    expect(screen.queryByText(zhCN.workbench.sourceRequired)).toBeNull();
+    expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).not.toBeDisabled();
+  });
 });
 
 describe('Workbench 编辑与导出接缝', () => {
@@ -488,7 +585,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
 
     await waitFor(() => expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy());
     const callsBeforeOnline = enqueueDesignSyncMock.mock.calls.length;
-    window.dispatchEvent(new Event('online'));
+    act(() => window.dispatchEvent(new Event('online')));
     await waitFor(() => expect(enqueueDesignSyncMock).toHaveBeenCalledTimes(callsBeforeOnline + 1));
 
     vi.unstubAllGlobals();

@@ -6,6 +6,8 @@
 import { importProjectFile } from '@/lib/project/parse';
 import { conflictName } from '@/lib/project/parse';
 import { drawPattern } from '@/lib/render/draw';
+import { LIMITS } from '@/lib/appInfo';
+import type { ImageDataLike } from '@/lib/engine/types';
 import type { Pattern, ProjectFile } from '@/lib/types';
 
 // ---------- 类型 ----------
@@ -24,10 +26,78 @@ export interface DesignRecord {
   syncState?: 'dirty' | 'synced' | 'conflict';
 }
 
+export interface LocalGenerationSourceV1 {
+  version: 1;
+  width: number;
+  height: number;
+  /** 紧密 RGBA 字节；始终为独立持有的普通 ArrayBuffer。 */
+  rgba: ArrayBuffer;
+}
+
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  try {
+    ArrayBuffer.prototype.slice.call(value, 0, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidLocalGenerationSource(value: unknown): value is LocalGenerationSourceV1 {
+  if (!value || typeof value !== 'object') return false;
+  const source = value as Partial<LocalGenerationSourceV1>;
+  const { width, height, rgba } = source;
+  return source.version === 1
+    && Number.isInteger(width)
+    && Number.isInteger(height)
+    && (width ?? 0) >= 1
+    && (height ?? 0) >= 1
+    && (width ?? 0) <= LIMITS.generationSourceDimension
+    && (height ?? 0) <= LIMITS.generationSourceDimension
+    && isArrayBuffer(rgba)
+    && rgba.byteLength === (width ?? 0) * (height ?? 0) * 4;
+}
+
+export function createLocalGenerationSource(image: ImageDataLike): LocalGenerationSourceV1 {
+  const rgba = new Uint8Array(
+    image.data.buffer,
+    image.data.byteOffset,
+    image.data.byteLength,
+  ).slice().buffer;
+  const source: LocalGenerationSourceV1 = { version: 1, width: image.width, height: image.height, rgba };
+  if (!isValidLocalGenerationSource(source)) {
+    throw new TypeError(`本地生成源必须是 1..${LIMITS.generationSourceDimension} 的紧密 RGBA 数据`);
+  }
+  return source;
+}
+
+export function imageDataFromLocalGenerationSource(source: LocalGenerationSourceV1): ImageDataLike {
+  if (!isValidLocalGenerationSource(source)) throw new TypeError('本地生成源格式无效');
+  return {
+    data: new Uint8ClampedArray(source.rgba.slice(0)),
+    width: source.width,
+    height: source.height,
+  };
+}
+
+export type GenerationSourceWrite =
+  | { mode: 'preserve' }
+  | { mode: 'replace'; source: LocalGenerationSourceV1 }
+  | { mode: 'clear' };
+
+export const PRESERVE_GENERATION_SOURCE = Object.freeze({ mode: 'preserve' } as const);
+export const CLEAR_GENERATION_SOURCE = Object.freeze({ mode: 'clear' } as const);
+
+export function replaceGenerationSource(source: LocalGenerationSourceV1): GenerationSourceWrite {
+  if (!isValidLocalGenerationSource(source)) throw new TypeError('本地生成源格式无效');
+  return { mode: 'replace', source };
+}
+
 export interface StorageAdapter {
   /** 全部设计记录，按 updatedAt 降序。 */
   getAll(): Promise<DesignRecord[]>;
-  put(record: DesignRecord): Promise<void>;
+  getGenerationSource(id: string): Promise<LocalGenerationSourceV1 | null>;
+  put(record: DesignRecord, sourceWrite?: GenerationSourceWrite): Promise<void>;
   delete(id: string): Promise<void>;
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;
@@ -47,9 +117,10 @@ export class StorageError extends Error {
 // ---------- IndexedDB 适配 ----------
 
 const DB_NAME = 'doupu';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_DESIGNS = 'designs';
 const STORE_META = 'meta';
+const STORE_GENERATION_SOURCES = 'generation-sources';
 
 function wrapRequest<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -80,6 +151,9 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
       if (!database.objectStoreNames.contains(STORE_META)) {
         database.createObjectStore(STORE_META, { keyPath: 'key' });
       }
+      if (!database.objectStoreNames.contains(STORE_GENERATION_SOURCES)) {
+        database.createObjectStore(STORE_GENERATION_SOURCES, { keyPath: 'designId' });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(new StorageError('UNAVAILABLE', '无法打开本地数据库'));
@@ -91,23 +165,55 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
       const records = await wrapRequest(tx.objectStore(STORE_DESIGNS).getAll());
       return (records as DesignRecord[]).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     },
-    async put(record) {
-      const tx = db.transaction(STORE_DESIGNS, 'readwrite');
+    async getGenerationSource(id) {
+      const tx = db.transaction(STORE_GENERATION_SOURCES, 'readonly');
+      const stored = await wrapRequest(tx.objectStore(STORE_GENERATION_SOURCES).get(id));
+      if (!stored || typeof stored !== 'object') return null;
+      const { designId: _designId, ...source } = stored as LocalGenerationSourceV1 & { designId: string };
+      void _designId;
+      if (!isValidLocalGenerationSource(source)) return null;
+      return { ...source, rgba: source.rgba.slice(0) };
+    },
+    async put(record, sourceWrite = PRESERVE_GENERATION_SOURCE) {
+      if (sourceWrite.mode === 'replace' && !isValidLocalGenerationSource(sourceWrite.source)) {
+        throw new TypeError('本地生成源格式无效');
+      }
+      const tx = db.transaction([STORE_DESIGNS, STORE_GENERATION_SOURCES], 'readwrite');
       const completed = txComplete(tx);
-      const store = tx.objectStore(STORE_DESIGNS);
-      const existing = (await wrapRequest(store.get(record.id))) as DesignRecord | undefined;
-      const next =
-        record.syncState === 'dirty' && (record.revision ?? 0) === 0 && (existing?.revision ?? 0) > 0
-          ? { ...record, revision: existing!.revision }
-          : record;
-      await wrapRequest(store.put(next));
-      await completed;
+      try {
+        const store = tx.objectStore(STORE_DESIGNS);
+        const existing = (await wrapRequest(store.get(record.id))) as DesignRecord | undefined;
+        const next =
+          record.syncState === 'dirty' && (record.revision ?? 0) === 0 && (existing?.revision ?? 0) > 0
+            ? { ...record, revision: existing!.revision }
+            : record;
+        await wrapRequest(store.put(next));
+        const sourceStore = tx.objectStore(STORE_GENERATION_SOURCES);
+        if (sourceWrite.mode === 'replace') {
+          const source = sourceWrite.source;
+          await wrapRequest(sourceStore.put({
+            designId: record.id,
+            ...source,
+            rgba: source.rgba.slice(0),
+          }));
+        } else if (sourceWrite.mode === 'clear') {
+          await wrapRequest(sourceStore.delete(record.id));
+        }
+        await completed;
+      } catch (error) {
+        await abortTransaction(tx, completed, error);
+      }
     },
     async delete(id) {
-      const tx = db.transaction(STORE_DESIGNS, 'readwrite');
+      const tx = db.transaction([STORE_DESIGNS, STORE_GENERATION_SOURCES], 'readwrite');
       const completed = txComplete(tx);
-      await wrapRequest(tx.objectStore(STORE_DESIGNS).delete(id));
-      await completed;
+      try {
+        await wrapRequest(tx.objectStore(STORE_DESIGNS).delete(id));
+        await wrapRequest(tx.objectStore(STORE_GENERATION_SOURCES).delete(id));
+        await completed;
+      } catch (error) {
+        await abortTransaction(tx, completed, error);
+      }
     },
     async getMeta(key) {
       const tx = db.transaction(STORE_META, 'readonly');
@@ -117,8 +223,12 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
     async setMeta(key, value) {
       const tx = db.transaction(STORE_META, 'readwrite');
       const completed = txComplete(tx);
-      await wrapRequest(tx.objectStore(STORE_META).put({ key, value }));
-      await completed;
+      try {
+        await wrapRequest(tx.objectStore(STORE_META).put({ key, value }));
+        await completed;
+      } catch (error) {
+        await abortTransaction(tx, completed, error);
+      }
     },
   };
 }
@@ -130,6 +240,12 @@ function txComplete(tx: IDBTransaction): Promise<void> {
     tx.onerror = () => reject(toStorageError(tx.error));
     tx.onabort = () => reject(toStorageError(tx.error));
   });
+}
+
+async function abortTransaction(tx: IDBTransaction, completed: Promise<void>, error: unknown): Promise<never> {
+  try { tx.abort(); } catch { /* transaction may already be committing/aborting */ }
+  await completed.catch(() => undefined);
+  throw error;
 }
 
 // ---------- 纯函数辅助 ----------

@@ -250,6 +250,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
       const canvas = canvasRef.current;
       if (!canvas) return;
       event.preventDefault();
+      canvas.focus({ preventScroll: true });
       canvas.setPointerCapture(event.pointerId);
 
       const current = clampCropRect(rect, naturalWidth, naturalHeight);
@@ -445,6 +446,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
           ref={canvasRef}
           tabIndex={0}
           aria-label={crop.ariaCropCanvas}
+          aria-describedby="crop-keyboard-hint"
           onPointerDown={handlePointerDown}
           onPointerMove={handleHover}
           onPointerLeave={() => {
@@ -462,8 +464,11 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-soft">
-        <p>{crop.sizeLabel(current.width, current.height)}</p>
-        <p className="hidden text-xs text-ink-soft/80 sm:block">
+        <p role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>{crop.positionLabel(Math.round(current.x), Math.round(current.y))}</span>
+          <span>{crop.sizeLabel(current.width, current.height)}</span>
+        </p>
+        <p id="crop-keyboard-hint" className="hidden text-xs text-ink-soft/80 sm:block">
           {crop.dragHint}；{crop.nudgeHint}
         </p>
       </div>

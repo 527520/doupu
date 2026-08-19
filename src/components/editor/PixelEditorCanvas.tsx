@@ -37,6 +37,8 @@ const MOVE_THRESHOLD_PX = 6;
 interface Props {
   pattern: Pattern;
   palette: PaletteColor[];
+  /** 编辑面板首次挂载时将键盘焦点移入画布区域。 */
+  autoFocus?: boolean;
   /** 测试钩子：固定格像素尺寸 */
   defaultCellPx?: number;
   onStatsChange?: (stats: PatternStatsItem[], total: number) => void;
@@ -51,6 +53,7 @@ interface Props {
 export default function PixelEditorCanvas({
   pattern,
   palette,
+  autoFocus = false,
   defaultCellPx,
   onStatsChange,
   onColorChange,
@@ -82,6 +85,10 @@ export default function PixelEditorCanvas({
   const [clearOpen, setClearOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (autoFocus) containerRef.current?.focus();
+  }, [autoFocus]);
 
   // 容器宽度自适应：窄屏（手机）按实际可用宽度计算格尺寸，画布等比、绝不拉伸
   useEffect(() => {
@@ -532,7 +539,15 @@ export default function PixelEditorCanvas({
         break;
       }
       case 'enter': {
-        if (cursor) commit(toolRef.current === 'brush' ? 'brush' : 'eraser', paintAtCell(cursor.row, cursor.col));
+        if (!cursor) break;
+        e.preventDefault();
+        if (toolRef.current === 'pick') {
+          pickAtCell(cursor.row, cursor.col);
+        } else if (toolRef.current === 'fill') {
+          commit('fill', floodFill(stateRef.current.cells, W, H, cursor.row, cursor.col, colorRef.current));
+        } else {
+          commit(toolRef.current === 'brush' ? 'brush' : 'eraser', paintAtCell(cursor.row, cursor.col));
+        }
         break;
       }
       default:
@@ -632,6 +647,7 @@ export default function PixelEditorCanvas({
         ref={containerRef}
         tabIndex={0}
         aria-label={t.editorRegion}
+        aria-describedby="editor-keyboard-status"
         onKeyDown={onKeyDown}
         className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2 outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
@@ -647,7 +663,7 @@ export default function PixelEditorCanvas({
           style={{ touchAction: 'pan-y pinch-zoom', cursor: tool === 'pick' ? 'copy' : 'crosshair' }}
         />
       </div>
-      <p className="text-xs text-ink-soft/80" role="status">
+      <p id="editor-keyboard-status" className="text-xs text-ink-soft/80" role="status">
         {tool === 'pick'
           ? t.pickHint
           : cursor

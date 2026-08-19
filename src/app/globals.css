@@ -90,7 +90,7 @@
   }
 
   .site-header {
-    @apply flex w-full flex-wrap items-center gap-2 sm:gap-3;
+    @apply flex w-full flex-col items-stretch gap-2 sm:gap-3;
   }
 
 }

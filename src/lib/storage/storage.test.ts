@@ -1,35 +1,51 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLEAR_GENERATION_SOURCE,
   StorageError,
   buildThumbnailSize,
+  createLocalGenerationSource,
+  imageDataFromLocalGenerationSource,
   createDesignRecord,
   isQuotaError,
   newDesignId,
   nextDesignName,
   parseStoredProject,
+  replaceGenerationSource,
   renderThumbnail,
   type DesignRecord,
+  type GenerationSourceWrite,
+  type LocalGenerationSourceV1,
   type StorageAdapter,
 } from './index';
 import { serializeProject, type ProjectSource } from '@/lib/project/serialize';
-import type { ProjectFile } from '@/lib/types';
+import { generatePattern } from '@/lib/engine/generate';
+import { buildBrandPalette } from '@/lib/palettes';
+import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 
 /** 内存版 IndexedDB 假实现（测试专用）。 */
 class FakeStorage implements StorageAdapter {
   readonly designs = new Map<string, DesignRecord>();
   readonly meta = new Map<string, string>();
+  readonly sources = new Map<string, LocalGenerationSourceV1>();
   /** 模拟配额满：put 时抛 DOMException。 */
   quotaExceeded = false;
 
   async getAll(): Promise<DesignRecord[]> {
     return [...this.designs.values()].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
-  async put(record: DesignRecord): Promise<void> {
+  async getGenerationSource(id: string): Promise<LocalGenerationSourceV1 | null> {
+    const source = this.sources.get(id);
+    return source ? structuredClone(source) : null;
+  }
+  async put(record: DesignRecord, sourceWrite?: GenerationSourceWrite): Promise<void> {
     if (this.quotaExceeded) throw new DOMException('quota', 'QuotaExceededError');
     this.designs.set(record.id, { ...record });
+    if (sourceWrite?.mode === 'replace') this.sources.set(record.id, structuredClone(sourceWrite.source));
+    else if (sourceWrite?.mode === 'clear') this.sources.delete(record.id);
   }
   async delete(id: string): Promise<void> {
     this.designs.delete(id);
+    this.sources.delete(id);
   }
   async getMeta(key: string): Promise<string | null> {
     return this.meta.get(key) ?? null;
@@ -114,6 +130,125 @@ describe('FakeStorage + 记录 CRUD（storage 层验收）', () => {
     ).rejects.toSatisfy((e) => isQuotaError(e));
     expect(isQuotaError(new StorageError('QUOTA', 'x'))).toBe(true);
     expect(isQuotaError(new Error('other'))).toBe(false);
+  });
+
+  it('replace 会让 Fake adapter 与设计一起保存本地生成源', async () => {
+    const storage = new FakeStorage();
+    const source = createLocalGenerationSource({
+      data: new Uint8ClampedArray([1, 2, 3, 4]),
+      width: 1,
+      height: 1,
+    });
+
+    await storage.put(
+      createDesignRecord('id-source', makeProject('有源', '2026-08-14T10:00:00.000Z'), null),
+      replaceGenerationSource(source),
+    );
+
+    expect(await storage.getGenerationSource('id-source')).toEqual(source);
+  });
+
+  it('Fake adapter 默认保留已有源，只有显式 clear 才清除', async () => {
+    const storage = new FakeStorage();
+    const source = createLocalGenerationSource({
+      data: new Uint8ClampedArray([4, 3, 2, 1]),
+      width: 1,
+      height: 1,
+    });
+    await storage.put(
+      createDesignRecord('id-source', makeProject('初版', '2026-08-14T10:00:00.000Z'), null),
+      replaceGenerationSource(source),
+    );
+
+    await storage.put(createDesignRecord('id-source', makeProject('改名', '2026-08-14T11:00:00.000Z'), null));
+    expect(await storage.getGenerationSource('id-source')).not.toBeNull();
+    await storage.put(
+      createDesignRecord('id-source', makeProject('清源', '2026-08-14T12:00:00.000Z'), null),
+      CLEAR_GENERATION_SOURCE,
+    );
+    expect(await storage.getGenerationSource('id-source')).toBeNull();
+  });
+
+  it('Fake adapter 删除设计时级联删除本地生成源', async () => {
+    const storage = new FakeStorage();
+    const source = createLocalGenerationSource({
+      data: new Uint8ClampedArray([1, 1, 1, 255]),
+      width: 1,
+      height: 1,
+    });
+    await storage.put(
+      createDesignRecord('id-source', makeProject('待删除', '2026-08-14T10:00:00.000Z'), null),
+      replaceGenerationSource(source),
+    );
+
+    await storage.delete('id-source');
+
+    expect(await storage.getGenerationSource('id-source')).toBeNull();
+  });
+});
+
+describe('本地生成源契约', () => {
+  it('字节往返前后真实引擎输出完全一致', () => {
+    const image = {
+      data: new Uint8ClampedArray([
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255,
+        255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 0, 128,
+      ]),
+      width: 3,
+      height: 2,
+    };
+    const restored = imageDataFromLocalGenerationSource(createLocalGenerationSource(image));
+    const params = { ...DEFAULT_GENERATION_PARAMS, targetWidth: 6, targetColorCount: 12 };
+    const palette = buildBrandPalette('MARD');
+
+    const before = generatePattern(image, params, palette);
+    const after = generatePattern(restored, params, palette);
+
+    expect(after.pattern).toEqual(before.pattern);
+    expect(after.stats).toEqual(before.stats);
+    expect(after.totalBeadCount).toBe(before.totalBeadCount);
+  });
+
+  it('把 SharedArrayBuffer 视图复制成独立的普通 ArrayBuffer', () => {
+    const shared = new SharedArrayBuffer(12);
+    const pixels = new Uint8ClampedArray(shared, 4, 8);
+    pixels.set([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    const source = createLocalGenerationSource({ data: pixels, width: 2, height: 1 });
+
+    expect(source).toMatchObject({ version: 1, width: 2, height: 1 });
+    expect(source.rgba).toBeInstanceOf(ArrayBuffer);
+    expect([...new Uint8Array(source.rgba)]).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    pixels[0] = 99;
+    expect(new Uint8Array(source.rgba)[0]).toBe(1);
+  });
+
+  it('只接受 1..800 整数尺寸且 RGBA 长度必须精确匹配', () => {
+    const maximum = createLocalGenerationSource({
+      data: new Uint8ClampedArray(800 * 800 * 4),
+      width: 800,
+      height: 800,
+    });
+    expect(maximum.rgba.byteLength).toBe(800 * 800 * 4);
+
+    expect(() => createLocalGenerationSource({ data: new Uint8ClampedArray(4), width: 0, height: 1 })).toThrow();
+    expect(() => createLocalGenerationSource({ data: new Uint8ClampedArray(4), width: 801, height: 1 })).toThrow();
+    expect(() => createLocalGenerationSource({ data: new Uint8ClampedArray(4), width: 1.5, height: 1 })).toThrow();
+    expect(() => createLocalGenerationSource({ data: new Uint8ClampedArray(7), width: 2, height: 1 })).toThrow();
+  });
+
+  it('读取转换会再次校验并返回不共享存储缓冲的 ImageDataLike', () => {
+    const source = createLocalGenerationSource({
+      data: new Uint8ClampedArray([1, 2, 3, 4]),
+      width: 1,
+      height: 1,
+    });
+    const image = imageDataFromLocalGenerationSource(source);
+    expect(image).toMatchObject({ width: 1, height: 1 });
+    expect([...image.data]).toEqual([1, 2, 3, 4]);
+    image.data[0] = 99;
+    expect(new Uint8Array(source.rgba)[0]).toBe(1);
+    expect(() => imageDataFromLocalGenerationSource({ ...source, width: 2 })).toThrow();
   });
 });
 

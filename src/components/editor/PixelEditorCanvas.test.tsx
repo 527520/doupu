@@ -38,6 +38,11 @@ const pointer = (canvas: Element, type: string, props: Record<string, unknown> =
   fireEvent[type as 'pointerDown'](canvas, { pointerType: 'mouse', ...props });
 
 describe('PixelEditorCanvas', () => {
+  it('autoFocus 会在进入编辑时聚焦编辑画布区域', () => {
+    const { canvas } = setup(3, 2, { autoFocus: true });
+    expect(document.activeElement).toBe(canvas.parentElement);
+  });
+
   it('初始统计正确上抛', () => {
     const { onStatsChange } = setup();
     expect(onStatsChange).not.toHaveBeenCalled(); // 初始不回调，仅编辑后
@@ -161,6 +166,35 @@ describe('PixelEditorCanvas', () => {
       expect.arrayContaining([{ code: 'B', hex: '#0000FF', count: 1 }]),
       6,
     );
+  });
+
+  it('橡皮模式下回车清空光标格', () => {
+    const { onStatsChange, canvas } = setup();
+    const wrapper = canvas.parentElement!;
+    fireEvent.click(screen.getByRole('button', { name: /橡皮/ }));
+    fireEvent.keyDown(wrapper, { key: 'ArrowRight' });
+    fireEvent.keyDown(wrapper, { key: 'Enter' });
+    expect(onStatsChange).toHaveBeenCalledWith([{ code: 'A', hex: '#FF0000', count: 5 }], 5);
+  });
+
+  it('油漆桶模式下回车填充光标所在连通区域', () => {
+    const { onStatsChange, canvas } = setup();
+    const wrapper = canvas.parentElement!;
+    fireEvent.click(screen.getByRole('button', { name: /油漆桶/ }));
+    fireEvent.keyDown(wrapper, { key: 'ArrowRight' });
+    fireEvent.keyDown(wrapper, { key: 'Enter' });
+    expect(onStatsChange).toHaveBeenCalledWith([{ code: 'B', hex: '#0000FF', count: 6 }], 6);
+  });
+
+  it('吸管模式下回车拾取光标格颜色且不改图纸', () => {
+    const onPatternChange = vi.fn();
+    const { onColorChange, canvas } = setup(3, 2, { onPatternChange });
+    const wrapper = canvas.parentElement!;
+    fireEvent.click(screen.getByRole('button', { name: /吸管/ }));
+    fireEvent.keyDown(wrapper, { key: 'ArrowRight' });
+    fireEvent.keyDown(wrapper, { key: 'Enter' });
+    expect(onColorChange).toHaveBeenLastCalledWith(RED);
+    expect(onPatternChange).not.toHaveBeenCalled();
   });
 
   it('点击画布后编辑区获得焦点（方向键立即可用）', () => {

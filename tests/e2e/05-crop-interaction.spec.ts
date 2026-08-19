@@ -139,6 +139,28 @@ test('边框手柄缩放：拖顶边中点只改高度、宽度不变', async ({
   expect(h).toBeLessThan(76);
 });
 
+test('点击画布后方向键移动选区，Shift 将步长提升到 10 像素', async ({ page }) => {
+  await openCropper(page);
+  const canvas = page.locator('canvas[aria-label*="裁剪"]');
+  const box = await canvasBox(page);
+
+  // 先缩小全图选区，给键盘移动留出空间。
+  await page.mouse.move(box.x + box.width - 2, box.y + box.height - 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+
+  await canvas.click({ position: { x: box.width * 0.25, y: box.height * 0.25 } });
+  await expect(canvas).toBeFocused();
+  const status = page.getByRole('status').filter({ hasText: '选区起点' });
+  await expect(status).toContainText('选区起点：X 0 · Y 0');
+
+  await page.keyboard.press('ArrowRight');
+  await expect(status).toContainText('选区起点：X 1 · Y 0');
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(status).toContainText('选区起点：X 1 · Y 10');
+});
+
 test('窄屏（350px）：画布保持原图 1.6 宽高比不拉伸，且 touch-action 为 none', async ({ page }) => {
   await page.setViewportSize({ width: 350, height: 700 });
   await openCropper(page);

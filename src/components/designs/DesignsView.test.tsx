@@ -52,6 +52,9 @@ class FakeStorage implements StorageAdapter {
   async getAll() {
     return [...this.records.values()];
   }
+  async getGenerationSource() {
+    return null;
+  }
   async put(r: DesignRecord) {
     this.records.set(r.id, { ...r });
   }

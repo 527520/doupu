@@ -15,6 +15,8 @@ export const ENGINE_VERSION = '2.0.0' as const;
 export const LIMITS = {
   maxFileBytes: 20 * 1024 * 1024,
   maxPixels: 8000 * 8000,
+  /** 裁剪后可持久化及发送给生成引擎的最长边像素。 */
+  generationSourceDimension: 200 * 4,
   targetWidth: { min: 20, max:200 },
   targetColorCount: { min: 2, max: 128 },
   gridCells: 200 * 200,

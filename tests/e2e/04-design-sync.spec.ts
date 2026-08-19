@@ -40,7 +40,7 @@ async function login(page: import('@playwright/test').Page, email: string, passw
 async function firstDesignId(page: import('@playwright/test').Page): Promise<string | null> {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((res, rej) => {
-      const r = indexedDB.open('doupu', 1);
+      const r = indexedDB.open('doupu');
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
     });
@@ -60,7 +60,7 @@ async function localSyncSnapshot(page: import('@playwright/test').Page): Promise
 }> {
   return page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('doupu', 1);
+      const request = indexedDB.open('doupu');
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
