@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 
@@ -91,9 +92,7 @@ function VerifyInner() {
       )}
       {state === 'success' && (
         <>
-          <p role="status" className="mb-4 text-center text-green-700">
-            {t.verifySuccess}
-          </p>
+          <Notice kind="success" className="mb-4">{t.verifySuccess}</Notice>
           <Link href="/login" className="link-soft block text-center">
             {t.goLogin}
           </Link>
@@ -120,7 +119,7 @@ function VerifyInner() {
             >
               {cooldown > 0 ? t.cooldown(cooldown) : t.submit}
             </button>
-            {resendDone && <p className="text-sm text-green-700">{t.resendSent}</p>}
+            {resendDone && <p className="text-sm text-success">{t.resendSent}</p>}
           </form>
         </>
       )}

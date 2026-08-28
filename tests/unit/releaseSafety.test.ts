@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const read = (path: string): string => readFileSync(path, 'utf8');
+
+/** 跨平台建目录（Windows 的 mkdir 不认 -p，外部命令会静默失败并让后续 copy 抛 ENOENT）。 */
+const ensureDirs = (...dirs: string[]): void => {
+  for (const dir of dirs) mkdirSync(dir, { recursive: true });
+};
+
+/**
+ * 部分用例要真的执行 deploy/scripts/*.sh，需要 POSIX shell。
+ * Windows 上（无 WSL/Git-Bash 的 sh 在 PATH 时）这些用例跳过而不是伪失败——
+ * 门禁必须在开发机上也是绿的，否则维护者会被训练成忽略红灯。Linux CI 仍会执行它们。
+ */
+const posixShell = spawnSync('sh', ['-c', 'exit 0'], { stdio: 'ignore' }).status === 0;
+const shellIt = posixShell ? it : it.skip;
 
 describe('backup and release safety gates', () => {
   it('creates, validates and atomically promotes a custom-format backup', () => {
@@ -16,7 +29,7 @@ describe('backup and release safety gates', () => {
     expect(script).not.toMatch(/COS_.+\u8df3\u8fc7\u4e0a\u4f20[\s\S]+exit 0/);
   });
 
-  it('treats a missing production alert channel as a failure', () => {
+  shellIt('treats a missing production alert channel as a failure', () => {
     const result = spawnSync('sh', ['deploy/scripts/notify.sh', 'test failure'], {
       cwd: process.cwd(),
       env: { ...process.env, BACKUP_ALERT_TOKEN: '', ALERT_ENDPOINT: '' },
@@ -31,7 +44,7 @@ describe('backup and release safety gates', () => {
     expect(script).toMatch(/rclone lsl "\$\{FINAL\}"[^\n]*\n?\s*\|\| fail "promoted object inspection failed/);
   });
 
-  it('executes the complete verified backup happy path with isolated adapters', () => {
+  shellIt('executes the complete verified backup happy path with isolated adapters', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-backup-test-'));
     const bin = join(root, 'bin');
     const remote = join(root, 'remote');
@@ -40,7 +53,7 @@ describe('backup and release safety gates', () => {
       writeFileSync(path, `#!/bin/sh\nset -eu\n${body}\n`);
       chmodSync(path, 0o755);
     };
-    spawnSync('mkdir', ['-p', bin, remote]);
+    ensureDirs(bin, remote);
     makeExecutable('pg_dump', `
       for arg in "$@"; do case "$arg" in --file) next=1;; *) if [ "\${next:-0}" = 1 ]; then printf dump > "$arg"; next=0; fi;; esac; done
     `);
@@ -77,7 +90,7 @@ describe('backup and release safety gates', () => {
     expect(existsSync(join(remote, '.pending', files[0]))).toBe(false);
   });
 
-  it.each([
+  shellIt.each([
     ['dump', 'pg_dump failed'],
     ['validate', 'pg_restore validation failed'],
     ['compress', 'compression failed'],
@@ -88,7 +101,7 @@ describe('backup and release safety gates', () => {
     const scripts = join(root, 'scripts');
     const remote = join(root, 'remote');
     const alertLog = join(root, 'alerts.log');
-    spawnSync('mkdir', ['-p', bin, scripts, remote]);
+    ensureDirs(bin, scripts, remote);
 
     const makeExecutable = (path: string, body: string): void => {
       writeFileSync(path, `#!/bin/sh\nset -eu\n${body}\n`);
@@ -147,12 +160,12 @@ describe('backup and release safety gates', () => {
     expect(script).toContain('禁止回滚旧协议镜像');
   });
 
-  it('keeps the serving containers untouched when migration execution fails', () => {
+  shellIt('keeps the serving containers untouched when migration execution fails', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-deploy-migration-failure-'));
     const scripts = join(root, 'deploy', 'scripts');
     const bin = join(root, 'bin');
     const deployLog = join(root, 'docker.log');
-    spawnSync('mkdir', ['-p', scripts, bin]);
+    ensureDirs(scripts, bin);
     const deployScript = join(scripts, 'deploy.sh');
     copyFileSync('deploy/scripts/deploy.sh', deployScript);
     chmodSync(deployScript, 0o755);
@@ -209,7 +222,7 @@ esac
     expect(backupService).not.toContain('|| true');
   });
 
-  it('waits for PostgreSQL and app readiness before the first backup and records success', () => {
+  shellIt('waits for PostgreSQL and app readiness before the first backup and records success', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-backup-loop-'));
     const scripts = join(root, 'scripts');
     const bin = join(root, 'bin');
@@ -217,7 +230,7 @@ esac
     const appAttempts = join(root, 'app-attempts');
     const backupLog = join(root, 'backup.log');
     const statusFile = join(root, 'last-success');
-    spawnSync('mkdir', ['-p', scripts, bin]);
+    ensureDirs(scripts, bin);
     copyFileSync('deploy/scripts/backup-loop.sh', join(scripts, 'backup-loop.sh'));
     chmodSync(join(scripts, 'backup-loop.sh'), 0o755);
     const attemptScript = (counter: string) => `count=0; [ ! -f "${counter}" ] || count=$(cat "${counter}"); count=$((count+1)); echo "$count" > "${counter}"; [ "$count" -ge 2 ]`;
@@ -249,12 +262,12 @@ esac
     expect(readFileSync(statusFile, 'utf8')).toMatch(/^\d+\n$/);
   });
 
-  it('exits non-zero and alerts when backup prerequisites never become ready', () => {
+  shellIt('exits non-zero and alerts when backup prerequisites never become ready', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-backup-wait-failure-'));
     const scripts = join(root, 'scripts');
     const bin = join(root, 'bin');
     const alertLog = join(root, 'alert.log');
-    spawnSync('mkdir', ['-p', scripts, bin]);
+    ensureDirs(scripts, bin);
     copyFileSync('deploy/scripts/backup-loop.sh', join(scripts, 'backup-loop.sh'));
     writeFileSync(join(bin, 'pg_isready'), '#!/bin/sh\nexit 1\n');
     writeFileSync(join(bin, 'curl'), '#!/bin/sh\nexit 1\n');
@@ -273,7 +286,7 @@ esac
     expect(readFileSync(alertLog, 'utf8')).toContain('PostgreSQL did not become ready');
   });
 
-  it('reports backup health only while the last verified success is fresh', () => {
+  shellIt('reports backup health only while the last verified success is fresh', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-backup-health-'));
     const statusFile = join(root, 'last-success');
     const now = Math.floor(Date.now() / 1000);
@@ -321,9 +334,9 @@ esac
     expect(verifyRelease).toContain('evidence.passed === true');
   });
 
-  it('accepts a constructible evidence-only attestation commit and rejects unrelated changes', () => {
+  shellIt('accepts a constructible evidence-only attestation commit and rejects unrelated changes', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-release-attestation-'));
-    spawnSync('mkdir', ['-p', join(root, 'deploy', 'scripts'), join(root, 'deploy', 'evidence', 'mobile'), join(root, 'deploy', 'evidence', 'algorithm'), join(root, 'src', 'lib')]);
+    ensureDirs(join(root, 'deploy', 'scripts'), join(root, 'deploy', 'evidence', 'mobile'), join(root, 'deploy', 'evidence', 'algorithm'), join(root, 'src', 'lib'));
     copyFileSync('deploy/scripts/verify-release.sh', join(root, 'deploy', 'scripts', 'verify-release.sh'));
     writeFileSync(join(root, 'package.json'), '{"version":"0.2.0"}\n');
     writeFileSync(join(root, 'src', 'lib', 'appInfo.ts'), "export const APP_VERSION = '0.2.0';\n");

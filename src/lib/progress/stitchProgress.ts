@@ -1,0 +1,139 @@
+/**
+ * 跟拼进度（G-1）：记录「这张图纸已经拼到哪些格子」。
+ *
+ * 为什么需要：拼一张 100×63 的图要几个小时甚至几天，中途必然放下。
+ * 没有进度记录时用户只能靠肉眼在纸质图纸上找位置，或者用手指按着屏幕，
+ * 这是竞品普遍具备（4/8）而豆谱完全空白的一环。
+ *
+ * 数据形态：每格 1 字节的 Uint8Array（0 未拼 / 1 已拼）。
+ * 200×200 也只有 40 KB，IndexedDB 直接存二进制不需要序列化成 JSON 数组
+ * （JSON 化会膨胀到 80 KB 以上并拖慢每次保存）。
+ *
+ * 与图纸的关系：进度按 designId 存，并记录当时的宽高。图纸被重新生成或
+ * 变换尺寸后宽高不再匹配，进度即失效（宁可让用户重新开始，也不能把
+ * 「已拼」标记错位到别的格子上）。
+ */
+export const STITCH_PROGRESS_VERSION = 1 as const;
+
+export interface StitchProgress {
+  version: typeof STITCH_PROGRESS_VERSION;
+  width: number;
+  height: number;
+  /** 长度 = width × height，每格 0/1 */
+  done: Uint8Array;
+  updatedAt: string;
+}
+
+export function createStitchProgress(width: number, height: number, now = new Date()): StitchProgress {
+  return {
+    version: STITCH_PROGRESS_VERSION,
+    width,
+    height,
+    done: new Uint8Array(Math.max(0, width * height)),
+    updatedAt: now.toISOString(),
+  };
+}
+
+/** 进度是否仍与当前图纸对应（尺寸一致且长度自洽）。 */
+export function isProgressCompatible(
+  progress: StitchProgress | null,
+  pattern: { width: number; height: number },
+): progress is StitchProgress {
+  return progress !== null
+    && progress.version === STITCH_PROGRESS_VERSION
+    && progress.width === pattern.width
+    && progress.height === pattern.height
+    && progress.done.length === pattern.width * pattern.height;
+}
+
+/** 反序列化（IndexedDB 里可能是 Uint8Array，也可能被结构化克隆成 ArrayBuffer）。 */
+export function parseStitchProgress(value: unknown): StitchProgress | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as { version?: unknown; width?: unknown; height?: unknown; done?: unknown; updatedAt?: unknown };
+  if (raw.version !== STITCH_PROGRESS_VERSION) return null;
+  if (!Number.isInteger(raw.width) || !Number.isInteger(raw.height)) return null;
+  const rawDone: unknown = raw.done;
+  const done = rawDone instanceof Uint8Array
+    ? rawDone
+    : rawDone instanceof ArrayBuffer
+      ? new Uint8Array(rawDone)
+      : null;
+  if (!done) return null;
+  const width = raw.width as number;
+  const height = raw.height as number;
+  if (done.length !== width * height) return null;
+  return {
+    version: STITCH_PROGRESS_VERSION,
+    width,
+    height,
+    done,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
+  };
+}
+
+/** 切换单格；返回新对象（不原地修改，便于 React 比较）。 */
+export function toggleCell(progress: StitchProgress, row: number, col: number, now = new Date()): StitchProgress {
+  if (row < 0 || col < 0 || row >= progress.height || col >= progress.width) return progress;
+  const index = row * progress.width + col;
+  const done = progress.done.slice();
+  done[index] = done[index] === 1 ? 0 : 1;
+  return { ...progress, done, updatedAt: now.toISOString() };
+}
+
+/** 整行标记（拼豆是一行一行拼的，逐格点 29 次不现实）。 */
+export function setRowDone(
+  progress: StitchProgress,
+  row: number,
+  value: boolean,
+  now = new Date(),
+): StitchProgress {
+  if (row < 0 || row >= progress.height) return progress;
+  const done = progress.done.slice();
+  done.fill(value ? 1 : 0, row * progress.width, (row + 1) * progress.width);
+  return { ...progress, done, updatedAt: now.toISOString() };
+}
+
+export function clearProgress(progress: StitchProgress, now = new Date()): StitchProgress {
+  return { ...progress, done: new Uint8Array(progress.done.length), updatedAt: now.toISOString() };
+}
+
+export interface ProgressSummary {
+  /** 需要拼的格子总数（不含透明与背景格） */
+  total: number;
+  doneCount: number;
+  /** 0–100，保留一位小数 */
+  percent: number;
+  /** 第一行仍未拼完的行号（0-based）；全部完成时为 null */
+  nextRow: number | null;
+}
+
+/**
+ * 汇总进度。只统计「需要拼的格子」：透明格与被判为背景的外部格不算分母，
+ * 否则一张带大片透明的图永远到不了 100%。
+ */
+export function summarizeProgress(
+  progress: StitchProgress,
+  cells: readonly { transparent: boolean; external?: boolean }[],
+): ProgressSummary {
+  let total = 0;
+  let doneCount = 0;
+  let nextRow: number | null = null;
+  for (let row = 0; row < progress.height; row++) {
+    let rowHasPending = false;
+    for (let col = 0; col < progress.width; col++) {
+      const index = row * progress.width + col;
+      const cell = cells[index];
+      if (!cell || cell.transparent || cell.external) continue;
+      total += 1;
+      if (progress.done[index] === 1) doneCount += 1;
+      else rowHasPending = true;
+    }
+    if (rowHasPending && nextRow === null) nextRow = row;
+  }
+  return {
+    total,
+    doneCount,
+    percent: total > 0 ? Math.round((doneCount / total) * 1000) / 10 : 0,
+    nextRow,
+  };
+}

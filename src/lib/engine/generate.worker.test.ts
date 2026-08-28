@@ -74,4 +74,35 @@ describe('generate.worker 持久消息协议', () => {
     dispatch(generate(2, []));
     expect(posted().at(-1)).toEqual({ type: 'error', taskId: 2, error: 'palette is empty' });
   });
+
+  it('生成结束 60 秒无新任务即释放 32 MiB 匹配表（A-09）', async () => {
+    vi.useFakeTimers();
+    try {
+      const { lutCacheSize } = await import('./lut');
+      dispatch(source());
+      dispatch(generate(11));
+      expect(lutCacheSize()).toBe(1);
+      vi.advanceTimersByTime(59_000);
+      expect(lutCacheSize()).toBe(1);
+      vi.advanceTimersByTime(2_000);
+      expect(lutCacheSize()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('新任务到来会取消待执行的释放（连续调参不会白重建）', async () => {
+    vi.useFakeTimers();
+    try {
+      const { lutCacheSize } = await import('./lut');
+      dispatch(source());
+      dispatch(generate(12));
+      vi.advanceTimersByTime(59_000);
+      dispatch(generate(13));
+      vi.advanceTimersByTime(2_000);
+      expect(lutCacheSize()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

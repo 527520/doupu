@@ -75,16 +75,10 @@ export default defineConfig({
         'src/lib/**/*.test.ts',
         'src/lib/**/*.performance.test.ts',
         'src/lib/palettes/data/**',
-        // These modules own database, cookie and route transaction boundaries.
-        // They are exercised in the isolated integration project instead of
-        // under V8 instrumentation, which previously destabilized native
-        // Argon2/PGlite. The integration job remains a required CI dependency.
-        'src/lib/auth/cookies.ts',
+        // 仅剩这一个排除项：db.ts 的 PGlite 回退分支只在 next dev / E2E 的
+        // instrumentation 里跑，测试进程走 setTestDb 注入，永远不会进那条路径。
+        // 认证/会话/守卫/限流已纳入护栏（A-14），覆盖率数字因此覆盖安全核心。
         'src/lib/auth/db.ts',
-        'src/lib/auth/guard.ts',
-        'src/lib/auth/rateLimit.ts',
-        'src/lib/auth/session.ts',
-        'src/lib/auth/transitions.ts',
       ],
       // Pure-library coverage guard: lines/statements/functions ≥90%, branches ≥75%.
       thresholds: {

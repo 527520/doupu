@@ -57,6 +57,18 @@ export type GenerationSessionAction =
   | { type: 'cancel'; taskId: number }
   | { type: 'restore'; commit: GenerationCommit }
   | { type: 'manual-edit'; pattern: Pattern; stats: PatternStatsItem[]; total: number }
+  /**
+   * 图纸级换色板（H-1）：不重新采样原图，只把每格换成新色板最近色。
+   * 因此不需要生成源，也不会丢手工修补；上一版图纸进 regenerationUndo 供一步撤销。
+   */
+  | {
+      type: 'remap';
+      pattern: Pattern;
+      stats: PatternStatsItem[];
+      total: number;
+      palette: PaletteColor[];
+      projectPalette: ProjectPalette;
+    }
   | { type: 'undo-regeneration' };
 
 export const createGenerationSession = (draft: GenerationDraft | null = null): GenerationSessionState => ({
@@ -186,6 +198,35 @@ export function generationSessionReducer(
         },
         hasManualEdits: true,
       };
+    case 'remap': {
+      // 换色板：committed 与 draft 一起换成新色板，图纸格子由调用方重映射好。
+      // 生成源与 status 保持不变（有源的会话仍可继续重新生成）。
+      if (!state.committed || state.status === 'generating') return state;
+      const next: GenerationCommit = {
+        ...state.committed,
+        pattern: action.pattern,
+        stats: action.stats,
+        total: action.total,
+        palette: action.palette,
+        projectPalette: action.projectPalette,
+      };
+      return {
+        ...state,
+        draft: {
+          params: next.params,
+          palette: action.palette,
+          projectPalette: action.projectPalette,
+        },
+        committed: next,
+        lastStableDraft: {
+          params: next.params,
+          palette: action.palette,
+          projectPalette: action.projectPalette,
+        },
+        error: null,
+        regenerationUndo: state.committed,
+      };
+    }
     case 'undo-regeneration':
       if (!state.regenerationUndo || state.status === 'generating') return state;
       return {

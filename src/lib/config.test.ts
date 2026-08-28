@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePdfMetrics, publicConfigFallback, type PublicConfig } from './config';
+import { normalizePdfMetrics, poolOptions, publicConfigFallback, type PublicConfig, type SiteConfig } from './config';
 
 describe('config（票 02）', () => {
   it('公开配置回退值与历史默认一致（未配置环境变量时行为不变）', () => {
@@ -26,5 +26,32 @@ describe('config（票 02）', () => {
     expect(normalizePdfMetrics({ cellMm: -1, marginMm: 0, headerMm: 0, pageCols: 0, pageRows: 1 }, fallback))
       .toEqual(fallback);
     expect(normalizePdfMetrics({ ...fallback, cellMm: Number.NaN }, fallback)).toEqual(fallback);
+  });
+
+  describe('连接池选项（A-11）', () => {
+    const db = (overrides: Partial<SiteConfig['database']> = {}): SiteConfig['database'] => ({
+      poolMax: 10,
+      statementTimeoutMs: 15_000,
+      connectionTimeoutMs: 5_000,
+      idleTimeoutMs: 30_000,
+      ...overrides,
+    });
+
+    it('默认给出语句/取连接/空闲三类超时，避免一条卡死语句拖垮全站', () => {
+      expect(poolOptions(db())).toEqual({
+        max: 10,
+        keepAlive: true,
+        statement_timeout: 15_000,
+        query_timeout: 15_000,
+        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 30_000,
+      });
+    });
+
+    it('值为 0 时省略该项而不是传 0（0 在 pg 里表示永不超时）', () => {
+      const options = poolOptions(db({ statementTimeoutMs: 0, connectionTimeoutMs: 0, idleTimeoutMs: 0 }));
+      expect(options).toEqual({ max: 10, keepAlive: true });
+      expect('statement_timeout' in options).toBe(false);
+    });
   });
 });

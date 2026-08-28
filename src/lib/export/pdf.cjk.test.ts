@@ -188,6 +188,52 @@ describe('generatePatternPdf（CJK 字体嵌入）', () => {
       { metrics: { cellMm: 20, marginMm: 30, headerMm: 30, pageCols: 100, pageRows: 100 } },
     );
     const document = await PDFDocument.load(bytes);
-    expect(document.getPageCount()).toBe(3); // 回退后 32 列 = 2 页图纸 + 1 页图例
+    // 回退后按板分页：32 列 = 2 块板 → 板位总览 1 页 + 图纸 2 页 + 图例 1 页（F-1）
+    expect(document.getPageCount()).toBe(4);
+  }, 30000);
+
+  it('多块板时首页是板位总览（F-1）', async () => {
+    // 60×29 = 横向 3 块板（29+29+2）
+    const wide: Pattern = {
+      width: 60,
+      height: 29,
+      cells: Array.from({ length: 60 * 29 }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+    const bytes = await generatePatternPdf(
+      { name: '板位', pattern: wide, stats: [{ code: 'A', hex: '#000000', count: 60 * 29 }] },
+      { fontBytes },
+    );
+    const document = await PDFDocument.load(bytes);
+    // 总览 1 + 图纸 3（一页一块板）+ 图例 1
+    expect(document.getPageCount()).toBe(5);
+  }, 30000);
+
+  it('板位总览页在 ASCII 降级路径下也有可读标题', async () => {
+    const wide: Pattern = {
+      width: 60,
+      height: 29,
+      cells: Array.from({ length: 60 * 29 }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+    // 不传 fontBytes → 走 Helvetica/ASCII 降级，可直接读出绘制文本
+    const bytes = await generatePatternPdf(
+      { name: 'board map', pattern: wide, stats: [{ code: 'A', hex: '#000000', count: 60 * 29 }] },
+    );
+    const texts = drawnAsciiText(bytes).join(' ');
+    expect(texts).toContain('Board map');
+    expect(texts).toContain('3 boards');
+  }, 30000);
+
+  it('单块板不出总览页（不为一页纸多印一张说明）', async () => {
+    const single: Pattern = {
+      width: 10,
+      height: 10,
+      cells: Array.from({ length: 100 }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+    const bytes = await generatePatternPdf(
+      { name: '单板', pattern: single, stats: [{ code: 'A', hex: '#000000', count: 100 }] },
+      { fontBytes },
+    );
+    const document = await PDFDocument.load(bytes);
+    expect(document.getPageCount()).toBe(2); // 图纸 1 + 图例 1
   }, 30000);
 });

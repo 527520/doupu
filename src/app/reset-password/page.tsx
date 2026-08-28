@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { passwordSchema } from '@/lib/schemas';
@@ -31,7 +32,7 @@ function ResetInner() {
       return;
     }
     if (!passwordSchema.safeParse(password).success) {
-      setError('密码需为 8–72 个字符，且首尾不含空格。');
+      setError(t.passwordRule);
       return;
     }
     if (password !== confirm) {
@@ -52,7 +53,7 @@ function ResetInner() {
       const body = await res.json().catch(() => null);
       setError(body?.error?.message || zhCN.auth.linkInvalid);
     } catch {
-      setError('网络错误，请稍后重试。');
+      setError(t.networkError);
     } finally {
       setPending(false);
     }
@@ -63,9 +64,7 @@ function ResetInner() {
   if (done) {
     return (
       <AuthShell title={t.resetTitle}>
-        <p role="status" className="mb-4 text-center text-green-700">
-          {t.resetSuccess}
-        </p>
+        <Notice kind="success" className="mb-4">{t.resetSuccess}</Notice>
         <Link href="/login" className="link-soft block text-center">
           {t.goLogin}
         </Link>

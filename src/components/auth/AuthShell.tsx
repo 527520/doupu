@@ -13,11 +13,11 @@ export default function AuthShell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-4 py-10">
+    <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-4 py-10">
       <section className="card-surface w-full max-w-md px-6 py-8 sm:px-8">
         <header className="mb-6 flex flex-col items-center gap-2 text-center">
           <ArcSignature className="w-24" />
-          <h1 className="text-2xl font-semibold tracking-wide text-ink">{title}</h1>
+          <h1 className="page-title">{title}</h1>
         </header>
         {children}
       </section>

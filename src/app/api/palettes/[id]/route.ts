@@ -7,6 +7,7 @@ import { getDb } from '@/lib/auth/db';
 import { palettes } from '@/../db/schema';
 import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
+import { enforceSyncWriteLimit } from '@/lib/auth/rateLimit';
 import { apiError, noContent, okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { palettePutSchema, revisionDeleteSchema } from '@/lib/schemas';
 import { LIMITS } from '@/lib/appInfo';
@@ -56,6 +57,7 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
   const { name, colors, baseRevision } = result.data;
 
   const db = getDb();
+  await enforceSyncWriteLimit(db, userId);
   const payloadBytes = measureJsonBytes(colors);
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from users where id = ${userId} for update`);
@@ -97,6 +99,7 @@ async function del(request: Request, { params }: { params: Promise<{ id: string 
   if (!result.success) return apiError(result.error);
   const { baseRevision } = result.data;
   const db = getDb();
+  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from users where id = ${userId} for update`);
     await tx.delete(palettes).where(and(eq(palettes.userId, userId), lt(palettes.deletedAt, tombstoneCutoff())));

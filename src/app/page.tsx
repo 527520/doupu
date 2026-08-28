@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SOURCE_REPO_URL } from '@/lib/appInfo';
 import OnboardingGuide from '@/components/onboarding/OnboardingGuide';
+import HomeUploadCard from '@/components/upload/HomeUploadCard';
 import HomeAuthNav from '@/components/layout/HomeAuthNav';
 import ArcSignature from '@/components/ui/ArcSignature';
 
 export default function Home() {
   const { app, home, footer, nav } = zhCN;
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-10 bg-cream px-6 py-10 text-center">
+    <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-10 bg-cream px-6 py-10 text-center">
       <section className="flex flex-col items-center gap-4">
         <ArcSignature className="w-32" />
         <h1 className="text-5xl font-semibold tracking-wide text-ink sm:text-6xl">{app.name}</h1>
@@ -18,14 +19,7 @@ export default function Home() {
 
       <OnboardingGuide />
 
-      <section className="flex w-full max-w-md flex-col gap-3">
-        <Link
-          href="/app"
-          className="rounded-3xl border-2 border-dashed border-lilac/70 bg-white/60 p-8 text-ink-soft shadow-card transition-colors duration-150 hover:border-primary hover:text-primary-deep"
-        >
-          {home.uploadHint}
-        </Link>
-      </section>
+      <HomeUploadCard />
 
       <nav
         aria-label={nav.mainNav}

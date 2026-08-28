@@ -1,17 +1,6 @@
 /** 动图检测（spec 边界 E4）：GIF 多帧 / APNG / 动画 WebP。解析失败一律返回 false（不抛异常）。 */
 import type { ImageType } from './sniff';
-
-/** 从 start 起读取 length 个字节的 ASCII 串（越界部分忽略）。 */
-function ascii(bytes: Uint8Array, start: number, length: number): string {
-  let out = '';
-  const end = Math.min(start + length, bytes.length);
-  for (let i = start; i < end; i++) out += String.fromCharCode(bytes[i]);
-  return out;
-}
-
-function readU32BE(bytes: Uint8Array, offset: number): number {
-  return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
-}
+import { ascii, readU32BE } from './bytes';
 
 export function isAnimatedImage(bytes: Uint8Array, type: ImageType): boolean {
   switch (type) {

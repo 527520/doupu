@@ -11,6 +11,9 @@ function storage(records: Awaited<ReturnType<StorageAdapter['getAll']>> = []): S
     async getGenerationSource() { return null; },
     async getMeta(key) { return meta.get(key) ?? null; },
     async setMeta(key, value) { meta.set(key, value); },
+    async getStitchProgress() { return null; },
+    async putStitchProgress() { /* 队列测试不涉及跟拼进度 */ },
+    async deleteStitchProgress() { /* 队列测试不涉及跟拼进度 */ },
   };
 }
 

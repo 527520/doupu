@@ -9,6 +9,14 @@ export const zhCN = {
     tagline: '上传照片，生成拼豆图纸',
     description: '豆谱（DouPu）—— 免费开源的拼豆图纸生成工具：上传照片或像素画，裁剪、调参、修补，导出可打印的拼豆图纸。',
   },
+  /** 跨页面复用的通用动作词：同一动作在按钮、弹窗、提示里必须同名。 */
+  common: {
+    confirm: '确定',
+    cancel: '取消',
+    delete: '删除',
+    retry: '重试',
+    close: '关闭',
+  },
   nav: {
     mainNav: '主导航',
     home: '首页',
@@ -22,9 +30,9 @@ export const zhCN = {
     logout: '退出登录',
     more: '菜单与账户',
     checkingAccount: '正在检查登录状态…',
+    skipToMain: '跳到主内容',
   },
   home: {
-    uploadHint: '拖拽图片到此处，或点击选择文件（支持拍照）',
     guideStep1: '上传照片或像素画',
     guideStep2: '调整尺寸与颜色参数',
     guideStep3: '修补细节并导出图纸',
@@ -66,10 +74,26 @@ export const zhCN = {
     backgroundSampler: '在原图中取样背景色',
     backgroundPickHint: '也可点击原图预览，直接取样背景色',
     brand: '色板品牌',
+    /* H-3：套装档位——限定生成时可用的色号数量，避免生成出买不到的颜色。 */
+    kitTier: '手里的套装',
+    kitTierAll: '整套色板（291 色）',
+    kitTierOption: (size: number) => `${size} 色套装`,
+    kitTierHint: '按你手里那盒豆子的规格选。选了档位后只会用这些颜色，不会生成买不到的色号。',
     widthUnit: '格',
     colorsUnit: '色',
     invalidWidth: '宽度需为 20–200 的整数',
     invalidColors: '颜色数需为 2–128 的整数',
+    /** A-05：竖长图撞到 200 行上限时，图纸比例与原图不同，必须明说并给出可执行的下一步。 */
+    heightClamped: (exactRows: number, maxWidth: number) =>
+      `这张图按比例需要 ${exactRows} 行，已按上限压到 200 行，成品会比原图矮一些。把宽度调到 ${maxWidth} 格可保持原图比例。`,
+    /* F-2：板数快捷档——用户买豆板按块买，「两块板宽」比「58 格」更直观。 */
+    boardPresetGroup: '按拼豆板数选尺寸',
+    boardPreset: (boards: number, width: number) => `${boards} 板（${width} 格）`,
+    /** 尺寸预览：让用户在生成前就知道图纸多大、要多少颗豆。 */
+    sizeHint: (width: number, rows: number) => `图纸 ${width} × ${rows} 格`,
+    /* D-10：参数术语解释——说清「这个数字影响你要买什么、成品像不像」，不解释算法。 */
+    colorCountHint: '颜色越多越接近原图，但要买的豆子种类也越多。卡通建议 8–20 色，照片建议 24–48 色。',
+    ditheringHint: '用交错的杂色模拟过渡色，照片的渐变会更自然，但成品看起来会更「花」。卡通和像素画建议关闭。',
   },
   preview: {
     zoomIn: '放大',
@@ -81,11 +105,16 @@ export const zhCN = {
     cellInfo: (row: number, col: number, code: string | null) =>
       code === null ? `第 ${row} 行 第 ${col} 列` : `第 ${row} 行 第 ${col} 列 · ${code}`,
     panHint: '鼠标拖动或触屏滑动平移；按 Ctrl/Command + 滚轮缩放',
+    /** 预览画布的可访问名（D-9）：读屏用户至少知道图纸规模。 */
+    canvasAria: (width: number, height: number) => `图纸预览：${width} × ${height} 格，可用键盘聚焦后配合工具条缩放`,
   },
   export: {
     pngExport: '导出 PNG 图纸',
     pngEmptyError: '图纸为空，无法导出。',
     pngFailed: '导出失败，请重试。',
+    /** A-03：画布超出浏览器上限时给出可执行的下一步，而不是让用户反复重试同一档位。 */
+    pngTooLargeError: (suggested: number) =>
+      `这张图纸太大，当前格子大小超出浏览器画布上限。把格子大小调到 ${suggested}px 或更小即可导出。`,
     legendTitle: '图例',
     countUnit: '粒',
   },
@@ -93,9 +122,72 @@ export const zhCN = {
     dialogTitle: 'PNG 导出选项',
     cellSize: '格子大小',
     cellSizeValue: (n: number) => `${n}px`,
+    /** 超限档位在下拉里保留但禁用，并说明原因（隐藏会让用户以为功能消失）。 */
+    cellSizeTooLarge: (n: number) => `${n}px（这张图纸太大）`,
     cropToContent: '裁掉图纸边缘空白',
     includeLegend: '包含图例与色号清单',
     confirm: '导出',
+  },
+  /* 采购清单（F-3）：把用量统计变成「照着买」的清单。 */
+  shopping: {
+    title: '采购清单',
+    show: '展开',
+    hide: '收起',
+    summary: (total: number, colors: number, packs: number, perPack: number) =>
+      `${total} 粒 · ${colors} 色 · 约 ${packs} 包（每包 ${perPack} 粒）`,
+    beadsPerPack: '每包颗数',
+    packHint: '按你买的规格改这个数字，包数会跟着重算。每个色号单独算包，1 粒也要买一包。',
+    packs: (packs: number) => `${packs} 包`,
+    bandAria: (colors: number) => `采购清单的 ${colors} 种颜色`,
+    copy: '复制清单',
+    copied: '已复制',
+    copyFailed: '当前浏览器不允许自动复制，请手动选中清单文字复制。',
+  },
+  /* 跟拼模式（G）：照着图纸一颗一颗拼时用的界面，进度只存本机。 */
+  stitch: {
+    title: '跟拼',
+    tab: '跟拼',
+    progress: (done: number, total: number, percent: number) => `已拼 ${done} / ${total} 粒（${percent}%）`,
+    rowLabel: (row: number, total: number) => `当前第 ${row} 行 / 共 ${total} 行`,
+    markRowDone: '整行标记已拼',
+    markRowUndone: '整行取消',
+    prevRow: '上一行',
+    nextRow: '下一行',
+    jumpToPending: (row: number) => `跳到第 ${row} 行（未拼完）`,
+    cellSize: '格子大小',
+    reset: '清空进度',
+    resetTitle: '清空跟拼进度',
+    resetMessage: '这会把「已拼」标记全部清除，图纸本身不受影响。',
+    resetAction: '确定清空',
+    finished: '这张图纸已经拼完了，辛苦啦。',
+    hint: '点格子标记已拼／取消；整行拼完用「整行标记已拼」更快。进度只保存在本机浏览器。',
+    canvasAria: (width: number, height: number, percent: number) =>
+      `跟拼画布：${width} × ${height} 格，已完成 ${percent}%。点选格子可标记已拼。`,
+    unavailable: '本地存储不可用，跟拼进度无法保存（可能处于隐私模式）。',
+  },
+  /* 只读分享（批次 K，决策 D38：取代 D23 的「无公开分享页」）。 */
+  share: {
+    button: '分享图纸',
+    dialogTitle: '分享这张图纸',
+    dialogHint: '生成一个只读链接，拿到链接的人能看图纸和用色清单，但改不了你的设计。',
+    creating: '正在生成链接…',
+    createFailed: '生成分享链接失败，请稍后重试。',
+    copyLink: '复制链接',
+    copied: '已复制',
+    stop: '停止分享',
+    qrAria: '分享链接的二维码',
+    snapshotNote: '链接里是分享那一刻的图纸快照：你之后继续修改不会影响已发出的链接。',
+    requiresCloud: '分享需要先登录（链接要能被别人打开）。',
+    notSyncedYet: '这张图纸还没同步到云端。请检查网络后点「保存」，稍等几秒再分享。',
+    /* 只读页 */
+    pageTitle: '共享的拼豆图纸',
+    readonlyBadge: '只读分享 · 无法编辑',
+    summary: (width: number, height: number, total: number, colors: number) =>
+      `${width} × ${height} 格 · ${total} 粒 · ${colors} 色`,
+    colorsTitle: '用色清单',
+    bandAria: (colors: number) => `这张图纸的 ${colors} 种颜色`,
+    cta: '想做一张自己的？上传照片就行，免费、无需下载。',
+    makeYourOwn: '做我自己的图纸',
   },
   upload: {
     title: '上传图片',
@@ -154,6 +246,8 @@ export const zhCN = {
     clearConfirmBody: '确定要清空整张图纸吗？所有格子将变为留空（透明）。此操作可以撤销（Ctrl+Z）。',
     clearConfirm: '确认清除',
     transformGroup: '镜像与旋转',
+    /** D-8：工具条按功能分组，折行后每行仍是一个可理解的组。 */
+    historyGroup: '撤销与重做',
     mirrorH: '左右翻转',
     mirrorV: '上下翻转',
     rotateCW: '顺时针旋转 90°',
@@ -168,11 +262,19 @@ export const zhCN = {
     paletteEmpty: '没有匹配的颜色',
     canvasAria: '图纸编辑画布',
     editorRegion: '编辑画布区域',
+    /** 光标所在格为空时的播报词（A-23：此前在组件里硬编码）。 */
+    emptyCell: '留空',
   },
   exportPdf: {
     button: '导出 PDF',
     dialogTitle: '确认导出 PDF',
     pageCount: (grid: number, legend: number) => `共 ${grid + legend} 页：图纸 ${grid} 页 + 图例清单 ${legend} 页`,
+    /* F-1：按 29×29 拼豆板分页——一页正好一块板，页边界与板缝线重合。 */
+    boardOverviewTitle: '板位总览',
+    boardOverviewSummary: (boards: number, cols: number, rows: number, width: number, height: number) =>
+      `这张图纸共 ${boards} 块板（横向 ${cols} 块 × 纵向 ${rows} 块），${width} × ${height} 格。后面每页一块板，页眉标注该板的行列位置。`,
+    boardPageCount: (boards: number, grid: number, legend: number) =>
+      `共 ${grid + legend + 1} 页：板位总览 1 页 + 图纸 ${grid} 页（${boards} 块板，一页一块）+ 图例清单 ${legend} 页`,
     largeHint: '页数较多，导出可能需要几秒钟',
     confirm: '导出',
     cancel: '取消',
@@ -184,15 +286,25 @@ export const zhCN = {
   },
   workbench: {
     title: '工作台',
-    stepUpload: '上传图片',
-    stepCrop: '裁剪图片',
-    stepWorkspace: '图纸工作台',
+    /** 三步指示器标签（D-2）：故意比页面标题更短——它表达位置，不重复标题；
+        也避免与「上传图片」「裁剪图片」这两个页面标题同名造成歧义。 */
+    stepUpload: '上传',
+    stepCrop: '裁剪',
+    stepWorkspace: '工作台',
+    stepsAria: '制作进度',
     designName: '设计名称',
     save: '保存',
     saving: '保存中…',
     saved: '本地：已保存',
     unsaved: '有未保存修改',
     saveFailed: '保存失败',
+    /*
+      D-8：徽标文案必须短。这两条 20+ 字的说明放在头部徽标里，350px 屏幕上会折成
+      三四行把整个头部顶开。改成「短标签（可见）+ 完整说明（aria-label / title）」，
+      完整说明另外在工作台里以提示条出现一次。
+    */
+    localOnlyBadge: '仅本机',
+    localSavedBadge: '已保存',
     localOnly: '未登录：设计仅保存在本机浏览器，注册后可云端同步',
     localSaved: '已保存到本机「我的设计」，登录后自动同步云端',
     cloudPending: '云端：待同步',
@@ -210,13 +322,35 @@ export const zhCN = {
     generating: '正在生成图纸…（可继续调整参数，以最后一次为准）',
     generatingProgressLabel: '生成进度',
     cancel: '取消',
-    confirmRegenerate: '当前图纸包含手工修补。重新生成会替换它们，是否继续？',
-    undoRegeneration: '撤销重新生成，恢复手工修补',
+    confirmRegenerateTitle: '重新生成会覆盖手工修补',
+    confirmRegenerate: '当前图纸包含手工修补。重新生成会用新的自动结果替换它们，重新生成后仍可撤销一次。',
+    confirmRegenerateAction: '重新生成',
+    /* H-2：空白起稿——不上传图片，直接从空白图纸开始摆。 */
+    blankTitle: '从空白图纸开始',
+    blankHint: '不上传照片，直接自己摆格子（照着别人的图纸摆、画图标或文字都用这个）。之后可以随时换色板、导出打印。',
+    blankPreset: (boards: number, size: number) => `${boards} 板（${size} × ${size} 格）`,
+    /* H-3：套装档位应用结果。 */
+    kitApplied: (tier: number, changed: number) =>
+      tier === 0
+        ? `已恢复使用整套色板，${changed} 格换回更接近的颜色。`
+        : `已限定为 ${tier} 色套装，${changed} 格换成了档位内的颜色；不满意可点下方「撤销」。`,
+    undoRegeneration: '撤销上一步自动改动，恢复上一版图纸',
+    /* H-1：图纸级换色板——不需要原图，保留手工修补。 */
+    remapDone: (changed: number) =>
+      changed > 0
+        ? `已换到新色板，${changed} 格换了颜色；手工修补都保留着。不满意可点下方「撤销」。`
+        : '已换到新色板，这张图纸的颜色刚好都能对上，没有格子需要改。',
     previewTab: '预览',
     editTab: '编辑',
     statsTotal: (total: number) => `共 ${total} 粒`,
+    /** 生成完成的结果句（D-1）：说清尺寸、用量与颜色数，兼作读屏播报。
+        故意不与右侧统计面板的「共 N 粒」同句式，避免同一信息看起来重复两遍。 */
+    generateDone: (width: number, height: number, total: number, colors: number) =>
+      `图纸已生成：${width} × ${height} 格 · ${total} 粒 · ${colors} 色`,
     colorCount: (count: number) => `${count} 种颜色`,
-    confirmLeave: '有未保存的修改，确定离开吗？',
+    confirmLeaveTitle: '还有改动没保存',
+    confirmLeave: '这次改动保存失败了。现在离开会丢掉它，留在页面可以再试一次保存。',
+    confirmLeaveAction: '仍要离开',
     restart: '重新上传',
     sourceRequired: '本机未保存该项目的生成源。已锁定重新生成参数；如需调整，请先重新上传原图。',
     editorHint: '编辑后将自动保存到本机',
@@ -270,6 +404,12 @@ export const zhCN = {
     resetSuccess: '密码已重置，旧会话已全部失效，请重新登录。',
     passwordMismatch: '两次输入的密码不一致。',
     required: '请填写此项。',
+    /** 客户端预校验与网络异常文案（此前在四个认证页里各自硬编码，C-3 收拢）。 */
+    emailInvalid: '请输入正确的邮箱地址。',
+    credentialsInvalid: '请输入正确的邮箱与 8–72 位密码。',
+    passwordRule: '密码需为 8–72 个字符，且首尾不含空格。',
+    registerFailed: '注册失败，请重试。',
+    networkError: '网络错误，请稍后重试。',
     cooldown: (seconds: number) => `请 ${seconds} 秒后再试`,
   },
   palettes: {
@@ -280,6 +420,7 @@ export const zhCN = {
     newPalette: '新建色板',
     edit: '编辑',
     delete: '删除',
+    deleteConfirmTitle: (name: string) => `删除色板「${name}」`,
     deleteConfirm: '删除后不可恢复，确定删除该色板吗？',
     empty: '还没有自定义色板，点击「新建色板」开始。',
     loading: '正在加载色板…',
@@ -291,11 +432,17 @@ export const zhCN = {
     deleteFailed: '删除失败，请重试。',
     limitReached: '色板数量已达上限（20 个）。',
     colorCount: (n: number) => `${n} 色`,
+    /* E-1：色板页原来只有数字，看不到颜色。色带用于概览，色格用于细看。 */
+    bandAria: (name: string, count: number) => `${name} 的配色概览，共 ${count} 色`,
+    showColors: '查看全部颜色',
+    hideColors: '收起颜色',
     editor: {
       title: '编辑色板',
       name: '色板名称',
       code: '色号',
       hex: '颜色',
+      /** E-2：取色器的可访问名（每行一个原生 color input）。 */
+      pickColor: '取色',
       addRow: '添加颜色',
       removeRow: '删除此行',
       pasteImport: '粘贴导入',
@@ -303,7 +450,9 @@ export const zhCN = {
       copyFromBrand: '复制自品牌',
       pasteHint: '每行一个十六进制颜色（#RRGGBB）',
       importFailed: '未解析到有效的十六进制颜色。',
+      copyConfirmTitle: '覆盖当前颜色',
       copyConfirm: '复制将覆盖当前全部颜色，继续吗？',
+      copyConfirmAction: '覆盖',
       colorsCounter: (n: number) => `${n} / 500 色`,
       save: '保存',
       cancel: '取消',
@@ -335,6 +484,11 @@ export const zhCN = {
     updatedAt: (time: string) => `更新于 ${time}`,
     size: (w: number, h: number) => `${w} × ${h} 格`,
     placeholder: '图纸缩略图',
+    /** D-9：缩略图 alt 必须能区分不同设计（原来全部共用一句「图纸缩略图」）。 */
+    thumbnailAlt: (name: string, width: number, height: number) =>
+      `${name} 的图纸缩略图，${width} × ${height} 格`,
+    /** E-3：用色概览色带的可访问名。 */
+    colorBandAria: (name: string, count: number) => `${name} 的主要用色，共 ${count} 色`,
     guestBanner: '未登录：仅显示本机设计。登录后可云端同步，换设备继续编辑。',
     goLogin: '去登录',
     goRegister: '注册',

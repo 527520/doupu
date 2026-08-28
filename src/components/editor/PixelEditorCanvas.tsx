@@ -59,6 +59,7 @@ export default function PixelEditorCanvas({
   onColorChange,
   onPatternChange,
 }: Props) {
+  const t = zhCN.editor;
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(createEditorState(pattern));
@@ -310,9 +311,9 @@ export default function PixelEditorCanvas({
     (row: number, col: number): string => {
       const cell = stateRef.current.cells[row * W + col];
       if (!cell) return '—';
-      return cell.transparent ? '留空' : (cell.code ?? cell.hex ?? '—');
+      return cell.transparent ? t.emptyCell : (cell.code ?? cell.hex ?? '—');
     },
-    [W],
+    [W, t.emptyCell],
   );
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -461,7 +462,9 @@ export default function PixelEditorCanvas({
   /** 镜像/旋转（优化票 09）：整图变换，快照覆盖全部格子并记录尺寸变化，可撤销。 */
   const onTransform = (op: TransformOp): void => {
     const st = stateRef.current;
-    const beforeCells = st.cells.map((c) => ({ ...c }));
+    // 格子对象不可变（ops.ts：只整槽替换、从不原地修改），因此直接复用引用即可，
+    // 不必逐格 {...c} 深拷贝——200×200 时省掉 40 000 次分配（A-02）。
+    const beforeCells = st.cells.slice();
     const beforeDims = { width: st.width, height: st.height };
     const { cells, width, height } = applyTransform(st.cells, st.width, st.height, op);
     st.cells = cells;
@@ -555,7 +558,6 @@ export default function PixelEditorCanvas({
     }
   };
 
-  const t = zhCN.editor;
   const filteredPalette = availablePalette.filter((color) => {
     const query = paletteQuery.trim().toLowerCase();
     if (!query) return true;
@@ -590,7 +592,7 @@ export default function PixelEditorCanvas({
           onChange={(event) => setPaletteQuery(event.target.value)}
           aria-label={t.paletteSearch}
           placeholder={t.paletteSearch}
-          className="w-full rounded-lg border border-lilac/50 px-2 py-1 text-sm"
+          className="w-full input-compact"
         />
         <div className="mt-2 flex max-h-28 flex-wrap gap-1 overflow-auto">
           {filteredPalette.map((color, index) => (
@@ -619,7 +621,7 @@ export default function PixelEditorCanvas({
             id="editor-replace-from"
             value={replaceFrom}
             onChange={(e) => setReplaceFrom(e.target.value)}
-            className="w-24 rounded-lg border border-lilac/50 px-2 py-1"
+            className="w-24 input-compact"
           />
           <label htmlFor="editor-replace-to" className="text-ink-soft">
             {t.replaceTo}
@@ -628,7 +630,7 @@ export default function PixelEditorCanvas({
             id="editor-replace-to"
             value={replaceTo}
             onChange={(e) => setReplaceTo(e.target.value)}
-            className="rounded-lg border border-lilac/50 px-2 py-1"
+            className="input-compact"
           >
             {availablePalette.map((p, i) => (
               <option key={p.hex} value={String(i)}>
@@ -673,14 +675,14 @@ export default function PixelEditorCanvas({
       </p>
 
       {clearOpen && (
-        <Modal label={t.clearConfirmTitle} onClose={() => setClearOpen(false)} panelClassName="max-w-sm border-red-200">
-          <h3 className="text-sm font-medium text-red-700">{t.clearConfirmTitle}</h3>
+        <Modal label={t.clearConfirmTitle} onClose={() => setClearOpen(false)} panelClassName="max-w-sm border-danger/40">
+          <h3 className="text-sm font-medium text-danger">{t.clearConfirmTitle}</h3>
           <p className="mt-2 text-sm leading-6 text-ink-soft">{t.clearConfirmBody}</p>
           <div className="mt-3 flex justify-end gap-2">
-            <button type="button" onClick={() => setClearOpen(false)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft">
+            <button type="button" onClick={() => setClearOpen(false)} className="btn-outline btn-sm">
               {zhCN.designs.cancel}
             </button>
-            <button type="button" onClick={confirmClear} className="rounded-full bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700">
+            <button type="button" onClick={confirmClear} className="rounded-full bg-danger px-3 py-1 text-sm text-white transition-colors hover:bg-danger">
               {t.clearConfirm}
             </button>
           </div>

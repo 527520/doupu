@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyBrightnessContrast } from './brightness';
-import { buildLut, clearLutCache, lutIndex } from './lut';
+import { buildLut, clearLutCache, lutCacheKey, lutIndex } from './lut';
 import { floydSteinberg } from './dither';
 import { sampleCells } from './sample';
 import { mergeByTargetCount } from './merge';
@@ -67,6 +67,18 @@ describe('buildLut / lutIndex', () => {
 
   it('非法 hex 抛错', () => {
     expect(() => buildLut([{ hex: 'bad', code: null }])).toThrow();
+  });
+
+  it('缓存键包含色号：hex 相同但色号不同的色板不共享匹配表（A-09）', () => {
+    // 纯键比较：每个 Lut 的精确表是 32 MiB，测试里不实际构建多套。
+    const sameHexDifferentCodes = [
+      { hex: '#000000', code: 'C-01' },
+      { hex: '#FFFFFF', code: 'C-02' },
+      { hex: '#FF0000', code: 'C-03' },
+    ];
+    expect(lutCacheKey(palette)).not.toBe(lutCacheKey(sameHexDifferentCodes));
+    expect(lutCacheKey(palette)).toBe(lutCacheKey([...palette]));
+    expect(lutCacheKey([{ hex: '#000000', code: null }])).toBe('#000000:');
   });
 
   it.each(BRANDS)('%s 的每个可用色精确匹配自身', (brand) => {

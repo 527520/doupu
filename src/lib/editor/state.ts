@@ -2,7 +2,7 @@
  * 编辑器状态编排：cells 副本 + 用量统计联动（复用引擎 computeStats，spec §F5）。
  * 纯数据操作，供 React 组件与单测共用；200×200 单操作预算 <50ms。
  */
-import { computeStats } from '@/lib/engine/generate';
+import { computeStats, totalBeadCount as totalBeads } from '@/lib/engine/generate';
 import type { PaletteColor, Pattern, PatternCell, PatternStatsItem } from '@/lib/types';
 import {
   applyBrush,
@@ -26,7 +26,7 @@ export interface EditorState {
 
 function recompute(cells: PatternCell[]): Pick<EditorState, 'stats' | 'totalBeadCount'> {
   const stats = computeStats(cells);
-  return { stats, totalBeadCount: stats.reduce((sum, item) => sum + item.count, 0) };
+  return { stats, totalBeadCount: totalBeads(stats) };
 }
 
 /** 从图纸创建编辑器状态（cells 为副本，不修改原 pattern）。 */

@@ -1,5 +1,6 @@
 /** PNG 图纸导出的纯布局计算（spec §F7 PNG 部分；边界 E10/E24–E27）。 */
 import type { Pattern, PatternStatsItem } from '@/lib/types';
+import { buildExportFilename } from './filename';
 
 export const EXPORT_CELL_PX_MIN = 8;
 export const EXPORT_CELL_PX_MAX = 48;
@@ -7,7 +8,6 @@ export const EXPORT_CELL_PX_DEFAULT = 24;
 export const LEGEND_GAP = 16; // 图例区与图纸的间距（px）
 export const LEGEND_TEXT_GAP = 8; // 色块与文字间距（px）
 export const LEGEND_ENTRY_PADDING = 6; // 每个图例条目的上下留白
-export const DEFAULT_DESIGN_NAME = '未命名设计';
 export const MAX_EXPORT_CANVAS_DIMENSION = 65_535;
 export const MAX_EXPORT_CANVAS_PIXELS = 8192 * 8192;
 
@@ -47,24 +47,14 @@ export function clampCellPx(value: number): number {
 }
 
 /**
- * 文件名清洗（规则被测试锁定）：
- * 1. 去首尾空白；为空 → 未命名设计；
- * 2. 非法字符（\/:*?"<>| 与控制字符）→ '-'；
- * 3. 连续 '-' 折叠为一个；4. 去掉首尾 '-'；5. 结果为空 → 未命名设计。
- * 不做截断（名称上限 100 字符由 schema 保证）。
+ * 文件名清洗与导出文件名统一在 export/filename.ts（J-3：此前 PNG 与 PDF 各一套规则）。
+ * 这里重新导出，保持既有 import 路径可用。
  */
-export function sanitizeFilename(name: string): string {
-  const trimmed = name.trim();
-  if (trimmed.length === 0) return DEFAULT_DESIGN_NAME;
-  const replaced = trimmed.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '-');
-  const collapsed = replaced.replace(/-{2,}/g, '-');
-  const stripped = collapsed.replace(/^-+|-+$/g, '');
-  return stripped.length === 0 ? DEFAULT_DESIGN_NAME : stripped;
-}
+export { DEFAULT_DESIGN_NAME, sanitizeFilename } from './filename';
 
-/** 导出文件名：豆谱-<名称>-<W>x<H>.png。 */
+/** 导出文件名：豆谱-<名称>-<W>x<H>.png（规则见 export/filename.ts，PNG/PDF 共用）。 */
 export function pngFileName(designName: string, W: number, H: number): string {
-  return `豆谱-${sanitizeFilename(designName)}-${W}x${H}.png`;
+  return buildExportFilename(designName, W, H, 'png');
 }
 
 /** 图例条目高度：max(16, cellPx + 6)。 */
@@ -115,6 +105,47 @@ export function pngCanvasWithinLimits(size: { width: number; height: number }): 
     && size.width <= MAX_EXPORT_CANVAS_DIMENSION
     && size.height <= MAX_EXPORT_CANVAS_DIMENSION
     && size.width * size.height <= MAX_EXPORT_CANVAS_PIXELS;
+}
+
+/**
+ * 某个格子档位在当前图纸下是否可导出（A-03）。
+ *
+ * 200×200 图纸选 48px 会得到 9600² = 92.2 M px，超过 MAX_EXPORT_CANVAS_PIXELS(67.1 M) —— 
+ * 旧版把这个档位放在下拉里，用户只会看到「导出失败，请重试」并永远重试失败。
+ * 图例文字宽度按 png.ts 无 DOM 时的同一保守估计（cellPx × 4）计算：UI 预判只负责
+ * 拦掉必然失败的档位，导出路径的守卫仍是最终判据。
+ */
+export function pngCellPxFits(input: {
+  /** 导出区域的格数（已考虑裁边） */
+  contentWidth: number;
+  contentHeight: number;
+  cellPx: number;
+  /** 图例条目数；0 表示不含图例 */
+  legendCount: number;
+}): boolean {
+  const { contentWidth, contentHeight, cellPx, legendCount } = input;
+  if (contentWidth <= 0 || contentHeight <= 0) return false;
+  const layout = computePngCanvasLayout({
+    patternWidthPx: contentWidth * cellPx,
+    patternHeightPx: contentHeight * cellPx,
+    legendCount,
+    cellPx,
+    legendTextPx: legendCount > 0 ? cellPx * 4 : 0,
+  });
+  return pngCanvasWithinLimits(layout);
+}
+
+/** 在候选档位中挑出最大的可用档（升序候选；全都不可用时返回最小档）。 */
+export function largestFittingCellPx(
+  choices: readonly number[],
+  input: { contentWidth: number; contentHeight: number; legendCount: number },
+): number {
+  const ascending = [...choices].sort((a, b) => a - b);
+  let best = ascending[0];
+  for (const cellPx of ascending) {
+    if (pngCellPxFits({ ...input, cellPx })) best = cellPx;
+  }
+  return best;
 }
 
 /** PNG 图例放在图纸下方并按图纸宽度换行，避免极短图纸产生超宽 Canvas。 */

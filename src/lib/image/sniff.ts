@@ -3,17 +3,7 @@ export type ImageType = 'jpeg' | 'png' | 'webp' | 'gif' | 'heic';
 
 const HEIF_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'heif']);
 
-/** 从 start 起读取 length 个字节的 ASCII 串（越界部分忽略）。 */
-function ascii(bytes: Uint8Array, start: number, length: number): string {
-  let out = '';
-  const end = Math.min(start + length, bytes.length);
-  for (let i = start; i < end; i++) out += String.fromCharCode(bytes[i]);
-  return out;
-}
-
-function readU32BE(bytes: Uint8Array, offset: number): number {
-  return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
-}
+import { ascii, readU32BE } from './bytes';
 
 /** 检查 ISO-BMFF ftyp 盒的主品牌与兼容品牌是否属于 HEIF/HEIC。 */
 function isHeifBrand(bytes: Uint8Array): boolean {

@@ -14,6 +14,8 @@ import {
   legendEntriesPerColumn,
   legendEntryHeight,
   legendEntryText,
+  largestFittingCellPx,
+  pngCellPxFits,
   pngFileName,
   sanitizeFilename,
 } from './layout';
@@ -65,8 +67,7 @@ describe('contentBounds（包围盒）', () => {
 });
 
 describe('clampCellPx', () => {
-  it('边界 8/48 原样通过；越界钳制；默认值回退', () => {
-    expect(clampCellPx(8)).toBe(EXPORT_CELL_PX_MIN);
+  it('边界 8/48 原样通过；越界钳制；默认值回退', () => {    expect(clampCellPx(8)).toBe(EXPORT_CELL_PX_MIN);
     expect(clampCellPx(48)).toBe(EXPORT_CELL_PX_MAX);
     expect(clampCellPx(4)).toBe(EXPORT_CELL_PX_MIN);
     expect(clampCellPx(100)).toBe(EXPORT_CELL_PX_MAX);
@@ -107,9 +108,12 @@ describe('sanitizeFilename（规则锁定）', () => {
     expect(sanitizeFilename('\\\\')).toBe(DEFAULT_DESIGN_NAME);
   });
 
-  it('100 字符名称不截断（E26）', () => {
+  it('超长名称截断到 60 字符（J-3 统一规则；spec §E26 允许「完整显示或截断」）', () => {
+    // 100 个中文在 UTF-8 下是 300 字节，加上「豆谱-」前缀与「-100x200.pdf」后缀
+    // 会接近部分文件系统/网盘的 255 字节上限，因此统一截断。
     const name = '豆'.repeat(100);
-    expect(sanitizeFilename(name)).toBe(name);
+    expect(sanitizeFilename(name)).toBe('豆'.repeat(60));
+    expect(sanitizeFilename('豆'.repeat(60))).toBe('豆'.repeat(60));
   });
 
   it('合法中文与常规字符原样保留', () => {
@@ -185,5 +189,42 @@ describe('图例布局', () => {
     expect(pngCanvasWithinLimits({ width: 65_536, height: 1 })).toBe(false);
     expect(pngCanvasWithinLimits({ width: 8192, height: 8192 })).toBe(true);
     expect(pngCanvasWithinLimits({ width: 8193, height: 8193 })).toBe(false);
+  });
+});
+
+
+describe('格子档位可行性（A-03）', () => {
+  const full = { contentWidth: 200, contentHeight: 200, legendCount: 0 };
+
+  it('200×200 图纸：48px 必然超限（9600² = 92.2M px > 67.1M），32px 可用', () => {
+    expect(pngCellPxFits({ ...full, cellPx: 48 })).toBe(false);
+    expect(pngCellPxFits({ ...full, cellPx: 32 })).toBe(true);
+  });
+
+  it('长边 ≥171 格即无法用 48px（8192 ÷ 48 = 170.7）', () => {
+    expect(pngCellPxFits({ contentWidth: 170, contentHeight: 170, legendCount: 0, cellPx: 48 })).toBe(true);
+    expect(pngCellPxFits({ contentWidth: 171, contentHeight: 171, legendCount: 0, cellPx: 48 })).toBe(false);
+  });
+
+  it('小图纸所有档位都可用', () => {
+    for (const cellPx of [8, 16, 24, 32, 48]) {
+      expect(pngCellPxFits({ contentWidth: 29, contentHeight: 29, legendCount: 20, cellPx })).toBe(true);
+    }
+  });
+
+  it('图例只增不减所需画布：同档位下含图例的面积必然更大', () => {
+    const base = { patternWidthPx: 6400, patternHeightPx: 6400, cellPx: 32, legendTextPx: 128 };
+    const without = computePngCanvasLayout({ ...base, legendCount: 0 });
+    const withLegend = computePngCanvasLayout({ ...base, legendCount: 291 });
+    expect(withLegend.height).toBeGreaterThan(without.height);
+    // 291 色图例在 200×200 / 32px 下仍在上限内（真实上限判断以导出路径为准）
+    expect(pngCellPxFits({ contentWidth: 200, contentHeight: 200, legendCount: 291, cellPx: 32 })).toBe(true);
+    expect(pngCellPxFits({ contentWidth: 200, contentHeight: 200, legendCount: 291, cellPx: 48 })).toBe(false);
+  });
+
+  it('建议档位取最大可用档；空内容不可导出', () => {
+    expect(largestFittingCellPx([8, 16, 24, 32, 48], full)).toBe(32);
+    expect(largestFittingCellPx([8, 16, 24, 32, 48], { contentWidth: 29, contentHeight: 29, legendCount: 0 })).toBe(48);
+    expect(pngCellPxFits({ contentWidth: 0, contentHeight: 0, legendCount: 0, cellPx: 24 })).toBe(false);
   });
 });

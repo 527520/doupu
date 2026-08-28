@@ -105,10 +105,23 @@ function buildLutUncached(palette: PaletteColor[], shouldCancel?: CancellationPr
 }
 
 const lutCache = new Map<string, Lut>();
-const LUT_CACHE_LIMIT = 2;
+/**
+ * 缓存容量（A-09）：每套色板的精确表是 `new Uint16Array(1 << 24)` = 32 MiB。
+ * 缓存 2 套意味着 Worker 内常驻 64 MiB，在移动端 Safari 上会明显抬高 OOM 概率；
+ * 换色板并不频繁，留 1 套即可（配合 releaseIdleLut 在空闲时归零）。
+ */
+const LUT_CACHE_LIMIT = 1;
+
+/**
+ * 缓存键必须包含色号（A-09）：只用 hex 会让「hex 相同、色号不同」的两套色板
+ * 共享同一个 Lut，而 Lut 里携带的 `palette` 字段就成了过期数据。
+ */
+export function lutCacheKey(palette: PaletteColor[]): string {
+  return palette.map((color) => `${color.hex}:${color.code ?? ''}`).join(',');
+}
 
 export function buildLut(palette: PaletteColor[], shouldCancel?: CancellationProbe): Lut {
-  const key = palette.map((color) => color.hex).join(',');
+  const key = lutCacheKey(palette);
   const cached = lutCache.get(key);
   if (cached) return cached;
   const lut = buildLutUncached(palette, shouldCancel);
@@ -120,9 +133,14 @@ export function buildLut(palette: PaletteColor[], shouldCancel?: CancellationPro
   return lut;
 }
 
-/** 清空匹配器缓存（测试隔离与冷启动基准用）。 */
+/** 清空匹配器缓存（测试隔离、冷启动基准，以及生成空闲时的内存释放）。 */
 export function clearLutCache(): void {
   lutCache.clear();
+}
+
+/** 当前缓存的匹配表数量（内存占用探针：每套 32 MiB）。 */
+export function lutCacheSize(): number {
+  return lutCache.size;
 }
 
 /** 精确查找：RGB（0–255）→ 色板下标；等距时保留色板中更早的颜色。 */

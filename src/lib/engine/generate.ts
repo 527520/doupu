@@ -25,6 +25,37 @@ export const MAX_GENERATION_SOURCE_DIMENSION = LIMITS.generationSourceDimension;
 /** 进度上报（优化票 07）：0→100，按管线阶段单调递增。 */
 export type ProgressReporter = (percent: number) => void;
 
+/** 图纸最大行数（spec §F3：M 钳制到 [1, 200]）。 */
+export const MAX_PATTERN_ROWS = 200;
+
+/**
+ * 按原图比例推算图纸行数，并说明是否被上限钳制（A-05）。
+ *
+ * 竖长图会撞到 200 行上限：例如手机竖屏截图 1080×2400、宽度 100 格时，
+ * 按比例应为 222 行，实得 200 行——图纸相对原图纵向压缩约 10%，
+ * 而帮助文案写的是「高度按图片比例自动计算」。UI 需要据此明确告知，
+ * 并给出「宽度调到多少可保持比例」这个可执行的下一步。
+ */
+export function patternRows(sourceWidth: number, sourceHeight: number, targetWidth: number): {
+  rows: number;
+  /** 按比例应有的行数（未钳制） */
+  exactRows: number;
+  clamped: boolean;
+  /** 仍能保持原图比例的最大宽度；已在比例内时等于 targetWidth */
+  maxWidthKeepingRatio: number;
+} {
+  if (!(sourceWidth > 0) || !(sourceHeight > 0) || !(targetWidth > 0)) {
+    return { rows: 1, exactRows: 1, clamped: false, maxWidthKeepingRatio: targetWidth };
+  }
+  const exactRows = Math.max(1, Math.round((targetWidth * sourceHeight) / sourceWidth));
+  const rows = Math.min(MAX_PATTERN_ROWS, exactRows);
+  const clamped = exactRows > MAX_PATTERN_ROWS;
+  const maxWidthKeepingRatio = clamped
+    ? Math.max(1, Math.floor((MAX_PATTERN_ROWS * sourceWidth) / sourceHeight))
+    : targetWidth;
+  return { rows, exactRows, clamped, maxWidthKeepingRatio };
+}
+
 export function generatePattern(
   imageData: ImageDataLike,
   params: GenerationParams,
@@ -39,7 +70,7 @@ export function generatePattern(
   // 对空输入和“过滤后为空”保持同一领域错误，Worker/UI 不需要分辨内部原因。
   if (availablePalette.length === 0) throw new Error('palette is empty');
   const W = params.targetWidth;
-  const M = Math.min(200, Math.max(1, Math.round((W * imageData.height) / imageData.width)));
+  const M = patternRows(imageData.width, imageData.height, W).rows;
 
   onProgress?.(5);
   assertGenerationActive(shouldCancel);
@@ -92,7 +123,7 @@ export function generatePattern(
   return {
     pattern: { width: W, height: M, cells },
     stats,
-    totalBeadCount: stats.reduce((sum, item) => sum + item.count, 0),
+    totalBeadCount: totalBeadCount(stats),
     mergeThresholdUsed: merged.thresholdUsed,
   };
 }
@@ -114,4 +145,14 @@ export function computeStats(cells: PatternCell[]): PatternStatsItem[] {
     const d = b.count - a.count;
     return d !== 0 ? d : a.hex < b.hex ? -1 : a.hex > b.hex ? 1 : 0;
   });
+}
+
+/**
+ * 用量总数（J-3）：`stats.reduce((sum, item) => sum + item.count, 0)` 此前在
+ * 引擎、编辑器状态、工作台（3 处）与 PDF 导出各写一遍，共 6 处。
+ */
+export function totalBeadCount(stats: readonly PatternStatsItem[]): number {
+  let total = 0;
+  for (const item of stats) total += item.count;
+  return total;
 }

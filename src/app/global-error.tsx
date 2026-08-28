@@ -21,7 +21,7 @@ export default function GlobalError({
   return (
     <html lang="zh-CN">
       <body style={{ background: '#fdf8f4', color: '#4b4356' }}>
-        <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-16 text-center">
+        <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-16 text-center">
           <p className="text-7xl font-semibold" style={{ color: '#b9a7d980' }} aria-hidden="true">
             !
           </p>

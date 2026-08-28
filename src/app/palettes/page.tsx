@@ -7,7 +7,10 @@ import { useRouter } from 'next/navigation';
 import { zhCN } from '@/messages/zh-CN';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
+import PaletteSwatches from '@/components/palettes/PaletteSwatches';
 import Modal from '@/components/ui/Modal';
+import Notice from '@/components/ui/Notice';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import SiteHeader from '@/components/layout/SiteHeader';
 import {
   deletePalette,
@@ -27,6 +30,7 @@ interface EditingState {
 export default function PalettesPage() {
   const t = zhCN.palettes;
   const router = useRouter();
+  const { confirm, confirmDialog } = useConfirm();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<PaletteRecord[]>([]);
   const [loginRequired, setLoginRequired] = useState(false);
@@ -104,7 +108,13 @@ export default function PalettesPage() {
   };
 
   const handleDelete = async (record: PaletteRecord): Promise<void> => {
-    if (typeof window !== 'undefined' && !window.confirm(t.deleteConfirm)) return;
+    const ok = await confirm({
+      title: t.deleteConfirmTitle(record.name),
+      message: t.deleteConfirm,
+      confirmLabel: zhCN.common.delete,
+      danger: true,
+    });
+    if (!ok) return;
     setPageError(null);
     try {
       await deletePalette(record.id, record.revision);
@@ -119,7 +129,7 @@ export default function PalettesPage() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
+    <main id="main" className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
       <SiteHeader
         title={t.title}
         currentPath="/palettes"
@@ -127,7 +137,7 @@ export default function PalettesPage() {
           <button
             type="button"
             onClick={startCreate}
-            className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-deep"
+            className="btn-primary btn-sm"
           >
             {t.newPalette}
           </button>
@@ -135,33 +145,40 @@ export default function PalettesPage() {
       />
 
       {pageError && (
-        <p role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <Notice kind="danger">
           {pageError}
-          <button type="button" onClick={() => void load()} className="rounded-full border border-red-300 px-2 py-0.5 text-xs hover:bg-red-100">
+          <button type="button" onClick={() => void load()} className="btn-danger-outline btn-xs">
             {t.retry}
           </button>
-        </p>
+        </Notice>
       )}
 
       {loginRequired && (
-        <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <Notice kind="warning">
           {t.loginRequired}{' '}
           <Link href="/login?next=/palettes" className="link-soft">
             {zhCN.nav.login}
           </Link>
-        </p>
+        </Notice>
       )}
 
       <section aria-label={t.builtinTitle} className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-ink-soft">{t.builtinTitle}</h2>
         <p className="text-xs text-ink-soft/80">{t.builtinNote}</p>
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {BRANDS.map((brand) => (
-            <li key={brand} className="card-surface p-3 text-sm">
-              <p className="font-medium text-ink">{brand}</p>
-              <p className="text-xs text-ink-soft">{t.colorCount(buildBrandPalette(brand).length)}</p>
-            </li>
-          ))}
+        <ul className="grid grid-cols-2 items-start gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {BRANDS.map((brand) => {
+            const palette = buildBrandPalette(brand);
+            return (
+              <li key={brand} className="card-surface flex flex-col gap-2 p-3 text-sm">
+                <div>
+                  <p className="font-medium text-ink">{brand}</p>
+                  <p className="text-xs text-ink-soft">{t.colorCount(palette.length)}</p>
+                </div>
+                {/* E-1：这一页原本一个颜色都看不到，只有「291 色」这个数字。 */}
+                <PaletteSwatches name={brand} colors={palette} />
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -174,23 +191,27 @@ export default function PalettesPage() {
             {t.empty}
           </p>
         ) : (
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {records.map((record) => (
-              <li key={record.id} className="card-surface flex items-center justify-between gap-2 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{record.name}</p>
-                  <p className="text-xs text-ink-soft">
-                    {t.colorCount(record.colors.length)} · {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
-                  </p>
+              <li key={record.id} className="card-surface flex flex-col gap-2 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{record.name}</p>
+                    <p className="text-xs text-ink-soft">
+                      {t.colorCount(record.colors.length)} · {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1 text-xs">
+                    <button type="button" onClick={() => startEdit(record)} className="rounded-full px-1.5 py-1 text-primary-deep hover:bg-primary-soft">
+                      {t.edit}
+                    </button>
+                    <button type="button" onClick={() => void handleDelete(record)} className="btn-danger-quiet">
+                      {t.delete}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 gap-1 text-xs">
-                  <button type="button" onClick={() => startEdit(record)} className="rounded-full px-1.5 py-1 text-primary-deep hover:bg-primary-soft">
-                    {t.edit}
-                  </button>
-                  <button type="button" onClick={() => void handleDelete(record)} className="rounded-full px-1.5 py-1 text-red-600 hover:bg-red-50">
-                    {t.delete}
-                  </button>
-                </div>
+                {/* 自定义色板同样要能一眼看到颜色（E-1） */}
+                <PaletteSwatches name={record.name} colors={record.colors} />
               </li>
             ))}
           </ul>
@@ -208,6 +229,7 @@ export default function PalettesPage() {
           />
         </Modal>
       )}
+      {confirmDialog}
     </main>
   );
 }

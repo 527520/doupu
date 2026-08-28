@@ -1,3 +1,4 @@
+import type { StitchProgress } from '@/lib/progress/stitchProgress';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, createSyncClient, type CloudDesignFull, type CloudDesignMeta } from './clientAdapter';
 import type {
@@ -61,6 +62,16 @@ class FakeStorage implements StorageAdapter {
   }
   async getMeta(key: string): Promise<string | null> {
     return this.meta.get(key) ?? null;
+  }
+  readonly stitchProgress = new Map<string, StitchProgress>();
+  async getStitchProgress(designId: string): Promise<StitchProgress | null> {
+    return this.stitchProgress.get(designId) ?? null;
+  }
+  async putStitchProgress(designId: string, progress: StitchProgress): Promise<void> {
+    this.stitchProgress.set(designId, progress);
+  }
+  async deleteStitchProgress(designId: string): Promise<void> {
+    this.stitchProgress.delete(designId);
   }
   async setMeta(key: string, value: string): Promise<void> {
     this.meta.set(key, value);

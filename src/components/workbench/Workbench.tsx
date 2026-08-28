@@ -10,6 +10,19 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
+import { takePendingUpload } from '@/lib/upload/pendingUpload';
+import Notice from '@/components/ui/Notice';
+import ShoppingListPanel from '@/components/export/ShoppingListPanel';
+import StitchView from '@/components/stitch/StitchView';
+import ShareButton from '@/components/share/ShareButton';
+import {
+  createStitchProgress,
+  isProgressCompatible,
+  type StitchProgress,
+} from '@/lib/progress/stitchProgress';
+import StepIndicator from '@/components/workbench/StepIndicator';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { useAuthStatus } from '@/components/account/useAuthStatus';
 import { ImageCropper } from '@/components/crop/ImageCropper';
 import GenerationParamsPanel, { type PaletteOption } from '@/components/params/GenerationParamsPanel';
 import PatternPreview from '@/components/preview/PatternPreview';
@@ -21,10 +34,16 @@ import SiteHeader from '@/components/layout/SiteHeader';
 import DesignNameEditor from './DesignNameEditor';
 import SaveStatus, { type CloudSaveState, type SaveState } from './SaveStatus';
 import { zhCN } from '@/messages/zh-CN';
-import { DEFAULT_GENERATION_PARAMS, BRANDS, type Brand, type GenerationParams, type PaletteColor, type Pattern, type ProjectFile } from '@/lib/types';
+import { DEFAULT_GENERATION_PARAMS, BRANDS, type Brand, type GenerationParams, type PaletteColor, type Pattern, type ProjectFile, type ProjectPalette } from '@/lib/types';
 import { buildBrandPalette } from '@/lib/palettes';
 import { cropImageData, type Rect } from '@/lib/crop/layout';
-import { computeStats, MAX_GENERATION_SOURCE_DIMENSION } from '@/lib/engine/generate';
+import { computeStats, totalBeadCount, MAX_GENERATION_SOURCE_DIMENSION } from '@/lib/engine/generate';
+import { remapPattern } from '@/lib/engine/remap';
+import { BOARD_SIZE } from '@/lib/export/pdfLayout';
+import { createBlankPattern, selectKitColors } from '@/lib/engine/kit';
+
+/** 空白起稿的尺寸档（H-2）：按板给，1 板 29×29 是最常见的起手规格。 */
+const BLANK_PRESETS = [1, 2, 3] as const;
 import { disposeGenerateWorker, prepareGenerationSource, runGenerate } from '@/lib/engine/runGenerate';
 import {
   selectCommittedSnapshot,
@@ -64,7 +83,7 @@ import type { SyncOutcome } from '@/lib/sync/clientAdapter';
 import { getPaletteColors, listPalettes } from '@/components/palettes/api';
 
 type Step = 'upload' | 'crop' | 'workspace';
-type Tab = 'preview' | 'edit';
+type Tab = 'preview' | 'edit' | 'stitch';
 type PaletteKind = { kind: 'builtin'; brand: Brand } | { kind: 'custom' };
 
 /** 清除 URL 上的 ?id= 参数（开始新设计后，刷新不应再恢复旧设计）。 */
@@ -92,6 +111,8 @@ interface WorkbenchProps {
 export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDecoder, onSavedStatus, generateFn }: WorkbenchProps) {
   const t = zhCN.workbench;
   const router = useRouter();
+  // 破坏性操作统一走品牌确认弹窗（C-7），不再用 window.confirm。
+  const { confirm, confirmDialog } = useConfirm();
   const [ownedImageDecoder] = useState<ImageDecoder>(() => createImageDecoder());
   const activeImageDecoder = imageDecoder ?? ownedImageDecoder;
   // 站点公开配置（票 02）：生成默认参数可被服务端环境变量覆盖，改配置即生效
@@ -116,6 +137,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [customPaletteId, setCustomPaletteId] = useState<string | null>(null);
   /** 云端自定义色板列表（优化票 06：登录后从 /api/palettes 加载，工作台可选）。 */
   const [cloudPalettes, setCloudPalettes] = useState<Array<{ id: string; name: string; colors: PaletteColor[] }>>([]);
+  /** 云端自定义色板加载失败（D-4）：内置色板仍可用，因此只是提示而非阻断。 */
+  const [paletteLoadFailed, setPaletteLoadFailed] = useState(false);
   const initialGenerationDraft = useMemo<GenerationDraft>(() => {
     const initialPalette = buildBrandPalette('MARD');
     return {
@@ -144,6 +167,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     updateDraft: updateGenerationDraft,
     restore: restoreGeneration,
     commitManualEdit,
+    remapPalette,
     undoRegeneration,
   } = useGenerationSession<EngineOutput>(initialGenerationDraft);
   const source = generationSession.source;
@@ -153,13 +177,23 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const pattern = generationSession.committed?.pattern ?? null;
   const stats = generationSession.committed?.stats ?? [];
   const total = generationSession.committed?.total ?? 0;
+  /**
+   * 生成完成计数（D-1）：每次成功 +1，用来重播结果句的上浮并触发一次礼貌播报。
+   * 0 表示本会话还没生成过（不放动效）。
+   */
+  const [doneToken, setDoneToken] = useState(0);
+  const patternRegionRef = useRef<HTMLDivElement>(null);
+  const firstDoneHandledRef = useRef(false);
   const generationDraft = generationSession.draft ?? initialGenerationDraft;
   const params = generationDraft.params;
   const palette = generationDraft.palette;
   const projectPalette = generationDraft.projectPalette;
-  const paletteKind: PaletteKind = projectPalette.kind === 'builtin'
-    ? { kind: 'builtin', brand: projectPalette.brand }
-    : { kind: 'custom' };
+  const paletteKind: PaletteKind = useMemo(
+    () => (projectPalette.kind === 'builtin'
+      ? { kind: 'builtin', brand: projectPalette.brand }
+      : { kind: 'custom' }),
+    [projectPalette],
+  );
   /** 快速任务 <300ms 不显示进度槽；实际进度由 generationSession 独占。 */
   const [showProgress, setShowProgress] = useState(false);
   const progress = showProgress ? generationSession.progress : null;
@@ -169,28 +203,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const visibleErrorMsg = errorMsg ?? generationSession.error;
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<string | null>(null);
-  const [authStatus, setAuthStatus] = useState<{ kind: 'guest' | 'user'; email: string }>({ kind: 'guest', email: '' });
-
-  // 登录态探测：决定头部显示「登录/注册」还是账号邮箱 + 「我的设计」入口
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/auth/me', { method: 'GET' })
-      .then(async (res) => {
-        if (cancelled) return;
-        if (res.ok) {
-          const body = (await res.json().catch(() => null)) as { email?: string } | null;
-          setAuthStatus({ kind: 'user', email: body?.email ?? '' });
-        } else {
-          setAuthStatus({ kind: 'guest', email: '' });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setAuthStatus({ kind: 'guest', email: '' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  /**
+   * 登录态（J-1）：决定头部显示「登录/注册」还是账号邮箱。
+   * 探测逻辑收在 useAuthStatus，与首页导航、新手引导共用同一套 401/网络失败处理。
+   * 这里把 loading 视为 guest —— 工作台不需要等登录态就能用。
+   */
+  const auth = useAuthStatus();
+  const authStatus = useMemo(
+    () => (auth.kind === 'user'
+      ? { kind: 'user' as const, email: auth.email }
+      : { kind: 'guest' as const, email: '' }),
+    [auth],
+  );
 
   // 优化票 06：登录后加载云端自定义色板进「色板品牌」下拉；失败静默（内置色板照常可用）
   useEffect(() => {
@@ -213,7 +237,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         );
       })
       .catch(() => {
-        // 静默失败
+        // D-4：以前这里是空 catch，云端色板加载失败时用户完全不知道——
+        // 下拉里只是「少了」自己的色板，会以为色板丢了。文案早已写好但从未渲染。
+        if (!cancelled) setPaletteLoadFailed(true);
       });
     return () => {
       cancelled = true;
@@ -223,29 +249,69 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [cloudSaveState, setCloudSaveState] = useState<CloudSaveState>('pending');
   const [storageReady, setStorageReady] = useState(false);
   const [tab, setTab] = useState<Tab>('preview');
+  /**
+   * 跟拼进度（G-1）：按设计 id 存在本机 IndexedDB，与图纸尺寸绑定。
+   * null 表示本地存储不可用（隐私模式）；尺寸不匹配时重建，避免把「已拼」错位。
+   */
+  const [stitchProgress, setStitchProgress] = useState<StitchProgress | null>(null);
+  const stitchSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 换色板结果提示（H-1）：告诉用户换了多少格，并提示可撤销。 */
+  const [remapNotice, setRemapNotice] = useState<string | null>(null);
+  /**
+   * 套装档位（H-3）：0 表示用整套色板。
+   * 档位只影响「可用色号集合」，因此有生成源时重新生成，没有源时对现有图纸重映射——
+   * 两条路径都保证成品里不会出现档位外的色号。
+   */
+  const [kitTier, setKitTier] = useState(0);
 
   const adapterRef = useRef<StorageAdapter | null>(null);
   const dirtyRef = useRef(false);
   /** 编辑代数：每次置脏 +1；保存完成后仅当代数未变才清脏（避免抹掉保存期间的编辑）。 */
   const editGenRef = useRef(0);
+  /**
+   * 自动保存防抖句柄（A-15）：以前靠 effect 依赖 [pattern, name, generationDraft] 间接触发，
+   * 而判断条件读的是非响应式的 dirtyRef —— 任何「只置脏、不改这三者」的新代码路径都会
+   * 静默丢失自动保存。现在由 markDirty 直接排程，置脏与排程是同一个动作。
+   */
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+
+  const scheduleAutosave = useCallback((): void => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      if (!dirtyRef.current) return;
+      void doSaveRef.current?.();
+    }, 1000);
+  }, []);
 
   const markDirty = useCallback((): void => {
     dirtyRef.current = true;
     editGenRef.current += 1;
     setSaveState('dirty');
-  }, []);
+    scheduleAutosave();
+  }, [scheduleAutosave]);
 
   const previewTabRef = useRef<HTMLButtonElement>(null);
   const editTabRef = useRef<HTMLButtonElement>(null);
+  const stitchTabRef = useRef<HTMLButtonElement>(null);
+  const TAB_ORDER: Tab[] = useMemo(() => ['preview', 'edit', 'stitch'], []);
 
-  /** 页签键盘导航：←/→ 切换预览/编辑，焦点跟随（ARIA tabs pattern） */
+  /** 页签键盘导航：←/→ 在预览/修补/跟拼之间循环，焦点跟随（ARIA tabs pattern） */
   const handleTabKey = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
-    const next: Tab = tab === 'preview' ? 'edit' : 'preview';
+    const current = TAB_ORDER.indexOf(tab);
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    const next = TAB_ORDER[(current + delta + TAB_ORDER.length) % TAB_ORDER.length];
     setTab(next);
-    (next === 'preview' ? previewTabRef : editTabRef).current?.focus();
-  }, [tab]);
+    const refs: Record<Tab, React.RefObject<HTMLButtonElement | null>> = {
+      preview: previewTabRef,
+      edit: editTabRef,
+      stitch: stitchTabRef,
+    };
+    refs[next].current?.focus();
+  }, [TAB_ORDER, tab]);
 
   const paletteOptions = useMemo<PaletteOption[]>(() => {
     const builtin = BRANDS.map((brand) => ({ value: brand, label: brand, kind: 'builtin' as const }));
@@ -299,7 +365,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         onProgress: () => {
           if (performance.now() - genStartedAtRef.current >= 300) setShowProgress(true);
         },
-        onSuccess: () => markDirty(),
+        onSuccess: () => {
+          markDirty();
+          // D-1：生成完成的可感知反馈（播报 + 三段编排 + 数字滚动）
+          setDoneToken((token) => token + 1);
+        },
         onFailure: (_error, stableDraft) => {
           if (stableDraft) restoreDraftControls(stableDraft);
         },
@@ -360,6 +430,23 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     },
     [activeImageDecoder, decodeFn, decodeRegionFn, t.decoding, t.heicConverting],
   );
+
+  // 首次生成完成时把焦点移到图纸区（D-1）：键盘/读屏用户直接落在结果上。
+  // 只做第一次——之后每次调参都抢焦点会打断正在操作参数的用户。
+  useEffect(() => {
+    if (doneToken === 0 || firstDoneHandledRef.current) return;
+    firstDoneHandledRef.current = true;
+    patternRegionRef.current?.focus();
+  }, [doneToken]);
+
+  // 首页落图后带过来的文件（D-3）：客户端导航期间模块单例存活，取一次即清空。
+  // 放到宏任务里执行，避免在 effect 体内同步 setState 触发级联渲染。
+  useEffect(() => {
+    const handed = takePendingUpload();
+    if (!handed) return;
+    const timer = setTimeout(() => { void handleUpload(handed); }, 0);
+    return () => clearTimeout(timer);
+  }, [handleUpload]);
 
   const handleCropConfirm = useCallback(
     async (rect: Rect): Promise<void> => {
@@ -440,72 +527,174 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   // ---------- 参数/色板/编辑 ----------
 
-  const confirmRegeneration = useCallback((): boolean => {
+  const confirmRegeneration = useCallback(async (): Promise<boolean> => {
     if (!generationSession.hasManualEdits) return true;
-    return window.confirm(t.confirmRegenerate);
-  }, [generationSession.hasManualEdits, t.confirmRegenerate]);
+    return confirm({
+      title: t.confirmRegenerateTitle,
+      message: t.confirmRegenerate,
+      confirmLabel: t.confirmRegenerateAction,
+      danger: true,
+    });
+  }, [confirm, generationSession.hasManualEdits, t.confirmRegenerate, t.confirmRegenerateAction, t.confirmRegenerateTitle]);
 
   const handleParamsChange = useCallback(
     (p: GenerationParams): void => {
       if (!source) return;
-      if (!confirmRegeneration()) {
-        // Give the debounced panel a new controlled value identity so its draft
-        // is reset to the last committed parameters.
-        restoreDraftControls(generationDraft);
-        return;
-      }
-      updateGenerationDraft({ ...generationDraft, params: p });
-      regenerate();
+      void (async () => {
+        if (!(await confirmRegeneration())) {
+          // Give the debounced panel a new controlled value identity so its draft
+          // is reset to the last committed parameters.
+          restoreDraftControls(generationDraft);
+          return;
+        }
+        updateGenerationDraft({ ...generationDraft, params: p });
+        regenerate();
+      })();
     },
     [source, generationDraft, regenerate, confirmRegeneration, restoreDraftControls, updateGenerationDraft],
   );
 
+  /**
+   * 换色板（H-1）。
+   *
+   * 两条路径，规则是「永不丢用户的工作」：
+   * - 图纸已有手工修补，或没有本地生成源（导入的项目文件、换设备打开的云端设计）
+   *   → 图纸级重映射：逐格换成新色板最近色，位置与修补全部保留，一步可撤销。
+   *   这也修掉了此前「没有生成源就根本换不了色板」的死路。
+   * - 既没有修补又有生成源 → 用新色板重新采样原图（色彩还原度更好，且无工作可丢）。
+   */
   const handlePaletteSelect = useCallback(
     (value: string): void => {
-      if (!source) return;
-      if (!confirmRegeneration()) {
-        restoreDraftControls(generationDraft);
-        return;
-      }
       if (value === '__custom') return; // 导入的自定义色板不可再切换（T18 提供管理）
-      if (value.startsWith('custom:')) {
-        const paletteId = value.slice('custom:'.length);
-        const found = cloudPalettes.find((p) => p.id === paletteId);
-        if (!found) return;
-        setCustomPaletteId(found.id);
-        updateGenerationDraft({
-          params,
-          palette: found.colors,
-          projectPalette: {
-            kind: 'custom',
-            colors: found.colors.map((c) => ({ code: c.code ?? '', hex: c.hex })),
-          },
+      const resolved = ((): { palette: PaletteColor[]; projectPalette: ProjectPalette; customId: string | null } | null => {
+        if (value.startsWith('custom:')) {
+          const paletteId = value.slice('custom:'.length);
+          const found = cloudPalettes.find((p) => p.id === paletteId);
+          if (!found) return null;
+          return {
+            palette: found.colors,
+            projectPalette: {
+              kind: 'custom',
+              colors: found.colors.map((c) => ({ code: c.code ?? '', hex: c.hex })),
+            },
+            customId: found.id,
+          };
+        }
+        const brand = value as Brand;
+        return { palette: buildBrandPalette(brand), projectPalette: { kind: 'builtin', brand }, customId: null };
+      })();
+      if (!resolved) return;
+
+      const committed = generationSession.committed;
+      const useRemap = committed !== null && (generationSession.hasManualEdits || !source);
+      if (useRemap) {
+        setCustomPaletteId(resolved.customId);
+        const result = remapPattern(committed.pattern, resolved.palette);
+        remapPalette({
+          pattern: result.pattern,
+          stats: result.stats,
+          total: result.totalBeadCount,
+          palette: resolved.palette,
+          projectPalette: resolved.projectPalette,
         });
-        regenerate();
+        setRemapNotice(t.remapDone(result.changedCells));
+        markDirty();
         return;
       }
-      const brand = value as Brand;
-      setCustomPaletteId(null);
-      const pal = buildBrandPalette(brand);
-      updateGenerationDraft({ params, palette: pal, projectPalette: { kind: 'builtin', brand } });
+      if (!source) return;
+      setCustomPaletteId(resolved.customId);
+      updateGenerationDraft({ params, palette: resolved.palette, projectPalette: resolved.projectPalette });
       regenerate();
     },
-    [source, params, regenerate, cloudPalettes, confirmRegeneration, generationDraft, restoreDraftControls, updateGenerationDraft],
+    [
+      cloudPalettes,
+      generationSession.committed,
+      generationSession.hasManualEdits,
+      markDirty,
+      params,
+      regenerate,
+      remapPalette,
+      source,
+      t,
+      updateGenerationDraft,
+    ],
   );
 
   const handlePatternChange = useCallback((p: Pattern): void => {
     if (generating) return;
     const nextStats = computeStats(p.cells);
-    const nextTotal = nextStats.reduce((sum, item) => sum + item.count, 0);
+    const nextTotal = totalBeadCount(nextStats);
     commitManualEdit(p, nextStats, nextTotal);
     markDirty();
   }, [commitManualEdit, generating, markDirty]);
+
+  /**
+   * 空白起稿（H-2）：不经过上传与生成，直接把一张全透明图纸提交进会话。
+   * 没有生成源，因此参数面板保持锁定（改参数需要原图），但可以修补、换色板、导出。
+   */
+  const startBlank = useCallback((width: number, height: number): void => {
+    const blank = createBlankPattern(width, height);
+    restoreGeneration({
+      params: { ...params, targetWidth: width },
+      palette,
+      projectPalette,
+      pattern: blank,
+      stats: [],
+      total: 0,
+      engineVersion: ENGINE_VERSION,
+    });
+    setStep('workspace');
+    setTab('edit'); // 空白图纸的第一步一定是画，直接落在修补页签
+    markDirty();
+  }, [markDirty, palette, params, projectPalette, restoreGeneration]);
+
+  /**
+   * 换档位（H-3）：把当前色板按档位裁成可用色子集后应用。
+   * 有生成源 → 用子集重新生成；没有源 → 对现有图纸重映射（保留修补）。
+   */
+  const handleKitTierChange = useCallback((tier: number): void => {
+    setKitTier(tier);
+    const full = paletteKind.kind === 'builtin'
+      ? buildBrandPalette(paletteKind.brand)
+      : palette;
+    const kit = selectKitColors(full, tier);
+    const committed = generationSession.committed;
+    if (source) {
+      updateGenerationDraft({ params, palette: kit, projectPalette });
+      regenerate();
+      return;
+    }
+    if (!committed) return;
+    const result = remapPattern(committed.pattern, kit);
+    remapPalette({
+      pattern: result.pattern,
+      stats: result.stats,
+      total: result.totalBeadCount,
+      palette: kit,
+      projectPalette,
+    });
+    setRemapNotice(t.kitApplied(tier, result.changedCells));
+    markDirty();
+  }, [
+    generationSession.committed,
+    markDirty,
+    palette,
+    paletteKind,
+    params,
+    projectPalette,
+    regenerate,
+    remapPalette,
+    source,
+    t,
+    updateGenerationDraft,
+  ]);
 
   const handleUndoRegeneration = useCallback((): void => {
     const snapshot = generationSession.regenerationUndo;
     if (!snapshot || generating) return;
     undoRegeneration();
     setCustomPaletteId(null);
+    setRemapNotice(null);
     markDirty();
   }, [generationSession.regenerationUndo, generating, markDirty, undoRegeneration]);
 
@@ -536,7 +725,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       ? buildBrandPalette(project.palette.brand)
       : project.palette.colors.map((color) => ({ hex: color.hex, code: color.code || null }));
     const computed = computeStats(project.pattern.cells);
-    const restoredTotal = computed.reduce((sum, item) => sum + item.count, 0);
+    const restoredTotal = totalBeadCount(computed);
     const commit = {
       params: project.params,
       palette: restoredPalette,
@@ -695,6 +884,26 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     }
   }, [buildProject, syncCloud]);
 
+  /**
+   * 分享前的准备（批次 K）：把当前设计**确实**保存并推到云端。
+   *
+   * 为什么不用「云端：已同步」徽标做判断：那个状态表示上一次同步跑完了，
+   * 一张刚生成、还没落盘的设计也会显示已同步——实测点分享会得到「设计不存在」。
+   * 这里直接走一遍保存 + 同步，再由服务端的查询结果说话。
+   */
+  const prepareShare = useCallback(async (): Promise<boolean> => {
+    const adapter = adapterRef.current;
+    if (!adapter || authStatus.kind !== 'user') return false;
+    if (dirtyRef.current || saveState !== 'saved') {
+      const saved = await doSave();
+      if (!saved) return false;
+    }
+    // doSave 内部会触发一次同步，但它是 fire-and-forget；这里显式等一次，
+    // 保证 POST /share 之前云端已经有这张设计。
+    await syncCloud(adapter);
+    return true;
+  }, [authStatus.kind, doSave, saveState, syncCloud]);
+
   // 登录工作台启动时先恢复 durable pending；网络恢复后在当前页面自动重试。
   useEffect(() => {
     const adapter = adapterRef.current;
@@ -705,12 +914,64 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => window.removeEventListener('online', retry);
   }, [authStatus.kind, storageReady, syncCloud]);
 
-  // 自动保存：dirty 时 1s 防抖（spec §F8）
+  // 自动保存：置脏后 1s 防抖（spec §F8）。排程在 markDirty 里完成；
+  // 这里只负责保持 doSave 引用最新，并在卸载时清掉未触发的定时器。
   useEffect(() => {
-    if (step !== 'workspace' || !dirtyRef.current || !pattern) return;
-    const timer = setTimeout(() => { void doSave(); }, 1000);
-    return () => clearTimeout(timer);
-  }, [pattern, name, generationDraft, step, doSave]);
+    doSaveRef.current = step === 'workspace' ? doSave : null;
+  }, [doSave, step]);
+
+  /**
+   * 跟拼进度的读取（G-1）：设计或图纸尺寸变化时重新对齐。
+   * 尺寸不匹配（重新生成或旋转过）就从零开始——把旧标记套到新图纸上会错位。
+   */
+  useEffect(() => {
+    if (!storageReady || !pattern) return;
+    const adapter = adapterRef.current;
+    if (!adapter) {
+      setStitchProgress(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stored = await adapter.getStitchProgress(designId);
+        if (cancelled) return;
+        setStitchProgress(
+          isProgressCompatible(stored, pattern)
+            ? stored
+            : createStitchProgress(pattern.width, pattern.height),
+        );
+      } catch {
+        if (!cancelled) setStitchProgress(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [designId, pattern, storageReady]);
+
+  /** 跟拼进度写入：300ms 防抖（连点格子不该每次都写库）。 */
+  const updateStitchProgress = useCallback((next: StitchProgress): void => {
+    setStitchProgress(next);
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    const id = designIdRef.current;
+    if (stitchSaveTimerRef.current) clearTimeout(stitchSaveTimerRef.current);
+    stitchSaveTimerRef.current = setTimeout(() => {
+      stitchSaveTimerRef.current = null;
+      void adapter.putStitchProgress(id, next).catch(() => {
+        // 进度写入失败不阻断跟拼（图纸本身不受影响）；下一次改动会再试。
+      });
+    }, 300);
+  }, []);
+
+  useEffect(() => () => {
+    if (stitchSaveTimerRef.current) clearTimeout(stitchSaveTimerRef.current);
+  }, []);
+
+  useEffect(() => () => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+  }, []);
 
   // beforeunload 防丢失
   useEffect(() => {
@@ -804,7 +1065,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       setName(project.name);
       setCreatedAt(project.createdAt);
       const computed = computeStats(project.pattern.cells);
-      const importedTotal = computed.reduce((sum, item) => sum + item.count, 0);
+      const importedTotal = totalBeadCount(computed);
       setCustomPaletteId(null);
       const importedPalette = project.palette.kind === 'builtin'
         ? buildBrandPalette(project.palette.brand)
@@ -859,8 +1120,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       leave();
       return;
     }
-    if (window.confirm(t.confirmLeave)) leave();
-  }, [doSave, t.confirmLeave]);
+    if (await confirm({
+      title: t.confirmLeaveTitle,
+      message: t.confirmLeave,
+      confirmLabel: t.confirmLeaveAction,
+      danger: true,
+    })) leave();
+  }, [confirm, doSave, t.confirmLeave, t.confirmLeaveAction, t.confirmLeaveTitle]);
 
   const handleNavigationClick = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string): void => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -928,6 +1194,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         ) : undefined}
       />
 
+      {/* 三步位置提示（D-2）：上传/裁剪页最需要，工作台阶段也保留一行让路径可见。 */}
+      <StepIndicator step={step} />
+
       {busy && <p className="text-sm text-primary-deep" role="status">{busyText}</p>}
       {generating && !busy && (
         <div className="flex flex-wrap items-center gap-3 text-sm text-primary-deep" role="status">
@@ -953,31 +1222,61 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           </button>
         </div>
       )}
-      {saveState === 'unavailable' && (
-        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          {t.unavailable}
-        </div>
-      )}
-      {visibleErrorMsg && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {visibleErrorMsg}
-        </div>
-      )}
-      {syncNotice && (
-        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {syncNotice}
-        </div>
-      )}
+      {saveState === 'unavailable' && <Notice kind="warning">{t.unavailable}</Notice>}
+      {/* 配额不足此前只体现在头部徽标文字里（现已缩短），必须在正文说清怎么办（D-8）。 */}
+      {saveState === 'quota' && <Notice kind="danger">{t.quotaError}</Notice>}
+      {visibleErrorMsg && <Notice kind="danger">{visibleErrorMsg}</Notice>}
+      {syncNotice && <Notice kind="warning">{syncNotice}</Notice>}
 
-      {step === 'upload' && <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} />}
+      {step === 'upload' && (
+        <>
+          <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} capture />
+          {/*
+            空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
+            想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。
+          */}
+          <section aria-label={t.blankTitle} className="card-surface flex flex-col gap-2 p-3 text-sm">
+            <p className="font-medium text-ink">{t.blankTitle}</p>
+            <p className="text-xs text-ink-soft">{t.blankHint}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {BLANK_PRESETS.map((boards) => (
+                <button
+                  key={boards}
+                  type="button"
+                  onClick={() => startBlank(boards * BOARD_SIZE, boards * BOARD_SIZE)}
+                  disabled={busy}
+                  className="btn-outline btn-sm"
+                >
+                  {t.blankPreset(boards, boards * BOARD_SIZE)}
+                </button>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {step === 'crop' && decoded && (
         <ImageCropper image={decoded} onConfirm={handleCropConfirm} onCancel={handleCropCancel} />
       )}
 
       {step === 'workspace' && pattern && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        // D-6：768–1023px（iPad 竖屏）此前只有 lg 断点，参数与导出全被挤到图纸下方，
+        // 需要滚很远才能改参数。md 起就并列两栏，侧栏在该区间收窄到 260px。
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_260px] lg:grid-cols-[1fr_320px]">
           <section className="flex flex-col gap-3">
+            {/*
+              生成完成的结果句（D-1 第一段）：礼貌播报 + 上浮出现。
+              以前生成完成没有任何反馈——进度行消失、图纸静默替换，用户不确定是否已完成。
+            */}
+            {doneToken > 0 && !generating && (
+              <p
+                key={doneToken}
+                role="status"
+                className="animate-rise text-sm font-medium text-success"
+              >
+                {t.generateDone(pattern.width, pattern.height, total, stats.length)}
+              </p>
+            )}
             <div
               role="tablist"
               aria-label={t.title}
@@ -1010,9 +1309,33 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               >
                 {t.editTab}
               </button>
+              <button
+                ref={stitchTabRef}
+                type="button"
+                id="tab-stitch"
+                role="tab"
+                aria-selected={tab === 'stitch'}
+                aria-controls="panel-stitch"
+                tabIndex={tab === 'stitch' ? 0 : -1}
+                onClick={() => setTab('stitch')}
+                className={`rounded-full px-3 py-1 transition-colors ${tab === 'stitch' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
+              >
+                {zhCN.stitch.tab}
+              </button>
             </div>
-            {tab === 'preview' ? (
-              <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview">
+            {tab === 'preview' && (
+              <div
+                id="panel-preview"
+                role="tabpanel"
+                aria-labelledby="tab-preview"
+                ref={patternRegionRef}
+                tabIndex={-1}
+              >
+                {/*
+                  这里刻意不做「图纸淡入」动效：淡入需要重挂载才能重播，而重挂载会
+                  把用户的缩放、网格/板缝/色号开关全部重置——每次调参都丢一次视图状态，
+                  代价远大于一个 400ms 的动效。完成感由上方结果句的上浮与数字滚动承担。
+                */}
                 <PatternPreview
                   pattern={pattern}
                   onCellHover={(info) =>
@@ -1020,7 +1343,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   }
                 />
               </div>
-            ) : (
+            )}
+            {tab === 'edit' && (
               <div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit">
                 <div className={generating ? 'pointer-events-none opacity-60' : undefined} aria-busy={generating}>
                   <PixelEditorCanvas
@@ -1030,6 +1354,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                     onPatternChange={handlePatternChange}
                   />
                 </div>
+              </div>
+            )}
+            {tab === 'stitch' && (
+              <div id="panel-stitch" role="tabpanel" aria-labelledby="tab-stitch">
+                {stitchProgress ? (
+                  <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} />
+                ) : (
+                  <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>
+                )}
               </div>
             )}
             {hoverInfo && tab === 'preview' && (
@@ -1042,7 +1375,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               <button
                 type="button"
                 onClick={handleUndoRegeneration}
-                className="self-start rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft"
+                className="self-start btn-outline btn-sm"
               >
                 {t.undoRegeneration}
               </button>
@@ -1051,10 +1384,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
           <aside className="flex flex-col gap-4">
             {generationSession.status === 'restored-locked' && (
-              <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                {t.sourceRequired}
-              </p>
+              <Notice kind="warning">{t.sourceRequired}</Notice>
             )}
+            {paletteLoadFailed && (
+              <Notice kind="warning" compact>{t.paletteLoadFailed}</Notice>
+            )}
+            {remapNotice && <Notice kind="success" compact>{remapNotice}</Notice>}
             <GenerationParamsPanel
               params={params}
               paletteOptions={paletteOptions}
@@ -1063,6 +1398,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               onPaletteSelect={handlePaletteSelect}
               backgroundSampleSource={source}
               disabled={!source || generating}
+              /* 换色板不需要原图（H-1）：只要有已提交的图纸就能重映射。 */
+              paletteDisabled={generating || !generationSession.committed}
+              kitTier={kitTier}
+              onKitTierChange={handleKitTierChange}
             />
 
             <div className="card-surface p-3 text-sm">
@@ -1079,6 +1418,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 ))}
               </ul>
             </div>
+
+            {generationSession.committed && (
+              <ShoppingListPanel
+                stats={stats}
+                designName={name.trim() || zhCN.project.unnamed}
+                width={pattern.width}
+                height={pattern.height}
+              />
+            )}
 
             {generationSession.committed && (
               <div className="card-surface flex flex-col gap-3 p-3">
@@ -1106,11 +1454,19 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   onImport={handleImport}
                   disabled={generating}
                 />
+                {/* 只读分享（K）：需要登录且已同步云端，否则链接打不开 */}
+                <ShareButton
+                  designId={designId}
+                  onBeforeShare={prepareShare}
+                  disabled={authStatus.kind !== 'user'}
+                  disabledReason={zhCN.share.requiresCloud}
+                />
               </div>
             )}
           </aside>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

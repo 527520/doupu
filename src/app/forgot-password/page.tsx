@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
@@ -27,7 +28,7 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError(null);
     if (!emailSchema.safeParse(email).success) {
-      setError('请输入正确的邮箱地址。');
+      setError(t.emailInvalid);
       return;
     }
     if (cooldown > 0 || pending) return;
@@ -55,12 +56,10 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell title={t.forgotTitle}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-        {error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <Notice kind="danger">{error}</Notice>}
         {done && (
           <>
-            <p role="status" className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">
-              {t.forgotSent}
-            </p>
+            <Notice kind="success">{t.forgotSent}</Notice>
             {devMailLink && (
               <div className="rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm">
                 <p className="mb-2 text-ink">{t.devMailHint}</p>

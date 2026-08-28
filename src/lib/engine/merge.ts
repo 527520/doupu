@@ -53,7 +53,13 @@ export function mergeByTargetCount(
   const codeByHex = new Map<string, string | null>();
   for (const p of palette) codeByHex.set(p.hex, p.code);
 
-  const applyThreshold = (theta: number): { cells: PatternCell[]; distinct: number } => {
+  /**
+   * 只算「哪些 hex 被并到哪个 hex」与合并后的 distinct（A-10）。
+   * 这一步只在 distinct 个颜色（≤ 500）上做 O(n²)，代价极小；
+   * 旧实现每个 θ 都 cells.map() 重建全部 40 000 个格子对象，
+   * 最坏 60 次 = 240 万次分配，只为拿到 distinct 这个整数。
+   */
+  const planThreshold = (theta: number): { replaced: Map<string, string>; distinct: number } => {
     const replaced = new Map<string, string>(); // 低频 hex → 替换为的高频 hex
     for (let i = 0; i < hexes.length; i++) {
       const hi = hexes[i];
@@ -66,27 +72,32 @@ export function mergeByTargetCount(
         }
       }
     }
-    if (replaced.size === 0) return { cells, distinct };
+    if (replaced.size === 0) return { replaced, distinct };
     const survivors = new Set<string>();
     for (const hex of hexes) survivors.add(replaced.get(hex) ?? hex);
-    const next = cells.map((cell) => {
+    return { replaced, distinct: survivors.size };
+  };
+
+  /** 命中阈值后才物化一次格子数组。 */
+  const materialize = (replaced: Map<string, string>): PatternCell[] => {
+    if (replaced.size === 0) return cells;
+    return cells.map((cell) => {
       if (cell.transparent || cell.external || cell.hex === null) return cell;
       const replacement = replaced.get(cell.hex);
       if (!replacement) return cell;
       return { hex: replacement, code: codeByHex.get(replacement) ?? null, transparent: false, external: false };
     });
-    return { cells: next, distinct: survivors.size };
   };
 
-  let at60: { cells: PatternCell[]; distinct: number } | null = null;
+  let at60: Map<string, string> | null = null;
   for (let theta = 0; theta <= 60; theta++) {
     assertGenerationActive(shouldCancel);
-    const candidate = applyThreshold(theta);
-    if (theta === 60) at60 = candidate;
-    if (candidate.distinct <= target) {
-      return { cells: candidate.cells, thresholdUsed: theta };
+    const plan = planThreshold(theta);
+    if (theta === 60) at60 = plan.replaced;
+    if (plan.distinct <= target) {
+      return { cells: materialize(plan.replaced), thresholdUsed: theta };
     }
   }
   // θ=60 仍不达标 → 取可达最小值（spec 边界）
-  return { cells: at60!.cells, thresholdUsed: 60 };
+  return { cells: materialize(at60!), thresholdUsed: 60 };
 }

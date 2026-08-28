@@ -11,7 +11,7 @@ import {
   type GenerationSessionAction,
 } from './session';
 import type { ImageDataLike } from './types';
-import type { Pattern, PatternStatsItem } from '@/lib/types';
+import type { PaletteColor, Pattern, PatternStatsItem, ProjectPalette } from '@/lib/types';
 
 interface GenerateOptions<Result> {
   create(source: ImageDataLike, draft: GenerationDraft, onProgress: (percent: number) => void): CancellableGenerationTask<Result>;
@@ -117,6 +117,16 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
   const commitManualEdit = useCallback((pattern: Pattern, stats: PatternStatsItem[], total: number): void => {
     dispatch({ type: 'manual-edit', pattern, stats, total });
   }, [dispatch]);
+  /** 图纸级换色板（H-1）：不需要生成源，保留手工修补，可一步撤销。 */
+  const remapPalette = useCallback((input: {
+    pattern: Pattern;
+    stats: PatternStatsItem[];
+    total: number;
+    palette: PaletteColor[];
+    projectPalette: ProjectPalette;
+  }): void => {
+    dispatch({ type: 'remap', ...input });
+  }, [dispatch]);
   const undoRegeneration = useCallback((): void => {
     dispatch({ type: 'undo-regeneration' });
   }, [dispatch]);
@@ -133,6 +143,7 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     updateDraft,
     restore,
     commitManualEdit,
+    remapPalette,
     undoRegeneration,
   } as const;
 }

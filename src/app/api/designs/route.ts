@@ -10,7 +10,7 @@ import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { apiError, okJson, withApiErrors } from '@/lib/auth/http';
 import { AppError } from '@/lib/errors';
 import type { ProjectFile } from '@/lib/types';
-import { decodeDesignCursor, DESIGN_PAGE_SIZE, encodeDesignCursor, tombstoneCutoff } from '@/lib/sync/revision';
+import { decodeDesignCursor, DESIGN_PAGE_SIZE, encodeDesignCursor } from '@/lib/sync/revision';
 
 function toProject(value: unknown): ProjectFile | null {
   return value && typeof value === 'object' ? (value as ProjectFile) : null;
@@ -20,7 +20,8 @@ async function get(request: Request = new Request('http://localhost/api/designs'
   const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const db = getDb();
-  await db.delete(designs).where(and(eq(designs.userId, userId), lt(designs.deletedAt, tombstoneCutoff())));
+  // 墓碑清理只在写路径与 instrumentation 的每日任务里做（A-06）：
+  // GET 必须是安全方法，否则路由预取/代理重放都会放大这次删除。
   const cursorValue = new URL(request.url).searchParams.get('cursor');
   const cursor = cursorValue ? decodeDesignCursor(cursorValue) : null;
   if (cursorValue && !cursor) return apiError(new AppError('VALIDATION', '分页游标无效'));

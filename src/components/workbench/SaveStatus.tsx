@@ -17,14 +17,21 @@ interface Props {
 
 export default function SaveStatus({ state, cloudState = 'pending', onSave, loggedIn, disabled }: Props) {
   const t = zhCN.workbench;
-  const badge: Record<SaveState, { text: string; className: string }> = {
-    idle: { text: loggedIn ? t.localSaved : t.localOnly, className: 'text-ink-soft/80' },
-    dirty: { text: t.unsaved, className: 'text-amber-700' },
+  /**
+   * 徽标：可见文字要短（D-8），完整说明走 aria-label/title。
+   * 保存失败、配额不足、存储不可用这三种是「必须马上懂」的状态，
+   * 由工作台的提示条负责完整表述，这里只给短标签。
+   */
+  const badge: Record<SaveState, { text: string; full?: string; className: string }> = {
+    idle: loggedIn
+      ? { text: t.localSavedBadge, full: t.localSaved, className: 'text-ink-soft' }
+      : { text: t.localOnlyBadge, full: t.localOnly, className: 'text-ink-soft' },
+    dirty: { text: t.unsaved, className: 'text-warning' },
     saving: { text: t.saving, className: 'text-primary-deep' },
-    saved: { text: t.saved, className: 'text-green-600' },
-    quota: { text: t.quotaError, className: 'text-red-600' },
-    error: { text: t.saveFailed, className: 'text-red-600' },
-    unavailable: { text: t.unavailable, className: 'text-red-600' },
+    saved: { text: t.saved, className: 'text-success' },
+    quota: { text: t.saveFailed, full: t.quotaError, className: 'text-danger' },
+    error: { text: t.saveFailed, className: 'text-danger' },
+    unavailable: { text: t.saveFailed, full: t.unavailable, className: 'text-danger' },
   };
   const current = badge[state];
   const cloudText: Record<CloudSaveState, string> = {
@@ -34,12 +41,16 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
   };
 
   return (
-    <div className="flex items-center gap-3">
-      <span role="status" className={`text-xs ${current.className}`}>
+    <div className="flex items-center gap-2 sm:gap-3">
+      <span
+        role="status"
+        className={`text-xs ${current.className}`}
+        {...(current.full ? { 'aria-label': current.full, title: current.full } : {})}
+      >
         {current.text}
       </span>
       {loggedIn && (
-        <span role="status" className="text-xs text-ink-soft/80">
+        <span role="status" className="hidden text-xs text-ink-soft sm:inline">
           {cloudText[cloudState]}
         </span>
       )}
@@ -47,7 +58,7 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
         type="button"
         onClick={onSave}
         disabled={disabled || state === 'saving'}
-        className="rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
+        className="btn-outline btn-sm"
       >
         {t.save}
       </button>

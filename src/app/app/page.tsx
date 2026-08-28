@@ -5,7 +5,7 @@ import Workbench from '@/components/workbench/Workbench';
 
 export default function AppPage() {
   return (
-    <main className="min-h-screen bg-cream">
+    <main id="main" className="min-h-screen bg-cream">
       <Workbench />
     </main>
   );

@@ -3,7 +3,7 @@
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
-import { contentBounds } from '@/lib/export/layout';
+import { contentBounds, largestFittingCellPx, pngCellPxFits } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
 import type { Pattern } from '@/lib/types';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
@@ -40,7 +40,30 @@ export default function PngExportButton({
   const [optCellPx, setOptCellPx] = useState<number>(defaultCellPx);
   const [optCrop, setOptCrop] = useState<boolean>(defaultCrop);
   const [optLegend, setOptLegend] = useState<boolean>(defaultLegend);
-  const empty = useMemo(() => contentBounds(pattern) === null, [pattern]);
+  const bounds = useMemo(() => contentBounds(pattern), [pattern]);
+  const empty = bounds === null;
+
+  /**
+   * 每个格子档位是否放得下（A-03）：超限档位禁用并注明原因，
+   * 而不是让用户选了之后拿到一句无信息量的「导出失败，请重试」。
+   */
+  const fitInput = useMemo(() => {
+    const contentWidth = optCrop && bounds ? bounds.x1 - bounds.x0 + 1 : pattern.width;
+    const contentHeight = optCrop && bounds ? bounds.y1 - bounds.y0 + 1 : pattern.height;
+    const legendCount = optLegend ? new Set(
+      pattern.cells.filter((cell) => !cell.transparent && !cell.external).map((cell) => cell.code),
+    ).size : 0;
+    return { contentWidth, contentHeight, legendCount };
+  }, [bounds, optCrop, optLegend, pattern]);
+
+  const fits = useMemo(
+    () => new Map<number, boolean>(
+      CELL_CHOICES.map((size) => [size, pngCellPxFits({ ...fitInput, cellPx: size })]),
+    ),
+    [fitInput],
+  );
+  const suggestedCellPx = useMemo(() => largestFittingCellPx(CELL_CHOICES, fitInput), [fitInput]);
+  const currentFits = fits.get(optCellPx) ?? true;
 
   const t = zhCN.exportPng;
 
@@ -64,7 +87,9 @@ export default function PngExportButton({
         includeLegend: optLegend,
       });
       if (!result.ok) {
-        setError(result.code === 'EMPTY_PATTERN' ? zhCN.export.pngEmptyError : zhCN.export.pngFailed);
+        if (result.code === 'EMPTY_PATTERN') setError(zhCN.export.pngEmptyError);
+        else if (result.code === 'CANVAS_TOO_LARGE') setError(zhCN.export.pngTooLargeError(suggestedCellPx));
+        else setError(zhCN.export.pngFailed);
         return;
       }
       const url = URL.createObjectURL(result.blob);
@@ -89,12 +114,12 @@ export default function PngExportButton({
         type="button"
         onClick={handleClick}
         disabled={disabled || empty || busy}
-        className="rounded-full bg-primary px-3 py-1.5 text-sm text-white shadow-soft transition-colors hover:bg-primary-deep disabled:cursor-not-allowed disabled:bg-lilac/50"
+        className="btn-primary btn-sm"
       >
         {busy ? '…' : zhCN.export.pngExport}
       </button>
       {error && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}
@@ -109,15 +134,20 @@ export default function PngExportButton({
                 id="png-cellpx"
                 value={optCellPx}
                 onChange={(e) => setOptCellPx(Number(e.target.value))}
-                className="rounded-lg border border-lilac/50 px-2 py-1"
+                className="input-compact"
               >
                 {CELL_CHOICES.map((size) => (
-                  <option key={size} value={size}>
-                    {t.cellSizeValue(size)}
+                  <option key={size} value={size} disabled={!fits.get(size)}>
+                    {fits.get(size) ? t.cellSizeValue(size) : t.cellSizeTooLarge(size)}
                   </option>
                 ))}
               </select>
             </label>
+            {!currentFits && (
+              <p role="alert" className="text-xs text-danger">
+                {zhCN.export.pngTooLargeError(suggestedCellPx)}
+              </p>
+            )}
             <label className="flex items-center gap-2 text-ink-soft">
               <input type="checkbox" checked={optCrop} onChange={(e) => setOptCrop(e.target.checked)} />
               {t.cropToContent}
@@ -132,15 +162,15 @@ export default function PngExportButton({
               type="button"
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="rounded-full border border-lilac/50 px-3 py-1 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
+              className="btn-outline btn-sm"
             >
               {zhCN.designs.cancel}
             </button>
             <button
               type="button"
               onClick={() => void confirm()}
-              disabled={busy}
-              className="rounded-full bg-primary px-3 py-1 text-sm text-white transition-colors hover:bg-primary-deep disabled:bg-lilac-soft disabled:text-ink-soft/60"
+              disabled={busy || !currentFits}
+              className="btn-primary btn-sm"
             >
               {t.confirm}
             </button>

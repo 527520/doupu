@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
+import Notice from '@/components/ui/Notice';
 import { validateImageFile, type ImageErrorCode } from '@/lib/image/validation';
 import type { ImageType } from '@/lib/image/sniff';
 
@@ -19,9 +20,14 @@ export interface UploadDropzoneProps {
   /** 校验通过（未解码）时回调。 */
   onValid: (file: ValidImageFile) => void;
   disabled?: boolean;
+  /**
+   * 手机上直接调起后置摄像头（D-3）。
+   * 首页文案承诺「支持拍照」，但此前没有任何拍照入口；桌面浏览器会忽略该属性。
+   */
+  capture?: boolean;
 }
 
-export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProps) {
+export function UploadDropzone({ onValid, disabled = false, capture = false }: UploadDropzoneProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
@@ -114,7 +120,7 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         className={[
-          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed p-8 text-center transition-colors',
+          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-8 text-center transition-colors',
           dragging ? 'border-primary bg-primary-soft text-primary-deep' : 'border-lilac/60 text-ink-soft',
           disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-primary hover:text-primary-deep',
         ].join(' ')}
@@ -133,6 +139,7 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic"
+        {...(capture ? { capture: 'environment' as const } : {})}
         disabled={disabled}
         className="sr-only"
         aria-label={upload.inputLabel}
@@ -140,16 +147,16 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
       />
 
       {error !== null && (
-        <div role="alert" className="flex items-center justify-between gap-3 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <Notice kind="danger">
           <span>{error}</span>
           <button
             type="button"
             onClick={reset}
-            className="shrink-0 rounded border border-red-300 px-2 py-1 text-xs hover:bg-red-100"
+            className="shrink-0 btn-danger-outline btn-xs"
           >
             {upload.retry}
           </button>
-        </div>
+        </Notice>
       )}
     </div>
   );

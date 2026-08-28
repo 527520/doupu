@@ -105,6 +105,38 @@ export const rateLimits = pgTable('rate_limits', {
   windowStart: timestamp('window_start', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * 只读分享（批次 K / 决策 D38，取代 D23 的「无公开分享页」）。
+ *
+ * 设计要点：
+ * - 存的是**图纸快照**而不是引用当前设计：分享出去的链接不该因为作者继续编辑而变样，
+ *   更不该在作者删除设计后变成 500；
+ * - token 只存哈希（与会话、邮件令牌同一套做法），数据库泄露不等于分享链接泄露；
+ * - 与 D13 一致：快照里只有图纸数据，没有原图，也不含作者邮箱；
+ * - 作者可随时撤销（删除该行），一个设计同时最多一条有效分享。
+ */
+export const designShares = pgTable(
+  'design_shares',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    designId: uuid('design_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').unique().notNull(),
+    /** 分享时的图纸快照（项目文件 JSON，去掉与作者相关的字段）。 */
+    snapshot: jsonb('snapshot').notNull(),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** 浏览计数：让作者知道链接有没有被看，不记录访客身份。 */
+    viewCount: integer('view_count').notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex('design_shares_design_unique').on(table.designId),
+    index('design_shares_user_idx').on(table.userId),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
@@ -113,3 +145,4 @@ export type Design = typeof designs.$inferSelect;
 export type NewDesign = typeof designs.$inferInsert;
 export type Palette = typeof palettes.$inferSelect;
 export type RateLimit = typeof rateLimits.$inferSelect;
+export type DesignShare = typeof designShares.$inferSelect;

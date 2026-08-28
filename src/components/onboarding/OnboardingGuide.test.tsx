@@ -1,15 +1,27 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import OnboardingGuide from './OnboardingGuide';
+import { resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
+/** 造一个贴近真实 Response 的桩：hook 判断的是 ok，而不是 status。 */
 function mockFetch(status: number): void {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status }));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => ({ email: 'user@example.com' }),
+  }));
 }
+
+beforeEach(() => {
+  // 登录态探测在组件间共享（J-1），用例之间必须清掉，否则第二个用例读到上一个的结果。
+  resetAuthStatusCache();
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
+  resetAuthStatusCache();
 });
 
 describe('OnboardingGuide', () => {
@@ -32,14 +44,15 @@ describe('OnboardingGuide', () => {
     });
   });
 
-  it('已关闭过（localStorage 标记）不显示，且不再发起会话请求', async () => {
+  it('关闭过之后不显示；且引导不会为登录态额外发请求（J-1：探测在组件间共享）', async () => {
     window.localStorage.setItem('doupu_onboarding_dismissed', '1');
-    const fetchSpy = vi.fn().mockResolvedValue({ status: 401 });
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => null });
     vi.stubGlobal('fetch', fetchSpy);
     render(<OnboardingGuide />);
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByLabelText('三步上手')).toBeNull();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    // 首页同时有导航与引导，两者共享同一次探测：整页最多一次请求
+    expect(fetchSpy.mock.calls.filter((call) => call[0] === '/api/auth/me').length).toBeLessThanOrEqual(1);
     window.localStorage.clear();
   });
 

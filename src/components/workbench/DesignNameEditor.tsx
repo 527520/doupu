@@ -20,7 +20,7 @@ export default function DesignNameEditor({ name, onChange }: Props) {
         placeholder={zhCN.project.unnamed}
         aria-label={zhCN.workbench.designName}
         onChange={(e) => onChange(e.target.value)}
-        className="w-44 rounded-lg border border-lilac/50 bg-white px-2 py-1 text-ink transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+        className="w-44 input-compact"
       />
     </label>
   );

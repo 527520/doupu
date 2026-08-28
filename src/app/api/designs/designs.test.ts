@@ -3,6 +3,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
+import { cleanupSyncTombstones } from '@/../db/client';
 import { setTestDb } from '@/lib/auth/db';
 import { users, sessions, designs } from '@/../db/schema';
 import { createSession } from '@/lib/auth/session';
@@ -305,7 +306,11 @@ describe('DELETE /api/designs/[id]（墓碑）', () => {
     expect(compact.payloadBytes).toBe(0);
 
     await db.update(designs).set({ deletedAt: new Date('2026-01-01T00:00:00.000Z') });
+    // GET 是安全方法，不再承担墓碑 GC（A-06）：列表读之后墓碑仍在。
     await listGet();
+    expect(await db.select().from(designs)).toHaveLength(1);
+    // 硬删除由每日清理任务与后续写路径承担。
+    expect(await cleanupSyncTombstones(db, new Date())).toEqual({ designs: 1, palettes: 0 });
     expect(await db.select().from(designs)).toHaveLength(0);
   });
 });

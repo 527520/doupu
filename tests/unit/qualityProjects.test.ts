@@ -25,10 +25,26 @@ describe('可信质量基线配置', () => {
   });
 
   it('为 coverage、database integration、performance 提供互不嵌套的命令', () => {
+    // coverage 现在也跑 integration：认证/会话/守卫/限流不再被排除在护栏之外（A-14），
+    // 因此与 npm run test 一样需要串行（PGlite / argon2 共享进程级 seam）。
     expect(packageJson.scripts['test:coverage']).toBe(
-      'vitest run --coverage --project unit --project serial',
+      'vitest run --no-file-parallelism --maxWorkers=1 --coverage --project unit --project serial --project integration',
     );
     expect(packageJson.scripts['test:integration']).toBe('vitest run --project integration');
     expect(packageJson.scripts['test:performance']).toBe('vitest run --project performance');
+  });
+
+  it('覆盖率护栏包含认证与限流等安全核心（A-14）', async () => {
+    const config = (await loadVitestConfig()) as { test?: { coverage?: { exclude?: string[] } } };
+    const excluded = config.test?.coverage?.exclude ?? [];
+    for (const file of [
+      'src/lib/auth/session.ts',
+      'src/lib/auth/transitions.ts',
+      'src/lib/auth/guard.ts',
+      'src/lib/auth/rateLimit.ts',
+      'src/lib/auth/cookies.ts',
+    ]) {
+      expect(excluded).not.toContain(file);
+    }
   });
 });

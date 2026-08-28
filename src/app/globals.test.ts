@@ -28,4 +28,31 @@ describe('全局颜色 token', () => {
     expect(contrast(token('ink-soft'), token('lilac-soft'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(token('lilac'), '#ffffff')).toBeGreaterThanOrEqual(3);
   });
+
+  it('次要文字与标题不同色，且比标题浅（C-1：此前两者同值，正文层级被压平）', () => {
+    expect(token('ink-soft')).not.toBe(token('ink'));
+    // 与纯黑的对比度越大＝颜色越浅：ink（最深）→ ink-muted → ink-soft
+    expect(contrast(token('ink-soft'), '#000000')).toBeGreaterThan(contrast(token('ink'), '#000000'));
+    expect(contrast(token('ink-soft'), token('cream'))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('状态色在奶油底/白底/软底/丁香底上均满足 4.5:1（C-2：green-600 与 amber-600 只有 3.1）', () => {
+    for (const name of ['success', 'warning', 'danger'] as const) {
+      expect(contrast(token(name), token('cream'))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(token(name), '#ffffff')).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(token(name), token(`${name}-soft`))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(token(name), token('lilac-soft'))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('危险色与主粉不同（避免把删除误认成主操作）', () => {
+    expect(token('danger')).not.toBe(token('primary'));
+  });
+
+  it('提供 notice 组件类的四种语气，并尊重减弱动态效果设置', () => {
+    for (const kind of ['info', 'success', 'warning', 'danger']) {
+      expect(css).toContain(`.notice-${kind}`);
+    }
+    expect(css).toContain('prefers-reduced-motion');
+  });
 });

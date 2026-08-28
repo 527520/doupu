@@ -3,6 +3,8 @@
  * 使用 db/incrementRateLimit 原子递增；窗口起点按小时对齐。
  */
 import { incrementRateLimit, type AnyDatabase } from '@/../db/client';
+import { config } from '@/lib/config';
+import { AppError } from '@/lib/errors';
 
 const WINDOW_MS = 60 * 60 * 1000;
 
@@ -42,4 +44,23 @@ export async function checkRateLimit(
 ): Promise<boolean> {
   const count = await incrementRateLimit(db, key, hourlyWindowStart(now));
   return count <= limit;
+}
+
+/** 同步写限流 key：按已鉴权用户计（同一账号换 IP 也受限）。 */
+export function syncWriteKey(userId: string): string {
+  return `sync:write:${userId}`;
+}
+
+/**
+ * 同步写（设计/色板 PUT + DELETE）限流（A-12）。
+ * 存量上限限制的是「总存储」，不限制「写入速率」：一个已验证账号可以反复 PUT
+ * 约 5 MB 的 body，持续消耗解析 + 行锁。超限抛 RATE_LIMITED，由 withApiErrors 转 429。
+ */
+export async function enforceSyncWriteLimit(
+  db: AnyDatabase,
+  userId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const allowed = await checkRateLimit(db, syncWriteKey(userId), config.security.syncWriteRateLimit, now);
+  if (!allowed) throw new AppError('RATE_LIMITED', '同步写入过于频繁，请稍后再试');
 }

@@ -115,50 +115,59 @@ export default function EditorToolbar({
         </div>
       )}
 
-      <span className="mx-1 h-4 w-px bg-lilac/40" />
+      <span className="mx-1 hidden h-4 w-px bg-lilac/40 sm:inline" />
 
-      <button
-        type="button"
-        onClick={onUndo}
-        disabled={!canUndo}
-        title="Ctrl+Z"
-        className="rounded-lg border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft disabled:cursor-not-allowed disabled:bg-lilac-soft disabled:text-ink-soft/60"
-      >
-        {t.undo}
-      </button>
-      <button
-        type="button"
-        onClick={onRedo}
-        disabled={!canRedo}
-        title="Ctrl+Shift+Z"
-        className="rounded-lg border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft disabled:cursor-not-allowed disabled:bg-lilac-soft disabled:text-ink-soft/60"
-      >
-        {t.redo}
-      </button>
+      {/*
+        D-8：350px 上这条工具条有 14 个控件，触屏还要 44px 触控目标，必然折行。
+        与其让它折成散乱的 6 行，不如显式分组（撤销/重做、替换、变换、清空），
+        组内不换行、组间换行——折行后每一行仍是一个可理解的功能组。
+      */}
+      <span className="flex items-center gap-1" aria-label={t.historyGroup}>
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Ctrl+Z"
+          className="btn-tool"
+        >
+          {t.undo}
+        </button>
+        <button
+          type="button"
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="Ctrl+Shift+Z"
+          className="btn-tool"
+        >
+          {t.redo}
+        </button>
+      </span>
 
-      <span className="mx-1 h-4 w-px bg-lilac/40" />
+      <span className="mx-1 hidden h-4 w-px bg-lilac/40 sm:inline" />
 
-      <button type="button" onClick={onReplaceOpen} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
-        {t.replace}
-      </button>
-      {replaceCountMessage && <span className="text-xs text-ink-soft">{replaceCountMessage}</span>}
+      <span className="flex items-center gap-1">
+        <button type="button" onClick={onReplaceOpen} className="btn-tool">
+          {t.replace}
+        </button>
+        {replaceCountMessage && <span className="text-xs text-ink-soft">{replaceCountMessage}</span>}
+      </span>
 
-      <div className="flex items-center gap-1" aria-label={t.transformGroup}>
-        <button type="button" onClick={() => onTransform('mirrorH')} title={t.mirrorH} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
+      <span className="flex items-center gap-1" aria-label={t.transformGroup}>
+        <button type="button" onClick={() => onTransform('mirrorH')} title={t.mirrorH} className="btn-tool">
           ⇋
         </button>
-        <button type="button" onClick={() => onTransform('mirrorV')} title={t.mirrorV} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
+        <button type="button" onClick={() => onTransform('mirrorV')} title={t.mirrorV} className="btn-tool">
           ⇵
         </button>
-        <button type="button" onClick={() => onTransform('rotateCCW')} title={t.rotateCCW} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
+        <button type="button" onClick={() => onTransform('rotateCCW')} title={t.rotateCCW} className="btn-tool">
           ↺
         </button>
-        <button type="button" onClick={() => onTransform('rotateCW')} title={t.rotateCW} className="rounded-lg border border-lilac/50 px-2 py-1 text-ink-soft transition-colors hover:bg-lilac-soft">
+        <button type="button" onClick={() => onTransform('rotateCW')} title={t.rotateCW} className="btn-tool">
           ↻
         </button>
-      </div>
+      </span>
 
-      <button type="button" onClick={onClear} title={t.clearTitle} className="rounded border border-red-200 px-2 py-1 text-red-600 hover:bg-red-50">
+      <button type="button" onClick={onClear} title={t.clearTitle} className="btn-danger-outline btn-xs">
         {t.clear}
       </button>
     </div>

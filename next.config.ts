@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Playwright intentionally opens the dev server through the IPv4 loopback
   // address so Chromium, Firefox and WebKit exercise the same origin.
-  allowedDevOrigins: ["127.0.0.1"],
+  // 局域网验收（手机连同一 WiFi 访问 next dev）时，把本机 LAN 地址放进
+  // DEV_LAN_ORIGIN 即可，不要把某台机器的内网 IP 写进版本库。仅影响 next dev。
+  allowedDevOrigins: ["127.0.0.1", ...(process.env.DEV_LAN_ORIGIN ? [process.env.DEV_LAN_ORIGIN] : [])],
   async headers() {
     return [
       {
@@ -11,6 +13,13 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
           { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
+      {
+        // 字体文件名固定，内容随发版重建；长缓存避免每次导出 PDF 重新下载（A-04）。
+        source: "/fonts/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
     ];

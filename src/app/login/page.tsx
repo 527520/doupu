@@ -22,7 +22,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     if (!emailSchema.safeParse(email).success) {
-      setError('请输入正确的邮箱地址。');
+      setError(t.emailInvalid);
       return;
     }
     if (password.length === 0) {
@@ -50,7 +50,7 @@ export default function LoginPage() {
         setError(message || zhCN.auth.invalidCredentials);
       }
     } catch {
-      setError('网络错误，请稍后重试。');
+      setError(t.networkError);
     } finally {
       setPending(false);
     }

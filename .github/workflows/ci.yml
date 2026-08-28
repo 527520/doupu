@@ -45,6 +45,22 @@ jobs:
       - name: Unit tests + coverage（连续 5 次，不含 integration / performance）
         run: npm run test:coverage:stable
 
+  windows-unit:
+    # 本仓库在 Windows 上开发，而 releaseSafety 等门禁曾因 POSIX 依赖只在 Linux 绿灯。
+    # 这个 job 保证「开发机能跑的测试」不再漂移（依赖 sh 的用例在此自动跳过）。
+    name: unit tests (windows)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit and serial tests on Windows
+        run: npm run test:unit
+
   integration:
     name: database / API integration
     runs-on: ubuntu-latest

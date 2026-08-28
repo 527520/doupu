@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PaletteEditor, { nextAutoCode, parseHexList, validateRows, type EditorRow } from './PaletteEditor';
 import { zhCN } from '@/messages/zh-CN';
 import { BRANDS } from '@/lib/palettes';
@@ -122,22 +122,20 @@ describe('PaletteEditor 导入', () => {
     expect(screen.getByText(t.importFailed)).toBeTruthy();
   });
 
-  it('复制自内置品牌：确认后替换为 291 行（含色号）', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    setup();
+  it('复制自内置品牌：确认后替换为 291 行（含色号）', async () => {
+    setup({ initialColors: [{ code: 'A', hex: '#FF0000' }, { code: 'B', hex: '#00FF00' }] });
     fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: 'MARD' } });
-    expect(screen.getByLabelText(t.colorsCounter(291))).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: t.copyConfirmAction }));
+    await waitFor(() => expect(screen.getByLabelText(t.colorsCounter(291))).toBeTruthy());
     expect((screen.getByLabelText(`${t.code} 1`) as HTMLInputElement).value).toBe('A01');
-    vi.restoreAllMocks();
   });
 
-  it('复制自品牌在确认被拒时不覆盖', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('复制自品牌在确认被拒时不覆盖', async () => {
     setup({ initialColors: [{ code: 'A', hex: '#FF0000' }, { code: 'B', hex: '#00FF00' }] });
     fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: 'COCO' } });
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }));
     expect(screen.getByLabelText(`${t.hex} 1`)).toBeTruthy();
     expect(screen.queryByLabelText(t.colorsCounter(291))).toBeNull();
-    vi.restoreAllMocks();
   });
 });
 

@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { registerSchema } from '@/lib/schemas';
@@ -24,7 +25,7 @@ export default function RegisterPage() {
     setError(null);
     const parsed = registerSchema.safeParse({ email, password });
     if (!parsed.success) {
-      setError('请输入正确的邮箱与 8–72 位密码。');
+      setError(t.credentialsInvalid);
       return;
     }
     if (password !== confirm) {
@@ -51,10 +52,10 @@ export default function RegisterPage() {
       } else if (body?.error?.code === 'RATE_LIMITED') {
         setError(zhCN.auth.tooManyRequests);
       } else {
-        setError(message || '注册失败，请重试。');
+        setError(message || t.registerFailed);
       }
     } catch {
-      setError('网络错误，请稍后重试。');
+      setError(t.networkError);
     } finally {
       setPending(false);
     }
@@ -65,9 +66,7 @@ export default function RegisterPage() {
   if (done) {
     return (
       <AuthShell title={t.registerTitle}>
-        <p role="status" className="mb-4 text-center text-green-700">
-          {t.registeredSent}
-        </p>
+        <Notice kind="success" className="mb-4">{t.registeredSent}</Notice>
         {devMailLink && (
           <div className="mb-4 rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm">
             <p className="mb-2 text-ink">{t.devMailHint}</p>

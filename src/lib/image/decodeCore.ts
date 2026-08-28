@@ -2,6 +2,7 @@
 import type { ImageType } from './sniff';
 import type { ImageErrorCode } from './validation';
 import { readImageDimensions } from './dimensions';
+import { jpegCropIsOrientationSafe } from './exifOrientation';
 
 export interface DecodedImage {
   data: Uint8ClampedArray;
@@ -120,9 +121,12 @@ export async function decodeImageFile(bytes: Uint8Array, type: ImageType): Promi
 }
 
 /**
- * Decode an oriented natural-pixel rectangle to a bounded RGBA buffer. JPEG
- * deliberately avoids source-crop-before-orientation; orientation-stable
- * PNG/WebP/GIF can use the decoder's direct crop+resize path.
+ * Decode an oriented natural-pixel rectangle to a bounded RGBA buffer.
+ *
+ * PNG/WebP/GIF 方向稳定，可以直接用解码器的 crop+resize。JPEG 的裁剪坐标是相对
+ * 已按 EXIF 旋转后的图，先按源坐标裁再旋转会错位；但只有真的带旋转标记时才有这个
+ * 问题——Orientation=1（或无 EXIF）时同样可以走 source-crop，省掉整幅位图
+ * （8000×8000 JPEG 约 256 MB RGBA，移动端会直接解码失败，A-16）。
  */
 export async function decodeImageRegion(
   bytes: Uint8Array,
@@ -136,10 +140,12 @@ export async function decodeImageRegion(
   const width = Math.max(1, Math.round(sourceWidth * scale));
   const height = Math.max(1, Math.round(sourceHeight * scale));
   const blob = encodedImageBlob(bytes, type);
+  const canSourceCrop = DIRECT_RESIZE_TYPES.has(type)
+    || (type === 'jpeg' && jpegCropIsOrientationSafe(bytes));
   let bitmap: ImageBitmap | null = null;
   try {
     let decoderAppliedCrop = false;
-    if (DIRECT_RESIZE_TYPES.has(type)) {
+    if (canSourceCrop) {
       try {
         bitmap = await createImageBitmap(
           blob,

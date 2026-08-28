@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import DesignsView from './DesignsView';
 import { ApiError, type CloudDesignFull } from '@/lib/sync/clientAdapter';
 import { enqueueBackgroundSync, hasPendingSync } from '@/lib/sync/queue';
+import type { StitchProgress } from '@/lib/progress/stitchProgress';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 import type { DesignRecord, StorageAdapter } from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
@@ -63,6 +64,16 @@ class FakeStorage implements StorageAdapter {
   }
   async getMeta(key: string) {
     return this.meta.get(key) ?? null;
+  }
+  readonly progress = new Map<string, StitchProgress>();
+  async getStitchProgress(designId: string) {
+    return this.progress.get(designId) ?? null;
+  }
+  async putStitchProgress(designId: string, value: StitchProgress) {
+    this.progress.set(designId, value);
+  }
+  async deleteStitchProgress(designId: string) {
+    this.progress.delete(designId);
   }
   async setMeta(key: string, value: string) {
     this.meta.set(key, value);

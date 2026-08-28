@@ -3,6 +3,7 @@
 /** 项目文件导出/导入按钮组（spec §F7 项目文件）：导出下载 JSON；导入校验并处理名称冲突。 */
 import { useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
+import Notice from '@/components/ui/Notice';
 import { LIMITS } from '@/lib/appInfo';
 import { conflictName, importProjectFile } from '@/lib/project/parse';
 import { projectFileName, serializeProject, type ProjectSource } from '@/lib/project/serialize';
@@ -70,7 +71,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={handleExport}
           disabled={disabled}
-          className="rounded-full border border-lilac/50 px-3 py-1.5 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
+          className="btn-outline btn-sm"
         >
           {t.exportLabel}
         </button>
@@ -78,7 +79,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled}
-          className="rounded-full border border-lilac/50 px-3 py-1.5 text-sm transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
+          className="btn-outline btn-sm"
         >
           {t.importLabel}
         </button>
@@ -92,14 +93,14 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
         className="sr-only"
       />
       {errors.length > 0 && (
-        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+        <Notice kind="danger" as="div" className="flex-col gap-1">
           <p className="font-medium">{t.importFailed}</p>
           <ul className="list-inside list-disc">
             {errors.map((error, index) => (
               <li key={index}>{error}</li>
             ))}
           </ul>
-        </div>
+        </Notice>
       )}
     </div>
   );

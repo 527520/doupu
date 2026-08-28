@@ -21,11 +21,11 @@ export default function PageError({
 
   const t = zhCN.errorPages;
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-6 py-16 text-center">
+    <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-6 py-16 text-center">
       <p className="text-7xl font-semibold text-lilac/50" aria-hidden="true">
         !
       </p>
-      <h1 className="text-2xl font-semibold tracking-wide text-ink">{t.errorTitle}</h1>
+      <h1 className="page-title">{t.errorTitle}</h1>
       <p className="max-w-md text-sm leading-6 text-ink-soft">{t.errorBody}</p>
       <div className="flex flex-wrap justify-center gap-3">
         <button type="button" onClick={reset} className="btn-primary">

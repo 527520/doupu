@@ -68,7 +68,7 @@ describe('useGenerationSession deep interface', () => {
     const cancel = vi.fn();
     const { result, unmount } = renderHook(() => useGenerationSession<GenerationCommit>(draft));
     expect(Object.keys(result.current).sort()).toEqual([
-      'cancel', 'commitManualEdit', 'generate', 'restore', 'reupload', 'state', 'undoRegeneration', 'updateDraft', 'upload',
+      'cancel', 'commitManualEdit', 'generate', 'remapPalette', 'restore', 'reupload', 'state', 'undoRegeneration', 'updateDraft', 'upload',
     ]);
     act(() => result.current.upload(source, draft));
     act(() => {

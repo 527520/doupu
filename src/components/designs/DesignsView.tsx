@@ -9,7 +9,11 @@ import { createDoupuApi, type DoupuApi, type MeInfo } from '@/lib/sync/api';
 import { createSyncClient, type CloudDesignMeta, type SyncClient } from '@/lib/sync/clientAdapter';
 import { enqueueDesignSync, withDesignStorageLock } from '@/lib/sync/queue';
 import { openIndexedDb, parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
+import type { PatternCell } from '@/lib/types';
 import AccountMenu from '@/components/account/AccountMenu';
+import Notice from '@/components/ui/Notice';
+import ColorBand from '@/components/palettes/ColorBand';
+import { LIMITS } from '@/lib/appInfo';
 import SiteHeader from '@/components/layout/SiteHeader';
 import Modal from '@/components/ui/Modal';
 import { fillDeleteHint, formatDateTime } from './format';
@@ -21,6 +25,8 @@ export interface DisplayDesign {
   height: number;
   updatedAt: string;
   thumbnail: string | null;
+  /** 用色概览（E-3）：按用量降序的 hex，仅本地有项目数据时可得。 */
+  colors: string[];
   revision: number;
   localPresent: boolean;
   cloudPresent: boolean;
@@ -34,6 +40,23 @@ interface Props {
 
 const t = zhCN.designs;
 
+/**
+ * 图纸用色概览（E-3）：按用量降序取前若干色。
+ * 缩略图能看出「长什么样」，但看不出「要用哪些豆子」——挑今天拼哪一张时，
+ * 用色比缩略图更常是决定因素（比如「今天只想拼粉色系那张」）。
+ */
+function topColors(cells: readonly PatternCell[], max = 12): string[] {
+  const counts = new Map<string, number>();
+  for (const cell of cells) {
+    if (cell.transparent || cell.external || !cell.hex) continue;
+    counts.set(cell.hex, (counts.get(cell.hex) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : 1))
+    .slice(0, max)
+    .map(([hex]) => hex);
+}
+
 function buildDisplay(
   local: DesignRecord[],
   cloud: CloudDesignMeta[],
@@ -44,7 +67,7 @@ function buildDisplay(
   for (const meta of cloud) {
     // 云端墓碑只参与同步 LWW，不显示在列表里
     if (meta.deleted) continue;
-    map.set(meta.id, { ...meta, thumbnail: null, status: 'synced', localPresent: false, cloudPresent: true });
+    map.set(meta.id, { ...meta, thumbnail: null, colors: [], status: 'synced', localPresent: false, cloudPresent: true });
   }
   for (const record of local) {
     const project = parseStoredProject(record.projectJson);
@@ -61,6 +84,7 @@ function buildDisplay(
       height: project?.pattern.height ?? 0,
       updatedAt: record.updatedAt,
       thumbnail: record.thumbnail,
+      colors: project ? topColors(project.pattern.cells) : [],
       revision: Math.max(record.revision ?? 0, cloudEntry?.revision ?? 0),
       localPresent: true,
       cloudPresent: Boolean(cloudEntry),
@@ -84,6 +108,8 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const [renaming, setRenaming] = useState<DisplayDesign | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleting, setDeleting] = useState<DisplayDesign | null>(null);
+  /** 未删除的设计数：达上限时先提示，避免用户新建后在保存阶段才撞墙（D-4）。 */
+  const activeDesignCount = designs.length;
 
   const load = useCallback(async () => {
     // StrictMode 安全：取消守卫——dev 双调用 effect 时第一次被 cleanup 取消，第二次正常完成；
@@ -115,7 +141,8 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
           // Join any Workbench save already syncing in this browser runtime;
           // this prevents duplicate baseRevision PUTs during SPA navigation.
           const outcome = await enqueueDesignSync(st, api);
-          if (!outcome) throw new Error('已验证账号的同步未启动');
+          // 内部不变量（不面向用户，随即被下方 catch 转成 t.syncFailed 提示）。
+          if (!outcome) throw new Error('sync did not start for a verified account');
           conflictIds = outcome.conflictCopies.map((conflict) => conflict.conflictId);
           cloud = outcome.cloud;
           // 同步可能改写本地存储（拉取覆盖/采纳服务端时间戳），重新读取后再构建列表
@@ -233,12 +260,12 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
+    <main id="main" className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
       <SiteHeader
         title={t.title}
         currentPath="/designs"
         primaryActions={
-          <Link href="/app?new=1" className="rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-primary-deep">
+          <Link href="/app?new=1" className="btn-primary btn-sm">
             {t.newDesign}
           </Link>
         }
@@ -247,47 +274,52 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         }
       />
 
+      {/* 设计数已达上限时先说清楚，而不是等用户新建后在保存阶段才失败（D-4）。 */}
+      {activeDesignCount >= LIMITS.designsPerUser && (
+        <Notice kind="warning">{t.limitError}</Notice>
+      )}
+
       {(me === 'loading' || syncing) && designs.length === 0 && (
-        <p role="status" className="rounded-xl bg-lilac-soft/60 p-3 text-sm text-ink-soft">
-          {t.loading}
-        </p>
+        <Notice kind="info">{t.loading}</Notice>
       )}
 
       {me !== 'loading' && me.state === 'guest' && (
-        <div className="rounded-xl border border-lilac/40 bg-lilac-soft p-3 text-sm text-ink">
+        <Notice kind="info">
           {t.guestBanner}{' '}
-          <Link href="/login" className="font-medium text-primary-deep underline underline-offset-4">
+          <Link href="/login" className="link-soft font-medium">
             {t.goLogin}
           </Link>
-        </div>
+          {' · '}
+          <Link href="/register" className="link-soft font-medium">
+            {t.goRegister}
+          </Link>
+        </Notice>
       )}
 
       {conflicts.length > 0 && (
-        <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          {t.conflictBanner.replace('{n}', String(conflicts.length))}
-        </div>
+        <Notice kind="warning">{t.conflictBanner.replace('{n}', String(conflicts.length))}</Notice>
       )}
 
       {cloudFailed && (
-        <div className="flex items-center gap-3 rounded-xl border border-lilac/30 bg-lilac-soft/60 p-3 text-sm text-ink-soft">
+        <Notice kind="info">
           <span>{t.syncFailed}</span>
-          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="rounded-full border border-lilac/50 px-2 py-0.5 text-xs transition-colors hover:bg-white disabled:bg-lilac-soft disabled:text-ink-soft/60">
+          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="btn-outline btn-xs">
             {syncing ? t.syncing : t.retry}
           </button>
-        </div>
+        </Notice>
       )}
 
       {error && (
-        <div role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <Notice kind="danger">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="rounded-full border border-red-300 px-2 py-0.5 text-xs hover:bg-red-50">
+          <button type="button" onClick={() => void load()} className="btn-danger-outline btn-xs">
             {t.retry}
           </button>
-        </div>
+        </Notice>
       )}
 
       {me !== 'loading' && !syncing && !error && designs.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-3xl border-2 border-dashed border-lilac/50 p-10 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-lilac/50 p-10 text-center">
           <p className="font-medium text-ink">{t.emptyTitle}</p>
           <p className="text-sm text-ink-soft">{t.emptyHint}</p>
         </div>
@@ -299,27 +331,36 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
             <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-cream-deep/70">
               {design.thumbnail ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={design.thumbnail} alt={t.placeholder} className="max-h-full max-w-full object-contain" />
+                <img
+                  src={design.thumbnail}
+                  /* D-9：所有缩略图原来共用同一句 alt「图纸缩略图」，读屏用户听到的
+                     是一串完全相同的项；带上设计名与尺寸才能分辨。 */
+                  alt={t.thumbnailAlt(design.name, design.width, design.height)}
+                  className="max-h-full max-w-full object-contain"
+                />
               ) : (
-                <span className="text-xs text-ink-soft/80">{t.size(design.width, design.height)}</span>
+                <span className="text-xs text-ink-soft">{t.size(design.width, design.height)}</span>
               )}
             </div>
             <p className="truncate text-sm font-medium text-ink" title={design.name}>
               {design.name}
             </p>
             <p className="text-xs text-ink-soft">{t.size(design.width, design.height)}</p>
+            {design.colors.length > 0 && (
+              <ColorBand colors={design.colors} max={12} label={t.colorBandAria(design.name, design.colors.length)} />
+            )}
             <p className="text-xs text-ink-soft/80">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
             <div className="flex flex-wrap items-center gap-1 text-xs">
               <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">
                 {design.localPresent ? t.localSaved : t.localMissing}
               </span>
-              {design.status === 'synced' && <span className="rounded-full bg-green-100 px-1.5 py-0.5 text-green-700">{t.synced}</span>}
-              {design.status === 'unsynced' && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-700">{t.unsynced}</span>}
+              {design.status === 'synced' && <span className="rounded-full bg-success-soft px-1.5 py-0.5 text-success">{t.synced}</span>}
+              {design.status === 'unsynced' && <span className="rounded-full bg-warning-soft px-1.5 py-0.5 text-warning">{t.unsynced}</span>}
               {design.status === 'localOnly' && <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">{t.localOnly}</span>}
-              {design.status === 'conflict' && <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-red-700">{t.conflict}</span>}
+              {design.status === 'conflict' && <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">{t.conflict}</span>}
             </div>
             <div className="mt-auto flex flex-wrap gap-1 text-xs">
-              <button type="button" onClick={() => void handleOpen(design)} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
+              <button type="button" onClick={() => void handleOpen(design)} className="btn-outline btn-icon">
                 {t.open}
               </button>
               <button
@@ -328,11 +369,11 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                   setRenaming(design);
                   setRenameValue(design.name);
                 }}
-                className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft"
+                className="btn-outline btn-icon"
               >
                 {t.rename}
               </button>
-              <button type="button" onClick={() => setDeleting(design)} className="rounded-full border border-red-300 px-2 py-1 text-red-600 hover:bg-red-50">
+              <button type="button" onClick={() => setDeleting(design)} className="btn-danger-outline btn-xs">
                 {t.delete}
               </button>
             </div>
@@ -357,13 +398,13 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               className="input-field"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <button type="button" onClick={() => setRenaming(null)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft hover:bg-lilac-soft">
+              <button type="button" onClick={() => setRenaming(null)} className="btn-outline btn-sm">
                 {t.cancel}
               </button>
               <button
                 type="submit"
                 disabled={renameValue.trim().length === 0}
-                className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:opacity-50"
+                className="btn-primary btn-sm"
               >
                 {t.save}
               </button>
@@ -373,14 +414,14 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       )}
 
       {deleting && (
-        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="max-w-sm border-red-200">
-          <h3 className="mb-2 text-sm font-medium text-red-700">{t.deleteTitle}</h3>
+        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="max-w-sm border-danger/40">
+          <h3 className="mb-2 text-sm font-medium text-danger">{t.deleteTitle}</h3>
           <p className="mb-3 text-sm text-ink-soft">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setDeleting(null)} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft">
+            <button type="button" onClick={() => setDeleting(null)} className="btn-outline btn-sm">
               {t.cancel}
             </button>
-            <button type="button" onClick={() => void handleDelete()} className="rounded bg-red-600 px-3 py-1 text-sm text-white">
+            <button type="button" onClick={() => void handleDelete()} className="btn-danger btn-sm">
               {t.delete}
             </button>
           </div>

@@ -7,6 +7,7 @@ import { getDb } from '@/lib/auth/db';
 import { designs } from '@/../db/schema';
 import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
+import { enforceSyncWriteLimit } from '@/lib/auth/rateLimit';
 import { apiError, noContent, okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { designPutSchema, revisionDeleteSchema } from '@/lib/schemas';
 import { exceedsProjectLimit } from '@/lib/sync/limits';
@@ -60,6 +61,7 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
   }
 
   const db = getDb();
+  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from users where id = ${userId} for update`);
     await tx.delete(designs).where(and(eq(designs.userId, userId), lt(designs.deletedAt, tombstoneCutoff())));
@@ -102,6 +104,7 @@ async function del(request: Request, { params }: { params: Promise<{ id: string 
   if (!result.success) return apiError(result.error);
   const { baseRevision } = result.data;
   const db = getDb();
+  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
     await tx.execute(sql`select id from users where id = ${userId} for update`);
     await tx.delete(designs).where(and(eq(designs.userId, userId), lt(designs.deletedAt, tombstoneCutoff())));

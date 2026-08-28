@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EditHistory, HISTORY_LIMIT } from './history';
+import { EditHistory, HISTORY_LIMIT, HISTORY_SNAPSHOT_LIMIT } from './history';
 import { makeSolid, makeTransparent, type EditSnapshot } from './ops';
 import type { PatternCell } from '@/lib/types';
 
@@ -69,6 +69,55 @@ describe('EditHistory（E21）', () => {
     h.push({ label: 'fill', snapshots: [] });
     expect(h.depth).toBe(0);
     expect(h.canUndo).toBe(false);
+  });
+
+  describe('快照总量配额（A-02：200×200 图纸连续整图操作曾累积 400 万快照 / 578 MB）', () => {
+    /** 整图级操作：一次 push 就是 W×H 个快照（旋转/清空/大面积油漆桶）。 */
+    function pushWholePattern(h: EditHistory, size: number, hex: string): void {
+      const snapshots: EditSnapshot[] = Array.from({ length: size }, (_, index) => ({
+        index,
+        before: makeSolid('#FF0000', 'A'),
+        after: makeSolid(hex, 'A'),
+      }));
+      h.push({ label: 'transform', snapshots });
+    }
+
+    it('小图纸仍保留完整 100 步（配额不影响常规使用）', () => {
+      const h = new EditHistory();
+      for (let i = 0; i < HISTORY_LIMIT; i++) h.push({ label: 'brush', snapshots: [snap(0, '#00FF00')] });
+      expect(h.depth).toBe(HISTORY_LIMIT);
+      expect(h.snapshotCount).toBe(HISTORY_LIMIT);
+    });
+
+    it('大图纸整图操作按快照总量丢最旧，总量不超过配额', () => {
+      const h = new EditHistory();
+      const whole = 200 * 200; // 40 000
+      for (let i = 0; i < 100; i++) pushWholePattern(h, whole, '#00FF00');
+      expect(h.snapshotCount).toBeLessThanOrEqual(HISTORY_SNAPSHOT_LIMIT);
+      // 配额 400 000 ÷ 每步 40 000 = 只能保留 10 步，而不是 100 步（旧行为会留 400 万个快照）
+      expect(h.depth).toBe(Math.floor(HISTORY_SNAPSHOT_LIMIT / whole));
+      expect(h.canUndo).toBe(true);
+    });
+
+    it('单步就超配额时仍保留该步，撤销永远可用', () => {
+      const h = new EditHistory();
+      pushWholePattern(h, HISTORY_SNAPSHOT_LIMIT + 1, '#00FF00');
+      expect(h.depth).toBe(1);
+      expect(h.canUndo).toBe(true);
+    });
+
+    it('撤销与重做在两栈间搬运时不重复计入配额', () => {
+      const h = new EditHistory();
+      const cells = cellsOf(4);
+      h.push({ label: 'brush', snapshots: [snap(0, '#00FF00'), snap(1, '#00FF00')] });
+      expect(h.snapshotCount).toBe(2);
+      h.undo(cells);
+      expect(h.snapshotCount).toBe(2);
+      h.redo(cells);
+      expect(h.snapshotCount).toBe(2);
+      h.clear();
+      expect(h.snapshotCount).toBe(0);
+    });
   });
 
   it('clear 清空双栈', () => {

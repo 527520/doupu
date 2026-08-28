@@ -86,15 +86,15 @@ export function ChangePasswordDialog({
         className="input-field"
       />
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
       <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
+        <button type="button" onClick={onClose} disabled={busy} className="btn-outline btn-sm">
           {zhCN.designs.cancel}
         </button>
-        <button type="submit" disabled={busy} className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:bg-lilac-soft disabled:text-ink-soft/60">
+        <button type="submit" disabled={busy} className="btn-primary btn-sm">
           {zhCN.designs.save}
         </button>
       </div>
@@ -137,7 +137,7 @@ export function DeleteAccountDialog({
       }}
       className="flex flex-col gap-2"
     >
-      <h3 className="text-sm font-medium text-red-700">{t.deleteAccountTitle}</h3>
+      <h3 className="text-sm font-medium text-danger">{t.deleteAccountTitle}</h3>
       <p className="text-sm text-ink-soft">{t.deleteAccountHint}</p>
       <input
         type="password"
@@ -148,15 +148,15 @@ export function DeleteAccountDialog({
         className="input-field"
       />
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
       <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
+        <button type="button" onClick={onClose} disabled={busy} className="btn-outline btn-sm">
           {zhCN.designs.cancel}
         </button>
-        <button type="submit" disabled={busy} className="rounded-full bg-red-600 px-3 py-1 text-sm text-white transition-colors hover:bg-red-700 disabled:bg-lilac-soft disabled:text-ink-soft/60">
+        <button type="submit" disabled={busy} className="rounded-full bg-danger px-3 py-1 text-sm text-white transition-colors hover:bg-danger disabled:bg-lilac-soft disabled:text-ink-soft/60">
           {t.deleteConfirm}
         </button>
       </div>
@@ -225,10 +225,10 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     <div className="relative flex max-w-full flex-wrap items-center justify-end gap-2 text-sm">
       {me.state === 'verified' ? (
         <span className="min-w-0 max-w-full truncate sm:max-w-[160px]" title={me.email}>
-          {me.email} <span className="text-xs text-green-600">({t.verified})</span>
+          {me.email} <span className="text-xs text-success">({t.verified})</span>
         </span>
       ) : (
-        <span className="text-amber-600">{t.unverified}</span>
+        <span className="text-warning">{t.unverified}</span>
       )}
 
       {me.state === 'unverified' && (
@@ -240,36 +240,36 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             value={resendEmail}
             onChange={(e) => setResendEmail(e.target.value)}
             placeholder={t.resendEmailLabel}
-            className="w-full min-w-0 rounded-lg border border-lilac/50 px-2 py-1 text-xs sm:w-40"
+            className="w-full min-w-0 input-compact text-xs sm:w-40"
           />
           <button
             type="button"
             onClick={() => void resend()}
             disabled={cooldown > 0}
-            className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft disabled:bg-lilac-soft disabled:text-ink-soft/60"
+            className="btn-outline btn-xs"
           >
             {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
           </button>
         </div>
       )}
-      {resendSent && me.state === 'unverified' && <span role="status" className="text-xs text-green-600">{t.resendSent}</span>}
+      {resendSent && me.state === 'unverified' && <span role="status" className="text-xs text-success">{t.resendSent}</span>}
       {resendError && (
-        <span role="alert" className="text-xs text-red-600">
+        <span role="alert" className="text-xs text-danger">
           {resendError}
         </span>
       )}
 
       {me.state === 'verified' && (
         <>
-          <button type="button" onClick={() => setShowPassword(true)} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
+          <button type="button" onClick={() => setShowPassword(true)} className="btn-outline btn-xs">
             {t.changePassword}
           </button>
-          <button type="button" onClick={() => setShowDelete(true)} className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">
+          <button type="button" onClick={() => setShowDelete(true)} className="btn-danger-outline btn-xs">
             {t.deleteAccount}
           </button>
         </>
       )}
-      <button type="button" onClick={() => void logout()} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
+      <button type="button" onClick={() => void logout()} className="btn-outline btn-xs">
         {t.logout}
       </button>
 
@@ -283,7 +283,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
         </Modal>
       )}
       {showDelete && (
-        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="max-w-sm border-red-200">
+        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="max-w-sm border-danger/40">
           <DeleteAccountDialog
             api={api}
             onClose={() => setShowDelete(false)}

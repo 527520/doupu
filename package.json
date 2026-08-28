@@ -12,6 +12,7 @@
     },
     "scripts": {
         "dev": "next dev",
+        "prebuild": "node scripts/build-pdf-font-subset.mjs && node scripts/build-ui-font-subset.mjs",
         "build": "next build",
         "start": "next start",
         "lint": "eslint .",
@@ -20,7 +21,7 @@
         "test:unit": "vitest run --project unit --project serial",
         "test:integration": "vitest run --project integration",
         "test:postgres-contract": "node tests/postgres/revision-contract.cjs",
-        "test:coverage": "vitest run --coverage --project unit --project serial",
+        "test:coverage": "vitest run --no-file-parallelism --maxWorkers=1 --coverage --project unit --project serial --project integration",
         "test:coverage:stable": "node tests/ci/repeat.cjs 5 npm run test:coverage",
         "test:performance": "vitest run --project performance",
         "test:performance:stable": "node tests/ci/repeat.cjs 5 npm run test:performance",
@@ -40,8 +41,10 @@
         "nodemailer": "^9.0.5",
         "pdf-lib": "^1.17.1",
         "pg": "^8.23.0",
+        "qr": "0.6.0",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
+        "subset-font": "^2.6.0",
         "zod": "^4.4.3"
     },
     "devDependencies": {

@@ -8,7 +8,7 @@ import { getVerifiedSessionUserId } from '@/lib/auth/session';
 import { apiError, okJson, withApiErrors } from '@/lib/auth/http';
 import { AppError } from '@/lib/errors';
 import type { CustomPaletteColor } from '@/lib/types';
-import { decodeDesignCursor, DESIGN_PAGE_SIZE, encodeDesignCursor, tombstoneCutoff } from '@/lib/sync/revision';
+import { decodeDesignCursor, DESIGN_PAGE_SIZE, encodeDesignCursor } from '@/lib/sync/revision';
 
 function toColors(value: unknown): CustomPaletteColor[] {
   return Array.isArray(value) ? (value as CustomPaletteColor[]) : [];
@@ -18,7 +18,7 @@ async function get(request: Request = new Request('http://localhost/api/palettes
   const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
   const db = getDb();
-  await db.delete(palettes).where(and(eq(palettes.userId, userId), lt(palettes.deletedAt, tombstoneCutoff())));
+  // 墓碑清理只在写路径与每日任务里做（A-06）：GET 保持只读。
   const cursorValue = new URL(request.url).searchParams.get('cursor');
   const cursor = cursorValue ? decodeDesignCursor(cursorValue) : null;
   if (cursorValue && !cursor) return apiError(new AppError('VALIDATION', '分页游标无效'));

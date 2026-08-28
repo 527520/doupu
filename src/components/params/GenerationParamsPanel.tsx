@@ -3,9 +3,16 @@
 /** 生成参数面板（spec §F3）：核心参数 + 高级折叠；300ms 防抖上抛；UI 层无法输入非法值。 */
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
+import Notice from '@/components/ui/Notice';
 import type { Brand, GenerationParams } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
+import { patternRows } from '@/lib/engine/generate';
+import { BOARD_SIZE } from '@/lib/export/pdfLayout';
+import { KIT_TIERS } from '@/lib/engine/kit';
 import type { ImageDataLike } from '@/lib/engine/types';
+
+/** 板数快捷档（F-2）：1/2/3/4 块板宽，超过 200 格上限的档位不提供。 */
+const BOARD_PRESETS = [1, 2, 3, 4, 6] as const;
 
 export interface PaletteOption {
   value: string;
@@ -20,7 +27,17 @@ interface Props {
   onParamsChange: (params: GenerationParams) => void;
   onPaletteSelect: (value: string) => void;
   backgroundSampleSource?: ImageDataLike | null;
+  /** 生成参数是否锁定：改参数需要重新采样原图，没有生成源时必须锁。 */
   disabled?: boolean;
+  /**
+   * 色板选择是否锁定（H-1）。
+   * 与 disabled 分开：换色板走图纸级重映射，不需要原图，因此没有生成源时仍可用。
+   * 省略时沿用 disabled。
+   */
+  paletteDisabled?: boolean;
+  /** 套装档位（H-3）：0 = 用整套色板；其余为可用色号数量。 */
+  kitTier?: number;
+  onKitTierChange?: (tier: number) => void;
 }
 
 /** 参数浅比较（全部为原始字段）。 */
@@ -46,7 +63,11 @@ export default function GenerationParamsPanel({
   onPaletteSelect,
   backgroundSampleSource,
   disabled,
+  paletteDisabled,
+  kitTier = 0,
+  onKitTierChange,
 }: Props) {
+  const paletteLocked = paletteDisabled ?? disabled;
   const [local, setLocal] = useState<GenerationParams>(params);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [widthText, setWidthText] = useState(String(params.targetWidth));
@@ -98,6 +119,29 @@ export default function GenerationParamsPanel({
 
   const paletteValue = useMemo(() => selectedPalette, [selectedPalette]);
   const t = zhCN.params;
+
+  /**
+   * 越界输入提示（B：invalidWidth/invalidColors 两条文案此前从未渲染，
+   * 输入越界只会静默回退，用户不知道发生了什么）。
+   */
+  const widthError = useMemo(() => {
+    if (widthText.trim() === '') return false;
+    const n = Number(widthText);
+    return !Number.isInteger(n) || n < LIMITS.targetWidth.min || n > LIMITS.targetWidth.max;
+  }, [widthText]);
+  const colorsError = useMemo(() => {
+    if (colorsText.trim() === '') return false;
+    const n = Number(colorsText);
+    return !Number.isInteger(n) || n < LIMITS.targetColorCount.min || n > LIMITS.targetColorCount.max;
+  }, [colorsText]);
+
+  /** 行数预览与 200 行钳位提示（A-05）：需要原图比例，无本地生成源时不显示。 */
+  const rows = useMemo(
+    () => (backgroundSampleSource
+      ? patternRows(backgroundSampleSource.width, backgroundSampleSource.height, local.targetWidth)
+      : null),
+    [backgroundSampleSource, local.targetWidth],
+  );
   const samplerWidth = backgroundSampleSource ? Math.min(240, backgroundSampleSource.width) : 0;
   const samplerHeight = backgroundSampleSource
     ? Math.max(1, Math.round((backgroundSampleSource.height * samplerWidth) / backgroundSampleSource.width))
@@ -141,6 +185,30 @@ export default function GenerationParamsPanel({
         <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-ink-soft">
           {t.targetWidth}（{LIMITS.targetWidth.min}–{LIMITS.targetWidth.max}）
         </label>
+        {/*
+          板数快捷档（F-2）：用户买豆板是按块买的，脑子里想的是「两块板那么大」，
+          而不是「58 格」。这里给常用板数一键设定，仍保留滑块做微调。
+        */}
+        <div className="mb-2 flex flex-wrap items-center gap-1" role="group" aria-label={t.boardPresetGroup}>
+          {BOARD_PRESETS.map((boards) => {
+            const width = boards * BOARD_SIZE;
+            const active = local.targetWidth === width;
+            return (
+              <button
+                key={boards}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  patch({ targetWidth: width });
+                  setWidthText(String(width));
+                }}
+                className={active ? 'btn-primary btn-xs' : 'btn-outline btn-xs'}
+              >
+                {t.boardPreset(boards, width)}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex items-center gap-3">
           <input
             id="param-width"
@@ -166,9 +234,22 @@ export default function GenerationParamsPanel({
             onChange={(e) => setWidthText(e.target.value)}
             onBlur={commitWidth}
             onKeyDown={(e) => e.key === 'Enter' && commitWidth()}
-            className="w-20 rounded-lg border border-lilac/50 px-2 py-1 text-sm text-ink"
+            className="w-20 input-compact"
           />
         </div>
+        {widthError && (
+          <Notice kind="danger" compact className="mt-1">
+            {t.invalidWidth}
+          </Notice>
+        )}
+        {rows && (
+          <p className="mt-1 text-xs text-ink-soft">{t.sizeHint(local.targetWidth, rows.rows)}</p>
+        )}
+        {rows?.clamped && (
+          <Notice kind="warning" compact className="mt-2">
+            {t.heightClamped(rows.exactRows, rows.maxWidthKeepingRatio)}
+          </Notice>
+        )}
       </div>
 
       <div>
@@ -200,37 +281,35 @@ export default function GenerationParamsPanel({
             onChange={(e) => setColorsText(e.target.value)}
             onBlur={commitColors}
             onKeyDown={(e) => e.key === 'Enter' && commitColors()}
-            className="w-20 rounded-lg border border-lilac/50 px-2 py-1 text-sm text-ink"
+            className="w-20 input-compact"
           />
         </div>
+        {colorsError && (
+          <Notice kind="danger" compact className="mt-1">
+            {t.invalidColors}
+          </Notice>
+        )}
+        {/* D-10：新手不知道「颜色数」意味着要买多少种豆子，也不知道多少算合适。 */}
+        <p className="mt-1 text-xs text-ink-soft">{t.colorCountHint}</p>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-ink-soft">
-        <input
-          type="checkbox"
-          checked={local.dithering}
-          onChange={(e) => patch({ dithering: e.target.checked })}
-        />
-        {t.dithering}
-      </label>
-
-      <div className="mb-2 text-sm">
-        <label htmlFor="param-brand" className="mb-1 block font-medium text-ink-soft">
-          {t.brand}
+      <div className="text-sm">
+        <label className="flex items-center gap-2 text-ink-soft">
+          <input
+            type="checkbox"
+            checked={local.dithering}
+            onChange={(e) => patch({ dithering: e.target.checked })}
+            aria-describedby="param-dithering-hint"
+          />
+          {t.dithering}
         </label>
-        <select
-          id="param-brand"
-          value={paletteValue}
-          onChange={(e) => onPaletteSelect(e.target.value)}
-          className="w-full rounded-lg border border-lilac/50 px-2 py-1.5 text-sm text-ink"
-        >
-          {paletteOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {/* D-10：「抖动」是算法术语，对新手不可懂；用一句大白话说明它换来什么、代价是什么。 */}
+        <p id="param-dithering-hint" className="mt-1 text-xs text-ink-soft">
+          {t.ditheringHint}
+        </p>
       </div>
+
+
 
       <button
         type="button"
@@ -251,7 +330,7 @@ export default function GenerationParamsPanel({
               id="param-mode"
               value={local.mode}
               onChange={(e) => patch({ mode: e.target.value as 'dominant' | 'average' })}
-              className="w-full rounded-lg border border-lilac/50 px-2 py-1.5 text-sm text-ink"
+              className="w-full input-compact py-1.5"
             >
               <option value="dominant">{t.sampleDominant}</option>
               <option value="average">{t.sampleAverage}</option>
@@ -347,6 +426,53 @@ export default function GenerationParamsPanel({
         </div>
       )}
       </fieldset>
+      <div className="mb-2 text-sm">
+        <label htmlFor="param-brand" className="mb-1 block font-medium text-ink-soft">
+          {t.brand}
+        </label>
+        {/*
+          色板选择独立于 fieldset 的禁用（H-1）：换色板走图纸级重映射，不需要原图，
+          所以「没有生成源」时参数锁定但色板仍可换——这正是此前导入的项目文件
+          换不了色板的原因。
+        */}
+        <select
+          id="param-brand"
+          value={paletteValue}
+          disabled={paletteLocked}
+          onChange={(e) => onPaletteSelect(e.target.value)}
+          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {paletteOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="mb-2 text-sm">
+        <label htmlFor="param-kit" className="mb-1 block font-medium text-ink-soft">
+          {t.kitTier}
+        </label>
+        {/*
+          套装档位（H-3）：内置色板是「品牌一共有多少色」，但用户手里常常只有
+          一盒 24/48 色套装。不限制时生成结果里会出现买不到的色号——这是用户
+          反馈里很常见的一条。档位从色板里按覆盖色域挑代表色，只用这些色生成。
+        */}
+        <select
+          id="param-kit"
+          value={kitTier}
+          disabled={paletteLocked}
+          onChange={(e) => onKitTierChange?.(Number(e.target.value))}
+          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {KIT_TIERS.map((tier) => (
+            <option key={tier} value={tier}>
+              {tier === 0 ? t.kitTierAll : t.kitTierOption(tier)}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-ink-soft">{t.kitTierHint}</p>
+      </div>
     </section>
   );
 }

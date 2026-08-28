@@ -2,9 +2,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import Home from './page';
+import { resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
 
 const fetchMock = vi.fn();
@@ -12,6 +13,8 @@ vi.stubGlobal('fetch', fetchMock);
 
 describe('首页', () => {
   beforeEach(() => {
+    // 登录态探测在组件间共享（J-1）：用例之间必须清掉共享的在途结果。
+    resetAuthStatusCache();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
   });

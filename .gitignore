@@ -65,3 +65,21 @@ next-env.d.ts
 
 # 部署向导临时产物（prod.env 含生产数据库密码，严禁入库）
 .scratch/deploy-wizard/
+
+# 代理会话的临时脚本与产物（正式 spec/issue 走 .scratch/<feature>/ 子目录入库）
+.scratch/*.py
+.scratch/*.mjs
+.scratch/*.json
+.scratch/*.png
+.scratch/*.err
+
+# IDE
+/.idea/
+
+
+# 构建期生成的 PDF 子集字体（由 npm run prebuild 产出，见 scripts/build-pdf-font-subset.mjs）
+/public/fonts/*.subset.otf
+# 界面字体：源字体与子集产物都不入库（源字体体积大且各自有授权条款，
+# 见 scripts/build-ui-font-subset.mjs 与 NOTICE.md）
+/public/fonts/*.subset.ttf
+/assets/fonts/

@@ -6,37 +6,19 @@
  * - 已登录：显示账号邮箱 + 「退出登录」（我的设计入口由首页导航常驻提供）。
  * 登录态经 /api/auth/me 探测（401/网络失败均按未登录处理）。
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zhCN } from '@/messages/zh-CN';
-
-type AuthState = { kind: 'loading' } | { kind: 'guest' } | { kind: 'user'; email: string };
+import { useAuthStatus, resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
 export default function HomeAuthNav() {
   const router = useRouter();
-  const [auth, setAuth] = useState<AuthState>({ kind: 'loading' });
+  // 登录态探测与工作台、新手引导共用（J-1）
+  const auth = useAuthStatus();
   const [loggingOut, setLoggingOut] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/auth/me', { method: 'GET' })
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          setAuth({ kind: 'guest' });
-          return;
-        }
-        const body = (await res.json().catch(() => null)) as { email?: string } | null;
-        setAuth({ kind: 'user', email: body?.email ?? '' });
-      })
-      .catch(() => {
-        if (!cancelled) setAuth({ kind: 'guest' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  /** 退出后本地立即切回未登录显示，不等下一次探测。 */
+  const [loggedOut, setLoggedOut] = useState(false);
 
   const logout = async (): Promise<void> => {
     if (loggingOut) return;
@@ -50,13 +32,14 @@ export default function HomeAuthNav() {
     } catch {
       // 网络失败也回退为未登录显示；服务端会话不受影响
     } finally {
-      setAuth({ kind: 'guest' });
+      setLoggedOut(true);
+      resetAuthStatusCache();
       setLoggingOut(false);
       router.refresh();
     }
   };
 
-  if (auth.kind === 'user') {
+  if (auth.kind === 'user' && !loggedOut) {
     return (
       <div className="flex items-center gap-2 text-sm">
         <span className="max-w-[180px] truncate rounded-full border border-lilac/50 bg-white px-3 py-1.5 text-ink-soft" title={auth.email}>
@@ -66,7 +49,7 @@ export default function HomeAuthNav() {
           type="button"
           onClick={() => void logout()}
           disabled={loggingOut}
-          className="rounded-full px-3 py-1.5 text-ink-soft transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+          className="rounded-full px-3 py-1.5 text-ink-soft transition-colors hover:bg-danger-soft hover:text-danger disabled:opacity-50"
         >
           {zhCN.nav.logout}
         </button>
@@ -74,11 +57,12 @@ export default function HomeAuthNav() {
     );
   }
 
-  if (auth.kind === 'guest') {
+  // guest / unknown（探测失败）都按未登录展示；退出登录后也走这里。
+  if (auth.kind === 'guest' || auth.kind === 'unknown' || loggedOut) {
     return (
       <Link
         href="/login"
-        className="rounded-full bg-primary px-5 py-2 font-semibold text-white shadow-soft transition-colors duration-150 hover:bg-primary-deep"
+        className="btn-primary"
       >
         {zhCN.nav.login}
       </Link>

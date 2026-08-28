@@ -17,7 +17,9 @@
 
   /* 墨紫（正文/标题） */
   --color-ink: #4b4356;
-  --color-ink-soft: #4b4356;
+  /* 次要文字：必须比 --color-ink 浅，否则正文层级被压平（C-1）。
+     5.48:1 on 奶油底 / 4.91:1 on 丁香底，仍满足 WCAG AA。 */
+  --color-ink-soft: #6b6276;
   --color-ink-muted: #61586c;
 
   /* 丁香紫（次级点缀/装饰） */
@@ -25,14 +27,59 @@
   --color-lilac-deep: #765a9e;
   --color-lilac-soft: #f0eaf8;
 
+  /* 状态色（C-2/C-3）：Tailwind 默认的 green-600 / amber-600 在奶油底上只有
+     3.1:1 与 3.0:1，用在 text-xs 上尤其不可读。这里改用与「温柔治愈」同调的
+     深鼠尾草绿 / 焦糖 / 砖红，三者在奶油底、白底、丁香底上都 ≥4.5:1，
+     且砖红与主粉（#b84f78）色相拉开，不会被误认成主操作。 */
+  --color-success: #1f7a4d;
+  --color-success-soft: #eaf5ee;
+  --color-warning: #96591a;
+  --color-warning-soft: #fdf1e3;
+  --color-danger: #c0392b;
+  --color-danger-soft: #fbeceb;
+
+  /* 圆角档位（C-5）：全站只用这四档，避免 8 种圆角混用。
+     胶囊=可点击的操作，2xl=卡片/面板/落区，xl=输入与提示条，lg=紧凑控件。
+     例外只有两处且是有意的：12–16px 的色块用 rounded-sm（拼豆是方的，圆点会失真），
+     裁剪画布用 rounded-none（圆角会裁掉可选区域的边角）。 */
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+
+  /* 动效（C-5）：默认 150ms，编排类动效 240ms；曲线统一 */
+  --ease-gentle: cubic-bezier(0.32, 0.72, 0.35, 1);
+
   /* 柔和粉色阴影（卡片/主按钮） */
   --shadow-soft: 0 8px 24px -10px rgb(232 133 168 / 0.45);
   --shadow-card: 0 2px 14px -6px rgb(75 67 86 / 0.14);
 
-  /* 圆润字体栈：Nunito 风格拉丁（系统回退）+ 幼圆/圆体（中文本地圆体） */
+  /*
+    字体栈（C-8）：
+    - 苹果系（Yuanti SC）与 Windows（YouYuan）自带圆体，排在最前——它们本地就有，
+      不产生下载，也是「温柔治愈」最贴合的字形；
+    - Android 没有内置圆体中文，会用到自托管的 "DouPu UI Sans"
+      （assets/fonts 的源字体经 scripts/build-ui-font-subset.mjs 子集化，约 136 KB）；
+    - 其余为系统兜底。
+    注意：当前源字体是阿里巴巴普惠体，属现代黑体而非圆体——它统一了安卓端观感，
+    但要真正的圆体需要换一份圆体源字体（放进 assets/fonts 即自动生效）。
+  */
   --font-sans:
-    "Yuanti SC", "YouYuan", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
-    system-ui, -apple-system, "Segoe UI", sans-serif;
+    "Yuanti SC", "YouYuan", "DouPu UI Sans", "PingFang SC", "Hiragino Sans GB",
+    "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+}
+
+/*
+  自托管界面字体（C-8）：产物由 npm run prebuild 生成，不入库。
+  文件不存在时这条 @font-face 静默失效，字体栈自动跳到下一个候选。
+  font-display: swap 保证首屏文字不被字体下载阻塞。
+*/
+@font-face {
+  font-family: "DouPu UI Sans";
+  src: url("/fonts/ui-sans-sc.subset.ttf") format("truetype");
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
 }
 
 /* Tailwind v4 preflight 将按钮光标重置为 default；这里恢复平台惯例：
@@ -72,9 +119,43 @@
   .btn-outline {
     @apply inline-flex items-center justify-center rounded-full border border-lilac bg-white px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary hover:text-primary-deep disabled:opacity-50;
   }
+  /*
+    尺寸修饰符（C-6）：全站原有 47 种手抄配方（68 处）里，差异几乎只有尺寸。
+    统一成「种类 + 尺寸」两段式，之后改按钮观感只需改这里。
+  */
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+  /** 图标按钮：只收紧内边距，不动字号（缩放 ± 这类符号按钮）。 */
+  .btn-icon {
+    @apply px-2 py-1;
+  }
+  /** 工具条控件：方角一档（rounded-lg），与胶囊形的主/次操作区分开。 */
+  .btn-tool {
+    @apply inline-flex items-center justify-center gap-1 rounded-lg border border-lilac bg-white px-2 py-1 text-sm text-ink transition-colors duration-150 hover:bg-lilac-soft disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /** 破坏性实心按钮：确认弹窗里的最终删除动作。 */
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded-full bg-danger px-4 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:brightness-95 disabled:opacity-50;
+  }
+  /** 破坏性描边按钮：删除/清空/放弃。 */
+  .btn-danger-outline {
+    @apply inline-flex items-center justify-center rounded-full border border-danger bg-white px-4 py-2 text-sm font-medium text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
+  }
+  /** 破坏性无边框按钮：列表行内的删除图标。 */
+  .btn-danger-quiet {
+    @apply inline-flex items-center justify-center rounded-full px-2 py-1 text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
+  }
   /* 文本输入框 */
   .input-field {
     @apply w-full rounded-xl border border-lilac/50 bg-white px-3.5 py-2.5 text-sm text-ink transition-colors duration-150 placeholder:text-ink-soft/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30;
+  }
+  /** 紧凑输入：工具条与参数面板里的数字/短文本输入，宽度仍由调用处的 w-* 决定。 */
+  .input-compact {
+    @apply rounded-lg border border-lilac/50 bg-white px-2 py-1 text-sm text-ink transition-colors duration-150 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30;
   }
   /* 卡片面：圆角 + 柔和阴影 + 丁香描边 */
   .card-surface {
@@ -89,17 +170,62 @@
     @apply text-2xl font-semibold tracking-wide text-ink;
   }
 
+  /*
+    提示条（C-4）：全站 20+ 处「加载中/警示/失败/成功」提示此前各写一套配方，
+    仅琥珀色警示条就有三种写法。统一到一套：软底 + 同色深字 + 左侧色条。
+    kind 由 .notice-* 决定，间距/字号由 .notice 决定。
+  */
+  .notice {
+    @apply flex items-start gap-2 rounded-xl border-l-4 px-3 py-2 text-sm;
+  }
+  .notice-info {
+    @apply border-l-lilac bg-lilac-soft text-ink;
+  }
+  .notice-success {
+    @apply border-l-success bg-success-soft text-success;
+  }
+  .notice-warning {
+    @apply border-l-warning bg-warning-soft text-warning;
+  }
+  .notice-danger {
+    @apply border-l-danger bg-danger-soft text-danger;
+  }
+  /* 紧凑变体：工具条/表单项下方的一行提示 */
+  .notice-compact {
+    @apply px-2 py-1.5 text-xs;
+  }
+
   .site-header {
     @apply flex w-full flex-col items-stretch gap-2 sm:gap-3;
   }
 
+  /** 跳到主内容（D-9）：平时移出视口，获得焦点时落在左上角。 */
+  .skip-link {
+    @apply fixed left-4 top-2 z-50 -translate-y-16 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white shadow-soft transition-transform focus-visible:translate-y-0;
+  }
+
 }
 
-/* 触屏设备：小按钮抬升到 ≥44px 触控目标 */
+/* 触屏设备的最小触控目标（D-7）。
+   原来只覆盖 button/[role=button] 且只抬高度：站内导航链接（<a>）仍是 36px，
+   「新建设计」30px，⇋⇵↺↻ 这类图标按钮是 44×28。这里补上链接与最小宽度。
+   例外：行内文字链接（.link-soft，句子中间的「去登录」）不该被撑成 44px 方块，
+   否则会把段落行距顶开。 */
 @media (pointer: coarse) {
   button,
-  [role='button'] {
+  [role='button'],
+  summary,
+  a:not(.link-soft),
+  input[type='checkbox'],
+  input[type='radio'] {
     min-height: 44px;
+    min-width: 44px;
+  }
+  /* 表单里的复选框本身很小，靠 label 提供命中区即可，不要把方框撑大 */
+  input[type='checkbox'],
+  input[type='radio'] {
+    min-height: 24px;
+    min-width: 24px;
   }
 }
 
@@ -110,11 +236,13 @@ body {
 }
 
 /* 历史 class 仍表达“次要文字/柔和描边”，但不再用透明度牺牲对比度。
-   统一覆盖可让全部调用点同时满足 WCAG，而无需每个页面复制颜色判断。 */
+   统一覆盖可让全部调用点同时满足 WCAG，而无需每个页面复制颜色判断。
+   注：文字三档由深到浅是 ink → ink-muted → ink-soft，透明度变体一律落到
+   ink-soft（C-1 之前 ink-soft 与 ink 同值，这些变体只能靠 ink-muted 兜底）。 */
 [class~='text-ink-soft/80'],
 [class~='text-ink-soft/60'],
 [class~='placeholder:text-ink-soft/60']::placeholder {
-  color: var(--color-ink-muted);
+  color: var(--color-ink-soft);
 }
 
 [class~='border-lilac/30'],
@@ -124,4 +252,40 @@ body {
 [class~='border-lilac/70'],
 [class~='border-primary/60'] {
   border-color: var(--color-lilac);
+}
+
+/* 尊重系统的「减弱动态效果」设置（无障碍质量地板）：
+   关掉编排动效与过渡，只保留即时状态变化。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+  生成完成的反馈（D-1）。
+  此前生成完成是完全静默的：进度行消失、图纸被替换，没有任何反馈，
+  用户（尤其小屏用户）常常不确定「到底生成好了没有」。
+  两段：结果句上浮 + 粒数滚动（滚动在 JS 里做）。约 240ms + 520ms，走 --ease-gentle；
+  reduced-motion 下由上面的规则降级为即时。
+  图纸本身不做淡入——那需要重挂载画布，会连带重置用户的缩放与网格开关。
+*/
+@keyframes doupu-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: doupu-rise 240ms var(--ease-gentle) both;
 }

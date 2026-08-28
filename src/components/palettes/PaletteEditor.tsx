@@ -3,6 +3,7 @@
 /** 自定义色板编辑器（spec §F6 / 边界 E20）：逐行录入 + 即时校验 + 粘贴/文件导入 + 复制自品牌。 */
 import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
 import { customPaletteColorsSchema, designNameSchema } from '@/lib/schemas';
 import { LIMITS } from '@/lib/appInfo';
@@ -60,6 +61,7 @@ export function validateRows(rows: EditorRow[]): { rowErrors: Map<number, string
 
 export default function PaletteEditor({ initialName, initialColors, saving, onSave, onCancel }: Props) {
   const t = zhCN.palettes.editor;
+  const { confirm, confirmDialog } = useConfirm();
   const [name, setName] = useState(initialName);
   const [rows, setRows] = useState<EditorRow[]>(
     initialColors.length > 0 ? initialColors.map((c) => ({ code: c.code, hex: c.hex })) : [{ code: 'C001', hex: '#FFFFFF' }],
@@ -125,14 +127,21 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
   const copyFromBrand = (brandValue: string): void => {
     const brand = BRANDS.find((b) => b === brandValue);
     if (!brand) return;
-    if (rows.length > 1 && typeof window !== 'undefined' && !window.confirm(t.copyConfirm)) return;
-    const palette = buildBrandPalette(brand);
-    const next: EditorRow[] = palette.map((color, index) => ({
-      code: color.code ?? `C${String(index + 1).padStart(3, '0')}`,
-      hex: color.hex,
-    }));
-    setRows(next);
-    setImportError(null);
+    void (async () => {
+      if (rows.length > 1 && !(await confirm({
+        title: t.copyConfirmTitle,
+        message: t.copyConfirm,
+        confirmLabel: t.copyConfirmAction,
+        danger: true,
+      }))) return;
+      const palette = buildBrandPalette(brand);
+      const next: EditorRow[] = palette.map((color, index) => ({
+        code: color.code ?? `C${String(index + 1).padStart(3, '0')}`,
+        hex: color.hex,
+      }));
+      setRows(next);
+      setImportError(null);
+    })();
   };
 
   const submit = (): void => {
@@ -151,22 +160,22 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           onChange={(e) => setName(e.target.value)}
           aria-label={t.name}
           aria-invalid={nameError !== null}
-          className="rounded-lg border border-lilac/50 px-2 py-1"
+          className="input-compact"
         />
-        {nameError && <span role="alert" className="text-xs text-red-600">{nameError}</span>}
+        {nameError && <span role="alert" className="text-xs text-danger">{nameError}</span>}
       </label>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <span aria-label={t.colorsCounter(rows.length)} className="text-xs text-ink-soft">
           {t.colorsCounter(rows.length)}
         </span>
-        <button type="button" onClick={addRow} disabled={rows.length >= LIMITS.customPaletteColors} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft disabled:opacity-50">
+        <button type="button" onClick={addRow} disabled={rows.length >= LIMITS.customPaletteColors} className="btn-outline btn-xs">
           {t.addRow}
         </button>
-        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft">
+        <button type="button" onClick={() => setPasteOpen((v) => !v)} className="btn-outline btn-xs">
           {t.pasteImport}
         </button>
-        <label className="cursor-pointer rounded-full border border-lilac/50 px-2 py-1 text-xs transition-colors hover:bg-lilac-soft focus-within:ring-2 focus-within:ring-primary">
+        <label className="cursor-pointer btn-outline btn-xs focus-within:ring-2 focus-within:ring-primary">
           {t.fileImport}
           <input
             type="file"
@@ -183,7 +192,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           value=""
           onChange={(e) => copyFromBrand(e.target.value)}
           aria-label={t.copyFromBrand}
-          className="rounded-full border border-lilac/50 px-2 py-1 text-xs"
+          className="btn-outline btn-xs"
         >
           <option value="" disabled>
             {t.copyFromBrand}
@@ -196,7 +205,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
         </select>
       </div>
 
-      {importError && <p role="alert" className="text-xs text-red-600">{importError}</p>}
+      {importError && <p role="alert" className="text-xs text-danger">{importError}</p>}
 
       {pasteOpen && (
         <div className="flex flex-col gap-2">
@@ -206,13 +215,13 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
             onChange={(e) => setPasteText(e.target.value)}
             rows={6}
             aria-label={t.pasteImport}
-            className="rounded-xl border border-lilac/50 p-2 font-mono text-xs"
+            className="input-compact p-2 font-mono text-xs"
           />
           <div className="flex gap-2">
-            <button type="button" onClick={doPasteImport} className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-primary-deep">
+            <button type="button" onClick={doPasteImport} className="btn-primary btn-xs">
               {t.pasteImport}
             </button>
-            <button type="button" onClick={() => setPasteOpen(false)} className="rounded-full border border-lilac/50 px-3 py-1 text-xs transition-colors hover:bg-lilac-soft">
+            <button type="button" onClick={() => setPasteOpen(false)} className="btn-outline btn-xs">
               {t.cancel}
             </button>
           </div>
@@ -230,7 +239,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className={rowErrors.has(index) ? 'bg-red-50' : undefined}>
+              <tr key={index} className={rowErrors.has(index) ? 'bg-danger-soft' : undefined}>
                 <td className="py-1 pr-2">
                   <input
                     type="text"
@@ -239,30 +248,44 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
                     onChange={(e) => setRow(index, { code: e.target.value })}
                     aria-label={`${t.code} ${index + 1}`}
                     aria-invalid={rowErrors.has(index)}
-                    className="w-28 rounded-lg border border-lilac/50 px-1 py-0.5 text-xs"
+                    className="w-28 input-compact px-1 py-0.5 text-xs"
                   />
                 </td>
                 <td className="py-1 pr-2">
-                  <input
-                    type="text"
-                    value={row.hex}
-                    onChange={(e) => setRow(index, { hex: e.target.value })}
-                    aria-label={`${t.hex} ${index + 1}`}
-                    aria-invalid={rowErrors.has(index)}
-                    className="w-28 rounded-lg border border-lilac/50 px-1 py-0.5 font-mono text-xs"
-                  />
+                  {/*
+                    E-2：原来每行只有一个 hex 文本框——编辑颜色却看不见颜色，
+                    只能靠脑补 #RRGGBB。这里补上取色器（原生 color input，
+                    移动端会调起系统取色盘）与色块预览，文本框仍保留以便粘贴色值。
+                  */}
+                  <span className="flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      value={/^#[0-9a-fA-F]{6}$/.test(row.hex) ? row.hex.toUpperCase() : '#FFFFFF'}
+                      onChange={(e) => setRow(index, { hex: e.target.value.toUpperCase() })}
+                      aria-label={`${t.pickColor} ${index + 1}`}
+                      className="h-6 w-8 shrink-0 cursor-pointer rounded-sm border border-lilac/50 bg-white p-0.5"
+                    />
+                    <input
+                      type="text"
+                      value={row.hex}
+                      onChange={(e) => setRow(index, { hex: e.target.value })}
+                      aria-label={`${t.hex} ${index + 1}`}
+                      aria-invalid={rowErrors.has(index)}
+                      className="w-24 input-compact px-1 py-0.5 font-mono text-xs"
+                    />
+                  </span>
                 </td>
                 <td className="py-1">
                   <button
                     type="button"
                     onClick={() => removeRow(index)}
                     aria-label={`${t.removeRow} ${index + 1}`}
-                    className="rounded px-1.5 py-1 text-xs text-red-600 hover:bg-red-50"
+                    className="btn-danger-quiet text-xs"
                   >
                     ×
                   </button>
                   {rowErrors.get(index) && (
-                    <p role="alert" className="text-xs text-red-600">{rowErrors.get(index)}</p>
+                    <p role="alert" className="text-xs text-danger">{rowErrors.get(index)}</p>
                   )}
                 </td>
               </tr>
@@ -271,21 +294,22 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
         </table>
       </div>
 
-      {global && <p role="alert" className="text-sm text-red-600">{global}</p>}
+      {global && <p role="alert" className="text-sm text-danger">{global}</p>}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={saving} className="rounded-full border border-lilac/50 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft disabled:opacity-50">
+        <button type="button" onClick={onCancel} disabled={saving} className="btn-outline btn-sm">
           {t.cancel}
         </button>
         <button
           type="button"
           onClick={submit}
           disabled={!canSave}
-          className="rounded-full bg-primary px-3 py-1 text-sm font-semibold text-white transition-colors hover:bg-primary-deep disabled:cursor-not-allowed disabled:bg-lilac/50"
+          className="btn-primary btn-sm"
         >
           {saving ? '…' : t.save}
         </button>
       </div>
+      {confirmDialog}
     </section>
   );
 }

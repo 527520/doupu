@@ -8,7 +8,7 @@ import {
   PDF_MARGIN_MM,
   PDF_PAGE_COLS,
   PDF_PAGE_ROWS,
-  UNTITLED_NAME,
+  DEFAULT_DESIGN_NAME,
   buildExportFilename,
   computePdfLayout,
   defaultPdfMetrics,
@@ -18,7 +18,7 @@ import {
   legendColumnsForItems,
   paginateLegendItems,
   pageHeaderText,
-  sanitizeFilenamePart,
+  sanitizeFilename,
   seamPositionsForPage,
   sortStatsForLegend,
   toWinAnsi,
@@ -38,37 +38,59 @@ describe('computePdfLayout（E25 分页）', () => {
       rowStart: 0,
       cols: 1,
       rows: 1,
+      board: { row: 1, col: 1, rows: 1, cols: 1 },
     });
   });
 
-  it('31×45 恰好一页图纸（整页满格）', () => {
-    const layout = computePdfLayout(31, 45);
+  it('默认按板分页：一页正好一块 29×29 板（F-1）', () => {
+    const layout = computePdfLayout(29, 29);
+    expect(layout.gridPages).toHaveLength(1);
+    expect(layout.gridPages[0].cols).toBe(29);
+    expect(layout.gridPages[0].rows).toBe(29);
+    expect(layout.boards).toEqual({ rows: 1, cols: 1 });
+
+    // 30 格宽 → 第二块板只有 1 列，仍单独成页（与板缝线对齐）
+    const wide = computePdfLayout(30, 29);
+    expect(wide.gridPages).toHaveLength(2);
+    expect(wide.gridPages[1].colStart).toBe(29);
+    expect(wide.gridPages[1].cols).toBe(1);
+    expect(wide.gridPages[1].board).toEqual({ row: 1, col: 2, rows: 1, cols: 2 });
+  });
+
+  it('free 模式沿用配置化的每页格数（31×45）', () => {
+    const layout = computePdfLayout(31, 45, defaultPdfMetrics, 'free');
     expect(layout.gridPages).toHaveLength(1);
     expect(layout.gridPages[0].cols).toBe(31);
     expect(layout.gridPages[0].rows).toBe(45);
-    expect(layout.totalPages).toBe(2);
+    expect(layout.gridPages[0].board).toBeNull();
+    expect(layout.boards).toBeNull();
+    expect(computePdfLayout(32, 45, defaultPdfMetrics, 'free').gridPages).toHaveLength(2);
+    expect(computePdfLayout(45, 46, defaultPdfMetrics, 'free').gridPages).toHaveLength(4);
   });
 
-  it('32×45 → 横向 2 页；45×46 → 2×2=4 页', () => {
-    expect(computePdfLayout(32, 45).gridPages).toHaveLength(2);
-    expect(computePdfLayout(45, 46).gridPages).toHaveLength(4);
+  it('每页格数配置不足一块板时退回自由分页（不能把板切开）', () => {
+    const small = { ...defaultPdfMetrics, pageCols: 20, pageRows: 20 };
+    const layout = computePdfLayout(40, 40, small);
+    expect(layout.boards).toBeNull();
+    expect(layout.gridPages).toHaveLength(4);
+    expect(layout.gridPages[0].cols).toBe(20);
   });
 
-  it('200×200 → ceil(200/31)×ceil(200/45)=35 页图纸 + 1 页图例 = 36 页', () => {
+  it('200×200 → 按板 7×7=49 页图纸 + 1 页图例 = 50 页', () => {
     const layout = computePdfLayout(200, 200);
-    expect(layout.gridPages).toHaveLength(35);
-    expect(layout.totalPages).toBe(36);
-    // 最后一页部分页：列 187–200（14 列）、行 181–200（20 行）
-    const last = layout.gridPages[34];
-    expect(last.colStart).toBe(186);
-    expect(last.cols).toBe(14);
-    expect(last.rowStart).toBe(180);
-    expect(last.rows).toBe(20);
-    expect(last.pageIndex).toBe(34);
-    expect(last.totalPages).toBe(35);
+    expect(layout.gridPages).toHaveLength(49);
+    expect(layout.totalPages).toBe(50);
+    expect(layout.boards).toEqual({ rows: 7, cols: 7 });
+    // 最后一页部分板：列 175–200（26 列）、行 175–200（26 行）
+    const last = layout.gridPages[48];
+    expect(last.colStart).toBe(174);
+    expect(last.cols).toBe(26);
+    expect(last.rowStart).toBe(174);
+    expect(last.rows).toBe(26);
+    expect(last.board).toEqual({ row: 7, col: 7, rows: 7, cols: 7 });
   });
 
-  it('极宽图（200×2）→ 7 页横向铺开，每页 45 行上限内仅 2 行', () => {
+  it('极宽图（200×2）→ 7 页横向铺开，每页仅 2 行', () => {
     const layout = computePdfLayout(200, 2);
     expect(layout.gridPages).toHaveLength(7);
     expect(layout.gridPages.every((p) => p.rows === 2)).toBe(true);
@@ -90,8 +112,8 @@ describe('computePdfLayout（E25 分页）', () => {
 
   it('图纸页按行优先排列，坐标连续且不重叠', () => {
     const layout = computePdfLayout(70, 90);
-    // 70→3 页宽、90→2 页高 = 6 页
-    expect(layout.gridPages).toHaveLength(6);
+    // 70→3 块板宽、90→4 块板高 = 12 页
+    expect(layout.gridPages).toHaveLength(12);
     for (const page of layout.gridPages) {
       expect(page.cols).toBeGreaterThan(0);
       expect(page.rows).toBeGreaterThan(0);
@@ -100,24 +122,42 @@ describe('computePdfLayout（E25 分页）', () => {
     }
     // 行优先：第 4 页（index 3）应为第二行的第一列
     expect(layout.gridPages[3].colStart).toBe(0);
-    expect(layout.gridPages[3].rowStart).toBe(45);
+    expect(layout.gridPages[3].rowStart).toBe(29);
   });
 });
 
 describe('pageHeaderText（行列区间标注）', () => {
-  it('1-based 闭区间', () => {
-    const layout = computePdfLayout(200, 200);
+  it('按板分页：先说第几板，再说行列区间（F-1）', () => {
+    const layout = computePdfLayout(200, 200); // 7×7 板
+    expect(pageHeaderText(layout.gridPages[0])).toBe('第 1/49 页 · 第 1 行 第 1 列板 · 列 1–29 · 行 1–29');
+    expect(pageHeaderText(layout.gridPages[48])).toBe('第 49/49 页 · 第 7 行 第 7 列板 · 列 175–200 · 行 175–200');
+    // 行优先：第 7 页 = 第一行最后一列板；第 8 页 = 第二行第一列板
+    expect(pageHeaderText(layout.gridPages[6])).toBe('第 7/49 页 · 第 1 行 第 7 列板 · 列 175–200 · 行 1–29');
+    expect(pageHeaderText(layout.gridPages[7])).toBe('第 8/49 页 · 第 2 行 第 1 列板 · 列 1–29 · 行 30–58');
+  });
+
+  it('只有一块板时不啰嗦板坐标', () => {
+    const layout = computePdfLayout(29, 29);
+    expect(pageHeaderText(layout.gridPages[0])).toBe('第 1/1 页 · 整板 · 列 1–29 · 行 1–29');
+  });
+
+  it('free 模式保持原样（1-based 闭区间）', () => {
+    const layout = computePdfLayout(200, 200, defaultPdfMetrics, 'free');
     expect(pageHeaderText(layout.gridPages[0])).toBe('第 1/35 页 · 列 1–31 · 行 1–45');
     expect(pageHeaderText(layout.gridPages[34])).toBe('第 35/35 页 · 列 187–200 · 行 181–200');
-    // 行优先：第 7 页 = 第一行最后一列；第 8 页 = 第二行第一列
-    expect(pageHeaderText(layout.gridPages[6])).toBe('第 7/35 页 · 列 187–200 · 行 1–45');
-    expect(pageHeaderText(layout.gridPages[7])).toBe('第 8/35 页 · 列 1–31 · 行 46–90');
   });
 });
 
 describe('seamPositionsForPage（板缝线）', () => {
-  it('只保留落在本页区间内的全局板缝位置', () => {
+  it('按板分页后页内不再有板缝线——页边界就是板缝（F-1）', () => {
     const layout = computePdfLayout(200, 200);
+    const first = seamPositionsForPage(layout.gridPages[0]);
+    expect(first.cols).toEqual([]);
+    expect(first.rows).toEqual([]);
+  });
+
+  it('free 模式下只保留落在本页区间内的全局板缝位置', () => {
+    const layout = computePdfLayout(200, 200, defaultPdfMetrics, 'free');
     const first = seamPositionsForPage(layout.gridPages[0]);
     expect(first.cols).toEqual([29]);
     expect(first.rows).toEqual([29]);
@@ -241,16 +281,16 @@ describe('paginateLegendItems', () => {
   });
 });
 
-describe('sanitizeFilenamePart / buildExportFilename（E26）', () => {
-  it('非法字符替换、折叠、裁剪首尾', () => {
-    expect(sanitizeFilenamePart('a/b\\c:d*e?f"g<h>i|j')).toBe('a_b_c_d_e_f_g_h_i_j');
-    expect(sanitizeFilenamePart('__名___字__')).toBe('名_字');
-    expect(sanitizeFilenamePart('  ')).toBe('');
+describe('buildExportFilename（E26；规则统一在 export/filename.ts，J-3）', () => {
+  it('非法字符替换为 -、折叠、裁剪首尾（与 PNG 同一套规则）', () => {
+    expect(sanitizeFilename('a/b\\c:d*e?f"g<h>i|j')).toBe('a-b-c-d-e-f-g-h-i-j');
+    expect(sanitizeFilename('--名---字--')).toBe('名-字');
+    expect(sanitizeFilename('  ')).toBe(DEFAULT_DESIGN_NAME);
   });
 
   it('空名回退「未命名设计」', () => {
-    expect(buildExportFilename('', 100, 200, 'pdf')).toBe(`豆谱-${UNTITLED_NAME}-100x200.pdf`);
-    expect(buildExportFilename('   ', 10, 20)).toBe(`豆谱-${UNTITLED_NAME}-10x20.pdf`);
+    expect(buildExportFilename('', 100, 200, 'pdf')).toBe(`豆谱-${DEFAULT_DESIGN_NAME}-100x200.pdf`);
+    expect(buildExportFilename('   ', 10, 20)).toBe(`豆谱-${DEFAULT_DESIGN_NAME}-10x20.pdf`);
   });
 
   it('正常名称与超长名称', () => {
@@ -260,11 +300,12 @@ describe('sanitizeFilenamePart / buildExportFilename（E26）', () => {
     expect(long.length).toBeLessThan(120);
   });
 
-  it('PNG/PDF 同一规则，仅扩展名不同', () => {
-    const png = buildExportFilename('测试', 10, 10, 'png');
-    const pdf = buildExportFilename('测试', 10, 10, 'pdf');
-    expect(png).toBe('豆谱-测试-10x10.png');
-    expect(pdf).toBe('豆谱-测试-10x10.pdf');
+  it('PNG 与 PDF 的文件名只差扩展名（此前 - 与 _ 两套规则会给出不同名字）', () => {
+    const png = buildExportFilename('测试:图纸', 10, 10, 'png');
+    const pdf = buildExportFilename('测试:图纸', 10, 10, 'pdf');
+    expect(png).toBe('豆谱-测试-图纸-10x10.png');
+    expect(pdf).toBe('豆谱-测试-图纸-10x10.pdf');
+    expect(png.replace(/\.png$/, '')).toBe(pdf.replace(/\.pdf$/, ''));
   });
 });
 

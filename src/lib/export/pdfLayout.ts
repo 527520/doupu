@@ -5,6 +5,7 @@
  * 票 02 配置化：分页/尺寸参数经 PdfPageMetrics 传入，默认值来自站点配置（config.ts）。
  */
 import { config } from '@/lib/config';
+import { A4_HEIGHT_MM, A4_WIDTH_MM, MM_TO_PT } from '@/lib/paper';
 
 export interface PdfPageMetrics {
   cellMm: number;
@@ -29,10 +30,10 @@ export const PDF_PAGE_ROWS = defaultPdfMetrics.pageRows;
 // 物理自洽（常量自洽测试锁定）：2×8 + 10(页眉) + 45×6 = 296 ≤ 297（A4 高）；2×8 + 31×6 = 202 ≤ 210（A4 宽）
 export const PDF_MARGIN_MM = defaultPdfMetrics.marginMm;
 export const PDF_HEADER_MM = defaultPdfMetrics.headerMm;
-export const A4_WIDTH_MM = 210;
-export const A4_HEIGHT_MM = 297;
-export const MM_TO_PT = 72 / 25.4;
-export const UNTITLED_NAME = '未命名设计';
+/** 纸张常量统一在 src/lib/paper.ts（J-3：config.ts 曾各自硬编码 210/297）；此处转出保持既有 import 路径。 */
+export { A4_WIDTH_MM, A4_HEIGHT_MM, MM_TO_PT };
+/** 兼容导出：设计名默认值统一在 export/filename.ts（DEFAULT_DESIGN_NAME）。 */
+export { DEFAULT_DESIGN_NAME } from './filename';
 
 export interface PdfPageSpec {
   /** 0-based 图纸页序号 */
@@ -43,6 +44,8 @@ export interface PdfPageSpec {
   rowStart: number;
   cols: number;
   rows: number;
+  /** 按板分页时的板坐标（1-based，行列均从 1 开始）；自由分页时为 null。 */
+  board: { row: number; col: number; rows: number; cols: number } | null;
 }
 
 export interface PdfLayout {
@@ -51,14 +54,38 @@ export interface PdfLayout {
   legendPageIndex: number;
   /** 总页数 = 图纸页 + 图例页 */
   totalPages: number;
+  /** 按板分页时的板阵列（用于总览页）；自由分页时为 null。 */
+  boards: { rows: number; cols: number } | null;
 }
 
-/** 分页计算：每页 pageCols 列 × pageRows 行；页数 = ceil(W/cols) × ceil(H/rows)；另加 1 页图例清单。 */
-export function computePdfLayout(W: number, H: number, metrics: PdfPageMetrics = defaultPdfMetrics): PdfLayout {
+/** 一块拼豆板的格数（D16/D21：仅 5mm 融合豆，板为 29×29）。 */
+export const BOARD_SIZE = 29;
+
+/**
+ * 分页计算。
+ *
+ * 两种模式（F-1）：
+ * - `byBoard`（默认）：每页正好一块 29×29 拼豆板。图纸本来就按板画缝线，
+ *   而旧版按 31×45 格切页，页边界与板缝线错位——用户拼的时候要对着一页纸
+ *   跨两块板，或者一块板要翻两页。按板分页后「一页 = 一块板」，
+ *   还能给出板坐标（第 2 行第 1 列）方便按板归位。
+ * - `free`：沿用 metrics.pageCols × pageRows 的自由分页（配置化保留）。
+ */
+export function computePdfLayout(
+  W: number,
+  H: number,
+  metrics: PdfPageMetrics = defaultPdfMetrics,
+  mode: 'byBoard' | 'free' = 'byBoard',
+): PdfLayout {
   if (!Number.isInteger(W) || !Number.isInteger(H) || W < 1 || H < 1) {
-    return { gridPages: [], legendPageIndex: 0, totalPages: 1 };
+    return { gridPages: [], legendPageIndex: 0, totalPages: 1, boards: null };
   }
-  const { pageCols, pageRows } = metrics;
+  const byBoard = mode === 'byBoard'
+    // 一块板必须放得下：版式配置太小时（例如把每页格数调到 20）退回自由分页。
+    && metrics.pageCols >= BOARD_SIZE
+    && metrics.pageRows >= BOARD_SIZE;
+  const pageCols = byBoard ? BOARD_SIZE : metrics.pageCols;
+  const pageRows = byBoard ? BOARD_SIZE : metrics.pageRows;
   const pageColsCount = Math.ceil(W / pageCols);
   const pageRowsCount = Math.ceil(H / pageRows);
   const gridPages: PdfPageSpec[] = [];
@@ -73,17 +100,31 @@ export function computePdfLayout(W: number, H: number, metrics: PdfPageMetrics =
         rowStart,
         cols: Math.min(pageCols, W - colStart),
         rows: Math.min(pageRows, H - rowStart),
+        board: byBoard
+          ? { row: pr + 1, col: pc + 1, rows: pageRowsCount, cols: pageColsCount }
+          : null,
       });
     }
   }
-  return { gridPages, legendPageIndex: gridPages.length, totalPages: gridPages.length + 1 };
+  return {
+    gridPages,
+    legendPageIndex: gridPages.length,
+    totalPages: gridPages.length + 1,
+    boards: byBoard ? { rows: pageRowsCount, cols: pageColsCount } : null,
+  };
 }
 
 /** 页眉文本（spec：第 x/y 页、行列区间；坐标为 1-based 闭区间）。 */
 export function pageHeaderText(page: PdfPageSpec): string {
   const colEnd = page.colStart + page.cols;
   const rowEnd = page.rowStart + page.rows;
-  return `第 ${page.pageIndex + 1}/${page.totalPages} 页 · 列 ${page.colStart + 1}–${colEnd} · 行 ${page.rowStart + 1}–${rowEnd}`;
+  const position = `列 ${page.colStart + 1}–${colEnd} · 行 ${page.rowStart + 1}–${rowEnd}`;
+  if (!page.board) return `第 ${page.pageIndex + 1}/${page.totalPages} 页 · ${position}`;
+  // 按板分页时页眉先说「第几板」——拼的时候找的是板，不是页码。
+  const boardLabel = page.board.rows * page.board.cols > 1
+    ? `第 ${page.board.row} 行 第 ${page.board.col} 列板`
+    : '整板';
+  return `第 ${page.pageIndex + 1}/${page.totalPages} 页 · ${boardLabel} · ${position}`;
 }
 
 /** 全局板缝位置（每 29 格，落在当前页区间内才绘制）。 */
@@ -214,20 +255,9 @@ export function paginateLegendItems<T extends { code: string; count: number }>(
   return pages;
 }
 
-const ILLEGAL_FILENAME_RE = /[\\/:*?"<>|\u0000-\u001f]/g;
-
-/** 设计名清洗：非法文件名字符替换为 '_'，折叠重复，裁剪首尾，限长 60。 */
-export function sanitizeFilenamePart(name: string): string {
-  return name
-    .trim()
-    .replace(ILLEGAL_FILENAME_RE, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 60);
-}
-
-/** 导出文件名（与 PNG 同规则，spec E26）：豆谱-<设计名>-<W>x<H>.<ext>；空名用「未命名设计」。 */
-export function buildExportFilename(name: string, W: number, H: number, ext = 'pdf'): string {
-  const part = sanitizeFilenamePart(name) || UNTITLED_NAME;
-  return `豆谱-${part}-${W}x${H}.${ext}`;
-}
+/**
+ * 设计名清洗与导出文件名统一在 export/filename.ts（J-3）。
+ * 此前这里用 `_` 且截断 60、layout.ts 用 `-` 且不截断，同一设计名的
+ * PNG 与 PDF 会得到不同文件名，而注释却写着「与 PNG 同规则」。
+ */
+export { buildExportFilename, sanitizeFilename } from './filename';

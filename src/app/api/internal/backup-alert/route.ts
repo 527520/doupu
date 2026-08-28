@@ -8,6 +8,9 @@ import { z } from 'zod';
 import { AppError } from '@/lib/errors';
 import { apiError, noContent, readJson, withApiErrors } from '@/lib/auth/http';
 import { isDevMailMode, sendMail } from '@/lib/auth/mailer';
+import { getDb } from '@/lib/auth/db';
+import { checkRateLimit, clientIp } from '@/lib/auth/rateLimit';
+import { config } from '@/lib/config';
 
 const alertSchema = z.object({
   token: z.string().min(16),
@@ -24,7 +27,31 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** 单行化：告警内容进日志前剥掉换行与控制字符，避免伪造日志行（A-13）。 */
+export function singleLine(message: string): string {
+  return message.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+}
+
+/** HTML 转义：告警内容会进管理员邮件正文，不能原样拼接（A-13）。 */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function post(request: Request) {
+  // 该路径公网可达且不走浏览器 Origin 守卫：先按 IP 限流，令牌爆破才有代价（A-13）。
+  const db = getDb();
+  const allowed = await checkRateLimit(
+    db,
+    `internal:backup-alert:${clientIp(request)}`,
+    config.security.backupAlertRateLimit,
+  );
+  if (!allowed) return apiError(new AppError('RATE_LIMITED', '请求过于频繁'));
+
   const body = await readJson(request, 4096);
   if (!body.ok) return body.response;
   const parsed = alertSchema.safeParse(body.data);
@@ -35,7 +62,8 @@ async function post(request: Request) {
     return apiError(new AppError('UNAUTHORIZED', '未授权'));
   }
 
-  console.error('[backup-alert]', parsed.data.message);
+  const message = singleLine(parsed.data.message);
+  console.error('[backup-alert]', message);
   const adminEmail = process.env.ADMIN_EMAIL ?? process.env.SMTP_FROM ?? '';
   if (adminEmail && !isDevMailMode()) {
     // SMTP ignores the SES-specific option. In SES mode startup validation
@@ -44,12 +72,12 @@ async function post(request: Request) {
     await sendMail(
       adminEmail,
       '豆谱备份告警',
-      `<p>${parsed.data.message}</p>`,
-      parsed.data.message,
+      `<p>${escapeHtml(message)}</p>`,
+      message,
       {
         sesTemplate: {
           templateId: process.env.SES_ALERT_TEMPLATE_ID ?? '',
-          templateData: { message: parsed.data.message },
+          templateData: { message },
         },
       },
     );

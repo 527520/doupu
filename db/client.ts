@@ -6,6 +6,7 @@ import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-post
 import { Pool } from 'pg';
 import { sql, lt } from 'drizzle-orm';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
+import { poolOptions } from '@/lib/config';
 import * as schema from './schema';
 import { designs, palettes, rateLimits } from './schema';
 
@@ -13,9 +14,9 @@ export type ProdDatabase = NodePgDatabase<typeof schema>;
 /** 生产/测试两种客户端共用的联合类型（PGlite 仅为 type-only 导入，不进打包链）。 */
 export type AnyDatabase = ProdDatabase | PgliteDatabase<typeof schema>;
 
-/** 生产客户端：连接池（max 10，单实例规模）。 */
+/** 生产客户端：连接池（超时与容量见 config.database，A-11）。 */
 export function createProdClient(databaseUrl: string): ProdDatabase {
-  const pool = new Pool({ connectionString: databaseUrl, max: 10 });
+  const pool = new Pool({ connectionString: databaseUrl, ...poolOptions() });
   return drizzlePg(pool, { schema });
 }
 

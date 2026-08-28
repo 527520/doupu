@@ -106,15 +106,18 @@ describe('PalettesPage', () => {
     render(<PalettesPage />);
     await waitFor(() => expect(screen.getByText('待删')).toBeTruthy());
 
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    fireEvent.click(screen.getByRole('button', { name: t.delete }));
+    const cancelDelete = async (): Promise<void> => {
+      fireEvent.click(screen.getByRole('button', { name: t.delete }));
+      fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }));
+    };
+    await cancelDelete();
     expect(deletePalette).not.toHaveBeenCalled();
-    confirmSpy.mockReturnValue(true);
+
     deletePalette.mockResolvedValue(undefined);
     fireEvent.click(screen.getByRole('button', { name: t.delete }));
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.common.delete }));
     await waitFor(() => expect(deletePalette).toHaveBeenCalledWith('id-1', 1));
     await waitFor(() => expect(screen.queryByText('待删')).toBeNull());
-    confirmSpy.mockRestore();
   });
 
   it('编辑：打开编辑器并预填数据', async () => {

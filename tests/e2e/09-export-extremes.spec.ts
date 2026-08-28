@@ -54,7 +54,10 @@ test('200×1 PNG has cross-browser decodable golden pixels and 500-color PDF pag
     const binary = atob(base64);
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
     const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    // WebKit（Playwright）没有 OffscreenCanvas，这里用普通 canvas 元素。
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
     const context = canvas.getContext('2d')!;
     context.drawImage(bitmap, 0, 0);
     bitmap.close();

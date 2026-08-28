@@ -2,42 +2,36 @@
 
 /**
  * 首页三步引导（spec §F10）：无会话且未手动关闭时显示。
- * 关闭状态存 localStorage（doupu_onboarding_dismissed），会话状态探测 /api/auth/me（401 即游客）。
+ * 关闭状态存 localStorage（doupu_onboarding_dismissed）；登录态由 useAuthStatus 提供（J-1）。
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
+import { useAuthStatus } from '@/components/account/useAuthStatus';
 
 const DISMISS_KEY = 'doupu_onboarding_dismissed';
 
 export default function OnboardingGuide() {
   const t = zhCN.onboarding;
-  const [visible, setVisible] = useState(false);
+  const auth = useAuthStatus();
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (typeof window !== 'undefined' && window.localStorage.getItem(DISMISS_KEY) === '1') {
-          return; // 已关闭过
-        }
-        const response = await fetch('/api/auth/me');
-        if (response.status === 401 && !cancelled) setVisible(true); // 游客才显示
-      } catch {
-        // 网络失败时不显示引导（避免打扰）
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    // localStorage 读取放进宏任务：SSR 阶段没有 window，且不在 effect 体内同步 setState。
+    if (typeof window === 'undefined') return;
+    const timer = setTimeout(() => {
+      if (window.localStorage.getItem(DISMISS_KEY) === '1') setDismissed(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const dismiss = (): void => {
     if (typeof window !== 'undefined') window.localStorage.setItem(DISMISS_KEY, '1');
-    setVisible(false);
+    setDismissed(true);
   };
 
-  if (!visible) return null;
+  // 只对游客显示；登录态探测中（loading）先不显示，避免闪一下又消失。
+  if (dismissed || auth.kind !== 'guest') return null;
 
   const steps = [
     { title: t.step1Title, body: t.step1Body },
@@ -52,7 +46,7 @@ export default function OnboardingGuide() {
         <button
           type="button"
           onClick={dismiss}
-          className="rounded-full border border-lilac/60 px-3 py-1 text-sm text-ink-soft transition-colors hover:bg-lilac-soft"
+          className="btn-outline btn-sm"
         >
           {t.dismiss}
         </button>

@@ -53,6 +53,14 @@ export default async function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased">
+        {/*
+          跳到主内容（D-9）：键盘用户此前必须逐个 Tab 过站内导航（工作台里还有
+          页签与工具条）才能到图纸。链接平时不可见，获得焦点时出现在左上角。
+          各页面的 <main> 都带 id="main"，见 .skip-link 样式。
+        */}
+        <a href="#main" className="skip-link">
+          {zhCN.nav.skipToMain}
+        </a>
         <ClientReadyMarker />
         {children}
       </body>

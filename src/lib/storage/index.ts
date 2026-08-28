@@ -8,6 +8,7 @@ import { conflictName } from '@/lib/project/parse';
 import { drawPattern } from '@/lib/render/draw';
 import { LIMITS } from '@/lib/appInfo';
 import type { ImageDataLike } from '@/lib/engine/types';
+import { parseStitchProgress, type StitchProgress } from '@/lib/progress/stitchProgress';
 import type { Pattern, ProjectFile } from '@/lib/types';
 
 // ---------- 类型 ----------
@@ -101,6 +102,10 @@ export interface StorageAdapter {
   delete(id: string): Promise<void>;
   getMeta(key: string): Promise<string | null>;
   setMeta(key: string, value: string): Promise<void>;
+  /** 跟拼进度（G-1）：按设计 id 独立存放，删除设计时一并清除。 */
+  getStitchProgress(designId: string): Promise<StitchProgress | null>;
+  putStitchProgress(designId: string, progress: StitchProgress): Promise<void>;
+  deleteStitchProgress(designId: string): Promise<void>;
 }
 
 export type StorageErrorCode = 'UNAVAILABLE' | 'QUOTA' | 'UNKNOWN';
@@ -117,10 +122,12 @@ export class StorageError extends Error {
 // ---------- IndexedDB 适配 ----------
 
 const DB_NAME = 'doupu';
-const DB_VERSION = 2;
+// v3：新增跟拼进度存储（G-1）。升级只加 store，不改动既有数据。
+const DB_VERSION = 3;
 const STORE_DESIGNS = 'designs';
 const STORE_META = 'meta';
 const STORE_GENERATION_SOURCES = 'generation-sources';
+const STORE_STITCH_PROGRESS = 'stitch-progress';
 
 function wrapRequest<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -153,6 +160,9 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
       }
       if (!database.objectStoreNames.contains(STORE_GENERATION_SOURCES)) {
         database.createObjectStore(STORE_GENERATION_SOURCES, { keyPath: 'designId' });
+      }
+      if (!database.objectStoreNames.contains(STORE_STITCH_PROGRESS)) {
+        database.createObjectStore(STORE_STITCH_PROGRESS, { keyPath: 'designId' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -205,11 +215,13 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
       }
     },
     async delete(id) {
-      const tx = db.transaction([STORE_DESIGNS, STORE_GENERATION_SOURCES], 'readwrite');
+      const tx = db.transaction([STORE_DESIGNS, STORE_GENERATION_SOURCES, STORE_STITCH_PROGRESS], 'readwrite');
       const completed = txComplete(tx);
       try {
         await wrapRequest(tx.objectStore(STORE_DESIGNS).delete(id));
         await wrapRequest(tx.objectStore(STORE_GENERATION_SOURCES).delete(id));
+        // 设计删了进度就没有意义，留着只会在同 id 复用时错位（G-1）
+        await wrapRequest(tx.objectStore(STORE_STITCH_PROGRESS).delete(id));
         await completed;
       } catch (error) {
         await abortTransaction(tx, completed, error);
@@ -225,6 +237,36 @@ export async function openIndexedDb(): Promise<StorageAdapter> {
       const completed = txComplete(tx);
       try {
         await wrapRequest(tx.objectStore(STORE_META).put({ key, value }));
+        await completed;
+      } catch (error) {
+        await abortTransaction(tx, completed, error);
+      }
+    },
+    async getStitchProgress(designId) {
+      const tx = db.transaction(STORE_STITCH_PROGRESS, 'readonly');
+      const stored = await wrapRequest(tx.objectStore(STORE_STITCH_PROGRESS).get(designId));
+      return parseStitchProgress(stored);
+    },
+    async putStitchProgress(designId, progress) {
+      const tx = db.transaction(STORE_STITCH_PROGRESS, 'readwrite');
+      const completed = txComplete(tx);
+      try {
+        // 复制一份再写：结构化克隆会共享 buffer，之后原地改动会污染已存数据。
+        await wrapRequest(tx.objectStore(STORE_STITCH_PROGRESS).put({
+          designId,
+          ...progress,
+          done: progress.done.slice(0),
+        }));
+        await completed;
+      } catch (error) {
+        await abortTransaction(tx, completed, error);
+      }
+    },
+    async deleteStitchProgress(designId) {
+      const tx = db.transaction(STORE_STITCH_PROGRESS, 'readwrite');
+      const completed = txComplete(tx);
+      try {
+        await wrapRequest(tx.objectStore(STORE_STITCH_PROGRESS).delete(designId));
         await completed;
       } catch (error) {
         await abortTransaction(tx, completed, error);

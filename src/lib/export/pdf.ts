@@ -7,6 +7,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { normalizePdfMetrics } from '@/lib/config';
+import { totalBeadCount } from '@/lib/engine/generate';
 import { hexToRgb } from '@/lib/engine/color';
 import { contrastColor } from '@/lib/render/layout';
 import { zhCN } from '@/messages/zh-CN';
@@ -101,6 +102,71 @@ function drawLegend(
   });
 }
 
+/**
+ * 板位总览页（F-1）：图纸被切成多块板时，先给一页「这些板怎么拼在一起」。
+ * 没有这一页，用户拿到 49 张纸只能靠页眉的行列区间在脑子里拼装。
+ */
+function drawBoardOverviewPage(
+  page: PDFPage,
+  boards: { rows: number; cols: number },
+  patternWidth: number,
+  patternHeight: number,
+  name: string,
+  font: PDFFont,
+  cjk: boolean,
+  metrics: PdfPageMetrics,
+  measure: PdfTextMeasurer,
+): void {
+  const t = zhCN.exportPdf;
+  const marginPt = metrics.marginMm * MM_TO_PT;
+  const top = PAGE_H_PT - marginPt;
+  const rawTitle = cjk ? `${t.boardOverviewTitle} · ${name.trim()}` : `Board map · ${name.trim()}`;
+  const title = truncateTextToWidth(rawTitle, 14, PAGE_W_PT - 2 * marginPt, '...', measure);
+  page.drawText(cjk ? title : toWinAnsi(title), { x: marginPt, y: top - 16, size: 14, font });
+
+  const summary = cjk
+    ? t.boardOverviewSummary(boards.rows * boards.cols, boards.cols, boards.rows, patternWidth, patternHeight)
+    : `${boards.rows * boards.cols} boards (${boards.cols} x ${boards.rows}), ${patternWidth} x ${patternHeight} cells`;
+  page.drawText(cjk ? summary : toWinAnsi(summary), {
+    x: marginPt,
+    y: top - 32,
+    size: 9,
+    font,
+    color: rgb(0.35, 0.35, 0.35),
+  });
+
+  // 板位示意图：按板阵列画格子，格内标「行-列」，与各页页眉的板坐标一致。
+  const usableW = PAGE_W_PT - 2 * marginPt;
+  const usableH = top - 60 - marginPt;
+  const cell = Math.max(24, Math.min(usableW / boards.cols, usableH / boards.rows, 90));
+  const mapW = cell * boards.cols;
+  const mapTop = top - 52;
+  for (let row = 0; row < boards.rows; row++) {
+    for (let col = 0; col < boards.cols; col++) {
+      const x = marginPt + (usableW - mapW) / 2 + col * cell;
+      const y = mapTop - (row + 1) * cell;
+      page.drawRectangle({
+        x,
+        y,
+        width: cell,
+        height: cell,
+        borderColor: rgb(0.45, 0.4, 0.5),
+        borderWidth: 0.8,
+      });
+      const label = `${row + 1}-${col + 1}`;
+      const size = Math.min(10, cell / 3);
+      const textWidth = font.widthOfTextAtSize(label, size);
+      page.drawText(label, {
+        x: x + (cell - textWidth) / 2,
+        y: y + (cell - size) / 2,
+        size,
+        font,
+        color: rgb(0.3, 0.27, 0.35),
+      });
+    }
+  }
+}
+
 /** 生成分页拼图 PDF；返回 PDF 字节。 */
 export async function generatePatternPdf(
   input: PdfExportInput,
@@ -130,6 +196,21 @@ export async function generatePatternPdf(
     font = await doc.embedFont(StandardFonts.Helvetica);
   }
   const measure: PdfTextMeasurer = (text, size) => font.widthOfTextAtSize(cjk ? text : toWinAnsi(text), size);
+
+  // 多块板时先出一页板位总览（F-1）：一页 = 一块板之后，用户需要知道板怎么拼。
+  if (layout.boards && layout.boards.rows * layout.boards.cols > 1) {
+    drawBoardOverviewPage(
+      doc.addPage([PAGE_W_PT, PAGE_H_PT]),
+      layout.boards,
+      W,
+      H,
+      name,
+      font,
+      cjk,
+      metrics,
+      measure,
+    );
+  }
 
   for (const page of layout.gridPages) {
     const pdfPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
@@ -218,7 +299,7 @@ export async function generatePatternPdf(
   const sortedStats = sortStatsForLegend(stats);
   const legendPages = paginateLegendItems(sortedStats, metrics, measure);
   const legendColumnCount = legendColumnsForItems(sortedStats, A4_WIDTH_MM - 2 * metrics.marginMm, 8, measure);
-  const totalCount = sortedStats.reduce((sum, item) => sum + item.count, 0);
+  const totalCount = totalBeadCount(sortedStats);
   legendPages.forEach((pageStats, index) => {
     const legendPage = doc.addPage([PAGE_W_PT, PAGE_H_PT]);
     drawLegend(

@@ -96,6 +96,15 @@ describe('PatternPreview', () => {
     expect(setPointerCapture).not.toHaveBeenCalled();
     expect(container.scrollLeft).toBe(10);
     expect(container.scrollTop).toBe(12);
-    expect(canvas).toHaveStyle({ touchAction: 'pan-x pan-y' });
+    // D-5：平移交给原生滚动，双指缩放交给浏览器（原来的 pan-x pan-y 把捏合禁掉了，
+    // 手机上只能点 ±，与编辑画布的手势也不一致）。
+    expect(canvas).toHaveStyle({ touchAction: 'pan-x pan-y pinch-zoom' });
+  });
+
+  it('画布对读屏可见：有可访问名与图纸规模，且可键盘聚焦（D-9）', () => {
+    render(<PatternPreview pattern={pattern} defaultCellPx={10} />);
+    const canvas = screen.getByRole('img', { name: /3 × 2 格/ });
+    expect(canvas.tagName).toBe('CANVAS');
+    expect(canvas).toHaveAttribute('tabindex', '0');
   });
 });

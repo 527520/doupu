@@ -8,6 +8,7 @@
  * - 敏感项（限流/会话/体积）绝不出现在 publicConfig() 中。
  */
 import { LIMITS } from '@/lib/appInfo';
+import { A4_HEIGHT_MM, A4_WIDTH_MM } from '@/lib/paper';
 
 const isServer = typeof process !== 'undefined' && process.versions?.node != null;
 
@@ -65,12 +66,19 @@ export interface SiteConfig extends PublicConfig {
     loginRateLimit: number;
     registerRateLimit: number;
     tokenRateLimit: number;
+    /** 同步写（设计/色板 PUT+DELETE）每用户每小时上限 */
+    syncWriteRateLimit: number;
+    /** 备份告警端点每 IP 每小时上限 */
+    backupAlertRateLimit: number;
     sessionTtlSeconds: number;
     maxBodyBytes: number;
   };
-  features: {
-    heicWasm: boolean;
-    pdfFontSubset: boolean;
+  /** 生产连接池韧性：任一项为 0 表示不设该超时（不推荐）。 */
+  database: {
+    poolMax: number;
+    statementTimeoutMs: number;
+    connectionTimeoutMs: number;
+    idleTimeoutMs: number;
   };
 }
 
@@ -83,10 +91,17 @@ const DEFAULTS: SiteConfig = {
     loginRateLimit: 10,
     registerRateLimit: 10,
     tokenRateLimit: 60,
+    syncWriteRateLimit: 600,
+    backupAlertRateLimit: 60,
     sessionTtlSeconds: 30 * 24 * 60 * 60,
     maxBodyBytes: 64 * 1024,
   },
-  features: { heicWasm: true, pdfFontSubset: true },
+  database: {
+    poolMax: 10,
+    statementTimeoutMs: 15_000,
+    connectionTimeoutMs: 5_000,
+    idleTimeoutMs: 30_000,
+  },
 };
 
 /** PDF 版式参数必须作为整组落在 A4 可见区内，否则整组回退。 */
@@ -104,8 +119,9 @@ export function normalizePdfMetrics(
     && Number.isInteger(candidate.pageRows)
     && candidate.pageCols > 0
     && candidate.pageRows > 0;
-  const fitsWidth = 2 * candidate.marginMm + candidate.pageCols * candidate.cellMm <= 210;
-  const fitsHeight = 2 * candidate.marginMm + candidate.headerMm + candidate.pageRows * candidate.cellMm <= 297;
+  // A4 尺寸常量与 export/pdfLayout.ts 共用（J-3：此前两处各自硬编码 210/297）。
+  const fitsWidth = 2 * candidate.marginMm + candidate.pageCols * candidate.cellMm <= A4_WIDTH_MM;
+  const fitsHeight = 2 * candidate.marginMm + candidate.headerMm + candidate.pageRows * candidate.cellMm <= A4_HEIGHT_MM;
   return { ...(fieldsAreValid && fitsWidth && fitsHeight ? candidate : fallback) };
 }
 
@@ -135,18 +151,46 @@ function compute(): SiteConfig {
       loginRateLimit: readInt('RATE_LOGIN', DEFAULTS.security.loginRateLimit, 1),
       registerRateLimit: readInt('RATE_REGISTER', DEFAULTS.security.registerRateLimit, 1),
       tokenRateLimit: readInt('RATE_TOKEN', DEFAULTS.security.tokenRateLimit, 1),
+      syncWriteRateLimit: readInt('RATE_SYNC_WRITE', DEFAULTS.security.syncWriteRateLimit, 1),
+      backupAlertRateLimit: readInt('RATE_BACKUP_ALERT', DEFAULTS.security.backupAlertRateLimit, 1),
       sessionTtlSeconds: readInt('SESSION_TTL_SECONDS', DEFAULTS.security.sessionTtlSeconds, 60),
       maxBodyBytes: readInt('MAX_BODY_BYTES', DEFAULTS.security.maxBodyBytes, 1024),
     },
-    features: {
-      heicWasm: readBool('HEIC_WASM', DEFAULTS.features.heicWasm),
-      pdfFontSubset: readBool('PDF_FONT_SUBSET', DEFAULTS.features.pdfFontSubset),
+    database: {
+      poolMax: readInt('DB_POOL_MAX', DEFAULTS.database.poolMax, 1, 200),
+      statementTimeoutMs: readInt('DB_STATEMENT_TIMEOUT_MS', DEFAULTS.database.statementTimeoutMs, 0, 600_000),
+      connectionTimeoutMs: readInt('DB_CONNECTION_TIMEOUT_MS', DEFAULTS.database.connectionTimeoutMs, 0, 60_000),
+      idleTimeoutMs: readInt('DB_IDLE_TIMEOUT_MS', DEFAULTS.database.idleTimeoutMs, 0, 600_000),
     },
   };
 }
 
 /** 模块级单例：服务端首次导入时固化（环境变量在进程启动时已定）。 */
 export const config: SiteConfig = compute();
+
+/**
+ * 生产连接池选项（A-11）：无超时的池子在一条卡死语句下会耗尽 10 个连接，
+ * 之后所有请求 hang 到 Node 超时 —— 表现为全站不可用而不是优雅 503。
+ * 值为 0 时省略该项（交给 PostgreSQL 默认）。
+ */
+export function poolOptions(cfg: SiteConfig['database'] = config.database): {
+  max: number;
+  keepAlive: true;
+  statement_timeout?: number;
+  query_timeout?: number;
+  connectionTimeoutMillis?: number;
+  idleTimeoutMillis?: number;
+} {
+  return {
+    max: cfg.poolMax,
+    keepAlive: true,
+    ...(cfg.statementTimeoutMs > 0
+      ? { statement_timeout: cfg.statementTimeoutMs, query_timeout: cfg.statementTimeoutMs }
+      : {}),
+    ...(cfg.connectionTimeoutMs > 0 ? { connectionTimeoutMillis: cfg.connectionTimeoutMs } : {}),
+    ...(cfg.idleTimeoutMs > 0 ? { idleTimeoutMillis: cfg.idleTimeoutMs } : {}),
+  };
+}
 
 /** 浏览器端初始回退（SSR/未加载 /api/config 前使用）。 */
 export const publicConfigFallback: PublicConfig = {

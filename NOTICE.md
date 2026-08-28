@@ -31,6 +31,18 @@ PDF 导出嵌入 **Noto Sans CJK SC**（OFL-1.1，SIL Open Font License）：
 - 来源：https://github.com/notofonts/noto-cjk（Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf）
 - 字体文件：`public/fonts/NotoSansCJKsc-Regular.otf`；许可全文：`public/fonts/OFL.txt`
 - 用途：打印版 PDF 的中文页眉、图例与清单文本（pdf-lib + fontkit 子集嵌入）。
+- 构建期还会生成 `public/fonts/NotoSansCJKsc-Regular.subset.otf`（GB2312 全字子集，
+  约 3.2 MB，供浏览器按需下载；生僻字回退全量字体）。子集工具为
+  [subset-font](https://github.com/papandreou/subset-font)（HarfBuzz WASM，MIT），
+  见 `scripts/build-pdf-font-subset.mjs`。
+
+界面自托管中文字体（可选）：
+- 源字体放在 `assets/fonts/`（不入库），由 `scripts/build-ui-font-subset.mjs` 在构建期
+  子集化为 `public/fonts/ui-sans-sc.subset.ttf`（仅界面文案用到的约 730 个字形，约 136 KB）。
+- 当前使用 **阿里巴巴普惠体 3.0 55 Regular**（Alibaba PuHuiTi，官方声明免费商用）。
+  该字体为现代黑体而非圆体；苹果与 Windows 用户仍优先使用系统自带的圆体
+  （Yuanti SC / 幼圆），自托管字体主要服务于无内置圆体中文的 Android。
+- 更换字体：把新的 ttf/otf 放进 `assets/fonts/` 并删除旧文件即可，同时更新本节声明。
 
 ## 本项目许可
 

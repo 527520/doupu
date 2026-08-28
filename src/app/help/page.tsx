@@ -6,7 +6,7 @@ import SiteHeader from '@/components/layout/SiteHeader';
 export default function HelpPage() {
   const t = zhCN.help;
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
+    <main id="main" className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
       <SiteHeader title={t.title} currentPath="/help" />
       <div className="flex flex-col items-center gap-3 text-center">
         <ArcSignature className="w-24" />

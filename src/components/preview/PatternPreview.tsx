@@ -194,18 +194,29 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-3 text-xs">
-        <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
-          −
-        </button>
-        <span role="status" aria-label={t.zoom}>{Math.round(zoom * 100)}%</span>
-        <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="rounded-full border border-lilac/50 px-2 py-1 transition-colors hover:bg-lilac-soft">
-          +
-        </button>
-        <PreviewToggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
-        <PreviewToggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
-        <PreviewToggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
-        <span className="text-ink-soft/80">{t.panHint}</span>
+      {/*
+        D-8：350px 屏幕上这一行原本要放 9 个控件加一句 24 字提示，会折成 4–5 行
+        把图纸挤出首屏。现在：缩放组与三个开关分两行排，长提示只在 sm 以上显示
+        （小屏用户本来就靠手势，提示文字对他们没用）。
+      */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+        <span className="flex items-center gap-2">
+          <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="btn-outline btn-icon">
+            −
+          </button>
+          {/* 缩放百分比不是「状态播报」：原来的 role="status" 会让读屏在每次缩放时
+              打断朗读（D-9 的 role 滥用）。可访问名仍是「缩放」，数值由文本提供。 */}
+          <span aria-label={t.zoom} className="w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="btn-outline btn-icon">
+            +
+          </button>
+        </span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <PreviewToggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
+          <PreviewToggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
+          <PreviewToggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
+        </span>
+        <span className="hidden text-ink-soft sm:inline">{t.panHint}</span>
       </div>
       <div ref={containerRef} className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2">
         <canvas
@@ -216,7 +227,16 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
           onPointerLeave={onPointerLeave}
-          style={{ touchAction: 'pan-x pan-y' }}
+          /*
+            D-9：canvas 对读屏是完全空白的，给出可访问名与图纸规模摘要；
+            tabIndex 让键盘用户能把焦点落到图纸上（生成完成后我们也会聚焦这里）。
+            D-5：pinch-zoom 交给浏览器——原来的 pan-x pan-y 把双指缩放禁掉了，
+            手机上只能点 ± 看格子，与编辑画布的手势也不一致。
+          */
+          role="img"
+          aria-label={t.canvasAria(pattern.width, pattern.height)}
+          tabIndex={0}
+          style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
         />
       </div>
     </div>
