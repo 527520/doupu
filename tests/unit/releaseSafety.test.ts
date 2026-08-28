@@ -12,11 +12,13 @@ const ensureDirs = (...dirs: string[]): void => {
 };
 
 /**
- * 部分用例要真的执行 deploy/scripts/*.sh，需要 POSIX shell。
- * Windows 上（无 WSL/Git-Bash 的 sh 在 PATH 时）这些用例跳过而不是伪失败——
- * 门禁必须在开发机上也是绿的，否则维护者会被训练成忽略红灯。Linux CI 仍会执行它们。
+ * 部分用例要真的执行 deploy/scripts/*.sh，需要 POSIX shell 与 POSIX 路径语义。
+ * 只在 Linux 上执行：Windows 的 CI 镜像带 Git Bash 的 sh（能找到 sh 不代表
+ * 脚本里的 PATH 覆盖（/usr/bin:/bin 等）能工作——这些用例把 PATH 换成 POSIX
+ * 布局，sh 本身就无法再被解析），因此在 Windows 上一律跳过而不是伪失败。
+ * Linux CI 仍会执行它们，门禁不受影响。
  */
-const posixShell = spawnSync('sh', ['-c', 'exit 0'], { stdio: 'ignore' }).status === 0;
+const posixShell = process.platform === 'linux' && spawnSync('sh', ['-c', 'exit 0'], { stdio: 'ignore' }).status === 0;
 const shellIt = posixShell ? it : it.skip;
 
 describe('backup and release safety gates', () => {

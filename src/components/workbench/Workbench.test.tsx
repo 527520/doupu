@@ -277,14 +277,15 @@ describe('Workbench 全流程', () => {
     const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
     fireEvent.change(widthInput, { target: { value: '20' } });
     fireEvent.blur(widthInput);
-    const cancelButton = await screen.findByRole('button', { name: zhCN.common.cancel });
+    // CI（覆盖率插桩 + 单 worker）下防抖→脏状态→弹窗的级联可能超过默认 1s，放宽到 5s。
+    const cancelButton = await screen.findByRole('button', { name: zhCN.common.cancel }, { timeout: 5000 });
     fireEvent.click(cancelButton);
     await waitFor(() => expect(widthInput.value).toBe('100'));
     expect(screen.getByText(/共 10000 粒/)).toBeTruthy();
 
     fireEvent.change(widthInput, { target: { value: '20' } });
     fireEvent.blur(widthInput);
-    fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.confirmRegenerateAction }));
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.confirmRegenerateAction }, { timeout: 5000 }));
     await waitFor(() => expect(screen.getByText(/共 400 粒/)).toBeTruthy(), { timeout: 5000 });
     fireEvent.click(screen.getByText(zhCN.workbench.undoRegeneration));
     await waitFor(() => expect(screen.getByText(/共 10000 粒/)).toBeTruthy());
