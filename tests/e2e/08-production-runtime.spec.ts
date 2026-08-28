@@ -17,10 +17,12 @@ test('standalone production CSP permits RSC navigation and the generation Worker
   expect(csp.match(/script-src[^;]*/)?.[0]).not.toContain("'unsafe-inline'");
   expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
 
-  await page.getByRole('link', { name: '开始制作' }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  await page.waitForFunction(() => document.documentElement.dataset.doupuHydrated === 'true');
+  await page.goto('/');
+  // D-3：首页「开始制作」链接已由真实上传落区取代——走首页落图交接进工作台，
+  // 同样覆盖 RSC 客户端导航（/ → /app?new=1）。
   await page.getByLabel('图片文件选择器').setInputFiles(PHOTO);
+  await expect(page).toHaveURL(/\/app/);
+  await page.waitForFunction(() => document.documentElement.dataset.doupuHydrated === 'true');
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible();
   await page.getByRole('button', { name: '确认裁剪' }).click();
   await expect(page.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
