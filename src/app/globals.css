@@ -119,20 +119,6 @@
   .btn-outline {
     @apply inline-flex items-center justify-center rounded-full border border-lilac bg-white px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary hover:text-primary-deep disabled:opacity-50;
   }
-  /*
-    尺寸修饰符（C-6）：全站原有 47 种手抄配方（68 处）里，差异几乎只有尺寸。
-    统一成「种类 + 尺寸」两段式，之后改按钮观感只需改这里。
-  */
-  .btn-sm {
-    @apply px-3 py-1.5 text-sm;
-  }
-  .btn-xs {
-    @apply px-2 py-1 text-xs;
-  }
-  /** 图标按钮：只收紧内边距，不动字号（缩放 ± 这类符号按钮）。 */
-  .btn-icon {
-    @apply px-2 py-1;
-  }
   /** 工具条控件：方角一档（rounded-lg），与胶囊形的主/次操作区分开。 */
   .btn-tool {
     @apply inline-flex items-center justify-center gap-1 rounded-lg border border-lilac bg-white px-2 py-1 text-sm text-ink transition-colors duration-150 hover:bg-lilac-soft disabled:cursor-not-allowed disabled:opacity-50;
@@ -148,6 +134,23 @@
   /** 破坏性无边框按钮：列表行内的删除图标。 */
   .btn-danger-quiet {
     @apply inline-flex items-center justify-center rounded-full px-2 py-1 text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
+  }
+  /*
+    尺寸修饰符（C-6）：全站原有 47 种手抄配方（68 处）里，差异几乎只有尺寸。
+    统一成「种类 + 尺寸」两段式，之后改按钮观感只需改这里。
+    注意顺序：必须放在所有按钮种类**之后**——同层同特异性下后定义者胜，
+    此前 btn-danger-outline 排在 btn-xs 后面，px-4 py-2 text-sm 覆盖了修饰符，
+    「注销账号」等 9 处破坏性按钮全都以基础尺寸渲染。
+  */
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+  /** 图标按钮：只收紧内边距，不动字号（缩放 ± 这类符号按钮）。 */
+  .btn-icon {
+    @apply px-2 py-1;
   }
   /* 文本输入框 */
   .input-field {

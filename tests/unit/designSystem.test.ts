@@ -47,6 +47,24 @@ describe('设计系统一致性', () => {
     expect(bad).toEqual([]);
   });
 
+  it('按钮尺寸修饰符定义在所有按钮种类之后（同层同特异性下后定义者覆盖修饰符）', () => {
+    const css = readFileSync(join(process.cwd(), 'src', 'app', 'globals.css'), 'utf8');
+    const defIndex = (name: string): number => {
+      const match = new RegExp(`^\\s*\\.${name}\\s*\\{`, 'gm').exec(css);
+      if (!match) throw new Error(`globals.css 缺少 .${name} 定义`);
+      return match.index;
+    };
+    const baseClasses = ['btn-primary', 'btn-outline', 'btn-tool', 'btn-danger', 'btn-danger-outline', 'btn-danger-quiet'];
+    const lastBaseName = baseClasses.reduce((latest, name) => (defIndex(name) > defIndex(latest) ? name : latest));
+    const lastBaseIndex = defIndex(lastBaseName);
+    for (const modifier of ['btn-sm', 'btn-xs', 'btn-icon']) {
+      expect(
+        defIndex(modifier),
+        `.${modifier} 必须定义在 .${lastBaseName} 之后，否则尺寸修饰符会被基础尺寸覆盖`,
+      ).toBeGreaterThan(lastBaseIndex);
+    }
+  });
+
   it('破坏性确认统一走品牌弹窗，不用 window.confirm', () => {
     const callers = sourceFiles.filter((file) => {
       if (file.endsWith(join('ui', 'ConfirmDialog.tsx'))) return false; // 文档注释里提到它
