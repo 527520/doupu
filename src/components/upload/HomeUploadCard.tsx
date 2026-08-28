@@ -20,7 +20,9 @@ export default function HomeUploadCard() {
   const onValid = useCallback((file: ValidImageFile): void => {
     setPendingUpload(file);
     setHanding(true);
-    router.push('/app');
+    // ?new=1：与「新建设计」同一语义——跳过历史设计恢复，避免上一张设计
+    // 的恢复流程在竞态里把即将进入裁剪的新图顶掉（回到旧设计）。
+    router.push('/app?new=1');
   }, [router]);
 
   return (

@@ -87,8 +87,8 @@ describe('PalettesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: t.newPalette }));
     expect(screen.getByLabelText(t.editor.title)).toBeTruthy();
-    // 弹窗宽度（桌面不应过宽：max-w-lg = 512px）
-    expect(screen.getByRole('dialog', { name: t.edit })).toHaveClass('max-w-lg');
+    // 弹窗宽度（max-w-xl = 576px：容纳取色器 + 色号 + 删除列与整行校验错误，不折行）
+    expect(screen.getByRole('dialog', { name: t.edit })).toHaveClass('max-w-xl');
 
     fireEvent.change(screen.getByLabelText(t.editor.name), { target: { value: '新建板' } });
     // 编辑器默认一行 C001/#FFFFFF，直接保存

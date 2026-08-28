@@ -219,7 +219,7 @@ export default function PalettesPage() {
       </section>
 
       {editing && (
-        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-lg max-h-[85vh] overflow-auto">
+        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-xl max-h-[85vh] overflow-auto">
           <PaletteEditor
             initialName={editing.name}
             initialColors={editing.colors}

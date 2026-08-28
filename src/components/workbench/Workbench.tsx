@@ -440,10 +440,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, [doneToken]);
 
   // 首页落图后带过来的文件（D-3）：客户端导航期间模块单例存活，取一次即清空。
-  // 放到宏任务里执行，避免在 effect 体内同步 setState 触发级联渲染。
+  // StrictMode 安全：dev 下 effect 双调用——第一次取走单例后 cleanup 取消 0ms 定时器，
+  // 第二次再取已是 null，交接被静默吞掉（表现为「又回到上一个设计」）。
+  // 用 ref 接住第一次取到的文件，双调用的第二次沿用同一份，定时器才真正执行。
+  const handedUploadRef = useRef<ValidImageFile | null>(null);
   useEffect(() => {
-    const handed = takePendingUpload();
+    handedUploadRef.current ??= takePendingUpload();
+    const handed = handedUploadRef.current;
     if (!handed) return;
+    // 放到宏任务里执行，避免在 effect 体内同步 setState 触发级联渲染。
     const timer = setTimeout(() => { void handleUpload(handed); }, 0);
     return () => clearTimeout(timer);
   }, [handleUpload]);

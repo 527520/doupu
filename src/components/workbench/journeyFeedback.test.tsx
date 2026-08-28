@@ -59,7 +59,7 @@ describe('首页上传卡（D-3）', () => {
     const dropped = new File([png], 'photo.png', { type: 'image/png' });
     fireEvent.change(screen.getByLabelText(zhCN.upload.inputLabel), { target: { files: [dropped] } });
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/app'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/app?new=1'));
     expect(takePendingUpload()?.name).toBe('photo.png');
     vi.doUnmock('next/navigation');
   });

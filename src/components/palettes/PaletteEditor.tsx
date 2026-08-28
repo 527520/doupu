@@ -1,7 +1,7 @@
 'use client';
 
 /** 自定义色板编辑器（spec §F6 / 边界 E20）：逐行录入 + 即时校验 + 粘贴/文件导入 + 复制自品牌。 */
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { BRANDS, buildBrandPalette } from '@/lib/palettes';
@@ -239,56 +239,66 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr key={index} className={rowErrors.has(index) ? 'bg-danger-soft' : undefined}>
-                <td className="py-1 pr-2">
-                  <input
-                    type="text"
-                    value={row.code}
-                    maxLength={LIMITS.customPaletteCodeLength}
-                    onChange={(e) => setRow(index, { code: e.target.value })}
-                    aria-label={`${t.code} ${index + 1}`}
-                    aria-invalid={rowErrors.has(index)}
-                    className="w-28 input-compact px-1 py-0.5 text-xs"
-                  />
-                </td>
-                <td className="py-1 pr-2">
-                  {/*
-                    E-2：原来每行只有一个 hex 文本框——编辑颜色却看不见颜色，
-                    只能靠脑补 #RRGGBB。这里补上取色器（原生 color input，
-                    移动端会调起系统取色盘）与色块预览，文本框仍保留以便粘贴色值。
-                  */}
-                  <span className="flex items-center gap-1.5">
-                    <input
-                      type="color"
-                      value={/^#[0-9a-fA-F]{6}$/.test(row.hex) ? row.hex.toUpperCase() : '#FFFFFF'}
-                      onChange={(e) => setRow(index, { hex: e.target.value.toUpperCase() })}
-                      aria-label={`${t.pickColor} ${index + 1}`}
-                      className="h-6 w-8 shrink-0 cursor-pointer rounded-sm border border-lilac/50 bg-white p-0.5"
-                    />
+              <Fragment key={index}>
+                <tr className={rowErrors.has(index) ? 'bg-danger-soft' : undefined}>
+                  <td className="py-1 pr-2">
                     <input
                       type="text"
-                      value={row.hex}
-                      onChange={(e) => setRow(index, { hex: e.target.value })}
-                      aria-label={`${t.hex} ${index + 1}`}
+                      value={row.code}
+                      maxLength={LIMITS.customPaletteCodeLength}
+                      onChange={(e) => setRow(index, { code: e.target.value })}
+                      aria-label={`${t.code} ${index + 1}`}
                       aria-invalid={rowErrors.has(index)}
-                      className="w-24 input-compact px-1 py-0.5 font-mono text-xs"
+                      className="w-28 input-compact px-1 py-0.5 text-xs"
                     />
-                  </span>
-                </td>
-                <td className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => removeRow(index)}
-                    aria-label={`${t.removeRow} ${index + 1}`}
-                    className="btn-danger-quiet text-xs"
-                  >
-                    ×
-                  </button>
-                  {rowErrors.get(index) && (
-                    <p role="alert" className="text-xs text-danger">{rowErrors.get(index)}</p>
-                  )}
-                </td>
-              </tr>
+                  </td>
+                  <td className="py-1 pr-2">
+                    {/*
+                      E-2：原来每行只有一个 hex 文本框——编辑颜色却看不见颜色，
+                      只能靠脑补 #RRGGBB。这里补上取色器（原生 color input，
+                      移动端会调起系统取色盘）与色块预览，文本框仍保留以便粘贴色值。
+                    */}
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(row.hex) ? row.hex.toUpperCase() : '#FFFFFF'}
+                        onChange={(e) => setRow(index, { hex: e.target.value.toUpperCase() })}
+                        aria-label={`${t.pickColor} ${index + 1}`}
+                        className="h-6 w-8 shrink-0 cursor-pointer rounded-sm border border-lilac/50 bg-white p-0.5"
+                      />
+                      <input
+                        type="text"
+                        value={row.hex}
+                        onChange={(e) => setRow(index, { hex: e.target.value })}
+                        aria-label={`${t.hex} ${index + 1}`}
+                        aria-invalid={rowErrors.has(index)}
+                        className="w-24 input-compact px-1 py-0.5 font-mono text-xs"
+                      />
+                    </span>
+                  </td>
+                  <td className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(index)}
+                      aria-label={`${t.removeRow} ${index + 1}`}
+                      className="btn-danger-quiet text-xs"
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+                {/*
+                  行内校验错误独占一整行：此前挤在 64px 宽的删除列里，
+                  「颜色 #FFFFFF 重复」这类文案必然折行。占满行宽后不再换行。
+                */}
+                {rowErrors.get(index) && (
+                  <tr>
+                    <td colSpan={3} className="pb-1.5 pl-1">
+                      <p role="alert" className="text-xs text-danger">{rowErrors.get(index)}</p>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
