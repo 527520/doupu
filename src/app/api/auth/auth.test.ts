@@ -9,6 +9,7 @@ import { rateLimits } from '@/../db/schema';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
 import * as mailer from '@/lib/auth/mailer';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
+import { hourlyWindowStart } from '@/lib/auth/rateLimit';
 import { POST as registerPost } from './register/route';
 import { POST as verifyPost } from './verify-email/route';
 import { POST as resendPost } from './resend-verification/route';
@@ -279,8 +280,15 @@ describe('认证全生命周期', () => {
     const mail = email();
     await registerPost(post('/api/auth/register', { email: mail, password }));
     let last: Response | null = null;
-    for (let i = 0; i < 11; i++) {
-      last = await loginPost(post('/api/auth/login', { email: mail, password: 'wrong-password', ip: '198.51.100.7' }));
+    // 限流窗口按整点对齐：CI 慢 runner 上 11 次请求可能跨过小时边界、计数被回滚，
+    // 第 11 次只拿到 401。窗口真变了就重跑一轮，不是窗口问题则按结果正常断言。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const windowStart = hourlyWindowStart().getTime();
+      for (let i = 0; i < 11; i++) {
+        last = await loginPost(post('/api/auth/login', { email: mail, password: 'wrong-password', ip: '198.51.100.7' }));
+      }
+      if (last!.status === 429) break;
+      if (hourlyWindowStart().getTime() === windowStart) break;
     }
     expect(last!.status).toBe(429);
     expect((await errorBody(last!)).error.code).toBe('RATE_LIMITED');

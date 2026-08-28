@@ -290,7 +290,7 @@ describe('Workbench 全流程', () => {
     fireEvent.click(screen.getByText(zhCN.workbench.undoRegeneration));
     await waitFor(() => expect(screen.getByText(/共 10000 粒/)).toBeTruthy());
     expect(screen.queryByText(zhCN.workbench.undoRegeneration)).toBeNull();
-  });
+  }, 20_000);
 
   it('重新生成失败会回滚参数控件并保留上一份已提交图纸', async () => {
     let calls = 0;

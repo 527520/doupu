@@ -34,7 +34,8 @@ jobs:
   coverage:
     name: unit coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 5× 全量（含 integration）约 17 分钟 + npm ci，20 分钟余量太小，慢 runner 会误超时。
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -210,10 +211,13 @@ jobs:
             -e BACKUP_DESTINATION=/backup/doupu-backup \
             -v "$PWD/.backup-smoke:/backup" -v "$PWD/deploy/scripts:/scripts:ro" \
             doupu-backup:local /scripts/backup.sh
+          # 归档落在 .backup-smoke/doupu-backup/ 下；恢复容器挂载 .backup-smoke 为 /backup，
+          # 因此要把相对路径原样带进去（此前用 ##*/ 只剩文件名，容器里找不到归档）。
           archive=$(find .backup-smoke -name 'doupu-*.dump.gz' -type f -print -quit)
+          test -n "${archive}" || { echo "backup archive not found under .backup-smoke" >&2; exit 1; }
           docker run --rm --network host --entrypoint sh \
             -e PGHOST=127.0.0.1 -e PGUSER=doupu -e PGPASSWORD=doupu-ci-password -e PGDATABASE=postgres \
             -e RESTORE_DATABASE=doupu_restore_test \
             -e "RESTORE_CANARY_SQL=SELECT value FROM release_backup_canary WHERE value='verified'" \
             -v "$PWD/.backup-smoke:/backup:ro" -v "$PWD/deploy/scripts:/scripts:ro" \
-            doupu-backup:local /scripts/restore-drill.sh "/backup/${archive##*/}"
+            doupu-backup:local /scripts/restore-drill.sh "/backup/${archive#.backup-smoke/}"
