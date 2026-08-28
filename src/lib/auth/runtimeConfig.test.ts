@@ -31,7 +31,7 @@ describe('production auth adapters', () => {
     })).toEqual({ mail: 'smtp' });
   });
 
-  it('requires a dedicated backup-alert template for production SES', () => {
+  it('SES 模式允许缺告警模板（告警降级为仅日志），主模板仍必填', () => {
     const ses = {
       NODE_ENV: 'production',
       APP_URL: 'https://example.com',
@@ -43,8 +43,12 @@ describe('production auth adapters', () => {
       BACKUP_ALERT_TOKEN: 'a'.repeat(32),
       ADMIN_EMAIL: 'ops@example.com',
     };
-    expect(() => validateProductionAuthAdapters(ses)).toThrow(/SES_ALERT_TEMPLATE_ID/);
+    // 缺告警模板：允许启动（告警走日志），而不是拒绝启动整个应用
+    expect(validateProductionAuthAdapters(ses)).toEqual({ mail: 'ses' });
     expect(validateProductionAuthAdapters({ ...ses, SES_ALERT_TEMPLATE_ID: '103' }))
       .toEqual({ mail: 'ses' });
+    // 验证/重置模板仍是硬要求
+    expect(() => validateProductionAuthAdapters({ ...ses, SES_VERIFY_TEMPLATE_ID: '' }))
+      .toThrow(/SES_VERIFY_TEMPLATE_ID/);
   });
 });

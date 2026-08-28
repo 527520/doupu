@@ -73,6 +73,15 @@ describe('POST /api/internal/backup-alert', () => {
     });
   });
 
+  it('未配置告警模板且无 SMTP 时降级为仅记日志，不假报成功也不拖垮站点', async () => {
+    delete process.env.SES_ALERT_TEMPLATE_ID;
+    delete process.env.SMTP_HOST;
+    const response = await POST(request('backup failed, log only'));
+
+    expect(response.status).toBe(204);
+    expect(sendMailMock).not.toHaveBeenCalled();
+  });
+
   describe('公网未鉴权入口的加固（A-13）', () => {
     it('超过每 IP 每小时上限后回 429，令牌爆破因此有代价', async () => {
       const limit = config.security.backupAlertRateLimit;

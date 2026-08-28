@@ -65,10 +65,11 @@ async function post(request: Request) {
   const message = singleLine(parsed.data.message);
   console.error('[backup-alert]', message);
   const adminEmail = process.env.ADMIN_EMAIL ?? process.env.SMTP_FROM ?? '';
-  if (adminEmail && !isDevMailMode()) {
-    // SMTP ignores the SES-specific option. In SES mode startup validation
-    // guarantees a dedicated alert template; delivery failure must propagate
-    // so the backup container never reports a false 204 success.
+  const sesAlertTemplateId = process.env.SES_ALERT_TEMPLATE_ID ?? '';
+  // 告警通道是尽力而为的附加保障：SMTP 模式下由 sendMail 走 SMTP；
+  // SES 模式但未建告警模板时降级为仅记日志（上面已落日志），不能让备份
+  // 容器的告警调用把站点主流程拖垮，也绝不假报成功。
+  if (adminEmail && !isDevMailMode() && (process.env.SMTP_HOST || sesAlertTemplateId)) {
     await sendMail(
       adminEmail,
       '豆谱备份告警',
@@ -76,7 +77,7 @@ async function post(request: Request) {
       message,
       {
         sesTemplate: {
-          templateId: process.env.SES_ALERT_TEMPLATE_ID ?? '',
+          templateId: sesAlertTemplateId,
           templateData: { message },
         },
       },

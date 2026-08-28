@@ -26,9 +26,12 @@ export function validateProductionAuthAdapters(env: Environment = process.env): 
   if (mail === 'smtp') {
     requireValues(env, ['SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'], 'SMTP adapter');
   } else {
+    // SES_ALERT_TEMPLATE_ID 刻意不在必填之列：备份告警是「尽力而为」的附加通道，
+    // 未建告警模板时告警降级为仅记日志（见 internal/backup-alert 路由），
+    // 站点注册/验证/找回等主流程不受影响，绝不能因此拒绝启动整个应用。
     requireValues(
       env,
-      ['SES_SECRET_KEY', 'SES_FROM', 'SES_VERIFY_TEMPLATE_ID', 'SES_RESET_TEMPLATE_ID', 'SES_ALERT_TEMPLATE_ID'],
+      ['SES_SECRET_KEY', 'SES_FROM', 'SES_VERIFY_TEMPLATE_ID', 'SES_RESET_TEMPLATE_ID'],
       'SES adapter',
     );
   }
