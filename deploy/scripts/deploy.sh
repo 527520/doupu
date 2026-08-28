@@ -19,7 +19,7 @@ APP_IMAGE=${APP_IMAGE#\'}
 APP_IMAGE=${APP_IMAGE%\'}
 if ! printf '%s\n' "${APP_IMAGE}" \
   | grep -Eq '^ghcr\.io/527520/doupu(:v[0-9]+\.[0-9]+\.[0-9]+|@sha256:[0-9a-f]{64})$'; then
-  echo "APP_IMAGE 必须是本仓库已发布的稳定 GHCR tag 或 digest（例如 ghcr.io/527520/doupu:v0.2.0）" >&2
+  echo "APP_IMAGE 必须是本仓库已发布的稳定 GHCR tag 或 digest（例如 ghcr.io/527520/doupu:v0.3.0）" >&2
   exit 1
 fi
 export APP_IMAGE
