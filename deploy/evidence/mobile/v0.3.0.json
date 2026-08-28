@@ -1,6 +1,6 @@
 {
   "version": "0.3.0",
-  "candidateCommit": "a8c96c2487a90d37f5a942b315e62572a37e0d3b",
+  "candidateCommit": "ceb3e026c832a034b712e053e94b1bc32154c1ad",
   "completedAt": "2026-08-28T16:51:43.000Z",
   "tester": "wuqian",
   "ios": { "device": "iPhone 16 Pro", "os": "iOS 18", "browser": "Safari", "passed": true },
