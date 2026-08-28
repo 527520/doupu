@@ -27,7 +27,8 @@ export default function HomeUploadCard() {
 
   return (
     <section className="flex w-full max-w-md flex-col gap-3 text-left">
-      <UploadDropzone onValid={onValid} disabled={handing} capture />
+      {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
+      <UploadDropzone onValid={onValid} disabled={handing} />
       <ol className="flex flex-col gap-1 text-xs text-ink-soft sm:flex-row sm:justify-between sm:gap-2">
         {[zhCN.home.guideStep1, zhCN.home.guideStep2, zhCN.home.guideStep3].map((step, index) => (
           <li key={step} className="flex items-center gap-1.5">

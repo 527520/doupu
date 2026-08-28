@@ -1235,7 +1235,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
       {step === 'upload' && (
         <>
-          <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} capture />
+          {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
+          <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} />
           {/*
             空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
             想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。

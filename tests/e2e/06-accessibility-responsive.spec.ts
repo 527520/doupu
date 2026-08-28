@@ -29,8 +29,9 @@ for (const width of widths) {
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-    // D-3：上传落区兑现「支持拍照」——capture="environment" 是刻意保留的属性
-    await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+    // 不得带 capture：移动端浏览器一旦带 capture 只允许调用摄像头，相册选择被堵死
+    // （0.3.0 真机验收抓到的回归，模拟器发现不了）。
+    await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
     if (width < 768) {
       await page.waitForLoadState('networkidle');
       const unexpectedConsoleErrors = consoleErrors.filter(
@@ -133,8 +134,8 @@ test('iOS Safari 触屏环境可上传且页面可滚动', async ({ browser }, t
   const response = await page.goto(`${BASE_URL}/app`);
   expect(response?.status(), await page.locator('body').innerText()).toBe(200);
   await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-  // D-3：手机触屏环境下上传入口应带 capture，直接唤起相机
-  await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+  // 不得带 capture（见上方说明）：手机上必须能选相册，相机入口由系统选择器提供。
+  await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   await context.close();
@@ -147,8 +148,8 @@ test('Android Chrome 触屏环境可上传且页面可滚动', async ({ browser 
   const response = await page.goto(`${BASE_URL}/app`);
   expect(response?.status(), await page.locator('body').innerText()).toBe(200);
   await expect(page.getByRole('button', { name: '选择图片文件' })).toBeVisible();
-  // D-3：手机触屏环境下上传入口应带 capture，直接唤起相机
-  await expect(page.getByLabel('图片文件选择器')).toHaveAttribute('capture', 'environment');
+  // 不得带 capture（见上方说明）：手机上必须能选相册，相机入口由系统选择器提供。
+  await expect(page.getByLabel('图片文件选择器')).not.toHaveAttribute('capture');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   await context.close();

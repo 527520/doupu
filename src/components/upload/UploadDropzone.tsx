@@ -20,14 +20,9 @@ export interface UploadDropzoneProps {
   /** 校验通过（未解码）时回调。 */
   onValid: (file: ValidImageFile) => void;
   disabled?: boolean;
-  /**
-   * 手机上直接调起后置摄像头（D-3）。
-   * 首页文案承诺「支持拍照」，但此前没有任何拍照入口；桌面浏览器会忽略该属性。
-   */
-  capture?: boolean;
 }
 
-export function UploadDropzone({ onValid, disabled = false, capture = false }: UploadDropzoneProps) {
+export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
@@ -135,11 +130,15 @@ export function UploadDropzone({ onValid, disabled = false, capture = false }: U
         )}
       </div>
 
+      {/*
+        不要给这个 input 加 capture 属性：iOS/Android 一旦带 capture 就只允许调用摄像头，
+        相册选择被堵死（真机验收抓到的回归）。不带 capture 时，移动端系统选择器本身
+        就会同时给出「拍照」与「相册」入口。
+      */}
       <input
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic"
-        {...(capture ? { capture: 'environment' as const } : {})}
         disabled={disabled}
         className="sr-only"
         aria-label={upload.inputLabel}

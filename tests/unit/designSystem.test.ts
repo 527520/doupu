@@ -65,6 +65,17 @@ describe('设计系统一致性', () => {
     }
   });
 
+  it('文件选择输入不带 capture 属性（移动端带 capture 会堵死相册选择，0.3.0 真机验收回归）', () => {
+    const bad: string[] = [];
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8');
+      if (/capture: 'environment'/.test(source) || /<UploadDropzone[^>]*\bcapture\b/.test(source)) {
+        bad.push(file);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('破坏性确认统一走品牌弹窗，不用 window.confirm', () => {
     const callers = sourceFiles.filter((file) => {
       if (file.endsWith(join('ui', 'ConfirmDialog.tsx'))) return false; // 文档注释里提到它
