@@ -78,6 +78,7 @@
 - 优化计划（`.scratch/optimization/`）：票 01–12 全部完成并全量自测通过（单测 538、覆盖率 src/lib 行 92.9%、E2E 54×3 浏览器、typecheck/lint/build 全绿、350px 移动端走查），已推送 GitHub（6 个 commit，`497169b..43e5697`）。
 - 全面审查轮（`.scratch/review-2026-08/`，2026-08-26 起）：批次 A–K 全部实现。单测 918 通过 + 12 跳过（`npm run test` 全绿）、性能 7/7、覆盖率 src/lib 行 94.4%/分支 84.0%（门槛 90/75）、E2E 115 通过 × 3 浏览器（Chromium/Firefox/WebKit，8 跳过）、typecheck/lint/build 全绿。新增决策 D38–D44 已记入上表；PDF 字体子集改由 subset-font（HarfBuzz）构建（@pdf-lib/fontkit 的 CFF createSubset 产物不可用，会导致导出 OOM）。
 - 0.3.0 发版：候选 `3e2942a` 经真机验收（iPhone 16 Pro Safari / 小米 15 Pro Android Chrome，含上传 capture 回归修复）与六类素材算法并排验收，证据 attestation `badd895`，tag `v0.3.0` 已推送；release workflow 构建 GHCR 镜像后按「发版升级」流程部署 doupu.fun。
+- 0.3.0 已上线 doupu.fun：镜像 ghcr.io/527520/doupu:v0.3.0，迁移 0003（design_shares）已在生产应用，app/backup/caddy/postgres 全部 healthy，首页/工作台/分享 404 兜底均验证通过。已知事项：腾讯云 SES 未创建备份告警模板（生产 .env 暂用占位 ID，告警降级为仅日志）；`5680367` 已把「缺告警模板」从启动硬校验改为优雅降级，随下个版本上线。建议在 SES 控制台创建告警模板（变量 {{message}}）后更新服务器 .env。
 - 网络备注：本机 DNS 被劫持（github.com 解析到不可达 IP），HTTPS 推送失败；改用 SSH（`git push git@github.com:527520/doupu.git main`）推送成功。SSH 22 与 ssh.github.com:443 均可达。
 
 ## 代理负责的工程决策（写入 ADR，用户可反驳）
