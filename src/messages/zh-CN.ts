@@ -33,6 +33,8 @@ export const zhCN = {
     skipToMain: '跳到主内容',
   },
   workspace: {
+    brandEnglish: 'DOUPU STUDIO',
+    brandVersion: (version: string) => `DOUPU STUDIO · v${version}`,
     start: '开始创作',
     startShort: '创作',
     designsShort: '设计',
@@ -43,7 +45,7 @@ export const zhCN = {
     creationSpace: '创作空间',
     learn: '了解豆谱',
     localGeneration: '完全在本机生成',
-    localGenerationHint: '原图不会上传。登录后只同步图纸与参数。',
+    localGenerationHint: '原图不会上传。登录后可同步图纸、自定义色板与展示名。',
     learnPrivacy: '了解隐私设计',
     localCreator: '本地创作者',
     localCreating: '本地创作中',
@@ -215,10 +217,12 @@ export const zhCN = {
     notSyncedYet: '这张图纸还没同步到云端。请检查网络后点「保存」，稍等几秒再分享。',
     /* 只读页 */
     pageTitle: '共享的拼豆图纸',
+    pageKicker: '豆谱 · 拼豆图纸分享',
     readonlyBadge: '只读分享 · 无法编辑',
     summary: (width: number, height: number, total: number, colors: number) =>
       `${width} × ${height} 格 · ${total} 粒 · ${colors} 色`,
     colorsTitle: '用色清单',
+    colorCount: (colors: number) => `${colors} 色`,
     bandAria: (colors: number) => `这张图纸的 ${colors} 种颜色`,
     cta: '想做一张自己的？上传照片就行，免费、无需下载。',
     makeYourOwn: '做我自己的图纸',
@@ -235,6 +239,7 @@ export const zhCN = {
   },
   crop: {
     title: '裁剪图片',
+    settingsKicker: '裁剪设置',
     modeFree: '自由',
     modeSquare: '1:1',
     modeOriginal: '原始比例',
@@ -431,6 +436,7 @@ export const zhCN = {
     resetTitle: '重置密码',
     email: '邮箱',
     usernameOptional: '用户名（选填）',
+    usernameTooLong: (max: number) => `用户名最长 ${max} 个字符`,
     password: '密码',
     confirmPassword: '确认密码',
     loginSubmit: '登录',
@@ -563,11 +569,11 @@ export const zhCN = {
     localMode: '仅保存在这台设备',
     cloudMode: '本机保存 + 云端同步',
     localModeHint: '设计保存在浏览器中，换设备前请导出项目文件备份。',
-    cloudModeHint: '设计和自定义色板会同步；原始照片始终不会上传。',
+    cloudModeHint: '设计、自定义色板与展示名会同步；原始照片始终不会上传。',
     privacyTitle: '隐私边界',
-    privacyBody: '图片解码、裁剪与图纸生成全部在当前浏览器完成。服务器只接收你主动保存的图纸数据。',
+    privacyBody: '图片解码、裁剪与图纸生成全部在当前浏览器完成。服务器只接收账号资料及你主动保存的图纸与自定义色板。',
     originalPrivate: '原图留在本机',
-    projectSync: '仅同步图纸与参数',
+    projectSync: '同步资料与创作数据',
     verified: '已验证',
     username: '用户名',
     usernameHint: '用于欢迎语与头像展示，不影响邮箱登录。',
@@ -609,6 +615,7 @@ export const zhCN = {
   },
   help: {
     title: '帮助',
+    faqKicker: 'FAQ',
     uploadTitle: '上传要求',
     uploadBody:
       '支持 JPEG、PNG、WebP 与 HEIC 图片，文件不超过 20 MB、像素不超过 8000×8000。不支持动图（GIF/APNG/动画 WebP）。原图只在你的浏览器中处理，不会上传到服务器。',
@@ -674,6 +681,9 @@ export const zhCN = {
     ],
   },
   errorPages: {
+    studioName: '豆谱工作室',
+    notFoundEyebrow: '走错工作间了',
+    errorEyebrow: '工作台暂时停了一下',
     notFoundTitle: '页面不存在',
     notFoundBody: '你访问的页面不存在或已被移动。可以去首页继续制作拼豆图纸。',
     errorTitle: '页面出错了',
@@ -704,7 +714,7 @@ export const zhCN = {
     feedbackLink: 'GitHub Issues 反馈',
     privacyTitle: '隐私政策',
     privacyBody:
-      '我们只收集你主动提供的信息：注册邮箱与设计图纸数据。上传的照片仅在本地浏览器中处理，不会上传到服务器；云端仅保存图纸（色块网格）与自定义色板。你可以随时导出项目文件备份，或注销账号以永久删除全部云端数据。',
+      '我们只收集你主动提供的信息：注册邮箱、可选展示名，以及你主动保存的设计图纸与自定义色板。上传的照片仅在本地浏览器中处理，不会上传到服务器；云端不保存原图。你可以随时导出项目文件备份，或注销账号以永久删除全部云端数据。',
     // 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回 icp 字段并在页脚渲染
   },
 } as const;

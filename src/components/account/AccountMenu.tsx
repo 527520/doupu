@@ -7,6 +7,7 @@ import { zhCN } from '@/messages/zh-CN';
 import { passwordSchema, usernameSchema } from '@/lib/schemas';
 import Modal from '@/components/ui/Modal';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
+import { LIMITS } from '@/lib/appInfo';
 
 interface Props {
   api: DoupuApi;
@@ -242,7 +243,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   if (me.state === 'guest') {
     return (
       <section className="account-menu account-guest">
-        <div className="account-section-heading"><span className="account-section-icon">豆</span><div><h2>{t.guestTitle}</h2><p>{t.guestHint}</p></div></div>
+        <div className="account-section-heading"><span className="account-section-icon" aria-hidden="true">{zhCN.app.name.charAt(0)}</span><div><h2>{t.guestTitle}</h2><p>{t.guestHint}</p></div></div>
         <div className="account-button-row"><Link href="/login" className="btn-primary">{t.login}</Link><Link href="/register" className="btn-outline">{t.register}</Link></div>
       </section>
     );
@@ -276,7 +277,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             <div className="account-section-heading"><div><h2>{t.profileTitle}</h2><p>{t.profileHint}</p></div></div>
             <label htmlFor="account-username">{t.username}</label>
             <div className="account-field-row">
-              <input id="account-username" className="input-field" value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} placeholder={t.username} />
+              <input id="account-username" className="input-field" value={username} onChange={(event) => setUsername(event.target.value)} maxLength={LIMITS.usernameLength} placeholder={t.username} />
               <button type="button" onClick={() => void saveProfile()} disabled={profileBusy} className="btn-primary">{t.saveUsername}</button>
             </div>
             {profileMessage && <span role="status" className="text-xs text-ink-soft">{profileMessage}</span>}

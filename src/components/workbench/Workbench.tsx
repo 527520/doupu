@@ -185,6 +185,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    */
   const [doneToken, setDoneToken] = useState(0);
   const patternRegionRef = useRef<HTMLDivElement>(null);
+  const mobilePatternRegionRef = useRef<HTMLDivElement>(null);
   const firstDoneHandledRef = useRef(false);
   const generationDraft = generationSession.draft ?? initialGenerationDraft;
   const params = generationDraft.params;
@@ -440,7 +441,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   useEffect(() => {
     if (doneToken === 0 || firstDoneHandledRef.current) return;
     firstDoneHandledRef.current = true;
-    patternRegionRef.current?.focus();
+    (mobilePatternRegionRef.current ?? patternRegionRef.current)?.focus();
   }, [doneToken]);
 
   // 首页落图后带过来的文件（D-3）：客户端导航期间模块单例存活，取一次即清空。
@@ -1279,21 +1280,35 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
             <span>{paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}</span>
           </div>
-          <div className="mobile-mode-switcher" role="group" aria-label={t.title}>
-            <button type="button" aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>{t.previewTab}</button>
-            <button type="button" aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>{t.editTab}</button>
-            <button type="button" aria-pressed={tab === 'stitch'} onClick={() => setTab('stitch')}>{zhCN.stitch.tab}</button>
+          {doneToken > 0 && !generating && (
+            <p key={doneToken} role="status" className="animate-rise mobile-workbench-feedback text-success">
+              {t.generateDone(pattern.width, pattern.height, total, stats.length)}
+            </p>
+          )}
+          {generationSession.status === 'restored-locked' && <Notice kind="warning">{t.sourceRequired}</Notice>}
+          {paletteLoadFailed && <Notice kind="warning" compact>{t.paletteLoadFailed}</Notice>}
+          {remapNotice && <Notice kind="success" compact>{remapNotice}</Notice>}
+          <div className="mobile-mode-switcher" role="tablist" aria-label={t.title} onKeyDown={handleTabKey}>
+            <button ref={previewTabRef} id="tab-preview" type="button" role="tab" aria-selected={tab === 'preview'} aria-controls="panel-preview" tabIndex={tab === 'preview' ? 0 : -1} onClick={() => setTab('preview')}>{t.previewTab}</button>
+            <button ref={editTabRef} id="tab-edit" type="button" role="tab" aria-selected={tab === 'edit'} aria-controls="panel-edit" tabIndex={tab === 'edit' ? 0 : -1} onClick={() => setTab('edit')}>{t.editTab}</button>
+            <button ref={stitchTabRef} id="tab-stitch" type="button" role="tab" aria-selected={tab === 'stitch'} aria-controls="panel-stitch" tabIndex={tab === 'stitch' ? 0 : -1} onClick={() => setTab('stitch')}>{zhCN.stitch.tab}</button>
           </div>
 
           <section className="mobile-canvas-shell">
             <header><span className="saved-dot" />{saveState === 'dirty' ? t.unsaved : t.saved}<strong>{pattern.width} × {pattern.height}</strong></header>
             <div className="mobile-canvas-stage">
-              {tab === 'preview' && <PatternPreview pattern={pattern} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} />}
-              {tab === 'edit' && <div className={generating ? 'pointer-events-none opacity-60' : undefined} aria-busy={generating}><PixelEditorCanvas pattern={pattern} palette={palette} autoFocus onPatternChange={handlePatternChange} /></div>}
-              {tab === 'stitch' && (stitchProgress ? <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} /> : <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>)}
+              {tab === 'preview' && <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>}
+              {tab === 'edit' && <div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" className={generating ? 'pointer-events-none opacity-60' : undefined} aria-busy={generating}><PixelEditorCanvas pattern={pattern} palette={palette} autoFocus onPatternChange={handlePatternChange} /></div>}
+              {tab === 'stitch' && <div id="panel-stitch" role="tabpanel" aria-labelledby="tab-stitch">{stitchProgress ? <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} /> : <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>}</div>}
             </div>
             <footer>{t.statsTotal(total)} · {t.colorCount(stats.length)}<span>{t.editorHint}</span></footer>
           </section>
+          {hoverInfo && tab === 'preview' && <p role="status" className="mobile-workbench-hover">{hoverInfo}</p>}
+          {generationSession.regenerationUndo && !generating && (
+            <button type="button" onClick={handleUndoRegeneration} className="btn-outline mobile-workbench-undo">
+              {t.undoRegeneration}
+            </button>
+          )}
 
           <nav className="mobile-tool-dock" aria-label={t.mobileTools}>
             {([
@@ -1358,7 +1373,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               role="tablist"
               aria-label={t.title}
               onKeyDown={handleTabKey}
-              className="flex gap-1 rounded-full border border-lilac/40 bg-white p-1 text-sm"
+              className="desktop-mode-switcher"
             >
               <button
                 ref={previewTabRef}
@@ -1369,7 +1384,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 aria-controls="panel-preview"
                 tabIndex={tab === 'preview' ? 0 : -1}
                 onClick={() => setTab('preview')}
-                className={`rounded-full px-3 py-1 transition-colors ${tab === 'preview' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
+                className={`desktop-mode-button${tab === 'preview' ? ' is-active' : ''}`}
               >
                 {t.previewTab}
               </button>
@@ -1382,7 +1397,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 aria-controls="panel-edit"
                 tabIndex={tab === 'edit' ? 0 : -1}
                 onClick={() => setTab('edit')}
-                className={`rounded-full px-3 py-1 transition-colors ${tab === 'edit' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
+                className={`desktop-mode-button${tab === 'edit' ? ' is-active' : ''}`}
               >
                 {t.editTab}
               </button>
@@ -1395,7 +1410,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 aria-controls="panel-stitch"
                 tabIndex={tab === 'stitch' ? 0 : -1}
                 onClick={() => setTab('stitch')}
-                className={`rounded-full px-3 py-1 transition-colors ${tab === 'stitch' ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft'}`}
+                className={`desktop-mode-button${tab === 'stitch' ? ' is-active' : ''}`}
               >
                 {zhCN.stitch.tab}
               </button>
@@ -1459,7 +1474,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
           </section>
 
-          <aside className="flex flex-col gap-4">
+          <aside className="desktop-inspector-stack flex flex-col gap-4">
             {generationSession.status === 'restored-locked' && (
               <Notice kind="warning">{t.sourceRequired}</Notice>
             )}

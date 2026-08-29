@@ -179,7 +179,7 @@ export default function GenerationParamsPanel({
   };
 
   return (
-    <section aria-label={t.title} className="card-surface flex flex-col gap-4 p-4">
+    <section aria-label={t.title} className="card-surface generation-params-panel flex flex-col gap-4 p-4">
       <fieldset disabled={disabled} className="contents">
       <div>
         <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-ink-soft">

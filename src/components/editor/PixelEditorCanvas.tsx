@@ -565,7 +565,7 @@ export default function PixelEditorCanvas({
   });
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="pixel-editor-studio flex flex-col gap-2">
       <EditorToolbar
         tool={tool}
         brushSize={brushSize}
@@ -585,7 +585,7 @@ export default function PixelEditorCanvas({
         onTransform={onTransform}
       />
 
-      <section aria-label={t.paletteTray} className="rounded-xl border border-lilac/40 bg-white p-2">
+      <section aria-label={t.paletteTray} className="editor-palette-tray rounded-xl border border-lilac/40 bg-white p-2">
         <input
           type="search"
           value={paletteQuery}

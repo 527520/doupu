@@ -64,12 +64,12 @@ export default function EditorToolbar({
         : { swatch: '#d1d5db', label: t.noColor };
 
   return (
-    <div aria-label={t.title} className="flex flex-wrap items-center gap-2 text-sm">
+    <div aria-label={t.title} className="editor-tool-ribbon flex flex-wrap items-center gap-2 text-sm">
       {/* 当前颜色指示（spec 用户体验：始终可见当前将落笔的颜色） */}
       <span
         role="status"
         aria-label={`${t.currentColor}: ${colorIndicator.label}`}
-        className="flex items-center gap-1.5 rounded-full border border-lilac/50 bg-white px-2 py-1"
+        className="editor-current-swatch flex items-center gap-1.5 border border-lilac/50 bg-white px-2 py-1"
       >
         <span
           className="inline-block h-4 w-4 rounded-sm border border-lilac/60"
@@ -89,7 +89,7 @@ export default function EditorToolbar({
           aria-pressed={tool === id}
           title={TOOL_SHORTCUTS[id] ? `${label}（${TOOL_SHORTCUTS[id]}）` : label}
           onClick={() => onToolChange(id)}
-          className={`rounded-lg border px-2 py-1 transition-colors ${tool === id ? 'border-primary bg-primary text-white' : 'border-lilac/50 text-ink-soft hover:bg-lilac-soft'}`}
+          className={`editor-tool-button${tool === id ? ' is-active' : ''}`}
         >
           {label}
         </button>

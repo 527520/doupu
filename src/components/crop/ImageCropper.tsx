@@ -416,7 +416,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
   return (
     <div className="studio-panel crop-studio">
       <div className="crop-studio-heading">
-        <div><span className="studio-eyebrow">裁剪设置</span><h2>{crop.title}</h2></div>
+        <div><span className="studio-eyebrow">{crop.settingsKicker}</span><h2>{crop.title}</h2></div>
         <div role="group" aria-label={crop.ariaRatioMode} className="crop-ratio-control">
           {(
             [

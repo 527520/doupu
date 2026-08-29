@@ -9,6 +9,7 @@ import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { registerSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
+import { LIMITS } from '@/lib/appInfo';
 
 export default function RegisterPage() {
   const t = zhCN.authPages;
@@ -95,7 +96,7 @@ export default function RegisterPage() {
             className={field}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            maxLength={30}
+            maxLength={LIMITS.usernameLength}
           />
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">

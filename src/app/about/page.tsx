@@ -10,7 +10,7 @@ export default function AboutPage() {
       <SiteHeader title={t.title} currentPath="/about" subtitle={zhCN.workspace.localGenerationHint} />
       <div className="workspace-content info-page-content">
         <section className="about-hero">
-          <span className="studio-eyebrow">DOUPU STUDIO · v{APP_VERSION}</span>
+          <span className="studio-eyebrow">{zhCN.workspace.brandVersion(APP_VERSION)}</span>
           <h2>{zhCN.app.tagline}</h2><p>{t.intro}</p>
           <div>{t.features.map((feature) => <span key={feature}><Icon name="spark" size={15} />{feature}</span>)}</div>
         </section>

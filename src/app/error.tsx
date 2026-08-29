@@ -22,7 +22,7 @@ export default function PageError({
 
   const t = zhCN.errorPages;
   return (
-    <StateShell mark="!" eyebrow="工作台暂时停了一下" title={t.errorTitle} body={t.errorBody}>
+    <StateShell mark="!" eyebrow={t.errorEyebrow} title={t.errorTitle} body={t.errorBody}>
         <button type="button" onClick={reset} className="btn-primary">
           {t.retry}
         </button>

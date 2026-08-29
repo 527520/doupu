@@ -22,7 +22,7 @@ export default function SharedPatternView({ pattern, stats }: Props) {
     <div className="shared-pattern-layout">
       <section className="shared-pattern-canvas"><PatternPreview pattern={pattern} /></section>
       <aside className="shared-color-list">
-        <header><span>{t.colorsTitle}</span><strong>{stats.length} 色</strong></header>
+        <header><span>{t.colorsTitle}</span><strong>{t.colorCount(stats.length)}</strong></header>
         <ColorBand colors={stats.map((item) => item.hex)} max={20} label={t.bandAria(stats.length)} />
         <ul>
           {stats.map((item) => (

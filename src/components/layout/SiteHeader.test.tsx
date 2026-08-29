@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { MouseEvent } from 'react';
 import SiteHeader from './SiteHeader';
 
 describe('SiteHeader', () => {
@@ -25,5 +26,23 @@ describe('SiteHeader', () => {
     expect(more).toHaveAttribute('aria-expanded', 'true');
     expect(within(screen.getByTestId('site-overflow-panel')).getByRole('button', { name: '退出登录' })).toBeTruthy();
     expect(screen.getAllByRole('link', { name: '我的设计' }).some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+  });
+
+  it('所有外壳导航都经过离开保护回调', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn((event: MouseEvent<HTMLAnchorElement>, _href: string) => event.preventDefault());
+    const { container } = render(<SiteHeader title="工作台" currentPath="/app" onNavigate={onNavigate} />);
+
+    for (const selector of [
+      '.workspace-sidebar .brand-lockup',
+      '.workspace-privacy-note',
+      '.workspace-profile',
+      '.workspace-mobile-brand .brand-lockup',
+      '.workspace-top-avatar',
+    ]) {
+      await user.click(container.querySelector(selector) as HTMLAnchorElement);
+    }
+
+    expect(onNavigate.mock.calls.map((call) => call[1])).toEqual(['/', '/about', '/account', '/', '/account']);
   });
 });

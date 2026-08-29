@@ -10,6 +10,7 @@ const errorAlert = (page: import('@playwright/test').Page) => page.locator('p[ro
 test('注册 → 邮箱验证 → 登录 → 首页显示登录态入口', async ({ page }) => {
   const email = uniqueEmail('journey');
   const password = 'e2e-password-123';
+  const username = '拼豆小匠';
 
   // 注册页：客户端校验拦截非法输入
   await page.goto('/register');
@@ -20,6 +21,7 @@ test('注册 → 邮箱验证 → 登录 → 首页显示登录态入口', async
   await expect(errorAlert(page).first()).toBeVisible({ timeout: 10_000 });
 
   // 合法注册 → 显示「验证邮件已发送」+ 前往登录
+  await fillField(page, '用户名（选填）', username);
   await fillField(page, '邮箱', email);
   await fillField(page, '密码', password);
   await fillField(page, '确认密码', password);
@@ -37,6 +39,17 @@ test('注册 → 邮箱验证 → 登录 → 首页显示登录态入口', async
   await fillField(page, '密码', password);
   await page.getByRole('button', { name: '登录' }).click();
   await page.waitForURL(/\/designs|\/app/, { timeout: 15_000 });
+
+  // 展示名随账号保存，并可在账号页修改；邮箱仍是登录凭据。
+  await page.goto('/account');
+  const usernameInput = page.getByLabel('用户名');
+  await expect(usernameInput).toHaveValue(username);
+  await usernameInput.fill('新的拼豆名');
+  await page.getByRole('button', { name: '保存用户名' }).click();
+  await expect(page.getByText('用户名已保存')).toBeVisible();
+  await expect(page.getByTestId('workspace-sidebar').getByText('新的拼豆名')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('用户名')).toHaveValue('新的拼豆名');
 });
 
 test('登录失败显示统一错误文案（防枚举，E28/E33）', async ({ page }) => {

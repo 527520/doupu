@@ -55,7 +55,7 @@ export default function SiteHeader({
   return (
     <>
       <aside className="workspace-sidebar" data-testid="workspace-sidebar">
-        <Brand />
+        <Brand onClick={(event) => navigate(event, '/')} />
         <nav aria-label={zhCN.nav.mainNav} className="workspace-side-nav">
           <span className="workspace-nav-label">{zhCN.workspace.creationSpace}</span>
           {primaryNavigation.slice(0, 4).map((item) => (
@@ -73,12 +73,12 @@ export default function SiteHeader({
             <Icon name="user" /><span>{zhCN.workspace.account}</span>
           </Link>
         </nav>
-        <Link href="/about" className="workspace-privacy-note">
+        <Link href="/about" onClick={(event) => navigate(event, '/about')} className="workspace-privacy-note">
           <strong><Icon name="lock" size={15} />{zhCN.workspace.localGeneration}</strong>
           <span>{zhCN.workspace.localGenerationHint}</span>
           <small>{zhCN.workspace.learnPrivacy}<Icon name="arrow" size={14} /></small>
         </Link>
-        <Link href="/account" className="workspace-profile">
+        <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-profile">
           <span className="workspace-avatar">{avatar}</span>
           <span><strong>{displayName}</strong><small>{auth.kind === 'user' ? zhCN.workspace.cloudReady : zhCN.workspace.localCreating}</small></span>
           <Icon name="more" size={18} />
@@ -86,7 +86,7 @@ export default function SiteHeader({
       </aside>
 
       <header className="workspace-topbar">
-        <div className="workspace-mobile-brand"><Brand compact /></div>
+        <div className="workspace-mobile-brand"><Brand compact onClick={(event) => navigate(event, '/')} /></div>
         <div className="workspace-page-heading">
           <h1>{title}</h1>
           {subtitle && <p>{subtitle}</p>}
@@ -102,7 +102,7 @@ export default function SiteHeader({
               <div id="site-overflow-panel" data-testid="site-overflow-panel" className={`workspace-overflow-panel${overflowOpen ? ' is-open' : ''}`}>{overflowActions}</div>
             </div>
           )}
-          <Link href="/account" className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
+          <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
         </div>
       </header>
 

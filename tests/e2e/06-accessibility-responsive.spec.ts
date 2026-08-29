@@ -105,7 +105,33 @@ test('工作区页头在全部目标宽度下导航行与设计操作行不相�
   }
 });
 
-for (const route of ['/', '/app', '/designs', '/palettes', '/help', '/about'] as const) {
+test('移动工作台可切换编辑、用色与导出工具', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app');
+  await uploadFile(page, PHOTO);
+  await page.getByRole('button', { name: '使用整张图片' }).click();
+
+  await expect(page.getByLabel('设计名称').last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('status').filter({ hasText: '图纸已生成' })).toBeVisible();
+  await expect(page.locator('#panel-preview')).toBeFocused();
+  await page.getByRole('tab', { name: '预览', exact: true }).focus();
+  await page.getByRole('tab', { name: '预览', exact: true }).press('ArrowRight');
+  await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel('图纸编辑画布')).toBeVisible();
+
+  const colors = page.getByRole('button', { name: '用色', exact: true });
+  await colors.click();
+  await expect(colors).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.mobile-tool-sheet').getByText(/共 \d+ 粒/).first()).toBeVisible();
+
+  const exportTools = page.getByRole('button', { name: '导出', exact: true });
+  await exportTools.click();
+  await expect(exportTools).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '导出 PNG 图纸' })).toBeVisible();
+});
+
+for (const route of ['/', '/app', '/designs', '/palettes', '/account', '/help', '/about'] as const) {
   test(`${route} 无 axe 严重或关键问题`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(route);

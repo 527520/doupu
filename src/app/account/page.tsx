@@ -6,6 +6,7 @@ import AccountMenu from '@/components/account/AccountMenu';
 import Icon from '@/components/ui/Icon';
 import { createDoupuApi, type MeInfo } from '@/lib/sync/api';
 import { zhCN } from '@/messages/zh-CN';
+import { notifyAuthStatusChanged } from '@/components/account/useAuthStatus';
 
 export default function AccountPage() {
   const api = useMemo(() => createDoupuApi(), []);
@@ -31,7 +32,10 @@ export default function AccountPage() {
       <SiteHeader title={zhCN.workspace.account} currentPath="/account" subtitle={zhCN.workspace.accountSubtitle} />
       <div className="workspace-content account-page-grid">
         <section className="studio-panel account-primary-card">
-          <AccountMenu api={api} me={me} onAuthChanged={() => void load()} />
+          <AccountMenu api={api} me={me} onAuthChanged={() => {
+            notifyAuthStatusChanged();
+            void load();
+          }} />
         </section>
         <aside className="account-status-stack">
           <section className="studio-panel account-status-card">

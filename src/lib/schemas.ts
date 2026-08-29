@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { LIMITS } from './appInfo';
 import { BRANDS, type ProjectFile } from './types';
+import { zhCN } from '@/messages/zh-CN';
 
 // ---------- 基础 ----------
 
@@ -39,7 +40,7 @@ export const passwordSchema = z
 export const usernameSchema = z
   .string()
   .transform((value) => value.trim())
-  .pipe(z.string().max(LIMITS.usernameLength, `用户名最长 ${LIMITS.usernameLength} 个字符`));
+  .pipe(z.string().max(LIMITS.usernameLength, zhCN.authPages.usernameTooLong(LIMITS.usernameLength)));
 
 // ---------- 生成参数 ----------
 

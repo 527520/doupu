@@ -9,7 +9,7 @@ interface Props {
   children: ReactNode;
 }
 
-/** Branded full-page frame for recoverable empty and error states. */
+/** 可恢复空态与错误态共用的品牌化全页框架。 */
 export default function StateShell({ mark, eyebrow, title, body, children }: Props) {
   return (
     <main id="main" className="state-studio-page">

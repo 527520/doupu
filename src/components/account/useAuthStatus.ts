@@ -24,6 +24,7 @@ type Settled = Exclude<AuthStatus, { kind: 'loading' }>;
 
 /** 页面级共享：同一次加载里多个组件只发一次请求。 */
 let inflight: Promise<Settled> | null = null;
+const AUTH_STATUS_CHANGED = 'doupu:auth-status-changed';
 
 async function probe(): Promise<Settled> {
   try {
@@ -49,16 +50,26 @@ export function resetAuthStatusCache(): void {
   inflight = null;
 }
 
+/** 登录、退出或展示资料更新后，通知当前页面上的所有导航重新探测。 */
+export function notifyAuthStatusChanged(): void {
+  window.dispatchEvent(new Event(AUTH_STATUS_CHANGED));
+}
+
 export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>({ kind: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
-    void sharedProbe().then((settled) => {
-      if (!cancelled) setStatus(settled);
-    });
+    const refresh = (): void => {
+      void sharedProbe().then((settled) => {
+        if (!cancelled) setStatus(settled);
+      });
+    };
+    refresh();
+    window.addEventListener(AUTH_STATUS_CHANGED, refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener(AUTH_STATUS_CHANGED, refresh);
     };
   }, []);
 

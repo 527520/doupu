@@ -6,7 +6,7 @@ import StateShell from '@/components/system/StateShell';
 export default function NotFound() {
   const t = zhCN.errorPages;
   return (
-    <StateShell mark="404" eyebrow="走错工作间了" title={t.notFoundTitle} body={t.notFoundBody}>
+    <StateShell mark="404" eyebrow={t.notFoundEyebrow} title={t.notFoundTitle} body={t.notFoundBody}>
         <Link href="/" className="btn-primary">
           {t.backHome}
         </Link>

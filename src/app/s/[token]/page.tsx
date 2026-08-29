@@ -61,7 +61,7 @@ export default async function SharedDesignPage({ params }: { params: Promise<{ t
       <section className="share-studio-content">
         <header className="share-studio-intro">
           <div>
-            <p className="studio-eyebrow">豆谱 · 拼豆图纸分享</p>
+            <p className="studio-eyebrow">{t.pageKicker}</p>
             <h1>{snapshot.name.trim() || zhCN.project.unnamed}</h1>
           </div>
           <strong>{t.summary(snapshot.pattern.width, snapshot.pattern.height, total, stats.length)}</strong>
