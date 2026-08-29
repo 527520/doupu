@@ -72,6 +72,7 @@ next-env.d.ts
 .scratch/*.json
 .scratch/*.png
 .scratch/*.err
+.scratch/*.sh
 
 # IDE
 /.idea/
