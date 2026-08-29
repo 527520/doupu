@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
 import { takePendingUpload } from '@/lib/upload/pendingUpload';
 import Notice from '@/components/ui/Notice';
+import Icon from '@/components/ui/Icon';
 import ShoppingListPanel from '@/components/export/ShoppingListPanel';
 import StitchView from '@/components/stitch/StitchView';
 import ShareButton from '@/components/share/ShareButton';
@@ -31,6 +32,7 @@ import PngExportButton from '@/components/export/PngExportButton';
 import PdfExportButton from '@/components/export/PdfExportButton';
 import ProjectFileButtons from '@/components/export/ProjectFileButtons';
 import SiteHeader from '@/components/layout/SiteHeader';
+import { useMobileLayout } from '@/components/layout/useMobileLayout';
 import DesignNameEditor from './DesignNameEditor';
 import SaveStatus, { type CloudSaveState, type SaveState } from './SaveStatus';
 import { zhCN } from '@/messages/zh-CN';
@@ -249,6 +251,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [cloudSaveState, setCloudSaveState] = useState<CloudSaveState>('pending');
   const [storageReady, setStorageReady] = useState(false);
   const [tab, setTab] = useState<Tab>('preview');
+  const [mobilePanel, setMobilePanel] = useState<'params' | 'colors' | 'export'>('params');
+  const mobileLayout = useMobileLayout();
   /**
    * 跟拼进度（G-1）：按设计 id 存在本机 IndexedDB，与图纸尺寸绑定。
    * null 表示本地存储不可用（隐私模式）；尺寸不匹配时重建，避免把「已拼」错位。
@@ -1154,10 +1158,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, [activeImageDecoder, generationSession.status, resetWorkbench, saveBeforeLeave]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
+    <div className="workspace-content flex w-full flex-col gap-4">
       <SiteHeader
         title={t.title}
         currentPath="/app"
+        subtitle={zhCN.workspace.workbenchSubtitle}
         onNavigate={handleNavigationClick}
         context={step === 'workspace' ? (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1241,7 +1246,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
             想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。
           */}
-          <section aria-label={t.blankTitle} className="card-surface flex flex-col gap-2 p-3 text-sm">
+          <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
             <p className="font-medium text-ink">{t.blankTitle}</p>
             <p className="text-xs text-ink-soft">{t.blankHint}</p>
             <div className="flex flex-wrap items-center gap-2">
@@ -1268,7 +1273,73 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       {step === 'workspace' && pattern && (
         // D-6：768–1023px（iPad 竖屏）此前只有 lg 断点，参数与导出全被挤到图纸下方，
         // 需要滚很远才能改参数。md 起就并列两栏，侧栏在该区间收窄到 260px。
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_260px] lg:grid-cols-[1fr_320px]">
+        mobileLayout ? (
+        <div className="mobile-workbench">
+          <div className="mobile-project-bar">
+            <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
+            <span>{paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}</span>
+          </div>
+          <div className="mobile-mode-switcher" role="group" aria-label={t.title}>
+            <button type="button" aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>{t.previewTab}</button>
+            <button type="button" aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>{t.editTab}</button>
+            <button type="button" aria-pressed={tab === 'stitch'} onClick={() => setTab('stitch')}>{zhCN.stitch.tab}</button>
+          </div>
+
+          <section className="mobile-canvas-shell">
+            <header><span className="saved-dot" />{saveState === 'dirty' ? t.unsaved : t.saved}<strong>{pattern.width} × {pattern.height}</strong></header>
+            <div className="mobile-canvas-stage">
+              {tab === 'preview' && <PatternPreview pattern={pattern} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} />}
+              {tab === 'edit' && <div className={generating ? 'pointer-events-none opacity-60' : undefined} aria-busy={generating}><PixelEditorCanvas pattern={pattern} palette={palette} autoFocus onPatternChange={handlePatternChange} /></div>}
+              {tab === 'stitch' && (stitchProgress ? <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} /> : <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>)}
+            </div>
+            <footer>{t.statsTotal(total)} · {t.colorCount(stats.length)}<span>{t.editorHint}</span></footer>
+          </section>
+
+          <nav className="mobile-tool-dock" aria-label={t.mobileTools}>
+            {([
+              ['params', 'sliders', t.mobileParams],
+              ['colors', 'palette', t.mobileColors],
+              ['export', 'download', t.mobileExport],
+            ] as const).map(([panel, icon, label]) => (
+              <button key={panel} type="button" aria-pressed={mobilePanel === panel} onClick={() => setMobilePanel(panel)}><Icon name={icon} /><span>{label}</span></button>
+            ))}
+          </nav>
+
+          <section className="mobile-tool-sheet">
+            <span className="mobile-sheet-handle" aria-hidden="true" />
+            {mobilePanel === 'params' && (
+              <GenerationParamsPanel
+                params={params}
+                paletteOptions={paletteOptions}
+                selectedPalette={selectedPalette}
+                onParamsChange={handleParamsChange}
+                onPaletteSelect={handlePaletteSelect}
+                backgroundSampleSource={source}
+                disabled={!source || generating}
+                paletteDisabled={generating || !generationSession.committed}
+                kitTier={kitTier}
+                onKitTierChange={handleKitTierChange}
+              />
+            )}
+            {mobilePanel === 'colors' && (
+              <div className="mobile-color-summary">
+                <h2>{t.statsTotal(total)} · {t.colorCount(stats.length)}</h2>
+                <ul>{stats.slice(0, 30).map((item) => <li key={item.hex}><span style={{ backgroundColor: item.hex }} /><code>{item.code}</code><strong>{item.count} {zhCN.export.countUnit}</strong></li>)}</ul>
+                {generationSession.committed && <ShoppingListPanel stats={stats} designName={name.trim() || zhCN.project.unnamed} width={pattern.width} height={pattern.height} />}
+              </div>
+            )}
+            {mobilePanel === 'export' && generationSession.committed && (
+              <div className="mobile-export-stack">
+                <PngExportButton pattern={generationSession.committed.pattern} designName={name.trim() || zhCN.project.unnamed} disabled={generating} />
+                <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={generationSession.committed.pattern} stats={generationSession.committed.stats} disabled={generating} />
+                <ProjectFileButtons source={{ name: name.trim() || zhCN.project.unnamed, createdAt: createdAt || new Date().toISOString(), engineVersion: generationSession.committed.engineVersion, palette: generationSession.committed.projectPalette, params: generationSession.committed.params, pattern: generationSession.committed.pattern }} existingNames={savedNames} onImport={handleImport} disabled={generating} />
+                <ShareButton designId={designId} onBeforeShare={prepareShare} disabled={authStatus.kind !== 'user'} disabledReason={zhCN.share.requiresCloud} />
+              </div>
+            )}
+          </section>
+        </div>
+        ) : (
+        <div className="desktop-workbench-layout grid grid-cols-1 gap-4 md:grid-cols-[1fr_260px] lg:grid-cols-[1fr_320px]">
           <section className="flex flex-col gap-3">
             {/*
               生成完成的结果句（D-1 第一段）：礼貌播报 + 上浮出现。
@@ -1471,6 +1542,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
           </aside>
         </div>
+        )
       )}
       {confirmDialog}
     </div>

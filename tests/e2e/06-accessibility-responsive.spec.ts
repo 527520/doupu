@@ -48,9 +48,9 @@ for (const width of widths) {
         ...unexpectedConsoleErrors.map(({ text, url }) => `${text}${url ? ` (${url})` : ''}`),
       ];
       expect(errors, errors.join('\n')).toEqual([]);
-      await page.getByRole('button', { name: '菜单与账户' }).click();
-      await expect(page.getByRole('button', { name: '菜单与账户' })).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('site-overflow-panel').getByRole('link', { name: '我的设计' })).toBeVisible();
+      const mobileNav = page.getByTestId('workspace-mobile-nav');
+      await expect(mobileNav.getByRole('link', { name: '设计' })).toBeVisible();
+      await expect(mobileNav.getByRole('link', { name: '我的' })).toBeVisible();
     }
     const dimensions = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
@@ -66,49 +66,41 @@ test('工作区页头在全部目标宽度下导航行与设计操作行不相�
   await page.goto('/app');
   await uploadFile(page, PHOTO);
   await page.getByRole('button', { name: '使用整张图片' }).click();
-  const designName = page.getByLabel('设计名称').first();
   const save = page.getByRole('button', { name: '保存', exact: true });
-  await expect(designName).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel('设计名称').last()).toBeVisible({ timeout: 20_000 });
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: 800 });
     await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()))));
 
-    const geometry = await page.locator('header').evaluate((header) => {
+    const geometry = await page.evaluate(() => {
       const visibleRect = (element: Element | null): DOMRect | null => {
         if (!(element instanceof HTMLElement) || element.offsetParent === null) return null;
         return element.getBoundingClientRect();
       };
-      const topRow = [
-        visibleRect(header.querySelector('h1')),
-        ...Array.from(header.querySelectorAll('nav[aria-label="主导航"]')).map(visibleRect),
-        visibleRect(header.querySelector('button[aria-controls="site-overflow-panel"]')),
+      const projectActions = [
+        ...Array.from(document.querySelectorAll('input[aria-label="设计名称"]')).map(visibleRect),
+        ...Array.from(document.querySelectorAll('button'))
+          .filter((button) => button.textContent?.trim() === '保存')
+          .map(visibleRect),
       ].filter((rect): rect is DOMRect => rect !== null);
-      const workspaceRow = [
-        visibleRect(header.querySelector('input[aria-label="设计名称"]')),
-        ...Array.from(header.querySelectorAll('[role="status"]')).map(visibleRect),
-        visibleRect(Array.from(header.querySelectorAll('button')).find((button) => button.textContent?.trim() === '保存') ?? null),
-      ].filter((rect): rect is DOMRect => rect !== null);
-      const intersections = workspaceRow.flatMap((first, firstIndex) => workspaceRow
+      const intersections = projectActions.flatMap((first, firstIndex) => projectActions
         .slice(firstIndex + 1)
         .map((second) => first.left < second.right
           && first.right > second.left
           && first.top < second.bottom
           && first.bottom > second.top));
       return {
-        topBottom: Math.max(...topRow.map((rect) => rect.bottom)),
-        workspaceTop: Math.min(...workspaceRow.map((rect) => rect.top)),
-        workspaceIntersects: intersections.some(Boolean),
-        workspaceRight: Math.max(...workspaceRow.map((rect) => rect.right)),
-        headerRight: header.getBoundingClientRect().right,
+        count: projectActions.length,
+        intersects: intersections.some(Boolean),
+        right: Math.max(...projectActions.map((rect) => rect.right)),
         viewportWidth: document.documentElement.clientWidth,
       };
     });
 
-    expect(geometry.workspaceTop, `${width}px 工作区操作应位于导航行下方`).toBeGreaterThanOrEqual(geometry.topBottom);
-    expect(geometry.workspaceIntersects, `${width}px 名称、状态和保存按钮不得重叠`).toBe(false);
-    expect(geometry.workspaceRight, `${width}px 工作区操作不得越出页头`).toBeLessThanOrEqual(geometry.headerRight);
-    expect(geometry.headerRight, `${width}px 页头不应越出视口`).toBeLessThanOrEqual(geometry.viewportWidth);
+    expect(geometry.count, `${width}px 应同时提供名称与保存操作`).toBe(2);
+    expect(geometry.intersects, `${width}px 名称与保存按钮不得重叠`).toBe(false);
+    expect(geometry.right, `${width}px 工作区操作不得越出视口`).toBeLessThanOrEqual(geometry.viewportWidth);
     await expect(save).toBeVisible();
   }
 });

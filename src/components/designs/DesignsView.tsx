@@ -10,7 +10,6 @@ import { createSyncClient, type CloudDesignMeta, type SyncClient } from '@/lib/s
 import { enqueueDesignSync, withDesignStorageLock } from '@/lib/sync/queue';
 import { openIndexedDb, parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
 import type { PatternCell } from '@/lib/types';
-import AccountMenu from '@/components/account/AccountMenu';
 import Notice from '@/components/ui/Notice';
 import ColorBand from '@/components/palettes/ColorBand';
 import { LIMITS } from '@/lib/appInfo';
@@ -260,19 +259,22 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   };
 
   return (
-    <main id="main" className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4">
+    <main id="main" className="workspace-page flex w-full flex-col gap-4">
       <SiteHeader
         title={t.title}
         currentPath="/designs"
+        subtitle={zhCN.workspace.designsSubtitle}
         primaryActions={
           <Link href="/app?new=1" className="btn-primary btn-sm">
             {t.newDesign}
           </Link>
         }
-        overflowActions={
-          <AccountMenu api={api} me={me} onAuthChanged={() => void load()} />
-        }
       />
+
+      <section className="designs-hero">
+        <div><span className="studio-eyebrow">{t.collectionKicker}</span><h2>{t.collectionTitle}</h2><p>{t.collectionHint}</p></div>
+        <Link href="/app?new=1" className="btn-primary">{t.createFromHero}</Link>
+      </section>
 
       {/* 设计数已达上限时先说清楚，而不是等用户新建后在保存阶段才失败（D-4）。 */}
       {activeDesignCount >= LIMITS.designsPerUser && (
@@ -319,16 +321,16 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       )}
 
       {me !== 'loading' && !syncing && !error && designs.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-lilac/50 p-10 text-center">
+        <div className="designs-empty">
           <p className="font-medium text-ink">{t.emptyTitle}</p>
           <p className="text-sm text-ink-soft">{t.emptyHint}</p>
         </div>
       )}
 
-      <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <ul className="designs-grid">
         {designs.map((design) => (
-          <li key={design.id} className="card-surface flex flex-col gap-2 p-3">
-            <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-cream-deep/70">
+          <li key={design.id} className="design-card">
+            <div className="design-card-canvas">
               {design.thumbnail ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -342,7 +344,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                 <span className="text-xs text-ink-soft">{t.size(design.width, design.height)}</span>
               )}
             </div>
-            <p className="truncate text-sm font-medium text-ink" title={design.name}>
+            <p className="design-card-title" title={design.name}>
               {design.name}
             </p>
             <p className="text-xs text-ink-soft">{t.size(design.width, design.height)}</p>
@@ -359,7 +361,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               {design.status === 'localOnly' && <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">{t.localOnly}</span>}
               {design.status === 'conflict' && <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">{t.conflict}</span>}
             </div>
-            <div className="mt-auto flex flex-wrap gap-1 text-xs">
+            <div className="design-card-actions">
               <button type="button" onClick={() => void handleOpen(design)} className="btn-outline btn-icon">
                 {t.open}
               </button>

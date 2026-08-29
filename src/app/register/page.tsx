@@ -13,6 +13,7 @@ import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
 export default function RegisterPage() {
   const t = zhCN.authPages;
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export default function RegisterPage() {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
-    const parsed = registerSchema.safeParse({ email, password });
+    const parsed = registerSchema.safeParse({ email, password, username });
     if (!parsed.success) {
       setError(t.credentialsInvalid);
       return;
@@ -37,7 +38,7 @@ export default function RegisterPage() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(parsed.data),
       });
       if (res.ok) {
         setDone(true);
@@ -86,6 +87,17 @@ export default function RegisterPage() {
     <AuthShell title={t.registerTitle}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <FormError message={error} />
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
+          {t.usernameOptional}
+          <input
+            type="text"
+            autoComplete="nickname"
+            className={field}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            maxLength={30}
+          />
+        </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium text-ink-soft">
           {t.email}
           <input

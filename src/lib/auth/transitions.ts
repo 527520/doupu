@@ -17,13 +17,13 @@ export interface AuthTransitionHooks {
 /** 创建待验证账号与首个验证令牌必须同生共死。 */
 export async function createUnverifiedUser(
   db: AnyDatabase,
-  input: { email: string; passwordHash: string; tokenHash: string; expiresAt: Date },
+  input: { email: string; username?: string; passwordHash: string; tokenHash: string; expiresAt: Date },
   hooks: Pick<AuthTransitionHooks, 'afterUserCreated'> = {},
 ): Promise<{ id: string }> {
   return db.transaction(async (tx) => {
     const [user] = await tx
       .insert(users)
-      .values({ email: input.email, passwordHash: input.passwordHash })
+      .values({ email: input.email, username: input.username || null, passwordHash: input.passwordHash })
       .returning();
     await hooks.afterUserCreated?.();
     await tx.insert(emailTokens).values({

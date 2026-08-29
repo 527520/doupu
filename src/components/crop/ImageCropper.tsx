@@ -414,10 +414,10 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
   const current = clampCropRect(rect, naturalWidth, naturalHeight);
 
   return (
-    <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{crop.title}</h2>
-        <div role="group" aria-label={crop.ariaRatioMode} className="flex gap-1 rounded-full border border-lilac/50 p-1 text-sm">
+    <div className="studio-panel crop-studio">
+      <div className="crop-studio-heading">
+        <div><span className="studio-eyebrow">裁剪设置</span><h2>{crop.title}</h2></div>
+        <div role="group" aria-label={crop.ariaRatioMode} className="crop-ratio-control">
           {(
             [
               ['free', crop.modeFree],
@@ -430,10 +430,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
               type="button"
               aria-pressed={ratioMode === mode}
               onClick={() => changeRatioMode(mode)}
-              className={[
-                'rounded-full px-2.5 py-1 transition-colors',
-                ratioMode === mode ? 'bg-primary text-white' : 'text-ink-soft hover:bg-primary-soft',
-              ].join(' ')}
+              className={ratioMode === mode ? 'is-active' : undefined}
             >
               {label}
             </button>
@@ -441,7 +438,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         </div>
       </div>
 
-      <div ref={containerRef} className="w-full">
+      <div ref={containerRef} className="crop-canvas-wrap">
         <canvas
           ref={canvasRef}
           tabIndex={0}
@@ -463,8 +460,8 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-soft">
-        <p role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="crop-meta">
+        <p role="status">
           <span>{crop.positionLabel(Math.round(current.x), Math.round(current.y))}</span>
           <span>{crop.sizeLabel(current.width, current.height)}</span>
         </p>
@@ -473,7 +470,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-3">
+      <div className="crop-actions">
         <button
           type="button"
           onClick={onCancel}

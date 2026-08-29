@@ -1,29 +1,32 @@
 'use client';
 
-/** 认证页共用外壳（优化票 01）：奶油底 + 居中卡片 + 手绘弧线签名。 */
 import Link from 'next/link';
-import ArcSignature from '@/components/ui/ArcSignature';
+import Brand from '@/components/layout/Brand';
+import Icon from '@/components/ui/Icon';
 import { zhCN } from '@/messages/zh-CN';
 
-export default function AuthShell({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+export default function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
+  const t = zhCN.authPages;
   return (
-    <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-4 py-10">
-      <section className="card-surface w-full max-w-md px-6 py-8 sm:px-8">
-        <header className="mb-6 flex flex-col items-center gap-2 text-center">
-          <ArcSignature className="w-24" />
-          <h1 className="page-title">{title}</h1>
-        </header>
-        {children}
+    <main id="main" className="auth-studio-page">
+      <section className="auth-story-panel">
+        <Brand />
+        <div className="auth-story-copy">
+          <span className="studio-eyebrow">{t.storyKicker}</span>
+          <h2>{t.storyTitle}</h2>
+          <p>{t.storyBody}</p>
+          <div><span><Icon name="lock" size={16} />{t.localProcessing}</span><span><Icon name="cloud" size={16} />{t.cloudProjects}</span></div>
+        </div>
+        <div className="auth-story-swoop" aria-hidden="true"><span /><span /><span /></div>
       </section>
-      <Link href="/" className="link-soft text-sm">
-        ← {zhCN.nav.home}
-      </Link>
+      <section className="auth-form-column">
+        <div className="auth-mobile-brand"><Brand compact /></div>
+        <div className="auth-form-card">
+          <header><span className="auth-form-icon"><Icon name="user" /></span><h1>{title}</h1><p>{t.formHint}</p></header>
+          {children}
+        </div>
+        <Link href="/" className="auth-back-link"><Icon name="arrow" size={15} />{zhCN.nav.home}</Link>
+      </section>
     </main>
   );
 }

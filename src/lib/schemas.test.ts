@@ -12,6 +12,8 @@ import {
   patternSchema,
   projectFileSchema,
   registerSchema,
+  updateProfileSchema,
+  usernameSchema,
 } from './schemas';
 import { DEFAULT_GENERATION_PARAMS } from './types';
 
@@ -244,7 +246,16 @@ describe('账号 DTO（E31）', () => {
 
   it('注册 DTO 组合校验', () => {
     expect(registerSchema.safeParse({ email: 'a@b.com', password: '12345678' }).success).toBe(true);
+    expect(registerSchema.parse({ email: 'a@b.com', password: '12345678', username: '  豆豆  ' }).username).toBe('豆豆');
     expect(registerSchema.safeParse({ email: 'bad', password: 'short' }).success).toBe(false);
+  });
+
+  it('用户名是可清空的展示字段，去首尾空格且最多 30 个字符', () => {
+    expect(usernameSchema.parse('  豆豆  ')).toBe('豆豆');
+    expect(usernameSchema.parse('   ')).toBe('');
+    expect(usernameSchema.safeParse('豆'.repeat(30)).success).toBe(true);
+    expect(usernameSchema.safeParse('豆'.repeat(31)).success).toBe(false);
+    expect(updateProfileSchema.parse({ username: '  新名字 ' })).toEqual({ username: '新名字' });
   });
 });
 

@@ -24,37 +24,27 @@ export default function StepIndicator({ step }: { step: WorkbenchStep }) {
   const currentIndex = ORDER.indexOf(step);
 
   return (
-    <nav aria-label={t.stepsAria}>
-      <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm">
+    <nav aria-label={t.stepsAria} className="step-ticket-nav">
+      <ol>
         {ORDER.map((item, index) => {
           const done = index < currentIndex;
           const current = index === currentIndex;
           return (
-            <li key={item} className="flex items-center gap-2">
+            <li key={item} data-state={current ? 'current' : done ? 'done' : 'pending'}>
               <span
                 {...(current ? { 'aria-current': 'step' as const } : {})}
-                className={[
-                  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors',
-                  current ? 'bg-primary-soft font-medium text-primary-deep' : '',
-                  done ? 'text-ink-soft' : '',
-                  !current && !done ? 'text-ink-soft/60' : '',
-                ].filter(Boolean).join(' ')}
+                className="step-ticket"
               >
                 <span
                   aria-hidden="true"
-                  className={[
-                    'inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold',
-                    current ? 'bg-primary text-white' : '',
-                    done ? 'bg-success-soft text-success' : '',
-                    !current && !done ? 'border border-lilac/60 text-ink-soft/60' : '',
-                  ].filter(Boolean).join(' ')}
+                  className="step-ticket-number"
                 >
                   {done ? '✓' : index + 1}
                 </span>
                 {labels[item]}
               </span>
               {index < ORDER.length - 1 && (
-                <span aria-hidden="true" className="text-ink-soft/40">›</span>
+                <span aria-hidden="true" className="step-ticket-arrow">›</span>
               )}
             </li>
           );

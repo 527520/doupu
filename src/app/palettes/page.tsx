@@ -129,10 +129,11 @@ export default function PalettesPage() {
   };
 
   return (
-    <main id="main" className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
+    <main id="main" className="workspace-page flex w-full flex-col gap-6">
       <SiteHeader
         title={t.title}
         currentPath="/palettes"
+        subtitle={zhCN.workspace.palettesSubtitle}
         primaryActions={
           <button
             type="button"
@@ -143,6 +144,11 @@ export default function PalettesPage() {
           </button>
         }
       />
+
+      <section className="palette-hero">
+        <div><span className="studio-eyebrow">{t.libraryKicker}</span><h2>{t.heroTitle}</h2><p>{t.heroHint}</p></div>
+        <div className="palette-fan" aria-hidden="true"><span /><span /><span /><span /><span /></div>
+      </section>
 
       {pageError && (
         <Notice kind="danger">
@@ -162,14 +168,14 @@ export default function PalettesPage() {
         </Notice>
       )}
 
-      <section aria-label={t.builtinTitle} className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-ink-soft">{t.builtinTitle}</h2>
+      <section aria-label={t.builtinTitle} className="palette-library-section">
+        <h2>{t.builtinTitle}</h2>
         <p className="text-xs text-ink-soft/80">{t.builtinNote}</p>
-        <ul className="grid grid-cols-2 items-start gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <ul className="palette-brand-grid">
           {BRANDS.map((brand) => {
             const palette = buildBrandPalette(brand);
             return (
-              <li key={brand} className="card-surface flex flex-col gap-2 p-3 text-sm">
+              <li key={brand} className="palette-brand-card">
                 <div>
                   <p className="font-medium text-ink">{brand}</p>
                   <p className="text-xs text-ink-soft">{t.colorCount(palette.length)}</p>
@@ -182,18 +188,18 @@ export default function PalettesPage() {
         </ul>
       </section>
 
-      <section aria-label={t.customTitle} className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-ink-soft">{t.customTitle}</h2>
+      <section aria-label={t.customTitle} className="palette-library-section">
+        <h2>{t.customTitle}</h2>
         {loading ? (
           <p role="status" className="text-sm text-ink-soft/80">{t.loading}</p>
         ) : records.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-lilac/50 p-6 text-center text-sm text-ink-soft">
+          <p className="palette-empty">
             {t.empty}
           </p>
         ) : (
-          <ul className="grid grid-cols-1 items-start gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="palette-custom-grid">
             {records.map((record) => (
-              <li key={record.id} className="card-surface flex flex-col gap-2 p-3">
+              <li key={record.id} className="palette-brand-card">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{record.name}</p>

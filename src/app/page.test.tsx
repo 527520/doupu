@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import Home from './page';
 import { resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
@@ -21,28 +21,29 @@ describe('首页', () => {
 
   it('渲染标题、引导与上传入口', async () => {
     render(<Home />);
-    expect(screen.getByRole('heading', { name: '豆谱' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 1, name: '开始创作' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '今天想把什么变成拼豆？' })).toBeTruthy();
     expect(screen.getByRole('status')).toHaveTextContent('正在检查登录状态…');
     expect(screen.getByText(/拖拽图片到此处/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: '工作台' })).toBeTruthy();
+    expect(within(screen.getByTestId('workspace-sidebar')).getByRole('link', { name: '工作台' })).toBeTruthy();
     await screen.findByRole('link', { name: '登录' }); // 等待登录态探测完成
   });
 
   it('主导航包含全部入口且地址正确（未登录时显示登录按钮）', async () => {
     render(<Home />);
-    const nav = screen.getByRole('navigation', { name: '主导航' });
+    const nav = within(screen.getByTestId('workspace-sidebar')).getByRole('navigation', { name: '主导航' });
     const expectLink = (name: string, href: string) => {
-      const link = screen.getByRole('link', { name });
-      expect(nav.contains(link)).toBe(true);
+      const link = within(nav).getByRole('link', { name });
       expect(link.getAttribute('href')).toBe(href);
     };
     expectLink('工作台', '/app');
     expectLink('我的设计', '/designs');
     expectLink('色板管理', '/palettes');
-    expectLink('帮助', '/help');
+    expectLink('帮助与教程', '/help');
     expectLink('关于', '/about');
+    expectLink('账户与状态', '/account');
     await screen.findByRole('link', { name: '登录' });
-    expectLink('登录', '/login');
+    expect(screen.getByRole('link', { name: '登录' }).getAttribute('href')).toBe('/login');
   });
 
   it('已登录时显示邮箱与退出登录，不再显示登录按钮', async () => {

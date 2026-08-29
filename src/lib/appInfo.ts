@@ -31,6 +31,7 @@ export const LIMITS = {
   paletteBytesPerUser: 5 * 1024 * 1024,
   customPaletteColors: 500,
   customPaletteCodeLength: 20,
+  usernameLength: 30,
   password: { min: 8, max: 72 },
 } as const;
 

@@ -7,6 +7,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
+import StateShell from '@/components/system/StateShell';
 
 export default function PageError({
   error,
@@ -21,20 +22,13 @@ export default function PageError({
 
   const t = zhCN.errorPages;
   return (
-    <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 bg-cream px-6 py-16 text-center">
-      <p className="text-7xl font-semibold text-lilac/50" aria-hidden="true">
-        !
-      </p>
-      <h1 className="page-title">{t.errorTitle}</h1>
-      <p className="max-w-md text-sm leading-6 text-ink-soft">{t.errorBody}</p>
-      <div className="flex flex-wrap justify-center gap-3">
+    <StateShell mark="!" eyebrow="工作台暂时停了一下" title={t.errorTitle} body={t.errorBody}>
         <button type="button" onClick={reset} className="btn-primary">
           {t.retry}
         </button>
         <Link href="/" className="btn-outline">
           {t.backHome}
         </Link>
-      </div>
-    </main>
+    </StateShell>
   );
 }

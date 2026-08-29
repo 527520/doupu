@@ -21,6 +21,8 @@ export const users = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     // 邮箱大小写不敏感由 lower(email) 唯一索引保证（PGlite 测试环境无 citext 扩展）
     email: text('email').notNull(),
+    // 可选展示名：不唯一、不能用于登录；已有账号保持 null。
+    username: text('username'),
     passwordHash: text('password_hash').notNull(),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

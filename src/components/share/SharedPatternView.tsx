@@ -19,23 +19,22 @@ interface Props {
 export default function SharedPatternView({ pattern, stats }: Props) {
   const t = zhCN.share;
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_240px]">
-      <PatternPreview pattern={pattern} />
-      <aside className="card-surface flex flex-col gap-2 p-3 text-sm">
-        <p className="font-medium text-ink">{t.colorsTitle}</p>
+    <div className="shared-pattern-layout">
+      <section className="shared-pattern-canvas"><PatternPreview pattern={pattern} /></section>
+      <aside className="shared-color-list">
+        <header><span>{t.colorsTitle}</span><strong>{stats.length} 色</strong></header>
         <ColorBand colors={stats.map((item) => item.hex)} max={20} label={t.bandAria(stats.length)} />
-        <ul className="flex max-h-72 flex-col gap-1 overflow-auto pr-1">
+        <ul>
           {stats.map((item) => (
-            <li key={item.hex} className="flex items-center gap-2 text-xs">
+            <li key={item.hex}>
               <span
                 aria-hidden="true"
-                className="inline-block h-3 w-3 shrink-0 rounded-sm border border-lilac/40"
                 style={{ backgroundColor: item.hex }}
               />
-              <span className="font-mono text-ink">{item.code}</span>
-              <span className="ml-auto tabular-nums text-ink-soft">
+              <code>{item.code}</code>
+              <strong>
                 {item.count} {zhCN.export.countUnit}
-              </span>
+              </strong>
             </li>
           ))}
         </ul>

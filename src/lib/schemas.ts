@@ -35,6 +35,12 @@ export const passwordSchema = z
   .max(LIMITS.password.max, `密码最长 ${LIMITS.password.max} 个字符`)
   .refine((s) => s === s.trim(), '密码首尾不能包含空格');
 
+/** 用户名只是可选展示名，不作为登录凭据，也不要求唯一。空白值表示清空。 */
+export const usernameSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(z.string().max(LIMITS.usernameLength, `用户名最长 ${LIMITS.usernameLength} 个字符`));
+
 // ---------- 生成参数 ----------
 
 export const generationParamsSchema = z.object({
@@ -215,6 +221,11 @@ export function parseProjectFile(input: string): ProjectFileParseResult {
 export const registerSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
+  username: usernameSchema.optional(),
+});
+
+export const updateProfileSchema = z.object({
+  username: usernameSchema,
 });
 
 export const loginSchema = z.object({

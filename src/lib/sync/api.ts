@@ -9,13 +9,14 @@ import { projectFileSchema } from '@/lib/schemas';
 
 export type MeInfo =
   | { state: 'guest' }
-  | { state: 'verified'; email: string; createdAt: string }
+  | { state: 'verified'; email: string; username: string | null; createdAt: string }
   | { state: 'unverified' };
 
 export interface AuthApi {
   me(): Promise<MeInfo>;
   resendVerification(email: string): Promise<void>;
   changePassword(currentPassword: string, newPassword: string): Promise<void>;
+  updateProfile(username: string): Promise<void>;
   deleteAccount(password: string): Promise<void>;
   logout(): Promise<void>;
 }
@@ -135,8 +136,8 @@ export function createDoupuApi(fetchImpl: typeof fetch = fetch) {
       if (response.status === 401) return { state: 'guest' };
       if (response.status === 403) return { state: 'unverified' };
       if (!response.ok) await throwFor(response);
-      const data = (await response.json()) as { email: string; createdAt: string };
-      return { state: 'verified', email: data.email, createdAt: data.createdAt };
+      const data = (await response.json()) as { email: string; username: string | null; createdAt: string };
+      return { state: 'verified', email: data.email, username: data.username, createdAt: data.createdAt };
     },
     async resendVerification(email: string): Promise<void> {
       const response = await request('/api/auth/resend-verification', {
@@ -147,6 +148,13 @@ export function createDoupuApi(fetchImpl: typeof fetch = fetch) {
     },
     async changePassword(currentPassword: string, newPassword: string): Promise<void> {
       await expectNoContent('/api/auth/change-password', { currentPassword, newPassword });
+    },
+    async updateProfile(username: string): Promise<void> {
+      const response = await request('/api/auth/account', {
+        method: 'PATCH',
+        body: JSON.stringify({ username }),
+      });
+      if (!response.ok) await throwFor(response);
     },
     async deleteAccount(password: string): Promise<void> {
       const response = await request('/api/auth/account', {

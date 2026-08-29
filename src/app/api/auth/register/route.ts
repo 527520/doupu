@@ -29,7 +29,7 @@ async function post(request: Request) {
   if (!body.ok) return body.response;
   const parsed = registerSchema.safeParse(body.data);
   if (!parsed.success) return apiError(parsed.error);
-  const { email, password } = parsed.data;
+  const { email, password, username } = parsed.data;
 
   const db = getDb();
   if (!(await checkRateLimit(db, rateLimitKey('register', ip, email), RATE_LIMIT))) {
@@ -60,6 +60,7 @@ async function post(request: Request) {
     try {
       await createUnverifiedUser(db, {
         email,
+        username,
         passwordHash,
         tokenHash: hashToken(token),
         expiresAt: new Date(Date.now() + VERIFY_TTL_MS),

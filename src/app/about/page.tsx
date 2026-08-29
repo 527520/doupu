@@ -1,74 +1,26 @@
 import { zhCN } from '@/messages/zh-CN';
 import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, CONTACT_EMAIL, ISSUES_URL, SOURCE_REPO_URL } from '@/lib/appInfo';
-import Link from 'next/link';
-import ArcSignature from '@/components/ui/ArcSignature';
 import SiteHeader from '@/components/layout/SiteHeader';
+import Icon from '@/components/ui/Icon';
 
 export default function AboutPage() {
   const t = zhCN.about;
   return (
-    <main id="main" className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
-      <SiteHeader title={t.title} currentPath="/about" />
-      <div className="flex flex-col items-center gap-2 text-center">
-        <ArcSignature className="w-24" />
-        <p className="text-sm text-ink-soft/80">v{APP_VERSION}</p>
-        <p className="text-sm leading-6 text-ink-soft">{t.intro}</p>
+    <main id="main" className="workspace-page">
+      <SiteHeader title={t.title} currentPath="/about" subtitle={zhCN.workspace.localGenerationHint} />
+      <div className="workspace-content info-page-content">
+        <section className="about-hero">
+          <span className="studio-eyebrow">DOUPU STUDIO · v{APP_VERSION}</span>
+          <h2>{zhCN.app.tagline}</h2><p>{t.intro}</p>
+          <div>{t.features.map((feature) => <span key={feature}><Icon name="spark" size={15} />{feature}</span>)}</div>
+        </section>
+        <div className="about-card-grid">
+          <section className="info-card"><span><Icon name="lock" /></span><h2>{t.privacyTitle}</h2><p>{t.privacyBody}</p></section>
+          <section className="info-card"><span><Icon name="info" /></span><h2>{t.licenseTitle}</h2><p>{t.licenseBody}</p><a href={SOURCE_REPO_URL} target="_blank" rel="noreferrer" className="link-soft">{t.sourceCode}</a></section>
+          <section className="info-card"><span><Icon name="user" /></span><h2>{t.authorTitle}</h2><p>{AUTHOR_NAME}</p><div className="info-link-row"><a href={AUTHOR_GITHUB_URL} target="_blank" rel="noreferrer">{t.authorGithub}</a><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></div></section>
+          <section className="info-card"><span><Icon name="help" /></span><h2>{t.feedbackTitle}</h2><p>{t.feedbackBody}</p><a href={ISSUES_URL} target="_blank" rel="noreferrer" className="link-soft">{t.feedbackLink}</a></section>
+        </div>
       </div>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.featuresTitle}</h2>
-        <ul className="flex list-inside list-disc flex-col gap-1 text-sm text-ink-soft">
-          {t.features.map((feature) => (
-            <li key={feature}>{feature}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.licenseTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.licenseBody}</p>
-        <p className="text-sm">
-          <a href={SOURCE_REPO_URL} target="_blank" rel="noreferrer" className="link-soft">
-            {t.sourceCode}
-          </a>
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.authorTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">
-          {AUTHOR_NAME} ·{' '}
-          <a href={AUTHOR_GITHUB_URL} target="_blank" rel="noreferrer" className="link-soft">
-            {t.authorGithub}
-          </a>{' '}
-          ·{' '}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="link-soft">
-            {CONTACT_EMAIL}
-          </a>
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.feedbackTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.feedbackBody}</p>
-        <p className="text-sm">
-          <a href={ISSUES_URL} target="_blank" rel="noreferrer" className="link-soft">
-            {t.feedbackLink}
-          </a>
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.privacyTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.privacyBody}</p>
-      </section>
-
-      <footer className="flex flex-col gap-2 text-sm text-ink-soft/80">
-        {/* 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回一行 icp */}
-        <Link href="/" className="link-soft">
-          ← 返回首页
-        </Link>
-      </footer>
     </main>
   );
 }

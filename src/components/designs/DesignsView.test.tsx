@@ -133,6 +133,9 @@ class FakeApi implements DoupuApi {
   async changePassword() {
     // no-op
   }
+  async updateProfile() {
+    // no-op
+  }
   async deleteAccount() {
     // no-op
   }
@@ -161,13 +164,13 @@ describe('DesignsView', () => {
     expect(screen.getByText(/未登录：仅显示本机设计/)).toBeTruthy();
     expect(screen.getByText('仅本机')).toBeTruthy();
     expect(screen.getByText('本地：已保存')).toBeTruthy();
-    expect(screen.getByRole('link', { name: '登录' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '去登录' })).toBeTruthy();
   });
 
   it('已登录：本地与云端设计完成同步后均为已同步', async () => {
     const cloudProject = makeProject('云端设计', iso(-3600_000));
     const api = new FakeApi([{ id: 'c1', name: '云端设计', project: cloudProject, updatedAt: cloudProject.updatedAt }]);
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     const localProject = makeProject('本地新改', iso(-600_000));
     const storage = new FakeStorage([localRecord('l1', localProject)]);
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
@@ -189,7 +192,7 @@ describe('DesignsView', () => {
     expect(await hasPendingSync(storage)).toBe(true);
 
     const api = new FakeApi();
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
     await screen.findByText('离线设计');
@@ -200,7 +203,7 @@ describe('DesignsView', () => {
   it('冲突：云端较新覆盖本地，显示冲突角标与提示条', async () => {
     const cloudProject = makeProject('云端新版', iso(-1000));
     const api = new FakeApi([{ id: 'k1', name: '云端新版', project: cloudProject, updatedAt: cloudProject.updatedAt, revision: 2 }]);
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     const localProject = makeProject('本地旧版', iso(-2000));
     const storage = new FakeStorage([localRecord('k1', localProject, 1, 'dirty')]);
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
@@ -214,7 +217,7 @@ describe('DesignsView', () => {
   it('重命名：更新本地并推送云端', async () => {
     const project = makeProject('旧名', iso(-3600_000));
     const api = new FakeApi();
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     const storage = new FakeStorage([localRecord('r1', project)]);
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
@@ -231,7 +234,7 @@ describe('DesignsView', () => {
   it('删除：确认后本地墓碑 + 云端删除', async () => {
     const project = makeProject('待删', iso(-3600_000));
     const api = new FakeApi();
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     const storage = new FakeStorage([localRecord('d1', project)]);
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
@@ -248,7 +251,7 @@ describe('DesignsView', () => {
   it('列表状态暂时仅本地但云端已存在时，删除前探测 revision 并删除云端原件', async () => {
     const project = makeProject('竞态设计', iso(-3600_000));
     const api = new FakeApi([{ id: 'race-delete', name: project.name, project, updatedAt: project.updatedAt, revision: 1 }]);
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     api.listDesignsPage = async () => ({ items: [], nextCursor: null });
     api.putDesign = async () => { throw new TypeError('previous page is still syncing'); };
     const storage = new FakeStorage([localRecord('race-delete', project)]);
@@ -265,7 +268,7 @@ describe('DesignsView', () => {
   it('云端失败：保留本地列表并显示同步失败提示', async () => {
     const project = makeProject('本地设计', iso(-7200_000));
     const api = new FakeApi();
-    api.meState = { state: 'verified', email: 'a@b.com', createdAt: iso(-86400_000) };
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400_000) };
     api.failCloud = true;
     const storage = new FakeStorage([localRecord('l1', project)]);
     render(<DesignsView storageOverride={storage} apiOverride={api} />);

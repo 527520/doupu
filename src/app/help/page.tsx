@@ -1,54 +1,33 @@
 import { zhCN } from '@/messages/zh-CN';
-import Link from 'next/link';
-import ArcSignature from '@/components/ui/ArcSignature';
 import SiteHeader from '@/components/layout/SiteHeader';
+import Icon, { type IconName } from '@/components/ui/Icon';
 
 export default function HelpPage() {
   const t = zhCN.help;
+  const guides: Array<{ title: string; body: string; icon: IconName }> = [
+    { title: t.uploadTitle, body: t.uploadBody, icon: 'upload' },
+    { title: t.paramsTitle, body: t.paramsBody, icon: 'sliders' },
+    { title: t.seamTitle, body: t.seamBody, icon: 'grid' },
+    { title: t.exportTitle, body: t.exportBody, icon: 'download' },
+  ];
   return (
-    <main id="main" className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-10">
-      <SiteHeader title={t.title} currentPath="/help" />
-      <div className="flex flex-col items-center gap-3 text-center">
-        <ArcSignature className="w-24" />
-      </div>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.uploadTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.uploadBody}</p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.paramsTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.paramsBody}</p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.seamTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.seamBody}</p>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-ink">{t.exportTitle}</h2>
-        <p className="text-sm leading-6 text-ink-soft">{t.exportBody}</p>
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold text-ink">{t.faqTitle}</h2>
-        <dl className="flex flex-col gap-4">
-          {t.faqs.map((faq) => (
-            <div key={faq.q} className="card-surface p-4">
-              <dt className="mb-1 font-medium text-ink">{faq.q}</dt>
-              <dd className="text-sm leading-6 text-ink-soft">{faq.a}</dd>
-            </div>
+    <main id="main" className="workspace-page">
+      <SiteHeader title={t.title} currentPath="/help" subtitle={zhCN.workspace.helpAndGuide} />
+      <div className="workspace-content info-page-content">
+        <section className="info-hero">
+          <span className="info-hero-icon"><Icon name="help" size={27} /></span>
+          <div><span className="studio-eyebrow">{zhCN.workspace.helpAndGuide}</span><h2>{zhCN.onboarding.title}</h2><p>{zhCN.workspace.homeSubtitle}</p></div>
+        </section>
+        <div className="info-card-grid">
+          {guides.map((guide) => (
+            <section key={guide.title} className="info-card"><span><Icon name={guide.icon} /></span><h2>{guide.title}</h2><p>{guide.body}</p></section>
           ))}
-        </dl>
-      </section>
-
-      <footer className="text-sm text-ink-soft">
-        <Link href="/" className="link-soft">
-          ← 返回首页
-        </Link>
-      </footer>
+        </div>
+        <section className="faq-section">
+          <span className="studio-eyebrow">FAQ</span><h2>{t.faqTitle}</h2>
+          <dl>{t.faqs.map((faq) => <div key={faq.q}><dt>{faq.q}</dt><dd>{faq.a}</dd></div>)}</dl>
+        </section>
+      </div>
     </main>
   );
 }

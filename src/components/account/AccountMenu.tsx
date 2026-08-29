@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
-import { passwordSchema } from '@/lib/schemas';
+import { passwordSchema, usernameSchema } from '@/lib/schemas';
 import Modal from '@/components/ui/Modal';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 
@@ -168,6 +168,9 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   const t = zhCN.account;
   const [showPassword, setShowPassword] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState<{ account: string; value: string } | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [resendEmail, setResendEmail] = useState('');
   const [resendSent, setResendSent] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
@@ -179,6 +182,14 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       if (cooldownTimer.current) clearInterval(cooldownTimer.current);
     };
   }, []);
+
+  const verifiedAccount = me !== 'loading' && me.state === 'verified' ? me : null;
+  const username = verifiedAccount && usernameDraft?.account === verifiedAccount.email
+    ? usernameDraft.value
+    : verifiedAccount?.username ?? '';
+  const setUsername = (value: string): void => {
+    if (verifiedAccount) setUsernameDraft({ account: verifiedAccount.email, value });
+  };
 
   const resend = async (): Promise<void> => {
     setResendError(null);
@@ -206,72 +217,84 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     onAuthChanged();
   };
 
-  if (me === 'loading') return <span className="text-sm text-ink-soft/80">{zhCN.designs.syncing}</span>;
+  const saveProfile = async (): Promise<void> => {
+    const parsed = usernameSchema.safeParse(username);
+    if (!parsed.success) {
+      setProfileMessage(parsed.error.issues[0]?.message ?? t.genericError);
+      return;
+    }
+    setProfileBusy(true);
+    setProfileMessage(null);
+    try {
+      await api.updateProfile(parsed.data);
+      setUsername(parsed.data);
+      setProfileMessage(t.usernameSaved);
+      onAuthChanged();
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : t.genericError);
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  if (me === 'loading') return <span role="status" className="text-sm text-ink-soft/80">{zhCN.designs.syncing}</span>;
 
   if (me.state === 'guest') {
     return (
-      <nav aria-label={t.menuLabel} className="flex items-center gap-3 text-sm">
-        <Link href="/login" className="link-soft">
-          {t.login}
-        </Link>
-        <Link href="/register" className="link-soft">
-          {t.register}
-        </Link>
-      </nav>
+      <section className="account-menu account-guest">
+        <div className="account-section-heading"><span className="account-section-icon">豆</span><div><h2>{t.guestTitle}</h2><p>{t.guestHint}</p></div></div>
+        <div className="account-button-row"><Link href="/login" className="btn-primary">{t.login}</Link><Link href="/register" className="btn-outline">{t.register}</Link></div>
+      </section>
     );
   }
 
   return (
-    <div className="relative flex max-w-full flex-wrap items-center justify-end gap-2 text-sm">
-      {me.state === 'verified' ? (
-        <span className="min-w-0 max-w-full truncate sm:max-w-[160px]" title={me.email}>
-          {me.email} <span className="text-xs text-success">({t.verified})</span>
-        </span>
-      ) : (
-        <span className="text-warning">{t.unverified}</span>
+    <div className="account-menu">
+      {me.state === 'verified' && (
+        <section className="account-profile-summary">
+          <span className="account-large-avatar">{(username || me.email).charAt(0).toUpperCase()}</span>
+          <span><strong>{username || me.email.split('@')[0]}</strong><small title={me.email}>{me.email}</small></span>
+          <span className="account-verified">{t.verified}</span>
+        </section>
       )}
 
       {me.state === 'unverified' && (
-        <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-          <span className="text-xs text-ink-soft">{t.unverifiedHint}</span>
-          <input
-            type="email"
-            aria-label={t.resendEmailLabel}
-            value={resendEmail}
-            onChange={(e) => setResendEmail(e.target.value)}
-            placeholder={t.resendEmailLabel}
-            className="w-full min-w-0 input-compact text-xs sm:w-40"
-          />
-          <button
-            type="button"
-            onClick={() => void resend()}
-            disabled={cooldown > 0}
-            className="btn-outline btn-xs"
-          >
+        <section className="account-form-section">
+          <div className="account-section-heading"><div><h2>{t.unverified}</h2><p>{t.unverifiedHint}</p></div></div>
+          <input type="email" aria-label={t.resendEmailLabel} value={resendEmail} onChange={(e) => setResendEmail(e.target.value)} placeholder={t.resendEmailLabel} className="input-field" />
+          <button type="button" onClick={() => void resend()} disabled={cooldown > 0} className="btn-outline">
             {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
           </button>
-        </div>
+        </section>
       )}
       {resendSent && me.state === 'unverified' && <span role="status" className="text-xs text-success">{t.resendSent}</span>}
-      {resendError && (
-        <span role="alert" className="text-xs text-danger">
-          {resendError}
-        </span>
-      )}
+      {resendError && <span role="alert" className="text-xs text-danger">{resendError}</span>}
 
       {me.state === 'verified' && (
         <>
-          <button type="button" onClick={() => setShowPassword(true)} className="btn-outline btn-xs">
-            {t.changePassword}
-          </button>
-          <button type="button" onClick={() => setShowDelete(true)} className="btn-danger-outline btn-xs">
-            {t.deleteAccount}
-          </button>
+          <section className="account-form-section">
+            <div className="account-section-heading"><div><h2>{t.profileTitle}</h2><p>{t.profileHint}</p></div></div>
+            <label htmlFor="account-username">{t.username}</label>
+            <div className="account-field-row">
+              <input id="account-username" className="input-field" value={username} onChange={(event) => setUsername(event.target.value)} maxLength={30} placeholder={t.username} />
+              <button type="button" onClick={() => void saveProfile()} disabled={profileBusy} className="btn-primary">{t.saveUsername}</button>
+            </div>
+            {profileMessage && <span role="status" className="text-xs text-ink-soft">{profileMessage}</span>}
+          </section>
+          <section className="account-action-section">
+            <div className="account-section-heading"><div><h2>{t.securityTitle}</h2><p>{t.securityHint}</p></div></div>
+            <div className="account-button-row">
+              <button type="button" onClick={() => setShowPassword(true)} className="btn-outline">{t.changePassword}</button>
+              <button type="button" onClick={() => void logout()} className="btn-outline">{t.logout}</button>
+            </div>
+          </section>
+          <section className="account-danger-section">
+            <div className="account-section-heading"><div><h2>{t.dangerTitle}</h2><p>{t.deleteAccountHint}</p></div></div>
+            <button type="button" onClick={() => setShowDelete(true)} className="btn-danger-outline">{t.deleteAccount}</button>
+          </section>
         </>
       )}
-      <button type="button" onClick={() => void logout()} className="btn-outline btn-xs">
-        {t.logout}
-      </button>
+      {me.state === 'unverified' && <button type="button" onClick={() => void logout()} className="btn-outline">{t.logout}</button>}
 
       {showPassword && (
         <Modal label={t.changePasswordTitle} onClose={() => setShowPassword(false)} panelClassName="max-w-sm">

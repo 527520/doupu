@@ -18,6 +18,8 @@ import { parseShareSnapshot, type ShareSnapshot } from '@/lib/share/snapshot';
 import { computeStats, totalBeadCount } from '@/lib/engine/generate';
 import { zhCN } from '@/messages/zh-CN';
 import SharedPatternView from '@/components/share/SharedPatternView';
+import Brand from '@/components/layout/Brand';
+import Icon from '@/components/ui/Icon';
 
 export const metadata: Metadata = {
   title: zhCN.share.pageTitle,
@@ -50,23 +52,30 @@ export default async function SharedDesignPage({ params }: { params: Promise<{ t
   const t = zhCN.share;
 
   return (
-    <main id="main" className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs text-ink-soft">{t.readonlyBadge}</p>
-        <h1 className="page-title">{snapshot.name.trim() || zhCN.project.unnamed}</h1>
-        <p className="text-sm text-ink-soft">
-          {t.summary(snapshot.pattern.width, snapshot.pattern.height, total, stats.length)}
-        </p>
+    <main id="main" className="share-studio-page">
+      <header className="share-studio-header">
+        <Brand />
+        <span><Icon name="lock" size={14} />{t.readonlyBadge}</span>
       </header>
 
-      <SharedPatternView pattern={snapshot.pattern} stats={stats} />
+      <section className="share-studio-content">
+        <header className="share-studio-intro">
+          <div>
+            <p className="studio-eyebrow">豆谱 · 拼豆图纸分享</p>
+            <h1>{snapshot.name.trim() || zhCN.project.unnamed}</h1>
+          </div>
+          <strong>{t.summary(snapshot.pattern.width, snapshot.pattern.height, total, stats.length)}</strong>
+        </header>
 
-      <footer className="flex flex-col gap-2 text-sm text-ink-soft">
-        <p>{t.cta}</p>
-        <Link href="/app" className="btn-primary btn-sm self-start">
-          {t.makeYourOwn}
-        </Link>
-      </footer>
+        <SharedPatternView pattern={snapshot.pattern} stats={stats} />
+
+        <footer className="share-studio-cta">
+          <div><Icon name="spark" size={20} /><p>{t.cta}</p></div>
+          <Link href="/app" className="btn-primary">
+            {t.makeYourOwn}<Icon name="arrow" size={15} />
+          </Link>
+        </footer>
+      </section>
     </main>
   );
 }

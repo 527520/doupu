@@ -116,11 +116,12 @@ describe('createDoupuApi 账号接口', () => {
     expect(await unverified.me()).toEqual({ state: 'unverified' });
 
     const verified = createDoupuApi(async () =>
-      jsonResponse(200, { email: 'a@b.c', createdAt: '2026-01-01T00:00:00Z' }),
+      jsonResponse(200, { email: 'a@b.c', username: '豆豆', createdAt: '2026-01-01T00:00:00Z' }),
     );
     expect(await verified.me()).toEqual({
       state: 'verified',
       email: 'a@b.c',
+      username: '豆豆',
       createdAt: '2026-01-01T00:00:00Z',
     });
   });
@@ -147,17 +148,19 @@ describe('createDoupuApi 账号接口', () => {
     await expect(tooMany.resendVerification('a@b.c')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 
-  it('changePassword/deleteAccount/logout：成功静默、失败抛错、带 JSON 头', async () => {
+  it('changePassword/updateProfile/deleteAccount/logout：成功静默、失败抛错、带 JSON 头', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const api = createDoupuApi(async (input, init) => {
       calls.push({ url: String(input), init });
       return new Response(null, { status: 204 });
     });
     await api.changePassword('old', 'new');
+    await api.updateProfile('豆豆');
     await api.deleteAccount('old');
     await api.logout();
     expect(calls.map((c) => c.url)).toEqual([
       '/api/auth/change-password',
+      '/api/auth/account',
       '/api/auth/account',
       '/api/auth/logout',
     ]);
@@ -170,6 +173,7 @@ describe('createDoupuApi 账号接口', () => {
       jsonResponse(401, { error: { code: 'BAD_PASSWORD', message: '密码错误' } }),
     );
     await expect(fail.changePassword('old', 'new')).rejects.toMatchObject({ code: 'BAD_PASSWORD' });
+    await expect(fail.updateProfile('豆豆')).rejects.toMatchObject({ code: 'BAD_PASSWORD' });
     await expect(fail.deleteAccount('old')).rejects.toMatchObject({ code: 'BAD_PASSWORD' });
     await expect(fail.logout()).rejects.toMatchObject({ code: 'BAD_PASSWORD' });
   });

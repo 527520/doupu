@@ -9,6 +9,7 @@ import { zhCN } from '@/messages/zh-CN';
 import Notice from '@/components/ui/Notice';
 import { validateImageFile, type ImageErrorCode } from '@/lib/image/validation';
 import type { ImageType } from '@/lib/image/sniff';
+import Icon from '@/components/ui/Icon';
 
 export interface ValidImageFile {
   bytes: Uint8Array;
@@ -114,18 +115,14 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        className={[
-          'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-8 text-center transition-colors',
-          dragging ? 'border-primary bg-primary-soft text-primary-deep' : 'border-lilac/60 text-ink-soft',
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-primary hover:text-primary-deep',
-        ].join(' ')}
+        className={`upload-dropzone${dragging ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}
       >
         {reading ? (
           <p>{upload.reading}</p>
         ) : (
           <>
-            <p>{dragging ? upload.dragActive : upload.hint}</p>
-            <p className="text-xs text-ink-soft/80">{upload.formatHint}</p>
+            <span className="upload-dropzone-icon"><Icon name="upload" size={24} /></span>
+            <p><strong>{dragging ? upload.dragActive : upload.hint}</strong><small>{upload.formatHint}</small></p>
           </>
         )}
       </div>

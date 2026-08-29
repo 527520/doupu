@@ -20,23 +20,21 @@ export default function GlobalError({
   const t = zhCN.errorPages;
   return (
     <html lang="zh-CN">
-      <body style={{ background: '#fdf8f4', color: '#4b4356' }}>
-        <main id="main" className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-          <p className="text-7xl font-semibold" style={{ color: '#b9a7d980' }} aria-hidden="true">
-            !
-          </p>
-          <h1 className="text-2xl font-semibold">{t.errorTitle}</h1>
-          <p className="max-w-md text-sm leading-6" style={{ color: '#7e7589' }}>
-            {t.errorBody}
-          </p>
+      <body style={{ margin: 0, background: '#f8f7f4', color: '#302938', fontFamily: 'system-ui, sans-serif' }}>
+        <main id="main" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+          <section style={{ width: 'min(520px, 100%)', border: '1px solid #e7e2df', borderRadius: 24, background: '#fff', padding: 32, boxSizing: 'border-box', boxShadow: '0 24px 70px -45px #302938' }}>
+            <div aria-hidden="true" style={{ width: 56, height: 56, display: 'grid', placeItems: 'center', borderRadius: 16, background: '#f5e2e9', color: '#873253', fontSize: 30, fontWeight: 800 }}>!</div>
+            <p style={{ margin: '24px 0 7px', color: '#a83f68', fontSize: 11, fontWeight: 800, letterSpacing: '.12em' }}>豆谱工作室</p>
+            <h1 style={{ margin: 0, fontFamily: 'serif', fontSize: 32 }}>{t.errorTitle}</h1>
+            <p style={{ margin: '12px 0 24px', color: '#6f6877', fontSize: 14, lineHeight: 1.7 }}>{t.errorBody}</p>
           <button
             type="button"
             onClick={reset}
-            className="rounded-full px-5 py-2.5 text-sm font-semibold text-white"
-            style={{ backgroundColor: '#e885a8' }}
+            style={{ minHeight: 42, border: 0, borderRadius: 12, background: '#a83f68', padding: '0 20px', color: '#fff', fontSize: 14, fontWeight: 700 }}
           >
             {t.retry}
           </button>
+          </section>
         </main>
       </body>
     </html>

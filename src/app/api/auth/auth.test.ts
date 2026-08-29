@@ -19,7 +19,7 @@ import { GET as meGet } from './me/route';
 import { POST as forgotPost } from './forgot-password/route';
 import { POST as resetPost } from './reset-password/route';
 import { POST as changePasswordPost } from './change-password/route';
-import { DELETE as accountDelete } from './account/route';
+import { DELETE as accountDelete, PATCH as accountPatch } from './account/route';
 
 // ---------- next/headers cookies() mock ----------
 const cookieJar = new Map<string, string>();
@@ -97,7 +97,7 @@ describe('认证全生命周期', () => {
     const mail = email();
 
     // 1. 注册 → 204，发送验证邮件；开发邮件模式链接随响应头下发
-    const reg = await registerPost(post('/api/auth/register', { email: mail, password }));
+    const reg = await registerPost(post('/api/auth/register', { email: mail, password, username: '  豆豆  ' }));
     expect(reg.status).toBe(204);
     expect(sentMails()).toHaveLength(1);
     expect(lastMail().to).toBe(mail);
@@ -136,7 +136,18 @@ describe('认证全生命周期', () => {
     expect(verify.status).toBe(200);
     const meOk = await meGet(new Request(`${ORIGIN}/api/auth/me`));
     expect(meOk.status).toBe(200);
-    expect(await meOk.json()).toMatchObject({ email: mail, emailVerified: true });
+    expect(await meOk.json()).toMatchObject({ email: mail, emailVerified: true, username: '豆豆' });
+
+    // 用户名只用于展示，可在账号页修改或清空，不影响邮箱登录身份。
+    const profileUpdate = await accountPatch(post('/api/auth/account', { username: '  新名字  ' }));
+    expect(profileUpdate.status).toBe(204);
+    const meRenamed = await meGet(new Request(`${ORIGIN}/api/auth/me`));
+    expect(await meRenamed.json()).toMatchObject({ email: mail, username: '新名字' });
+
+    const profileClear = await accountPatch(post('/api/auth/account', { username: '   ' }));
+    expect(profileClear.status).toBe(204);
+    const meCleared = await meGet(new Request(`${ORIGIN}/api/auth/me`));
+    expect(await meCleared.json()).toMatchObject({ email: mail, username: null });
 
     // 5. 令牌重用 → 统一「链接无效或已过期」（E30）
     const verifyReuse = await verifyPost(post('/api/auth/verify-email', { token: verifyToken }));

@@ -40,9 +40,13 @@ describe('register 页', () => {
   it('注册成功显示已发送验证邮件', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     render(<RegisterPage />);
+    fireEvent.change(screen.getByLabelText('用户名（选填）'), { target: { value: '  豆豆  ' } });
     fill('a@b.com', '12345678', '12345678');
     fireEvent.click(screen.getByRole('button', { name: '注册' }));
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain(zhCN.authPages.registeredSent));
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/register', expect.objectContaining({
+      body: JSON.stringify({ email: 'a@b.com', password: '12345678', username: '豆豆' }),
+    }));
   });
 
   it('开发邮件模式：响应带 x-dev-mail-link 时展示可点击的验证链接', async () => {

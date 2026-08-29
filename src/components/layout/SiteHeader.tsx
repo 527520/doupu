@@ -2,102 +2,117 @@
 
 import Link from 'next/link';
 import { useState, type MouseEvent, type ReactNode } from 'react';
+import Brand from '@/components/layout/Brand';
+import Icon, { type IconName } from '@/components/ui/Icon';
+import { useAuthStatus } from '@/components/account/useAuthStatus';
 import { zhCN } from '@/messages/zh-CN';
 
 interface SiteHeaderProps {
   title: string;
   currentPath: string;
+  subtitle?: string;
   context?: ReactNode;
   primaryActions?: ReactNode;
   overflowActions?: ReactNode;
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
 }
 
-const navigation = [
-  ['/app', zhCN.nav.workbench],
-  ['/designs', zhCN.nav.designs],
-  ['/palettes', zhCN.nav.palettes],
-  ['/help', zhCN.nav.help],
-  ['/about', zhCN.nav.about],
-] as const;
+const primaryNavigation: Array<{ href: string; label: string; shortLabel: string; icon: IconName }> = [
+  { href: '/', label: zhCN.workspace.start, shortLabel: zhCN.workspace.startShort, icon: 'home' },
+  { href: '/app', label: zhCN.nav.workbench, shortLabel: zhCN.nav.workbench, icon: 'spark' },
+  { href: '/designs', label: zhCN.nav.designs, shortLabel: zhCN.workspace.designsShort, icon: 'folder' },
+  { href: '/palettes', label: zhCN.nav.palettes, shortLabel: zhCN.workspace.palettesShort, icon: 'palette' },
+  { href: '/account', label: zhCN.workspace.account, shortLabel: zhCN.workspace.accountShort, icon: 'user' },
+];
 
-/**
- * 全站页头 module：站点导航行与页面上下文/主操作行严格分开，避免中间宽度
- * 下工作台名称、保存状态和导航互相挤压；低频账号操作在窄屏收进可展开面板。
- */
+const secondaryNavigation: Array<{ href: string; label: string; icon: IconName }> = [
+  { href: '/help', label: zhCN.workspace.helpAndGuide, icon: 'help' },
+  { href: '/about', label: zhCN.nav.about, icon: 'info' },
+];
+
+function active(currentPath: string, href: string): boolean {
+  return href === '/' ? currentPath === '/' : currentPath === href || currentPath.startsWith(`${href}/`);
+}
+
 export default function SiteHeader({
   title,
   currentPath,
+  subtitle,
   context,
   primaryActions,
   overflowActions,
   onNavigate,
 }: SiteHeaderProps) {
+  const auth = useAuthStatus();
   const [overflowOpen, setOverflowOpen] = useState(false);
   const navigate = (event: MouseEvent<HTMLAnchorElement>, href: string): void => {
     setOverflowOpen(false);
     onNavigate?.(event, href);
   };
-  const links = (className: string) => (
-    <nav aria-label={zhCN.nav.mainNav} className={className}>
-      {navigation.map(([href, label]) => (
-        <Link
-          key={href}
-          href={href}
-          aria-current={currentPath === href ? 'page' : undefined}
-          onClick={(event) => navigate(event, href)}
-          className="rounded-full px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary-deep aria-[current=page]:bg-primary-soft aria-[current=page]:text-primary-deep"
-        >
-          {label}
-        </Link>
-      ))}
-    </nav>
-  );
+  const displayName = auth.kind === 'user' ? auth.username || auth.email.split('@')[0] : zhCN.workspace.localCreator;
+  const avatar = displayName.trim().charAt(0).toUpperCase() || zhCN.app.name.charAt(0);
 
   return (
-    <header className="site-header border-b border-lilac/40 pb-3">
-      <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Link
-            href="/"
-            onClick={(event) => navigate(event, '/')}
-            className="shrink-0 rounded-full px-2 py-1 text-sm font-semibold text-primary-deep hover:bg-primary-soft"
-          >
-            {zhCN.app.name}
+    <>
+      <aside className="workspace-sidebar" data-testid="workspace-sidebar">
+        <Brand />
+        <nav aria-label={zhCN.nav.mainNav} className="workspace-side-nav">
+          <span className="workspace-nav-label">{zhCN.workspace.creationSpace}</span>
+          {primaryNavigation.slice(0, 4).map((item) => (
+            <Link key={item.href} href={item.href} onClick={(event) => navigate(event, item.href)} aria-current={active(currentPath, item.href) ? 'page' : undefined} className="workspace-nav-item">
+              <Icon name={item.icon} /><span>{item.label}</span>
+            </Link>
+          ))}
+          <span className="workspace-nav-label">{zhCN.workspace.learn}</span>
+          {secondaryNavigation.map((item) => (
+            <Link key={item.href} href={item.href} onClick={(event) => navigate(event, item.href)} aria-current={active(currentPath, item.href) ? 'page' : undefined} className="workspace-nav-item">
+              <Icon name={item.icon} /><span>{item.label}</span>
+            </Link>
+          ))}
+          <Link href="/account" onClick={(event) => navigate(event, '/account')} aria-current={active(currentPath, '/account') ? 'page' : undefined} className="workspace-nav-item">
+            <Icon name="user" /><span>{zhCN.workspace.account}</span>
           </Link>
-          <span aria-hidden="true" className="text-lilac-deep">/</span>
-          <h1 className="min-w-0 truncate text-lg font-semibold text-ink">{title}</h1>
-        </div>
+        </nav>
+        <Link href="/about" className="workspace-privacy-note">
+          <strong><Icon name="lock" size={15} />{zhCN.workspace.localGeneration}</strong>
+          <span>{zhCN.workspace.localGenerationHint}</span>
+          <small>{zhCN.workspace.learnPrivacy}<Icon name="arrow" size={14} /></small>
+        </Link>
+        <Link href="/account" className="workspace-profile">
+          <span className="workspace-avatar">{avatar}</span>
+          <span><strong>{displayName}</strong><small>{auth.kind === 'user' ? zhCN.workspace.cloudReady : zhCN.workspace.localCreating}</small></span>
+          <Icon name="more" size={18} />
+        </Link>
+      </aside>
 
-        {links('hidden shrink-0 flex-wrap items-center gap-1 md:flex')}
-
-        <div className="site-overflow relative shrink-0">
-          <button
-            type="button"
-            aria-expanded={overflowOpen}
-            aria-controls="site-overflow-panel"
-            onClick={() => setOverflowOpen((open) => !open)}
-            className="btn-outline px-3 py-2 text-xs md:hidden"
-          >
-            {zhCN.nav.more}
-          </button>
-          <div
-            id="site-overflow-panel"
-            data-testid="site-overflow-panel"
-            className={`${overflowOpen ? 'flex' : 'hidden'} site-overflow-panel absolute right-0 top-full z-20 mt-2 min-w-56 flex-col gap-2 rounded-2xl border border-lilac/40 bg-white p-2 shadow-soft md:static md:mt-0 md:flex md:min-w-0 md:flex-row md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
-          >
-            {links('flex flex-col md:hidden')}
-            {overflowActions && <div className="flex flex-wrap items-center gap-2 p-1 md:p-0">{overflowActions}</div>}
-          </div>
+      <header className="workspace-topbar">
+        <div className="workspace-mobile-brand"><Brand compact /></div>
+        <div className="workspace-page-heading">
+          <h1>{title}</h1>
+          {subtitle && <p>{subtitle}</p>}
         </div>
-      </div>
-
-      {(context || primaryActions) && (
-        <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          {context && <div className="min-w-0 flex-1 text-xs text-ink-soft">{context}</div>}
-          {primaryActions && <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{primaryActions}</div>}
+        <div className="workspace-top-actions">
+          {context && <div className="workspace-context">{context}</div>}
+          {primaryActions}
+          {overflowActions && (
+            <div className="workspace-overflow">
+              <button type="button" className="icon-button" aria-label={zhCN.nav.more} aria-expanded={overflowOpen} aria-controls="site-overflow-panel" onClick={() => setOverflowOpen((open) => !open)}>
+                <Icon name="more" />
+              </button>
+              <div id="site-overflow-panel" data-testid="site-overflow-panel" className={`workspace-overflow-panel${overflowOpen ? ' is-open' : ''}`}>{overflowActions}</div>
+            </div>
+          )}
+          <Link href="/account" className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
         </div>
-      )}
-    </header>
+      </header>
+
+      <nav aria-label={zhCN.nav.mainNav} className="workspace-mobile-nav" data-testid="workspace-mobile-nav">
+        {primaryNavigation.map((item) => (
+          <Link key={item.href} href={item.href} onClick={(event) => navigate(event, item.href)} aria-current={active(currentPath, item.href) ? 'page' : undefined}>
+            <Icon name={item.icon} size={20} /><span>{item.shortLabel}</span>
+          </Link>
+        ))}
+      </nav>
+    </>
   );
 }

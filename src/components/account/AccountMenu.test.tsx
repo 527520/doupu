@@ -12,6 +12,7 @@ afterEach(() => {
 class FakeAuthApi implements DoupuApi {
   resendCalls: string[] = [];
   changeCalls: Array<{ current: string; next: string }> = [];
+  profileCalls: string[] = [];
   deleteCalls: string[] = [];
   logoutCalls = 0;
   constructor(
@@ -45,6 +46,9 @@ class FakeAuthApi implements DoupuApi {
     }
     this.changeCalls.push({ current, next });
   }
+  async updateProfile(username: string) {
+    this.profileCalls.push(username);
+  }
   async deleteAccount(password: string) {
     if (password !== this.accountPassword) {
       throw new ApiError(400, 'VALIDATION', '当前密码不正确。', 'password');
@@ -66,11 +70,22 @@ describe('AccountMenu', () => {
   it('已验证：显示邮箱与操作按钮；退出登录调用 API 并通知', async () => {
     const api = new FakeAuthApi();
     const onChanged = vi.fn();
-    render(<AccountMenu api={api} me={{ state: 'verified', email: 'user@example.com', createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={onChanged} />);
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'user@example.com', username: null, createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={onChanged} />);
     expect(screen.getByText(/user@example.com/)).toBeTruthy();
     expect(screen.getByText(/已验证/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
     await waitFor(() => expect(api.logoutCalls).toBe(1));
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('已验证：可修改用于展示的用户名', async () => {
+    const api = new FakeAuthApi();
+    const onChanged = vi.fn();
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'user@example.com', username: '豆豆', createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={onChanged} />);
+    expect(screen.getByDisplayValue('豆豆')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: '新名字' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
+    await waitFor(() => expect(api.profileCalls).toEqual(['新名字']));
     expect(onChanged).toHaveBeenCalled();
   });
 
@@ -95,7 +110,7 @@ describe('AccountMenu', () => {
 
   it('修改密码：错误当前密码显示服务端错误；正确则关闭对话框', async () => {
     const api = new FakeAuthApi('正确密码');
-    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={() => {}} />);
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', username: null, createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
 
     const dialog = screen.getByRole('dialog');
@@ -114,7 +129,7 @@ describe('AccountMenu', () => {
 
   it('修改密码：两次新密码不一致在客户端拦截', async () => {
     const api = new FakeAuthApi();
-    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={() => {}} />);
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', username: null, createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }));
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: '正确密码' } });
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpassword1' } });
@@ -127,7 +142,7 @@ describe('AccountMenu', () => {
   it('注销账号：错误密码报错；正确密码成功后通知', async () => {
     const api = new FakeAuthApi('x', '正确密码');
     const onChanged = vi.fn();
-    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={onChanged} />);
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', username: null, createdAt: '2026-08-15T00:00:00.000Z' }} onAuthChanged={onChanged} />);
     fireEvent.click(screen.getByRole('button', { name: '注销账号' }));
 
     fireEvent.change(screen.getByLabelText('密码'), { target: { value: '错误' } });

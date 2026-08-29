@@ -18,7 +18,7 @@ export type AuthStatus =
   | { kind: 'loading' }
   | { kind: 'guest' }
   | { kind: 'unknown' }
-  | { kind: 'user'; email: string };
+  | { kind: 'user'; email: string; username: string | null };
 
 type Settled = Exclude<AuthStatus, { kind: 'loading' }>;
 
@@ -29,8 +29,8 @@ async function probe(): Promise<Settled> {
   try {
     const response = await fetch('/api/auth/me', { method: 'GET' });
     if (!response.ok) return { kind: 'guest' };
-    const body = (await response.json().catch(() => null)) as { email?: string } | null;
-    return { kind: 'user', email: body?.email ?? '' };
+    const body = (await response.json().catch(() => null)) as { email?: string; username?: string | null } | null;
+    return { kind: 'user', email: body?.email ?? '', username: body?.username ?? null };
   } catch {
     return { kind: 'unknown' };
   }
