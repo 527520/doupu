@@ -1,6 +1,6 @@
 /** 应用级常量：名称、版本、外部链接。 */
 export const APP_NAME = '豆谱';
-export const APP_VERSION = '0.3.0';
+export const APP_VERSION = '0.3.1';
 export const SOURCE_REPO_URL = 'https://github.com/527520/doupu';
 export const ISSUES_URL = 'https://github.com/527520/doupu/issues';
 export const AUTHOR_NAME = 'wuqian';
