@@ -165,10 +165,14 @@ test('窄屏（350px）：画布保持原图 1.6 宽高比不拉伸，且 touch-
   await page.setViewportSize({ width: 350, height: 700 });
   await openCropper(page);
   const canvas = page.locator('canvas[aria-label*="裁剪"]');
-  // 等待画布收缩到容器宽度（< 原图 320px），避免在首帧默认尺寸上取包围盒
+  // 等待画布到达稳定状态：收缩到容器宽度（< 原图 320px）且未塌缩（> 240px），
+  // 避免在首帧默认尺寸/被夹宽的中间帧上取包围盒。
+  // 重构后 studio 面板窄屏内边距（页面 14×2 + 面板 18×2 + 画布槽 8×2 ≈ 80px），
+  // 350px 视口下画布约 268px。
   await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeLessThan(320);
+  await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeGreaterThan(240);
   const box = (await canvas.boundingBox())!;
-  expect(box.width).toBeGreaterThan(300);
+  expect(box.width).toBeGreaterThan(240);
   const ratio = box.width / box.height;
   expect(ratio).toBeGreaterThan(1.55);
   expect(ratio).toBeLessThan(1.65);

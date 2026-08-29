@@ -83,26 +83,29 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible({ timeout: 30_000 });
   await mark('square-crop-visible');
   const squarePreview = page.getByLabel('裁剪选区画布');
-  expect(await squarePreview.evaluate((canvas: HTMLCanvasElement) => Math.max(
-    Number.parseFloat(canvas.style.width),
-    Number.parseFloat(canvas.style.height),
-  ))).toBeLessThanOrEqual(800);
+  // CSS 预览尺寸 ≤ 800：容器未测出前高度为 auto（随夹取宽度按固有比例算高），
+  // 此时高度 NaN 按「不高于宽度」处理；画布缓冲上界由下一行断言兜底。
+  const previewCssMax = (canvas: HTMLCanvasElement): number => {
+    const w = Number.parseFloat(canvas.style.width);
+    const h = Number.parseFloat(canvas.style.height);
+    return Number.isNaN(h) ? w : Math.max(w, h);
+  };
+  expect(await squarePreview.evaluate(previewCssMax)).toBeLessThanOrEqual(800);
   expect(await squarePreview.evaluate((canvas: HTMLCanvasElement) => Math.max(canvas.width, canvas.height)))
     .toBeLessThanOrEqual(await page.evaluate(() => 800 * (window.devicePixelRatio || 1)));
   await page.getByRole('button', { name: '确认裁剪' }).click();
   await expect(page.getByText(/共 10000 粒/).first()).toBeVisible({ timeout: 30_000 });
   await mark('square-generated');
 
+  // 重构后「重新上传」收进顶栏「菜单与账户」溢出面板，先展开再点击。
+  await page.getByRole('button', { name: '菜单与账户' }).click();
   await page.getByRole('button', { name: '重新上传' }).click();
   await mark('tall-upload-start');
   await uploadFile(page, fixture('max-100x8000.png'));
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible({ timeout: 30_000 });
   await mark('tall-crop-visible');
   const tallPreview = page.getByLabel('裁剪选区画布');
-  expect(await tallPreview.evaluate((canvas: HTMLCanvasElement) => Math.max(
-    Number.parseFloat(canvas.style.width),
-    Number.parseFloat(canvas.style.height),
-  ))).toBeLessThanOrEqual(800);
+  expect(await tallPreview.evaluate(previewCssMax)).toBeLessThanOrEqual(800);
   expect(await tallPreview.evaluate((canvas: HTMLCanvasElement) => Math.max(canvas.width, canvas.height)))
     .toBeLessThanOrEqual(await page.evaluate(() => 800 * (window.devicePixelRatio || 1)));
   await page.getByRole('button', { name: '确认裁剪' }).click();

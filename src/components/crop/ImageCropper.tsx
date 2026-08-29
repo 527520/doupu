@@ -121,8 +121,15 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    // 先同步测一次，避免首帧按默认上限渲染后再收缩的闪现
-    setContainerWidth(el.clientWidth > 0 ? Math.floor(el.clientWidth) : null);
+    // 先同步测一次，避免首帧按默认上限渲染后再收缩的闪现。
+    // 必须量内容盒（与 ResizeObserver 的 contentRect 一致）：clientWidth 含容器内边距，
+    // 若按它定宽会被 max-width:100% 横向夹扁而高度不变，出现一帧比例变形
+    // （webkit 上 ResizeObserver 回调较慢，中间帧会滞留超过 1 秒，E2E 05 窄屏回归可捕获）。
+    const cs = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+    const contentWidth = cs
+      ? el.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0)
+      : el.clientWidth;
+    setContainerWidth(contentWidth > 0 ? Math.floor(contentWidth) : null);
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
@@ -164,9 +171,11 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     canvas.width = Math.round(displayWidth * dpr);
     canvas.height = Math.round(displayHeight * dpr);
-    // 显式 CSS 尺寸与容器测量一致：父容器（grid/flex）无法拉伸画布
+    // 显式 CSS 尺寸与容器测量一致：父容器（grid/flex）无法拉伸画布。
+    // 容器尚未测出时（首帧 clientWidth 为 0）高度给 auto：max-width:100% 只会夹宽度，
+    // auto 高度按画布固有宽高比随夹取宽度自动计算，避免「宽被夹、高不变」的变形中间帧。
     canvas.style.width = `${displayWidth}px`;
-    canvas.style.height = `${displayHeight}px`;
+    canvas.style.height = containerWidth === null ? 'auto' : `${displayHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, displayWidth, displayHeight);
     if (sourceCanvas) ctx.drawImage(sourceCanvas, 0, 0, displayWidth, displayHeight);
@@ -202,7 +211,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     ] as const) {
       ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
     }
-  }, [naturalWidth, naturalHeight, rect, scaleX, scaleY, displayWidth, displayHeight, sourceCanvas]);
+  }, [naturalWidth, naturalHeight, rect, scaleX, scaleY, displayWidth, displayHeight, sourceCanvas, containerWidth]);
 
   /** 客户区坐标 → 图像像素坐标（按画布真实渲染尺寸换算，与 CSS 拉伸无关）。 */
   const toImageCoords = useCallback(
@@ -450,10 +459,11 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
             if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
           }}
           onKeyDown={handleKeyDown}
-          // 首帧即按展示尺寸布局；displayWidth 由容器测量决定，画布严格等比
+          // 首帧即按展示尺寸布局；displayWidth 由容器测量决定，画布严格等比。
+          // 容器未测出前高度用 auto：配合 max-width:100% 夹宽时按固有比例自动算高，不产生变形帧。
           width={displayWidth}
           height={displayHeight}
-          style={{ width: displayWidth, height: displayHeight }}
+          style={{ width: displayWidth, height: containerWidth === null ? 'auto' : displayHeight }}
           // 注意：必须是方角（rounded-none）——全图选区的四角手柄位于画布角点，
           // 圆角会裁掉角点命中区域导致拖拽失灵（E2E 05 角点拖拽回归依赖此行为）
           className="block touch-none select-none cursor-crosshair rounded-none outline-none focus-visible:ring-2 focus-visible:ring-primary"

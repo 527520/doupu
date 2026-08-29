@@ -49,6 +49,33 @@ describe('ImageCropper', () => {
     expect(screen.getByRole('button', { name: zhCN.crop.modeOriginal })).toBeTruthy();
   });
 
+  it('首帧同步测量用内容盒宽度（扣除容器内边距），避免被 max-width 夹扁的比例变形帧', () => {
+    const image: DecodedImage = {
+      data: new Uint8ClampedArray(640 * 400 * 4).fill(255),
+      width: 640,
+      height: 400,
+      mime: 'image/png',
+    };
+    const proto = Element.prototype;
+    const originalClientWidth = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+    Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 284 });
+    const gcs = vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () => ({ paddingLeft: '8px', paddingRight: '8px' }) as CSSStyleDeclaration,
+    );
+    try {
+      render(<ImageCropper image={image} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+      const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
+      // 284 - 8 - 8 = 268；640×400 等比 → 268×168（高度四舍五入）。
+      // 若误用含内边距的 clientWidth(284)，画布会被 max-width 夹成 268×178 的变形帧。
+      expect(canvas.style.width).toBe('268px');
+      expect(canvas.style.height).toBe('168px');
+    } finally {
+      gcs.mockRestore();
+      if (originalClientWidth) Object.defineProperty(proto, 'clientWidth', originalClientWidth);
+      else delete (proto as { clientWidth?: number }).clientWidth;
+    }
+  });
+
   it('按下裁剪画布会主动获取键盘焦点', () => {
     render(<ImageCropper image={makeImage()} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
@@ -125,7 +152,9 @@ describe('ImageCropper', () => {
     render(<ImageCropper image={image} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
     expect(canvas.style.width).toBe('10px');
-    expect(canvas.style.height).toBe('800px');
+    // jsdom 容器宽为 0（未测出）：高度为 auto，由浏览器按固有比例随夹取宽度自动算高，
+    // 避免 max-width:100% 只夹宽度造成变形中间帧；像素缓冲上界仍由宽高属性兜底。
+    expect(canvas.style.height).toBe('auto');
     expect(canvas.width).toBeLessThanOrEqual(800 * (window.devicePixelRatio || 1));
     expect(canvas.height).toBeLessThanOrEqual(800 * (window.devicePixelRatio || 1));
   });
