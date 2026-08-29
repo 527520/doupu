@@ -60,6 +60,22 @@ for (const width of widths) {
   });
 }
 
+test('桌面设计库与色板页不被固定侧栏撑出视口', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+
+  for (const width of [944, 1280, 1440] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const route of ['/designs', '/palettes'] as const) {
+      await page.goto(route);
+      const dimensions = await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        page: document.documentElement.scrollWidth,
+      }));
+      expect(dimensions.page, `${route} 在 ${width}px 下不得横向溢出`).toBeLessThanOrEqual(dimensions.viewport);
+    }
+  }
+});
+
 test('工作区页头在全部目标宽度下导航行与设计操作行不相交', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
   await page.setViewportSize({ width: widths[0], height: 800 });

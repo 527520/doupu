@@ -1,11 +1,15 @@
 import type { NextConfig } from "next";
+import { networkInterfaces } from "node:os";
+import { collectAllowedDevOrigins } from "./src/lib/config/devOrigins";
+
+const allowedDevOrigins = collectAllowedDevOrigins(process.env.DEV_LAN_ORIGIN, networkInterfaces());
 
 const nextConfig: NextConfig = {
   // Playwright intentionally opens the dev server through the IPv4 loopback
   // address so Chromium, Firefox and WebKit exercise the same origin.
-  // 局域网验收（手机连同一 WiFi 访问 next dev）时，把本机 LAN 地址放进
-  // DEV_LAN_ORIGIN 即可，不要把某台机器的内网 IP 写进版本库。仅影响 next dev。
-  allowedDevOrigins: ["127.0.0.1", ...(process.env.DEV_LAN_ORIGIN ? [process.env.DEV_LAN_ORIGIN] : [])],
+  // 当前机器的局域网 IPv4 会自动加入；DEV_LAN_ORIGIN 保留给域名或隧道来源。
+  // 仅影响 next dev，不改变生产环境的来源策略。
+  allowedDevOrigins,
   async headers() {
     return [
       {

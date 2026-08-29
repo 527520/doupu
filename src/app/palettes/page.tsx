@@ -129,7 +129,7 @@ export default function PalettesPage() {
   };
 
   return (
-    <main id="main" className="workspace-page flex w-full flex-col gap-6">
+    <main id="main" className="workspace-page flex flex-col gap-6">
       <SiteHeader
         title={t.title}
         currentPath="/palettes"

@@ -259,7 +259,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   };
 
   return (
-    <main id="main" className="workspace-page flex w-full flex-col gap-4">
+    <main id="main" className="workspace-page flex flex-col gap-4">
       <SiteHeader
         title={t.title}
         currentPath="/designs"
