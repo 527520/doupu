@@ -1,10 +1,11 @@
 'use client';
 
-/** 自定义色板编辑器（spec §F6 / 边界 E20）：逐行录入 + 即时校验 + 粘贴/文件导入 + 复制自品牌。 */
-import { Fragment, useMemo, useState } from 'react';
+/** 自定义色板编辑器（spec §F6 / 边界 E20）：逐行录入 + 即时校验 + 粘贴/文件导入 + 复制内置色板。 */
+import { Fragment, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
-import { BRANDS, buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette, isBuiltinPaletteId, listBuiltinPalettes } from '@/lib/palettes';
+import { parseCustomPaletteImport } from '@/lib/palettes/customImport';
 import { customPaletteColorsSchema, designNameSchema } from '@/lib/schemas';
 import { LIMITS } from '@/lib/appInfo';
 import type { CustomPaletteColor } from '@/lib/types';
@@ -13,6 +14,15 @@ export interface EditorRow {
   code: string;
   hex: string;
 }
+
+const BUILTIN_PALETTE_GROUPS = Array.from(
+  listBuiltinPalettes().reduce((groups, palette) => {
+    const items = groups.get(palette.brand) ?? [];
+    items.push(palette);
+    groups.set(palette.brand, items);
+    return groups;
+  }, new Map<string, ReturnType<typeof listBuiltinPalettes>[number][]>()),
+);
 
 interface Props {
   initialName: string;
@@ -63,9 +73,10 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
   const t = zhCN.palettes.editor;
   const { confirm, confirmDialog } = useConfirm();
   const [name, setName] = useState(initialName);
-  const [rows, setRows] = useState<EditorRow[]>(
+  const [rows, setRowsState] = useState<EditorRow[]>(
     initialColors.length > 0 ? initialColors.map((c) => ({ code: c.code, hex: c.hex })) : [{ code: 'C001', hex: '#FFFFFF' }],
   );
+  const rowsRef = useRef(rows);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
@@ -76,6 +87,14 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
     return result.success ? null : result.error.issues[0]?.message ?? null;
   }, [name]);
   const canSave = rowErrors.size === 0 && global === null && nameError === null && !saving;
+
+  const setRows = (action: SetStateAction<EditorRow[]>): void => {
+    setRowsState((previous) => {
+      const next = typeof action === 'function' ? action(previous) : action;
+      rowsRef.current = next;
+      return next;
+    });
+  };
 
   const setRow = (index: number, patch: Partial<EditorRow>): void => {
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -90,43 +109,36 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
     setRows((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const appendHexes = (hexes: string[]): void => {
-    if (hexes.length === 0) {
-      setImportError(t.importFailed);
-      return;
+  const importText = (text: string): boolean => {
+    const result = parseCustomPaletteImport(text, { existingColors: rowsRef.current });
+    if (!result.ok) {
+      setImportError(result.errors.join('\n'));
+      return false;
     }
+    setRows((prev) => [...prev, ...result.colors]);
     setImportError(null);
-    setRows((prev) => {
-      const existing = new Set(prev.map((row) => row.hex.toUpperCase()));
-      const additions: EditorRow[] = [];
-      for (const hex of hexes) {
-        if (existing.has(hex) || additions.length + prev.length >= LIMITS.customPaletteColors) continue;
-        existing.add(hex);
-        additions.push({ code: nextAutoCode([...prev, ...additions]), hex });
-      }
-      return additions.length > 0 ? [...prev, ...additions] : prev;
-    });
+    return true;
   };
 
   const doPasteImport = (): void => {
-    appendHexes(parseHexList(pasteText));
-    setPasteText('');
-    setPasteOpen(false);
+    if (importText(pasteText)) {
+      setPasteText('');
+      setPasteOpen(false);
+    }
   };
 
   const doFileImport = async (file: File | null): Promise<void> => {
     if (!file) return;
     try {
       const text = await file.text();
-      appendHexes(parseHexList(text));
+      importText(text);
     } catch {
       setImportError(t.importFailed);
     }
   };
 
-  const copyFromBrand = (brandValue: string): void => {
-    const brand = BRANDS.find((b) => b === brandValue);
-    if (!brand) return;
+  const copyFromBuiltin = (paletteValue: string): void => {
+    if (!isBuiltinPaletteId(paletteValue)) return;
     void (async () => {
       if (rows.length > 1 && !(await confirm({
         title: t.copyConfirmTitle,
@@ -134,11 +146,12 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
         confirmLabel: t.copyConfirmAction,
         danger: true,
       }))) return;
-      const palette = buildBrandPalette(brand);
-      const next: EditorRow[] = palette.map((color, index) => ({
-        code: color.code ?? `C${String(index + 1).padStart(3, '0')}`,
-        hex: color.hex,
-      }));
+      const palette = getBuiltinPalette(paletteValue);
+      // engineColors 的目录契约保证色号可用；这里仍显式收窄，
+      // 防止将「仅展示」或未知色号误复制进可生成自定义色板。
+      const next: EditorRow[] = palette.engineColors.flatMap((color) =>
+        color.code === null ? [] : [{ code: color.code, hex: color.hex }],
+      );
       setRows(next);
       setImportError(null);
     })();
@@ -179,7 +192,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
           {t.fileImport}
           <input
             type="file"
-            accept=".txt,.csv,text/plain"
+            accept=".txt,.csv,text/plain,text/csv"
             className="sr-only"
             aria-label={t.fileImport}
             onChange={(e) => {
@@ -190,29 +203,36 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
         </label>
         <select
           value=""
-          onChange={(e) => copyFromBrand(e.target.value)}
+          onChange={(e) => copyFromBuiltin(e.target.value)}
           aria-label={t.copyFromBrand}
           className="btn-outline btn-xs"
         >
           <option value="" disabled>
             {t.copyFromBrand}
           </option>
-          {BRANDS.map((brand) => (
-            <option key={brand} value={brand}>
-              {brand}
-            </option>
+          {BUILTIN_PALETTE_GROUPS.map(([brandLabel, palettes]) => (
+            <optgroup key={brandLabel} label={brandLabel}>
+              {palettes.map((palette) => (
+                <option key={palette.id} value={palette.id}>
+                  {palette.series}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
 
-      {importError && <p role="alert" className="text-xs text-danger">{importError}</p>}
+      {importError && <p role="alert" className="whitespace-pre-line text-xs text-danger">{importError}</p>}
 
       {pasteOpen && (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-ink-soft">{t.pasteHint}</p>
           <textarea
             value={pasteText}
-            onChange={(e) => setPasteText(e.target.value)}
+            onChange={(e) => {
+              setPasteText(e.target.value);
+              setImportError(null);
+            }}
             rows={6}
             aria-label={t.pasteImport}
             className="input-compact p-2 font-mono text-xs"

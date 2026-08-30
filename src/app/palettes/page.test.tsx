@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PalettesPage from './page';
 import { zhCN } from '@/messages/zh-CN';
 import type { PaletteRecord } from '@/components/palettes/api';
+import { getBuiltinPalette, listBuiltinPalettes } from '@/lib/palettes';
+import { compatibleBoardProfilesForPalette } from '@/lib/boardProfiles';
 
 const t = zhCN.palettes;
 
@@ -40,19 +42,69 @@ describe('PalettesPage', () => {
   it('加载中提供明确的 live region 反馈', () => {
     listPalettes.mockReturnValue(new Promise(() => {}));
     render(<PalettesPage />);
-    expect(screen.getByRole('status')).toHaveTextContent('正在加载色板…');
+    expect(screen.getByText(t.loading)).toHaveAttribute('role', 'status');
   });
 
-  it('加载列表：渲染内置五品牌（各 291 色）与自定义色板卡片', async () => {
+  it('加载列表：按品牌分组渲染 13 套内置色板与自定义色板', async () => {
     listPalettes.mockResolvedValue([record('id-1', '我的色板')]);
     render(<PalettesPage />);
     await waitFor(() => expect(screen.getByText('我的色板')).toBeTruthy());
-    for (const brand of ['MARD', 'COCO', '漫漫', '盼盼', '咪小窝']) {
-      expect(screen.getByText(brand)).toBeTruthy();
-    }
-    expect(screen.getAllByText(t.colorCount(291))).toHaveLength(5);
+    const library = screen.getByRole('region', { name: t.builtinTitle });
+    expect(within(library).getAllByRole('listitem')).toHaveLength(13);
+    expect(library.querySelectorAll('.palette-brand-group')).toHaveLength(6);
+    expect(within(library).getAllByText(t.collectedColors)).toHaveLength(13);
+    expect(within(library).getAllByText(t.engineColors)).toHaveLength(13);
     // 自定义卡片文案为「1 色 · 日期」；用带分隔符的正则避免误匹配「291 色」
     expect(screen.getByText(/1 色 · /)).toBeTruthy();
+  });
+
+  it('内置色板可按品牌、系列和规格搜索，并实时播报结果数', async () => {
+    listPalettes.mockResolvedValue([]);
+    render(<PalettesPage />);
+    await waitFor(() => expect(screen.getByText(t.empty)).toBeTruthy());
+    const search = screen.getByRole('searchbox', { name: t.searchLabel });
+    fireEvent.change(search, { target: { value: 'Mini C' } });
+    const library = screen.getByRole('region', { name: t.builtinTitle });
+    expect(within(library).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent(t.searchResults(1, 13));
+
+    fireEvent.change(search, { target: { value: '2.6mm / 52×52' } });
+    expect(within(library).getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByRole('status')).toHaveTextContent(t.searchResults(3, 13));
+
+    fireEvent.change(search, { target: { value: '不存在的品牌' } });
+    expect(within(library).queryAllByRole('listitem')).toHaveLength(0);
+    expect(within(library).getByText(t.noSearchResults)).toBeTruthy();
+  });
+
+  it('卡片展示收录/可生成数、规格、来源质量与透明排除项', async () => {
+    listPalettes.mockResolvedValue([]);
+    const summary = listBuiltinPalettes().find((palette) => palette.series === 'C 系列 197 色');
+    expect(summary).toBeTruthy();
+    const palette = getBuiltinPalette(summary!.id);
+    render(<PalettesPage />);
+    await waitFor(() => expect(screen.getByText(t.empty)).toBeTruthy());
+    const heading = screen.getByRole('heading', { name: palette.series });
+    const card = heading.closest('li');
+    expect(card).toHaveTextContent(t.colorCount(palette.colorCount));
+    expect(card).toHaveTextContent(t.colorCount(palette.engineColorCount));
+    for (const profile of compatibleBoardProfilesForPalette({ kind: 'builtin', brand: palette.id })) {
+      expect(card).toHaveTextContent(profile.displayName);
+    }
+    expect(card).toHaveTextContent(palette.source.qualityLabel);
+    expect(card).toHaveTextContent(t.exclusionTransparent(palette.exclusions.transparent));
+  });
+
+  it('MARD 221 展示领域规则允许的全部三种制作规格', async () => {
+    listPalettes.mockResolvedValue([]);
+    const summary = listBuiltinPalettes().find((palette) => palette.series === '221 色核对版');
+    expect(summary).toBeTruthy();
+    render(<PalettesPage />);
+    await waitFor(() => expect(screen.getByText(t.empty)).toBeTruthy());
+    const card = screen.getByRole('heading', { name: summary!.series }).closest('li');
+    expect(card).toHaveTextContent('5mm / 29×29');
+    expect(card).toHaveTextContent('2.6mm / 50×50');
+    expect(card).toHaveTextContent('2.6mm / 52×52');
   });
 
   it('空态：无自定义色板时显示提示', async () => {

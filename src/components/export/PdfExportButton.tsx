@@ -5,13 +5,16 @@ import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import { loadPdfCjkFont } from '@/lib/export/pdfFont';
-import { buildExportFilename, computePdfLayout, paginateLegendItems, type PdfPageMetrics } from '@/lib/export/pdfLayout';
+import { buildExportFilename, computePdfLayout, paginateLegendItems, resolveBoardPdfMetrics, type PdfPageMetrics } from '@/lib/export/pdfLayout';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
 
 export interface PdfExportButtonProps {
   name: string;
   pattern: Pattern;
   stats: PatternStatsItem[];
+  boardSize?: number;
+  cellMm?: number;
   disabled?: boolean;
 }
 
@@ -28,7 +31,7 @@ export function triggerDownload(bytes: Uint8Array, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export default function PdfExportButton({ name, pattern, stats, disabled }: PdfExportButtonProps) {
+export default function PdfExportButton({ name, pattern, stats, boardSize = DEFAULT_BOARD_SIZE, cellMm, disabled }: PdfExportButtonProps) {
   const t = zhCN.exportPdf;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,21 +39,22 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
   // 版式参数来自站点公开配置（票 02）：服务端环境变量可覆盖，改配置即生效
   const pubCfg = usePublicConfig();
   const metrics = useMemo<PdfPageMetrics>(
-    () => ({
-      cellMm: pubCfg.exportPdf.cellMm,
-      marginMm: pubCfg.exportPdf.marginMm,
-      headerMm: pubCfg.exportPdf.headerMm,
-      pageCols: pubCfg.exportPdf.pageCols,
-      pageRows: pubCfg.exportPdf.pageRows,
-    }),
-    [pubCfg],
+    () => resolveBoardPdfMetrics(
+      pubCfg.exportPdf,
+      boardSize,
+      cellMm ?? pubCfg.exportPdf.cellMm,
+    ),
+    [boardSize, cellMm, pubCfg],
   );
 
   const isEmpty = useMemo(
     () => !pattern.cells.some((cell) => !cell.transparent && !cell.external),
     [pattern],
   );
-  const layout = useMemo(() => computePdfLayout(pattern.width, pattern.height, metrics), [pattern, metrics]);
+  const layout = useMemo(
+    () => computePdfLayout(pattern.width, pattern.height, metrics, 'byBoard', boardSize),
+    [boardSize, metrics, pattern.height, pattern.width],
+  );
   const legendPageCount = useMemo(() => paginateLegendItems(stats, metrics).length, [stats, metrics]);
 
   const onExportClick = (): void => {
@@ -73,7 +77,7 @@ export default function PdfExportButton({ name, pattern, stats, disabled }: PdfE
         import('@/lib/export/pdf'),
         loadPdfCjkFont(pdfText),
       ]);
-      const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics });
+      const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics, boardSize });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);
     } catch {

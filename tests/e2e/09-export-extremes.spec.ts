@@ -9,9 +9,9 @@ const at = '2026-08-17T00:00:00.000Z';
 
 function project(width: number, height: number, colors: Array<{ code: string; hex: string }>) {
   return {
-    format: 'doupu-project', version: 2, engineVersion: '2.0.0', name: `极限-${width}x${height}`,
+    format: 'doupu-project', version: 3, engineVersion: '2.0.0', boardProfile: '5mm-29', name: `极限-${width}x${height}`,
     createdAt: at, updatedAt: at,
-    palette: { kind: 'custom', colors },
+    paletteSelection: { palette: { kind: 'custom', colors }, kitTier: 0 },
     params: { targetWidth: Math.max(20, width), targetColorCount: 128, dithering: false, mode: 'dominant', brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8 },
     pattern: {
       width,

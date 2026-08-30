@@ -4,6 +4,8 @@ import { boardSeamPositions, contrastColor, labelVisible } from './layout';
 
 export interface DrawOptions {
   cellPx: number;
+  /** 当前制作规格的一块板边长；缺省保持兼容规格。 */
+  boardSize?: number;
   showGrid: boolean;
   showSeams: boolean;
   showLabels: boolean;
@@ -62,16 +64,16 @@ export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opt
     ctx.stroke();
   }
 
-  // 板缝线（每 29 格）
+  // 板缝线（间距由当前制作规格决定）
   if (opts.showSeams) {
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     ctx.lineWidth = Math.max(2, Math.round(cellPx / 8));
     ctx.beginPath();
-    for (const p of boardSeamPositions(W)) {
+    for (const p of boardSeamPositions(W, opts.boardSize)) {
       ctx.moveTo(p * cellPx, 0);
       ctx.lineTo(p * cellPx, totalH);
     }
-    for (const p of boardSeamPositions(H)) {
+    for (const p of boardSeamPositions(H, opts.boardSize)) {
       ctx.moveTo(0, p * cellPx);
       ctx.lineTo(totalW, p * cellPx);
     }

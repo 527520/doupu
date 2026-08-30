@@ -31,4 +31,36 @@ describe('drawPattern', () => {
       [0, 1, 3, 1],
     ]);
   });
+
+  it('uses the selected board size for seam placement', () => {
+    const moveTo = vi.fn();
+    const context = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      beginPath: vi.fn(),
+      moveTo,
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    const pattern: Pattern = {
+      width: 101,
+      height: 1,
+      cells: Array.from({ length: 101 }, () => ({
+        hex: '#112233',
+        code: 'A1',
+        transparent: false,
+      })),
+    };
+
+    drawPattern(context, pattern, {
+      cellPx: 2,
+      showGrid: false,
+      showSeams: true,
+      showLabels: false,
+      boardSize: 50,
+    });
+
+    expect(moveTo).toHaveBeenCalledWith(100, 0);
+    expect(moveTo).toHaveBeenCalledWith(200, 0);
+  });
 });

@@ -6,12 +6,16 @@ import type { ProjectFile } from '@/lib/types';
 
 const minimalProject: ProjectFile = {
   format: 'doupu-project',
-  version: 2,
+  version: 3,
   engineVersion: '2.0.0',
+  boardProfile: '5mm-29',
   name: '测试设计',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
-  palette: { kind: 'builtin', brand: 'MARD' },
+  paletteSelection: {
+    palette: { kind: 'builtin', brand: 'MARD' },
+    kitTier: 0,
+  },
   params: {
     targetWidth: 100,
     targetColorCount: 40,
@@ -25,7 +29,7 @@ const minimalProject: ProjectFile = {
   pattern: {
     width: 1,
     height: 1,
-    cells: [{ hex: '#FFFFFF', code: 'W', transparent: false }],
+    cells: [{ hex: '#FFFFFF', code: 'T01', transparent: false }],
   },
 };
 
@@ -79,6 +83,22 @@ describe('createDoupuApi 云端设计接口', () => {
       ...minimalProject,
       params: { ...minimalProject.params, backgroundPrototype: null },
     });
+  });
+
+  it('getDesign 明确拒绝旧 v2 云端设计，不在客户端静默补默认值', async () => {
+    const legacy = structuredClone(minimalProject) as unknown as Record<string, unknown>;
+    legacy.version = 2;
+    const api = createDoupuApi(async () =>
+      jsonResponse(200, {
+        id: 'legacy',
+        name: 'n',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        revision: 1,
+        project: legacy,
+      }),
+    );
+
+    await expect(api.getDesign('legacy')).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
   });
 
   it('putDesign 携带 JSON Content-Type 并返回 updatedAt', async () => {

@@ -4,8 +4,9 @@
  * 全部可单测；pdf.ts 只做绘制与文档组装。
  * 票 02 配置化：分页/尺寸参数经 PdfPageMetrics 传入，默认值来自站点配置（config.ts）。
  */
-import { config } from '@/lib/config';
+import { config, normalizePdfMetrics } from '@/lib/config';
 import { A4_HEIGHT_MM, A4_WIDTH_MM, MM_TO_PT } from '@/lib/paper';
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
 
 export interface PdfPageMetrics {
   cellMm: number;
@@ -22,6 +23,44 @@ export const defaultPdfMetrics: PdfPageMetrics = {
   pageCols: config.exportPdf.pageCols,
   pageRows: config.exportPdf.pageRows,
 };
+
+/**
+ * Combine a site-wide PDF configuration with one physical board profile.
+ * Validation must happen after overriding cell size and board dimensions:
+ * two independently valid configurations can otherwise form an A4-overflowing
+ * tuple. The fallback remains profile-aware, especially for 2.6mm output.
+ */
+export function resolveBoardPdfMetrics(
+  configured: PdfPageMetrics,
+  boardSize = DEFAULT_BOARD_SIZE,
+  cellMm = configured.cellMm,
+): PdfPageMetrics {
+  const size = Number.isInteger(boardSize) && boardSize > 0
+    ? boardSize
+    : DEFAULT_BOARD_SIZE;
+  const resolvedCellMm = Number.isFinite(cellMm) && cellMm > 0
+    ? cellMm
+    : defaultPdfMetrics.cellMm;
+  const profileFallback = normalizePdfMetrics(
+    {
+      cellMm: resolvedCellMm,
+      marginMm: defaultPdfMetrics.marginMm,
+      headerMm: defaultPdfMetrics.headerMm,
+      pageCols: size,
+      pageRows: size,
+    },
+    defaultPdfMetrics,
+  );
+  return normalizePdfMetrics(
+    {
+      ...configured,
+      cellMm: resolvedCellMm,
+      pageCols: Math.max(configured.pageCols, size),
+      pageRows: Math.max(configured.pageRows, size),
+    },
+    profileFallback,
+  );
+}
 
 // 兼容旧引用（测试与外部依赖既有常量名）
 export const PDF_CELL_MM = defaultPdfMetrics.cellMm;
@@ -58,14 +97,14 @@ export interface PdfLayout {
   boards: { rows: number; cols: number } | null;
 }
 
-/** 一块拼豆板的格数（D16/D21：仅 5mm 融合豆，板为 29×29）。 */
-export const BOARD_SIZE = 29;
+/** @deprecated 业务代码应传入当前制作规格；仅保留旧调用方的默认值。 */
+export const BOARD_SIZE = DEFAULT_BOARD_SIZE;
 
 /**
  * 分页计算。
  *
  * 两种模式（F-1）：
- * - `byBoard`（默认）：每页正好一块 29×29 拼豆板。图纸本来就按板画缝线，
+ * - `byBoard`（默认）：每页正好一块当前制作规格的拼豆板。图纸本来就按板画缝线，
  *   而旧版按 31×45 格切页，页边界与板缝线错位——用户拼的时候要对着一页纸
  *   跨两块板，或者一块板要翻两页。按板分页后「一页 = 一块板」，
  *   还能给出板坐标（第 2 行第 1 列）方便按板归位。
@@ -76,16 +115,18 @@ export function computePdfLayout(
   H: number,
   metrics: PdfPageMetrics = defaultPdfMetrics,
   mode: 'byBoard' | 'free' = 'byBoard',
+  boardSize = BOARD_SIZE,
 ): PdfLayout {
   if (!Number.isInteger(W) || !Number.isInteger(H) || W < 1 || H < 1) {
     return { gridPages: [], legendPageIndex: 0, totalPages: 1, boards: null };
   }
+  const normalizedBoardSize = Number.isInteger(boardSize) && boardSize > 0 ? boardSize : BOARD_SIZE;
   const byBoard = mode === 'byBoard'
     // 一块板必须放得下：版式配置太小时（例如把每页格数调到 20）退回自由分页。
-    && metrics.pageCols >= BOARD_SIZE
-    && metrics.pageRows >= BOARD_SIZE;
-  const pageCols = byBoard ? BOARD_SIZE : metrics.pageCols;
-  const pageRows = byBoard ? BOARD_SIZE : metrics.pageRows;
+    && metrics.pageCols >= normalizedBoardSize
+    && metrics.pageRows >= normalizedBoardSize;
+  const pageCols = byBoard ? normalizedBoardSize : metrics.pageCols;
+  const pageRows = byBoard ? normalizedBoardSize : metrics.pageRows;
   const pageColsCount = Math.ceil(W / pageCols);
   const pageRowsCount = Math.ceil(H / pageRows);
   const gridPages: PdfPageSpec[] = [];
@@ -127,14 +168,15 @@ export function pageHeaderText(page: PdfPageSpec): string {
   return `第 ${page.pageIndex + 1}/${page.totalPages} 页 · ${boardLabel} · ${position}`;
 }
 
-/** 全局板缝位置（每 29 格，落在当前页区间内才绘制）。 */
-export function seamPositionsForPage(page: PdfPageSpec): { cols: number[]; rows: number[] } {
+/** 全局板缝位置（按当前制作规格，落在当前页区间内才绘制）。 */
+export function seamPositionsForPage(page: PdfPageSpec, boardSize = BOARD_SIZE): { cols: number[]; rows: number[] } {
   const cols: number[] = [];
   const rows: number[] = [];
-  for (let s = 29; s < page.colStart + page.cols; s += 29) {
+  const size = Number.isInteger(boardSize) && boardSize > 0 ? boardSize : BOARD_SIZE;
+  for (let s = size; s < page.colStart + page.cols; s += size) {
     if (s > page.colStart) cols.push(s);
   }
-  for (let s = 29; s < page.rowStart + page.rows; s += 29) {
+  for (let s = size; s < page.rowStart + page.rows; s += size) {
     if (s > page.rowStart) rows.push(s);
   }
   return { cols, rows };

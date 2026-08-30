@@ -3,7 +3,9 @@ import type { ReactNode } from 'react';
 export type IconName =
   | 'home' | 'spark' | 'folder' | 'palette' | 'user' | 'help' | 'info'
   | 'lock' | 'cloud' | 'upload' | 'blank' | 'arrow' | 'more' | 'plus'
-  | 'search' | 'bell' | 'edit' | 'grid' | 'sliders' | 'download' | 'crop';
+  | 'search' | 'bell' | 'edit' | 'grid' | 'sliders' | 'download' | 'crop'
+  | 'hand' | 'brush' | 'eraser' | 'zoom-in' | 'zoom-out' | 'fit'
+  | 'undo' | 'redo' | 'mark' | 'back';
 
 const paths: Record<IconName, ReactNode> = {
   home: <><path d="M3.5 10.5 12 3l8.5 7.5" /><path d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6" /></>,
@@ -27,6 +29,16 @@ const paths: Record<IconName, ReactNode> = {
   sliders: <><path d="M4 6h6M14 6h6M4 12h11M19 12h1M4 18h3M11 18h9" /><circle cx="12" cy="6" r="2" /><circle cx="17" cy="12" r="2" /><circle cx="9" cy="18" r="2" /></>,
   download: <><path d="M12 4v11m0 0-4-4m4 4 4-4" /><path d="M4 18v2h16v-2" /></>,
   crop: <><path d="M7 3v14a2 2 0 0 0 2 2h12" /><path d="M3 7h12a2 2 0 0 1 2 2v12" /></>,
+  hand: <><path d="M7.5 11V6.5a1.5 1.5 0 0 1 3 0V10" /><path d="M10.5 10V4.5a1.5 1.5 0 0 1 3 0V10" /><path d="M13.5 10V6a1.5 1.5 0 0 1 3 0v5" /><path d="M16.5 11V8.5a1.5 1.5 0 0 1 3 0V14c0 4.4-2.6 7-7 7h-1c-2.2 0-3.7-.9-5-2.6L3.8 15a1.6 1.6 0 0 1 2.4-2.1L8 14.5" /></>,
+  brush: <><path d="m14.5 4.5 5 5L10 19H5v-5l9.5-9.5Z" /><path d="m12.5 6.5 5 5" /><path d="M5 19c-1.5 0-2.5.7-3 2 1.7.2 3.4-.1 4.5-1.5" /></>,
+  eraser: <><path d="m8.5 5.5 10 10-4.5 4.5H8l-5-5 10-10a3.2 3.2 0 0 1 4.5 0" /><path d="m7 11 6 6" /></>,
+  'zoom-in': <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5M10.5 7.5v6M7.5 10.5h6" /></>,
+  'zoom-out': <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5M7.5 10.5h6" /></>,
+  fit: <><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /><path d="M8 8h8v8H8z" /></>,
+  undo: <><path d="M9 7 4 12l5 5" /><path d="M5 12h8a6 6 0 0 1 6 6" /></>,
+  redo: <><path d="m15 7 5 5-5 5" /><path d="M19 12h-8a6 6 0 0 0-6 6" /></>,
+  mark: <><circle cx="12" cy="12" r="8" /><path d="m8.5 12 2.2 2.2 4.8-5" /></>,
+  back: <><path d="m14 5-7 7 7 7" /><path d="M7 12h13" /></>,
 };
 
 export default function Icon({ name, size = 20, className }: { name: IconName; size?: number; className?: string }) {

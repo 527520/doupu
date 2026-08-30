@@ -11,7 +11,10 @@
  */
 import { buildLut, lutIndex } from './lut';
 import { hexToRgb, oklabSquaredDistance, rgbToOklab } from './color';
-import type { PaletteColor, Pattern, PatternCell } from '@/lib/types';
+import type { PaletteColor, PaletteSelection, Pattern, PatternCell } from '@/lib/types';
+import { availablePaletteColors } from '@/lib/palettes/availability';
+import { isKitTierAvailableForPalette, projectPaletteEngineColors } from '@/lib/kitTiers';
+export { KIT_TIERS, type KitTier } from '@/lib/kitTiers';
 
 /** 空白图纸：全透明格，尺寸与生成路径同一上限（20–200）。 */
 export function createBlankPattern(width: number, height: number): Pattern {
@@ -27,9 +30,6 @@ export function createBlankPattern(width: number, height: number): Pattern {
 }
 
 /** 套装档位（H-3）：常见成品套装规格。0 表示不限制（用整套色板）。 */
-export const KIT_TIERS = [0, 24, 48, 72, 96, 144] as const;
-export type KitTier = (typeof KIT_TIERS)[number];
-
 /**
  * 从色板里挑出 N 个代表色（H-3）。
  *
@@ -39,7 +39,7 @@ export type KitTier = (typeof KIT_TIERS)[number];
  * 完全确定性（同一输入必得同一子集），便于项目文件复现。
  */
 export function selectKitColors(palette: PaletteColor[], size: number): PaletteColor[] {
-  const available = palette.filter((color) => color.code !== null);
+  const available = availablePaletteColors(palette);
   if (size <= 0 || available.length <= size) return available;
 
   const labs = available.map((color) => {
@@ -81,10 +81,20 @@ export function selectKitColors(palette: PaletteColor[], size: number): PaletteC
   return picked.sort((a, b) => a - b).map((index) => available[index]);
 }
 
+/** 持久化选择是色板身份和实际引擎色集的唯一事实来源。 */
+export function paletteColorsForSelection(selection: PaletteSelection): PaletteColor[] {
+  if (!isKitTierAvailableForPalette(selection.kitTier, selection.palette)) {
+    throw new Error('套装档位超出当前色板可生成颜色数');
+  }
+  return selectKitColors(projectPaletteEngineColors(selection.palette), selection.kitTier);
+}
+
 /** 把「可用色号子集」应用到已有图纸（H-3 换档时用，语义同 remapPattern）。 */
 export function nearestInKit(hex: string, kit: PaletteColor[]): PaletteColor {
-  const lut = buildLut(kit);
+  const available = availablePaletteColors(kit);
+  if (available.length === 0) throw new Error('palette is empty');
+  const lut = buildLut(available);
   const rgb = hexToRgb(hex);
   if (!rgb) throw new Error(`invalid hex: ${hex}`);
-  return kit[lutIndex(lut, rgb.r, rgb.g, rgb.b)];
+  return available[lutIndex(lut, rgb.r, rgb.g, rgb.b)];
 }

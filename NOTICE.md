@@ -9,8 +9,8 @@
 - 仓库：https://github.com/Zippland/perler-beads
 - 许可证：AGPL-3.0
 - 用途：产品概念的来源；以下内容移植自该项目（保留出处注释）：
-  - 五套国产拼豆品牌色板数据（`src/lib/palettes/data/colorSystemMapping.json`，源自其 `src/app/colorSystemMapping.json`，291 色 × MARD/COCO/漫漫/盼盼/咪小窝）
-  - Oklab 感知颜色距离公式与最近色匹配思路（`src/lib/engine/oklab.ts`）
+  - 五套国产拼豆品牌色板数据（现拆分锁定在 `src/lib/palettes/data/legacy/*.generated.json`，源自其 `src/app/colorSystemMapping.json`，291 色 × MARD/COCO/漫漫/盼盼/咪小窝；漫漫 `#F3C1C0` 的色号由上游 `S4` 本地纠正为 `S7`）
+  - Oklab 感知颜色距离公式与最近色匹配思路（`src/lib/engine/color.ts`）
   - 格元代表色采样规则（主色/平均色，透明阈值 128）
   - 相似颜色频率合并思路（原为全局频率合并，本项目重构为按目标颜色数二分阈值）
   - 边界洪泛背景去除思路
@@ -20,6 +20,17 @@
 
 - 仓库：https://github.com/liangdabiao/perler-beads-ai
 - 说明：仅作功能参考（图片裁剪交互）。本项目不采纳其 AI 相关功能，亦不采纳其 Apache-2.0 声明（该再许可对 AGPL 上游无依据）。
+
+### HansBug/pindou-color-data
+
+- 仓库：https://github.com/HansBug/pindou-color-data
+- 固定 commit：`178dafbc9e77d3de556550dbd058270200129186`
+- 许可证：MIT，Copyright (c) 2026 HansBug；许可证全文见 `third_party/pindou-color-data/LICENSE`
+- 用途：八套独立拼豆色卡的展示数据与引擎候选色来源：MARD 291、COCO 291、漫漫 278、
+  盼盼 289、咪小窝 290、MARD 221 核对版、Artkal C 197、Artkal M 221。
+- 导入产物：`src/lib/palettes/data/pindou-color-data.generated.json`；由
+  `scripts/import-pindou-color-data.mjs` 从上述固定 commit 显式生成。文件级 SHA-256 与未导入系列说明见
+  `third_party/pindou-color-data/README.md`。
 
 ## 依赖许可
 

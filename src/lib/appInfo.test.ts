@@ -5,7 +5,7 @@ describe('appInfo', () => {
   it('exposes the product identity', () => {
     expect(APP_NAME).toBe('豆谱');
     expect(PROJECT_FILE_FORMAT).toBe('doupu-project');
-    expect(PROJECT_FILE_VERSION).toBe(2);
+    expect(PROJECT_FILE_VERSION).toBe(3);
     expect(ENGINE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 

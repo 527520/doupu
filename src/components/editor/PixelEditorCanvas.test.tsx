@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import PixelEditorCanvas from './PixelEditorCanvas';
 import { makeSolid } from '@/lib/editor/ops';
 import { zhCN } from '@/messages/zh-CN';
@@ -38,6 +38,15 @@ const pointer = (canvas: Element, type: string, props: Record<string, unknown> =
   fireEvent[type as 'pointerDown'](canvas, { pointerType: 'mouse', ...props });
 
 describe('PixelEditorCanvas', () => {
+  it('移动端默认手形浏览，单指拖动画布不会修改图纸', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 35, clientY: 5 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 35, clientY: 5 });
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
   it('autoFocus 会在进入编辑时聚焦编辑画布区域', () => {
     const { canvas } = setup(3, 2, { autoFocus: true });
     expect(document.activeElement).toBe(canvas.parentElement);
@@ -111,6 +120,7 @@ describe('PixelEditorCanvas', () => {
     const { onColorChange, canvas } = setup();
     fireEvent.click(screen.getByRole('button', { name: /吸管/ }));
     pointer(canvas, 'pointerDown', { clientX: 25, clientY: 15 });
+    pointer(canvas, 'pointerUp', { clientX: 25, clientY: 15 });
     expect(onColorChange).toHaveBeenCalledWith({ hex: '#FF0000', code: 'A' });
   });
 
@@ -118,6 +128,7 @@ describe('PixelEditorCanvas', () => {
     const { onStatsChange, canvas } = setup();
     fireEvent.click(screen.getByRole('button', { name: /油漆桶/ }));
     pointer(canvas, 'pointerDown', { clientX: 0, clientY: 0 });
+    pointer(canvas, 'pointerUp', { clientX: 0, clientY: 0 });
     expect(onStatsChange).toHaveBeenCalledWith([{ code: 'B', hex: '#0000FF', count: 6 }], 6);
   });
 
@@ -205,36 +216,57 @@ describe('PixelEditorCanvas', () => {
     expect(document.activeElement).toBe(wrapper);
   });
 
-  it('触屏画布保留纵向页面滚动与双指缩放能力', () => {
+  it('画布接管触控手势，并通过明确的手形模式浏览', () => {
     const { canvas } = setup();
-    expect(canvas).toHaveStyle({ touchAction: 'pan-y pinch-zoom' });
+    expect(canvas).toHaveStyle({ touchAction: 'none' });
+    expect(screen.getByRole('button', { name: /手形/ })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('触屏长按 500ms 吸色（fake timers）', () => {
-    vi.useFakeTimers();
+  it('触屏按住显示 7×7 放大镜，不再触发长按吸色', () => {
     const { onColorChange, canvas } = setup();
-    fireEvent.pointerDown(canvas, { pointerType: 'touch', clientX: 5, clientY: 5 });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    fireEvent.pointerUp(canvas, { pointerType: 'touch', clientX: 5, clientY: 5 });
-    expect(onColorChange).toHaveBeenCalledWith({ hex: '#FF0000', code: 'A' });
-    vi.useRealTimers();
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 });
+    expect(screen.getByLabelText(/第 1 行，第 1 列，B/)).toBeTruthy();
+    expect(onColorChange).not.toHaveBeenCalledWith(RED);
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 });
   });
 
-  it('触屏点按落笔（未达长按阈值）', () => {
-    vi.useFakeTimers();
+  it('触屏点按落笔', () => {
     const { onStatsChange, canvas } = setup();
     fireEvent.pointerDown(canvas, { pointerType: 'touch', clientX: 5, clientY: 5 });
-    act(() => {
-      vi.advanceTimersByTime(100);
-    });
     fireEvent.pointerUp(canvas, { pointerType: 'touch', clientX: 5, clientY: 5 });
     expect(onStatsChange).toHaveBeenCalledWith(
       expect.arrayContaining([{ code: 'B', hex: '#0000FF', count: 1 }]),
       6,
     );
-    vi.useRealTimers();
+  });
+
+  it('第二根手指加入时完整回滚未提交笔迹', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { onPatternChange });
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 2, pointerType: 'touch', clientX: 36, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 2, pointerType: 'touch', clientX: 36, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('油漆桶拖动超过阈值不会写入', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: /油漆桶/ }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('手机选择编辑工具时自动放大到单格至少 20px', () => {
+    setup(40, 40, { layout: 'mobile' });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    expect(screen.getByLabelText('当前格子大小')).toHaveTextContent('20px');
+    expect(screen.getByText('已放大到可编辑比例')).toBeTruthy();
   });
 
   it('触屏拖动在同格超过阈值也会落下首格', () => {

@@ -16,6 +16,7 @@ import {
   usernameSchema,
 } from './schemas';
 import { DEFAULT_GENERATION_PARAMS } from './types';
+import { selectKitColors } from './engine/kit';
 
 function cell(hex: string, code: string | null) {
   return { hex, code, transparent: false };
@@ -27,17 +28,18 @@ function transparentCell() {
 function validProject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const project = {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name: '测试设计',
     createdAt: '2026-08-14T10:00:00.000Z',
     updatedAt: '2026-08-14T11:00:00.000Z',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
     params: DEFAULT_GENERATION_PARAMS,
     pattern: {
       width: 2,
       height: 1,
-      cells: [cell('#FF0000', 'F01'), transparentCell()],
+      cells: [cell('#FAF4C8', 'A01'), transparentCell()],
     },
   };
   return { ...project, ...overrides };
@@ -141,6 +143,93 @@ describe('hex 与单元格', () => {
 });
 
 describe('项目文件（§5.3）', () => {
+  it('图纸格的未知字段必须拒绝，不得静默丢弃', () => {
+    const candidate = validProject({
+      pattern: {
+        width: 1,
+        height: 1,
+        cells: [{ ...cell('#FAF4C8', 'A01'), futureCellFlag: true }],
+      },
+    });
+
+    expect(projectFileSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it('v3 所有嵌套协议对象都拒绝未知字段', () => {
+    const cases = [
+      validProject({ params: { ...DEFAULT_GENERATION_PARAMS, futureParam: true } }),
+      validProject({
+        pattern: {
+          width: 1,
+          height: 1,
+          cells: [cell('#FAF4C8', 'A01')],
+          futurePatternFlag: true,
+        },
+      }),
+      validProject({
+        paletteSelection: {
+          palette: { kind: 'builtin', brand: 'MARD', futurePaletteFlag: true },
+          kitTier: 0,
+        },
+      }),
+      validProject({
+        paletteSelection: {
+          palette: {
+            kind: 'custom',
+            colors: [{ code: 'C1', hex: '#123456', futureColorFlag: true }],
+          },
+          kitTier: 0,
+        },
+        pattern: { width: 1, height: 1, cells: [cell('#123456', 'C1')] },
+      }),
+    ];
+
+    for (const candidate of cases) {
+      expect(projectFileSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
+  it('非零套装档位下，图纸不得引用档位外颜色', () => {
+    const colors = Array.from({ length: 25 }, (_, index) => ({
+      code: `K${index + 1}`,
+      hex: `#${(index * 0x0a0703 + 1).toString(16).padStart(6, '0').slice(-6)}`,
+    }));
+    const selected = new Set(selectKitColors(colors, 24).map((color) => `${color.code}:${color.hex}`));
+    const excluded = colors.find((color) => !selected.has(`${color.code}:${color.hex}`));
+    expect(excluded).toBeDefined();
+
+    const candidate = {
+      format: 'doupu-project',
+      version: 3,
+      engineVersion: '2.0.0',
+      boardProfile: '5mm-29',
+      name: '档位成员校验',
+      createdAt: '2026-08-14T10:00:00.000Z',
+      updatedAt: '2026-08-14T11:00:00.000Z',
+      paletteSelection: { palette: { kind: 'custom', colors }, kitTier: 24 },
+      params: DEFAULT_GENERATION_PARAMS,
+      pattern: { width: 1, height: 1, cells: [{ ...excluded, transparent: false }] },
+    };
+
+    expect(projectFileSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it('套装档位必须是登记值，且不得超过色板可生成色数', () => {
+    const colors = Array.from({ length: 23 }, (_, index) => ({
+      code: `C${index + 1}`,
+      hex: `#${(index + 1).toString(16).padStart(6, '0')}`,
+    }));
+    const pattern = { width: 1, height: 1, cells: [cell(colors[0].hex, colors[0].code)] };
+    const selection = (kitTier: number) => ({
+      paletteSelection: { palette: { kind: 'custom', colors }, kitTier },
+      pattern,
+    });
+
+    expect(projectFileSchema.safeParse(validProject(selection(12))).success).toBe(false);
+    expect(projectFileSchema.safeParse(validProject(selection(24))).success).toBe(false);
+    expect(projectFileSchema.safeParse(validProject(selection(0))).success).toBe(true);
+  });
+
   it('完整合法文件可解析', () => {
     expect(parseProjectFile(JSON.stringify(validProject())).ok).toBe(true);
   });
@@ -149,7 +238,9 @@ describe('项目文件（§5.3）', () => {
     const cases: Record<string, unknown>[] = [
       validProject({ version: 99 }),
       validProject({ format: 'other' }),
-      validProject({ palette: { kind: 'builtin', brand: 'Perler' } }),
+      validProject({
+        paletteSelection: { palette: { kind: 'builtin', brand: 'Perler' }, kitTier: 0 },
+      }),
       validProject({ name: '   ' }),
       validProject({ createdAt: '昨天' }),
       validProject({ pattern: { width: 2, height: 1, cells: [cell('#GGGGGG', null), transparentCell()] } }),
@@ -223,6 +314,56 @@ describe('自定义色板（E20）', () => {
     expect(customPaletteColorsSchema.safeParse([{ code: 'A', hex: '#FFF' }]).success).toBe(false);
     expect(customPaletteColorsSchema.safeParse([{ code: '', hex: '#FF0000' }]).success).toBe(false);
     expect(customPaletteColorsSchema.safeParse([{ code: 'X'.repeat(21), hex: '#FF0000' }]).success).toBe(false);
+  });
+
+  it('持久化前裁剪色号，并拒绝问号、UNKNOWN 与裁剪后空色号', () => {
+    expect(customPaletteColorsSchema.parse([{ code: '  a01  ', hex: '#FF0000' }])).toEqual([
+      { code: 'a01', hex: '#FF0000' },
+    ]);
+    for (const code of ['   ', '?', ' ? ', 'UNKNOWN', 'UNKNOWN_01', 'UNKNOWN-01', ' unknown-missing ']) {
+      expect(
+        customPaletteColorsSchema.safeParse([{ code, hex: '#FF0000' }]).success,
+        code,
+      ).toBe(false);
+    }
+  });
+
+  it('项目图纸中每个非透明、非 external 制作格的 code+hex 必须属于声明色板', () => {
+    const validBuiltin = validProject({
+      pattern: { width: 1, height: 1, cells: [cell('#faf4c8', ' a01 ')] },
+    });
+    const parsed = projectFileSchema.safeParse(validBuiltin);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.pattern.cells[0]).toMatchObject({ hex: '#faf4c8', code: 'a01' });
+    }
+
+    const fakeBuiltin = validProject({
+      pattern: { width: 1, height: 1, cells: [cell('#FAF4C8', 'FAKE')] },
+    });
+    expect(projectFileSchema.safeParse(fakeBuiltin).success).toBe(false);
+
+    const custom = validProject({
+      paletteSelection: {
+        palette: { kind: 'custom', colors: [{ code: '  Skin-1 ', hex: '#abcdef' }] },
+        kitTier: 0,
+      },
+      pattern: { width: 1, height: 1, cells: [cell('#ABCDEF', 'skin-1')] },
+    });
+    const customParsed = projectFileSchema.safeParse(custom);
+    expect(customParsed.success).toBe(true);
+    if (customParsed.success && customParsed.data.paletteSelection.palette.kind === 'custom') {
+      expect(customParsed.data.paletteSelection.palette.colors[0].code).toBe('Skin-1');
+    }
+
+    const externalReference = validProject({
+      pattern: {
+        width: 1,
+        height: 1,
+        cells: [{ ...cell('#FFFFFF', 'C01'), external: true }],
+      },
+    });
+    expect(projectFileSchema.safeParse(externalReference).success).toBe(true);
   });
 });
 

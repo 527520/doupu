@@ -13,11 +13,12 @@ const at = (second: number) => `2026-08-17T00:00:${String(second).padStart(2, '0
 
 function project(name: string, updatedAt: string): ProjectFile {
   return {
-    format: 'doupu-project', version: 2, engineVersion: '2.0.0', name,
+    format: 'doupu-project', version: 3, engineVersion: '2.0.0', name,
+    boardProfile: '5mm-29',
     createdAt: at(0), updatedAt,
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
     params: { targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant', brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8 },
-    pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'A', transparent: false }] },
+    pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'H07', transparent: false }] },
   };
 }
 

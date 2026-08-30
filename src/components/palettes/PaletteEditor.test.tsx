@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PaletteEditor, { nextAutoCode, parseHexList, validateRows, type EditorRow } from './PaletteEditor';
 import { zhCN } from '@/messages/zh-CN';
-import { BRANDS } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
+import { BRANDS } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
 
 const t = zhCN.palettes.editor;
@@ -102,32 +103,74 @@ describe('PaletteEditor 校验矩阵（E20）', () => {
 });
 
 describe('PaletteEditor 导入', () => {
-  it('粘贴导入：解析 hex 列表、跳过重复、自动补色号', () => {
+  it('粘贴导入：严格解析 hex 列表并自动补色号', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: t.pasteImport })); // 展开面板
-    fireEvent.change(screen.getByLabelText(t.pasteImport), { target: { value: '#112233\n223344\n#112233\ninvalid\n#AABBCC' } });
+    fireEvent.change(screen.getByLabelText(t.pasteImport), { target: { value: '#112233\n223344\n#AABBCC' } });
     const importButtons = screen.getAllByRole('button', { name: t.pasteImport });
     fireEvent.click(importButtons[importButtons.length - 1]); // 面板内「粘贴导入」按钮
-    // 初始 1 行 + 新增 3 行（#223344 自动补 #、#AABBCC、重复的 #112233 被去重）
+    // 初始 1 行 + 新增 3 行（#223344 自动补 #）
     expect(screen.getByLabelText(`${t.hex} 4`)).toBeTruthy();
     expect(screen.queryByLabelText(`${t.hex} 5`)).toBeNull();
   });
 
-  it('粘贴导入非法内容提示 importFailed', () => {
+  it('粘贴导入任一坏行会整批拒绝，保留原草稿并显示行号', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: t.pasteImport }));
-    fireEvent.change(screen.getByLabelText(t.pasteImport), { target: { value: 'not-a-hex' } });
+    fireEvent.change(screen.getByLabelText(t.pasteImport), { target: { value: '#112233\nnot-a-hex\n#445566' } });
     const importButtons = screen.getAllByRole('button', { name: t.pasteImport });
     fireEvent.click(importButtons[importButtons.length - 1]);
-    expect(screen.getByText(t.importFailed)).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent('第 2 行');
+    expect(screen.getByLabelText(t.pasteImport)).toHaveValue('#112233\nnot-a-hex\n#445566');
+    expect(screen.queryByLabelText(`${t.hex} 2`)).toBeNull();
   });
 
-  it('复制自内置品牌：确认后替换为 291 行（含色号）', async () => {
+  it('粘贴导入 code,hex CSV：保留真实色号并忽略附加列', () => {
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: t.pasteImport }));
+    fireEvent.change(screen.getByLabelText(t.pasteImport), {
+      target: { value: 'notes,hex,code\n"warm, skin",#112233,A01\nplain,445566,B02' },
+    });
+    const importButtons = screen.getAllByRole('button', { name: t.pasteImport });
+    fireEvent.click(importButtons[importButtons.length - 1]);
+    expect(screen.getByLabelText(`${t.code} 2`)).toHaveValue('A01');
+    expect(screen.getByLabelText(`${t.hex} 2`)).toHaveValue('#112233');
+    expect(screen.getByLabelText(`${t.code} 3`)).toHaveValue('B02');
+  });
+
+  it('文件导入共用同一严格解析器，CSV MIME 可选且失败不改草稿', async () => {
+    setup();
+    const input = screen.getByLabelText(t.fileImport) as HTMLInputElement;
+    expect(input.accept).toContain('text/csv');
+    const file = { text: vi.fn().mockResolvedValue('code,hex\nA01,broken') } as unknown as File;
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('第 2 行'));
+    expect(screen.queryByLabelText(`${t.hex} 2`)).toBeNull();
+  });
+
+  it('文件读取期间继续编辑，导入仍以最新草稿做重复校验', async () => {
+    setup();
+    let resolveText!: (value: string) => void;
+    const file = {
+      text: vi.fn(() => new Promise<string>((resolve) => { resolveText = resolve; })),
+    } as unknown as File;
+    fireEvent.change(screen.getByLabelText(t.fileImport), { target: { files: [file] } });
+    changeRow(0, { code: 'A01' });
+    resolveText('code,hex\nA01,#112233');
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('与当前色板重复'));
+    expect(screen.queryByLabelText(`${t.hex} 2`)).toBeNull();
+  });
+
+  it('复制自内置色板：只复制可生成色，保留真实色号且不造 C001', async () => {
+    const builtin = getBuiltinPalette('漫漫');
     setup({ initialColors: [{ code: 'A', hex: '#FF0000' }, { code: 'B', hex: '#00FF00' }] });
-    fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: 'MARD' } });
+    fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: builtin.id } });
     fireEvent.click(await screen.findByRole('button', { name: t.copyConfirmAction }));
-    await waitFor(() => expect(screen.getByLabelText(t.colorsCounter(291))).toBeTruthy());
-    expect((screen.getByLabelText(`${t.code} 1`) as HTMLInputElement).value).toBe('A01');
+    await waitFor(() => expect(screen.getByLabelText(t.colorsCounter(builtin.engineColorCount))).toBeTruthy());
+    const copiedCodes = screen
+      .getAllByLabelText(new RegExp(`^${t.code} \\d+$`))
+      .map((input) => (input as HTMLInputElement).value);
+    expect(copiedCodes).toEqual(builtin.engineColors.map((color) => color.code));
   });
 
   it('复制自品牌在确认被拒时不覆盖', async () => {

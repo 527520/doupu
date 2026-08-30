@@ -1,245 +1,591 @@
 'use client';
 
-/**
- * 跟拼视图（G-1/G-2）：照着图纸一颗一颗拼时用的界面。
- *
- * 与「预览」「修补」的区别：这里不改图纸，只记录「拼到哪儿了」。
- * 设计要点（来自竞品与论坛反馈）：
- * - 点格子标记已拼／取消，已拼格子压暗并打勾；
- * - 整行标记：拼豆是一行一行推进的，逐格点 29 次不现实；
- * - 行列坐标常显（小屏尤其需要，否则数格子极易串行）；
- * - 「跳到下一未完成行」把当前行高亮，放下几天再回来也能立刻续上；
- * - 进度只存本机（Q13a）：不动项目文件格式与同步协议。
- */
+/* eslint-disable react-hooks/refs -- pointer/camera state must stay synchronous between high-frequency events. */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { zhCN } from '@/messages/zh-CN';
+import FingerLoupe, { type LoupeTarget } from '@/components/canvas/FingerLoupe';
+import GridViewportControls from '@/components/canvas/GridViewportControls';
+import useGridViewport from '@/components/canvas/useGridViewport';
+import Icon from '@/components/ui/Icon';
 import Notice from '@/components/ui/Notice';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
-import { contrastColor } from '@/lib/render/layout';
-import { BOARD_SIZE } from '@/lib/export/pdfLayout';
+import { zhCN } from '@/messages/zh-CN';
+import { contrastColor, prefersLightContrast, BOARD_SIZE } from '@/lib/render/layout';
+import { readCanvasTheme } from '@/lib/render/canvasTheme';
+import {
+  panGridCamera,
+  visibleGridRange,
+  zoomGridCameraAt,
+  type GridCamera,
+} from '@/lib/render/gridViewport';
 import {
   clearProgress,
-  setRowDone,
+  findNextStitchTarget,
+  getBoardRect,
+  isBoardRowDone,
+  isStitchableCell,
+  setBoardRowDone,
   summarizeProgress,
   toggleCell,
   type StitchProgress,
+  type StitchTarget,
 } from '@/lib/progress/stitchProgress';
+import {
+  canRedoStitchHistory,
+  canUndoStitchHistory,
+  commitStitchHistory,
+  createStitchHistory,
+  redoStitchHistory,
+  undoStitchHistory,
+  type StitchHistory,
+} from '@/lib/progress/stitchHistory';
 import type { Pattern } from '@/lib/types';
 
 interface Props {
   pattern: Pattern;
   progress: StitchProgress;
   onChange: (next: StitchProgress) => void;
+  boardSize?: number;
+  layout?: 'desktop' | 'mobile';
+  /** Deterministic component-test seam; production always measures the viewport. */
+  testCellPx?: number;
 }
 
-/** 格子显示尺寸：小屏也要能点得中（≥18px），大图纸再往下压。 */
-const MIN_CELL_PX = 18;
-const MAX_CELL_PX = 30;
-/** 坐标尺（行号/列号）占用的像素宽高 */
-const RULER_PX = 22;
+type InteractionMode = 'pan' | 'mark';
 
-export default function StitchView({ pattern, progress, onChange }: Props) {
+interface FocusTarget {
+  boardRow: number;
+  boardCol: number;
+  localRow: number;
+  row: number;
+  col: number;
+}
+
+type BoardRowTarget = FocusTarget;
+
+type Gesture =
+  | { kind: 'idle' }
+  | {
+      kind: 'candidate';
+      pointerId: number;
+      startX: number;
+      startY: number;
+      lastX: number;
+      lastY: number;
+      hit: { row: number; col: number } | null;
+    }
+  | { kind: 'pan'; pointerId: number; lastX: number; lastY: number }
+  | {
+      kind: 'pinch';
+      ids: [number, number];
+      startDistance: number;
+      startCenter: { x: number; y: number };
+      startCamera: GridCamera;
+    };
+
+const TAP_MOVE_THRESHOLD_PX = 8;
+const WORK_CELL_PX = 20;
+const OVERVIEW_SIZE = 116;
+
+function sameProgress(a: StitchProgress, b: StitchProgress): boolean {
+  if (a.version !== b.version || a.width !== b.width || a.height !== b.height || a.done.length !== b.done.length) return false;
+  for (let index = 0; index < a.done.length; index += 1) {
+    if (a.done[index] !== b.done[index]) return false;
+  }
+  return true;
+}
+
+function focusFromTarget(target: StitchTarget | BoardRowTarget): FocusTarget {
+  return {
+    boardRow: target.boardRow,
+    boardCol: target.boardCol,
+    localRow: target.localRow,
+    row: target.row,
+    col: target.col,
+  };
+}
+
+function constrainFocus(
+  focus: FocusTarget,
+  patternWidth: number,
+  patternHeight: number,
+  boardSize: number,
+): FocusTarget {
+  const row = Math.max(0, Math.min(patternHeight - 1, focus.row));
+  const col = Math.max(0, Math.min(patternWidth - 1, focus.col));
+  return {
+    boardRow: Math.floor(row / boardSize),
+    boardCol: Math.floor(col / boardSize),
+    localRow: row % boardSize,
+    row,
+    col,
+  };
+}
+
+function buildBoardRows(pattern: Pattern, boardSize: number): BoardRowTarget[] {
+  const rows: BoardRowTarget[] = [];
+  const boardRows = Math.ceil(pattern.height / boardSize);
+  const boardCols = Math.ceil(pattern.width / boardSize);
+  for (let boardRow = 0; boardRow < boardRows; boardRow += 1) {
+    for (let boardCol = 0; boardCol < boardCols; boardCol += 1) {
+      const rect = getBoardRect(pattern.width, pattern.height, boardRow, boardCol, boardSize);
+      if (!rect) continue;
+      for (let row = rect.rowStart; row < rect.rowEndExclusive; row += 1) {
+        let firstCol: number | null = null;
+        for (let col = rect.colStart; col < rect.colEndExclusive; col += 1) {
+          if (isStitchableCell(pattern.cells[row * pattern.width + col])) {
+            firstCol = col;
+            break;
+          }
+        }
+        if (firstCol !== null) {
+          rows.push({ boardRow, boardCol, localRow: row - rect.rowStart, row, col: firstCol });
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+export default function StitchView({ pattern, progress, onChange, boardSize = BOARD_SIZE, layout = 'desktop', testCellPx }: Props) {
   const t = zhCN.stitch;
   const { confirm, confirmDialog } = useConfirm();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [focusRow, setFocusRow] = useState(0);
-  const [cellPx, setCellPx] = useState(MIN_CELL_PX + 4);
+  const overviewRef = useRef<HTMLCanvasElement>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const gestureRef = useRef<Gesture>({ kind: 'idle' });
+  const spacePressedRef = useRef(false);
+  const workScaleAppliedRef = useRef(false);
+  const boardRows = useMemo(() => buildBoardRows(pattern, boardSize), [boardSize, pattern]);
+  const initialTarget = useMemo(
+    () => findNextStitchTarget(progress, pattern.cells, boardSize) ?? boardRows[0] ?? {
+      boardRow: 0,
+      boardCol: 0,
+      localRow: 0,
+      row: 0,
+      col: 0,
+    },
+    [boardRows, boardSize, pattern.cells, progress],
+  );
+  const [focus, setFocus] = useState<FocusTarget>(() => focusFromTarget(initialTarget));
+  const resolvedFocus = useMemo(
+    () => constrainFocus(focus, pattern.width, pattern.height, boardSize),
+    [boardSize, focus, pattern.height, pattern.width],
+  );
+  const [mode, setMode] = useState<InteractionMode>(layout === 'mobile' ? 'pan' : 'mark');
+  const [loupe, setLoupe] = useState<LoupeTarget | null>(null);
+  const [overviewOpen, setOverviewOpen] = useState(layout !== 'mobile');
+  const [history, setHistory] = useState<StitchHistory>(() => createStitchHistory(progress));
+  const historyRef = useRef(history);
+  const activeProgress = history.current;
+  const summary = useMemo(() => summarizeProgress(activeProgress, pattern.cells), [activeProgress, pattern.cells]);
+  const viewport = useGridViewport({
+    patternWidth: pattern.width,
+    patternHeight: pattern.height,
+    boardSize,
+    initialBoard: { boardRow: initialTarget.boardRow, boardCol: initialTarget.boardCol },
+    testCellPx,
+  });
+  const readCamera = viewport.readCamera;
 
-  const summary = useMemo(() => summarizeProgress(progress, pattern.cells), [progress, pattern.cells]);
+  useEffect(() => { historyRef.current = history; }, [history]);
 
-  const width = pattern.width * cellPx + RULER_PX;
-  const height = pattern.height * cellPx + RULER_PX;
+  useEffect(() => {
+    if (sameProgress(progress, historyRef.current.current)) return;
+    const next = createStitchHistory(progress);
+    historyRef.current = next;
+    setHistory(next);
+  }, [progress]);
+
+  useEffect(() => {
+    if (layout !== 'mobile' || workScaleAppliedRef.current || viewport.size.width <= 1) return;
+    workScaleAppliedRef.current = true;
+    if (viewport.camera.cellPx < WORK_CELL_PX) {
+      viewport.zoomAt(WORK_CELL_PX, viewport.size.width / 2, viewport.size.height / 2);
+      viewport.centerCell(resolvedFocus.row, resolvedFocus.col);
+    }
+  }, [layout, resolvedFocus.col, resolvedFocus.row, viewport]);
+
+  const commitProgress = useCallback((next: StitchProgress): void => {
+    const current = historyRef.current;
+    if (next === current.current || sameProgress(next, current.current)) return;
+    const nextHistory = commitStitchHistory(current, next);
+    historyRef.current = nextHistory;
+    setHistory(nextHistory);
+    onChange(nextHistory.current);
+  }, [onChange]);
+
+  const selectFocus = useCallback((row: number, col: number, center = false): void => {
+    setFocus({
+      boardRow: Math.floor(row / boardSize),
+      boardCol: Math.floor(col / boardSize),
+      localRow: row % boardSize,
+      row,
+      col,
+    });
+    if (center) viewport.centerCell(row, col);
+  }, [boardSize, viewport]);
+
+  const focusBoardRow = useCallback((target: BoardRowTarget): void => {
+    setFocus(focusFromTarget(target));
+    viewport.centerCell(target.row, target.col);
+  }, [viewport]);
+
+  const moveBoardRow = useCallback((delta: number): void => {
+    if (boardRows.length === 0) return;
+    let index = boardRows.findIndex((entry) => (
+      entry.boardRow === resolvedFocus.boardRow
+      && entry.boardCol === resolvedFocus.boardCol
+      && entry.localRow === resolvedFocus.localRow
+    ));
+    if (index < 0) index = 0;
+    focusBoardRow(boardRows[Math.max(0, Math.min(boardRows.length - 1, index + delta))]);
+  }, [boardRows, focusBoardRow, resolvedFocus]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
+    const width = Math.max(1, Math.floor(viewport.size.width));
+    const height = Math.max(1, Math.floor(viewport.size.height));
+    const dpr = typeof window === 'undefined' ? 1 : Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.height = Math.max(1, Math.floor(height * dpr));
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const theme = readCanvasTheme(canvas);
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = theme.surface;
+    context.fillRect(0, 0, width, height);
 
-    // 坐标尺（G-2）：列号在上、行号在左，常显不折叠
-    ctx.font = `${Math.max(9, Math.floor(cellPx * 0.42))}px system-ui, sans-serif`;
-    ctx.fillStyle = '#6b6276';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (let col = 0; col < pattern.width; col++) {
-      // 每 5 列与每块板的首列标数字，避免小格子上文字糊成一片
-      if ((col + 1) % 5 !== 0 && col % BOARD_SIZE !== 0) continue;
-      ctx.fillText(String(col + 1), RULER_PX + col * cellPx + cellPx / 2, RULER_PX / 2);
+    const { cellPx, offsetX, offsetY } = viewport.camera;
+    const range = visibleGridRange(viewport.camera, pattern.width, pattern.height, viewport.size);
+    const activeRect = getBoardRect(pattern.width, pattern.height, resolvedFocus.boardRow, resolvedFocus.boardCol, boardSize);
+    if (activeRect) {
+      context.fillStyle = theme.activeRow;
+      context.fillRect(offsetX + activeRect.colStart * cellPx, offsetY + resolvedFocus.row * cellPx, activeRect.width * cellPx, cellPx);
     }
-    ctx.textAlign = 'right';
-    for (let row = 0; row < pattern.height; row++) {
-      if ((row + 1) % 5 !== 0 && row % BOARD_SIZE !== 0 && row !== focusRow) continue;
-      ctx.fillStyle = row === focusRow ? '#b84f78' : '#6b6276';
-      ctx.fillText(String(row + 1), RULER_PX - 4, RULER_PX + row * cellPx + cellPx / 2);
-    }
-
-    // 格子
-    for (let row = 0; row < pattern.height; row++) {
-      for (let col = 0; col < pattern.width; col++) {
+    context.font = `${Math.max(8, Math.min(12, cellPx * 0.38))}px ui-monospace, monospace`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    for (let row = range.rowStart; row < range.rowEnd; row += 1) {
+      for (let col = range.colStart; col < range.colEnd; col += 1) {
         const index = row * pattern.width + col;
         const cell = pattern.cells[index];
-        const x = RULER_PX + col * cellPx;
-        const y = RULER_PX + row * cellPx;
-        if (!cell || cell.transparent || cell.external || !cell.hex) continue;
-        const done = progress.done[index] === 1;
-        ctx.globalAlpha = done ? 0.28 : 1;
-        ctx.fillStyle = cell.hex;
-        ctx.fillRect(x, y, cellPx, cellPx);
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
-
-        if (done) {
-          // 已拼：打勾（用对比色，浅底黑勾、深底白勾）
-          ctx.strokeStyle = contrastColor(cell.hex) === '#000000' ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.85)';
-          ctx.lineWidth = Math.max(1.5, cellPx * 0.12);
-          ctx.beginPath();
-          ctx.moveTo(x + cellPx * 0.24, y + cellPx * 0.52);
-          ctx.lineTo(x + cellPx * 0.44, y + cellPx * 0.72);
-          ctx.lineTo(x + cellPx * 0.78, y + cellPx * 0.3);
-          ctx.stroke();
-        } else if (cellPx >= 20 && cell.code) {
-          ctx.fillStyle = contrastColor(cell.hex);
-          ctx.textAlign = 'center';
-          ctx.fillText(cell.code, x + cellPx / 2, y + cellPx / 2);
+        if (!isStitchableCell(cell)) continue;
+        const x = offsetX + col * cellPx;
+        const y = offsetY + row * cellPx;
+        const done = activeProgress.done[index] === 1;
+        context.globalAlpha = done ? 0.25 : 1;
+        context.fillStyle = cell.hex!;
+        context.fillRect(x, y, cellPx, cellPx);
+        context.globalAlpha = 1;
+        if (cellPx >= 4) {
+          context.strokeStyle = theme.grid;
+          context.lineWidth = 1;
+          context.strokeRect(x + 0.5, y + 0.5, Math.max(0, cellPx - 1), Math.max(0, cellPx - 1));
+        }
+        if (done && cellPx >= 10) {
+          context.strokeStyle = prefersLightContrast(cell.hex!) ? theme.doneLight : theme.doneDark;
+          context.lineWidth = Math.max(1.5, cellPx * 0.11);
+          context.beginPath();
+          context.moveTo(x + cellPx * 0.24, y + cellPx * 0.52);
+          context.lineTo(x + cellPx * 0.43, y + cellPx * 0.7);
+          context.lineTo(x + cellPx * 0.77, y + cellPx * 0.3);
+          context.stroke();
+        } else if (cellPx >= 18 && cell.code) {
+          context.fillStyle = contrastColor(cell.hex!);
+          context.fillText(cell.code, x + cellPx / 2, y + cellPx / 2);
         }
       }
     }
-
-    // 板缝线（每 29 格）：与打印版一致，方便按板对照
-    ctx.strokeStyle = 'rgba(75,67,86,0.55)';
-    ctx.lineWidth = 1.5;
-    for (let col = BOARD_SIZE; col < pattern.width; col += BOARD_SIZE) {
-      ctx.beginPath();
-      ctx.moveTo(RULER_PX + col * cellPx, RULER_PX);
-      ctx.lineTo(RULER_PX + col * cellPx, height);
-      ctx.stroke();
+    context.strokeStyle = theme.seam;
+    context.lineWidth = 1.5;
+    for (let col = boardSize; col < pattern.width; col += boardSize) {
+      const x = offsetX + col * cellPx;
+      if (x < -2 || x > width + 2) continue;
+      context.beginPath(); context.moveTo(x, 0); context.lineTo(x, height); context.stroke();
     }
-    for (let row = BOARD_SIZE; row < pattern.height; row += BOARD_SIZE) {
-      ctx.beginPath();
-      ctx.moveTo(RULER_PX, RULER_PX + row * cellPx);
-      ctx.lineTo(width, RULER_PX + row * cellPx);
-      ctx.stroke();
+    for (let row = boardSize; row < pattern.height; row += boardSize) {
+      const y = offsetY + row * cellPx;
+      if (y < -2 || y > height + 2) continue;
+      context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke();
     }
+    if (activeRect) {
+      context.strokeStyle = theme.lilac;
+      context.lineWidth = 2;
+      context.strokeRect(offsetX + activeRect.colStart * cellPx, offsetY + activeRect.rowStart * cellPx, activeRect.width * cellPx, activeRect.height * cellPx);
+      context.strokeStyle = theme.primary;
+      context.lineWidth = 2.5;
+      context.strokeRect(offsetX + activeRect.colStart * cellPx, offsetY + resolvedFocus.row * cellPx, activeRect.width * cellPx, cellPx);
+    }
+  }, [activeProgress, boardSize, pattern, resolvedFocus, viewport.camera, viewport.size]);
 
-    // 当前行高亮：放下几天回来也能立刻定位
-    ctx.strokeStyle = '#b84f78';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(RULER_PX, RULER_PX + focusRow * cellPx, pattern.width * cellPx, cellPx);
-  }, [pattern, progress, cellPx, focusRow, width, height]);
+  useEffect(() => {
+    const canvas = overviewRef.current;
+    if (!canvas) return;
+    const dpr = typeof window === 'undefined' ? 1 : Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = OVERVIEW_SIZE * dpr;
+    canvas.height = OVERVIEW_SIZE * dpr;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const theme = readCanvasTheme(canvas);
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, OVERVIEW_SIZE, OVERVIEW_SIZE);
+    context.fillStyle = theme.surface;
+    context.fillRect(0, 0, OVERVIEW_SIZE, OVERVIEW_SIZE);
+    const scale = Math.min((OVERVIEW_SIZE - 8) / pattern.width, (OVERVIEW_SIZE - 8) / pattern.height);
+    const offsetX = (OVERVIEW_SIZE - pattern.width * scale) / 2;
+    const offsetY = (OVERVIEW_SIZE - pattern.height * scale) / 2;
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const index = row * pattern.width + col;
+        const cell = pattern.cells[index];
+        if (!isStitchableCell(cell)) continue;
+        context.globalAlpha = activeProgress.done[index] === 1 ? 0.24 : 0.92;
+        context.fillStyle = cell.hex!;
+        context.fillRect(offsetX + col * scale, offsetY + row * scale, Math.max(1, scale), Math.max(1, scale));
+      }
+    }
+    context.globalAlpha = 1;
+    const rect = getBoardRect(pattern.width, pattern.height, resolvedFocus.boardRow, resolvedFocus.boardCol, boardSize);
+    if (rect) {
+      context.strokeStyle = theme.primary;
+      context.lineWidth = 2;
+      context.strokeRect(offsetX + rect.colStart * scale, offsetY + rect.rowStart * scale, rect.width * scale, rect.height * scale);
+    }
+    const worldLeft = Math.max(0, -viewport.camera.offsetX / viewport.camera.cellPx);
+    const worldTop = Math.max(0, -viewport.camera.offsetY / viewport.camera.cellPx);
+    const worldRight = Math.min(pattern.width, (viewport.size.width - viewport.camera.offsetX) / viewport.camera.cellPx);
+    const worldBottom = Math.min(pattern.height, (viewport.size.height - viewport.camera.offsetY) / viewport.camera.cellPx);
+    if (worldRight > worldLeft && worldBottom > worldTop) {
+      context.strokeStyle = theme.viewportFrame;
+      context.lineWidth = 1.5;
+      context.strokeRect(
+        offsetX + worldLeft * scale,
+        offsetY + worldTop * scale,
+        (worldRight - worldLeft) * scale,
+        (worldBottom - worldTop) * scale,
+      );
+    }
+  }, [activeProgress, boardSize, pattern, resolvedFocus.boardCol, resolvedFocus.boardRow, viewport.camera, viewport.size]);
 
-  const cellFromEvent = useCallback((event: React.PointerEvent<HTMLCanvasElement>): { row: number; col: number } | null => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const bounds = canvas.getBoundingClientRect();
-    const x = event.clientX - bounds.left - RULER_PX;
-    const y = event.clientY - bounds.top - RULER_PX;
-    if (x < 0 || y < 0) return null;
-    const col = Math.floor(x / cellPx);
-    const row = Math.floor(y / cellPx);
-    if (col < 0 || row < 0 || col >= pattern.width || row >= pattern.height) return null;
-    return { row, col };
-  }, [cellPx, pattern.height, pattern.width]);
+  const startPinch = useCallback((): void => {
+    const entries = [...pointersRef.current.entries()];
+    if (entries.length < 2) return;
+    const [[firstId, first], [secondId, second]] = entries;
+    setLoupe(null);
+    gestureRef.current = {
+      kind: 'pinch',
+      ids: [firstId, secondId],
+      startDistance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
+      startCenter: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+      startCamera: readCamera(),
+    };
+  }, [readCamera]);
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
-    const hit = cellFromEvent(event);
-    if (!hit) return;
-    setFocusRow(hit.row);
-    onChange(toggleCell(progress, hit.row, hit.col));
+    const point = viewport.localPoint(event.clientX, event.clientY);
+    pointersRef.current.set(event.pointerId, point);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional */ }
+    if (pointersRef.current.size >= 2) { startPinch(); return; }
+    const rawHit = viewport.cellAtClientPoint(event.clientX, event.clientY);
+    const hit = rawHit && isStitchableCell(pattern.cells[rawHit.row * pattern.width + rawHit.col]) ? rawHit : null;
+    if (hit) selectFocus(hit.row, hit.col);
+    const wantsPan = mode === 'pan' || event.button === 1 || spacePressedRef.current;
+    gestureRef.current = wantsPan
+      ? { kind: 'pan', pointerId: event.pointerId, lastX: point.x, lastY: point.y }
+      : { kind: 'candidate', pointerId: event.pointerId, startX: point.x, startY: point.y, lastX: point.x, lastY: point.y, hit };
+    if (!wantsPan && hit && (event.pointerType === 'touch' || event.pointerType === 'pen')) setLoupe({ ...hit, x: point.x, y: point.y });
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    const point = viewport.localPoint(event.clientX, event.clientY);
+    if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, point);
+    if (pointersRef.current.size >= 2) {
+      if (gestureRef.current.kind !== 'pinch') startPinch();
+      const gesture = gestureRef.current;
+      if (gesture.kind !== 'pinch') return;
+      const first = pointersRef.current.get(gesture.ids[0]);
+      const second = pointersRef.current.get(gesture.ids[1]);
+      if (!first || !second) return;
+      const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y));
+      const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+      const zoomed = zoomGridCameraAt(gesture.startCamera, gesture.startCamera.cellPx * (distance / gesture.startDistance), gesture.startCenter.x, gesture.startCenter.y);
+      viewport.applyCamera(panGridCamera(zoomed, center.x - gesture.startCenter.x, center.y - gesture.startCenter.y));
+      return;
+    }
+    const gesture = gestureRef.current;
+    if (gesture.kind === 'pan' && gesture.pointerId === event.pointerId) {
+      viewport.panBy(point.x - gesture.lastX, point.y - gesture.lastY);
+      gesture.lastX = point.x;
+      gesture.lastY = point.y;
+      return;
+    }
+    if (gesture.kind !== 'candidate' || gesture.pointerId !== event.pointerId) return;
+    if (Math.hypot(point.x - gesture.startX, point.y - gesture.startY) > TAP_MOVE_THRESHOLD_PX) {
+      setLoupe(null);
+      viewport.panBy(point.x - gesture.lastX, point.y - gesture.lastY);
+      gestureRef.current = { kind: 'pan', pointerId: event.pointerId, lastX: point.x, lastY: point.y };
+      return;
+    }
+    const hit = viewport.cellAtClientPoint(event.clientX, event.clientY);
+    if (hit && (event.pointerType === 'touch' || event.pointerType === 'pen')) setLoupe({ ...hit, x: point.x, y: point.y });
+  };
+
+  const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    const gesture = gestureRef.current;
+    const point = viewport.localPoint(event.clientX, event.clientY);
+    pointersRef.current.delete(event.pointerId);
+    setLoupe(null);
+    if (gesture.kind === 'candidate' && gesture.pointerId === event.pointerId) {
+      const hit = viewport.cellAtClientPoint(event.clientX, event.clientY);
+      const stayedStill = Math.hypot(point.x - gesture.startX, point.y - gesture.startY) <= TAP_MOVE_THRESHOLD_PX;
+      if (mode === 'mark' && stayedStill && hit && gesture.hit && hit.row === gesture.hit.row && hit.col === gesture.hit.col && isStitchableCell(pattern.cells[hit.row * pattern.width + hit.col])) {
+        commitProgress(toggleCell(historyRef.current.current, hit.row, hit.col));
+        selectFocus(hit.row, hit.col);
+      }
+    }
+    gestureRef.current = { kind: 'idle' };
+  };
+
+  const onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    pointersRef.current.delete(event.pointerId);
+    setLoupe(null);
+    gestureRef.current = { kind: 'idle' };
+  };
+
+  const onWheel = (event: React.WheelEvent<HTMLCanvasElement>): void => {
+    event.preventDefault();
+    if (event.ctrlKey || event.metaKey) {
+      const point = viewport.localPoint(event.clientX, event.clientY);
+      viewport.zoomAt(readCamera().cellPx * (event.deltaY < 0 ? 1.14 : 0.88), point.x, point.y);
+    } else {
+      viewport.panBy(-event.deltaX, -event.deltaY);
+    }
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === ' ') {
+      spacePressedRef.current = true;
+      if (event.target === event.currentTarget) event.preventDefault();
+      return;
+    }
+    if (event.key === 'ArrowUp') { event.preventDefault(); moveBoardRow(-1); }
+    else if (event.key === 'ArrowDown') { event.preventDefault(); moveBoardRow(1); }
+    else if (event.key === 'ArrowLeft') { event.preventDefault(); selectFocus(resolvedFocus.row, Math.max(0, resolvedFocus.col - 1), true); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); selectFocus(resolvedFocus.row, Math.min(pattern.width - 1, resolvedFocus.col + 1), true); }
+    else if (event.key === 'Enter' && mode === 'mark') {
+      event.preventDefault();
+      if (isStitchableCell(pattern.cells[resolvedFocus.row * pattern.width + resolvedFocus.col])) commitProgress(toggleCell(historyRef.current.current, resolvedFocus.row, resolvedFocus.col));
+    }
+  };
+
+  const onOverviewClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * (OVERVIEW_SIZE / Math.max(1, rect.width));
+    const y = (event.clientY - rect.top) * (OVERVIEW_SIZE / Math.max(1, rect.height));
+    const scale = Math.min((OVERVIEW_SIZE - 8) / pattern.width, (OVERVIEW_SIZE - 8) / pattern.height);
+    const offsetX = (OVERVIEW_SIZE - pattern.width * scale) / 2;
+    const offsetY = (OVERVIEW_SIZE - pattern.height * scale) / 2;
+    const col = Math.floor((x - offsetX) / scale);
+    const row = Math.floor((y - offsetY) / scale);
+    if (row < 0 || col < 0 || row >= pattern.height || col >= pattern.width) return;
+    const boardRow = Math.floor(row / boardSize);
+    const boardCol = Math.floor(col / boardSize);
+    const target = boardRows.find((entry) => entry.boardRow === boardRow && entry.boardCol === boardCol);
+    if (!target) return;
+    setFocus(focusFromTarget(target));
+    viewport.fitBoard(boardRow, boardCol);
+    if (layout === 'mobile') setOverviewOpen(false);
   };
 
   const markRow = (value: boolean): void => {
-    onChange(setRowDone(progress, focusRow, value));
-    // 标记整行完成后顺势前进一行——这是用户点这个按钮时的下一步动作。
-    // （只在这里前进，不做「进度变化就自动跳」，否则会在用户还在本行时把视线带走。）
-    if (value && focusRow < pattern.height - 1) setFocusRow(focusRow + 1);
+    const next = setBoardRowDone(
+      historyRef.current.current,
+      pattern.cells,
+      resolvedFocus.boardRow,
+      resolvedFocus.boardCol,
+      resolvedFocus.localRow,
+      value,
+      new Date(),
+      boardSize,
+    );
+    commitProgress(next);
+    if (value) moveBoardRow(1);
+  };
+
+  const undo = (): void => {
+    const next = undoStitchHistory(historyRef.current);
+    if (next === historyRef.current) return;
+    historyRef.current = next;
+    setHistory(next);
+    onChange(next.current);
+  };
+
+  const redo = (): void => {
+    const next = redoStitchHistory(historyRef.current);
+    if (next === historyRef.current) return;
+    historyRef.current = next;
+    setHistory(next);
+    onChange(next.current);
   };
 
   const reset = async (): Promise<void> => {
-    const ok = await confirm({
-      title: t.resetTitle,
-      message: t.resetMessage,
-      confirmLabel: t.resetAction,
-      danger: true,
-    });
-    if (ok) onChange(clearProgress(progress));
+    const ok = await confirm({ title: t.resetTitle, message: t.resetMessage, confirmLabel: t.resetAction, danger: true });
+    if (ok) commitProgress(clearProgress(historyRef.current.current));
   };
 
+  const rowDone = isBoardRowDone(activeProgress, pattern.cells, resolvedFocus.boardRow, resolvedFocus.boardCol, resolvedFocus.localRow, boardSize);
+  const boardCols = Math.max(1, Math.ceil(pattern.width / boardSize));
+  const boardCount = boardCols * Math.max(1, Math.ceil(pattern.height / boardSize));
+  const boardNumber = resolvedFocus.boardRow * boardCols + resolvedFocus.boardCol + 1;
+  const nextPending = findNextStitchTarget(activeProgress, pattern.cells, boardSize);
+
   return (
-    <section aria-label={t.title} className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-        <p role="status" className="font-medium text-ink">
-          {t.progress(summary.doneCount, summary.total, summary.percent)}
-        </p>
-        <span className="text-xs text-ink-soft">{t.rowLabel(focusRow + 1, pattern.height)}</span>
+    <section aria-label={t.title} className={`stitch-studio is-${layout}`}>
+      <header className="stitch-status-bar">
+        <div><span>{t.boardLabel(boardNumber, boardCount)}</span><strong>{t.localRowLabel(resolvedFocus.localRow + 1)}</strong></div>
+        <span className="sr-only">{t.rowLabel(resolvedFocus.row + 1, pattern.height)}</span>
+        <p role="status">{t.progress(summary.doneCount, summary.total, summary.percent)}</p>
+        <progress value={summary.percent} max={100} aria-label={t.progressAria} />
+      </header>
+
+      <div className="stitch-viewport-layout">
+        <div ref={viewport.viewportRef} tabIndex={0} onKeyDown={onKeyDown} onKeyUp={(event) => { if (event.key === ' ') spacePressedRef.current = false; }} onBlur={() => { spacePressedRef.current = false; }} className="grid-canvas-viewport stitch-canvas-viewport" aria-label={t.canvasRegion}>
+          <canvas ref={canvasRef} role="img" aria-label={t.canvasAria(pattern.width, pattern.height, summary.percent)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel} onWheel={onWheel} style={{ touchAction: 'none', cursor: mode === 'pan' ? 'grab' : 'crosshair' }} />
+          <span className="grid-coordinate-chip is-row">{t.rowCoordinate(resolvedFocus.row + 1)}</span>
+          <span className="grid-coordinate-chip is-col">{t.colCoordinate(resolvedFocus.col + 1)}</span>
+          <GridViewportControls cellPx={viewport.camera.cellPx} onZoomOut={() => viewport.zoomAt(readCamera().cellPx * 0.8, viewport.size.width / 2, viewport.size.height / 2)} onZoomIn={() => viewport.zoomAt(readCamera().cellPx * 1.25, viewport.size.width / 2, viewport.size.height / 2)} onFitBoard={() => viewport.fitBoard(resolvedFocus.boardRow, resolvedFocus.boardCol)} onFitPattern={viewport.fitPattern} />
+          <FingerLoupe pattern={pattern} target={loupe} viewportWidth={viewport.size.width} viewportHeight={viewport.size.height} done={activeProgress.done} />
+        </div>
+
+        <aside className={`stitch-overview${overviewOpen ? ' is-open' : ''}`} aria-label={t.overviewTitle}>
+          <header><strong>{t.overviewTitle}</strong>{layout === 'mobile' && <button type="button" onClick={() => setOverviewOpen(false)} aria-label={zhCN.common.close}>×</button>}</header>
+          <canvas ref={overviewRef} onClick={onOverviewClick} width={OVERVIEW_SIZE} height={OVERVIEW_SIZE} role="img" aria-label={t.overviewHint} />
+          <p>{t.overviewHint}</p>
+          <button type="button" className="btn-outline btn-xs" onClick={() => { if (!nextPending) return; setFocus(focusFromTarget(nextPending)); viewport.fitBoard(nextPending.boardRow, nextPending.boardCol); }} disabled={!nextPending}>{t.jumpPending}</button>
+          <button type="button" className="btn-danger-outline btn-xs" onClick={() => void reset()}>{t.reset}</button>
+        </aside>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => markRow(true)} className="btn-primary btn-sm">
-          {t.markRowDone}
-        </button>
-        <button type="button" onClick={() => markRow(false)} className="btn-outline btn-sm">
-          {t.markRowUndone}
-        </button>
-        <button
-          type="button"
-          onClick={() => setFocusRow((row) => Math.max(0, row - 1))}
-          className="btn-outline btn-xs"
-        >
-          {t.prevRow}
-        </button>
-        <button
-          type="button"
-          onClick={() => setFocusRow((row) => Math.min(pattern.height - 1, row + 1))}
-          className="btn-outline btn-xs"
-        >
-          {t.nextRow}
-        </button>
-        {summary.nextRow !== null && (
-          <button type="button" onClick={() => setFocusRow(summary.nextRow!)} className="btn-outline btn-xs">
-            {t.jumpToPending(summary.nextRow + 1)}
-          </button>
-        )}
-        <label className="flex items-center gap-1 text-xs text-ink-soft">
-          {t.cellSize}
-          <input
-            type="range"
-            min={MIN_CELL_PX}
-            max={MAX_CELL_PX}
-            value={cellPx}
-            onChange={(event) => setCellPx(Number(event.target.value))}
-            aria-label={t.cellSize}
-          />
-        </label>
-        <button type="button" onClick={() => void reset()} className="btn-danger-outline btn-xs">
-          {t.reset}
-        </button>
-      </div>
+      <nav className="stitch-action-dock" aria-label={t.actionsLabel}>
+        <span className="stitch-mode-toggle" aria-label={t.modeLabel}>
+          <button type="button" aria-pressed={mode === 'pan'} onClick={() => { setMode('pan'); setLoupe(null); }}><Icon name="hand" size={18} /><span>{t.panMode}</span></button>
+          <button type="button" aria-pressed={mode === 'mark'} onClick={() => setMode('mark')}><Icon name="mark" size={18} /><span>{t.markMode}</span></button>
+        </span>
+        <button type="button" onClick={undo} disabled={!canUndoStitchHistory(history)} aria-label={t.undo}><Icon name="undo" size={18} /><span>{t.undo}</span></button>
+        <button type="button" onClick={redo} disabled={!canRedoStitchHistory(history)} aria-label={t.redo} className="stitch-redo-action"><Icon name="redo" size={18} /><span>{t.redo}</span></button>
+        <button type="button" onClick={() => moveBoardRow(-1)} aria-label={t.prevRow}><span aria-hidden="true">↑</span><span>{t.prevRow}</span></button>
+        <button type="button" onClick={() => markRow(!rowDone)} className="is-primary"><Icon name="mark" size={18} /><span>{rowDone ? t.markRowUndone : t.markRowDone}</span></button>
+        <button type="button" onClick={() => moveBoardRow(1)} aria-label={t.nextRow}><span aria-hidden="true">↓</span><span>{t.nextRow}</span></button>
+        <button type="button" onClick={() => setOverviewOpen((value) => !value)} className="stitch-overview-action"><Icon name="grid" size={18} /><span>{t.overviewAction}</span></button>
+      </nav>
 
-      {summary.total > 0 && summary.doneCount === summary.total && (
-        <Notice kind="success">{t.finished}</Notice>
-      )}
-
-      <div className="overflow-auto rounded-2xl border border-lilac/40 bg-white p-2">
-        <canvas
-          ref={canvasRef}
-          onPointerDown={onPointerDown}
-          role="img"
-          aria-label={t.canvasAria(pattern.width, pattern.height, summary.percent)}
-          tabIndex={0}
-          className="touch-pan-y"
-          style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
-        />
-      </div>
-      <p className="text-xs text-ink-soft">{t.hint}</p>
+      {summary.total > 0 && summary.doneCount === summary.total && <Notice kind="success">{t.finished}</Notice>}
+      <p className="stitch-help-text">{mode === 'pan' ? t.panHint : t.markHint}</p>
       {confirmDialog}
     </section>
   );

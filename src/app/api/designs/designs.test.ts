@@ -41,17 +41,21 @@ function jsonRequest(method: string, path: string, body?: unknown, opts: { origi
 function projectFile(name: string, w = 2, h = 1): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: '2026-08-14T00:00:00.000Z',
     updatedAt: '2026-08-14T01:00:00.000Z',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: DEFAULT_GENERATION_PARAMS,
     pattern: {
       width: w,
       height: h,
-      cells: Array.from({ length: w * h }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+      cells: Array.from({ length: w * h }, () => ({ hex: '#FAF4C8', code: 'A01', transparent: false })),
     },
   };
 }
@@ -273,6 +277,17 @@ describe('PUT /api/designs/[id]', () => {
     expect(badType.status).toBe(400);
     const badOrigin = await putOne(jsonRequest('PUT', `/api/designs/${ID}`, putBody('x'), { origin: 'https://evil.example' }), p);
     expect(badOrigin.status).toBe(403);
+  });
+
+  it('拒绝图纸格 code+hex 不属于项目声明色板的写入', async () => {
+    const ID = '00000000-0000-4000-8000-000000000031';
+    const body = putBody('fake palette pair');
+    body.project.pattern.cells[0] = { hex: '#FAF4C8', code: 'FAKE', transparent: false };
+    const response = await putOne(
+      jsonRequest('PUT', `/api/designs/${ID}`, body),
+      { params: Promise.resolve({ id: ID }) },
+    );
+    expect(response.status).toBe(400);
   });
 });
 

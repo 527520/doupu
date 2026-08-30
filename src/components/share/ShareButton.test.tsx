@@ -56,6 +56,29 @@ describe('ShareButton', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it.each(['http', 'network'] as const)('停止分享发生 %s 失败时保留旧链接并提示重试', async (failure) => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        if (failure === 'network') throw new Error('offline');
+        return new Response(JSON.stringify({ error: { code: 'INTERNAL', message: 'failed' } }), { status: 500 });
+      }
+      return new Response(
+        JSON.stringify({ token: 'tok_abcdefghijklmnop', path: '/s/tok_abcdefghijklmnop' }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      );
+    }));
+    render(<ShareButton designId={DESIGN_ID} />);
+    fireEvent.click(screen.getByRole('button', { name: zhCN.share.button }));
+    await screen.findByRole('img', { name: zhCN.share.qrAria });
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.share.stop }));
+
+    expect(await screen.findByText(zhCN.share.stopFailed)).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText(new RegExp('/s/tok_abcdefghijklmnop'))).toBeTruthy();
+    expect(screen.getByRole('button', { name: zhCN.share.stop })).toBeTruthy();
+  });
+
   it('服务端拒绝时显示服务端给的原因，不假装成功', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(
       JSON.stringify({ error: { code: 'VALIDATION', message: '这个设计还没有可分享的图纸' } }),

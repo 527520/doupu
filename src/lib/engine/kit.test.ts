@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { KIT_TIERS, createBlankPattern, nearestInKit, selectKitColors } from './kit';
+import { KIT_TIERS, createBlankPattern, nearestInKit, paletteColorsForSelection, selectKitColors } from './kit';
 import { clearLutCache } from './lut';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import type { PaletteColor } from '@/lib/types';
 
 describe('createBlankPattern（H-2 空白起稿）', () => {
@@ -21,7 +21,7 @@ describe('createBlankPattern（H-2 空白起稿）', () => {
 });
 
 describe('selectKitColors（H-3 套装档位）', () => {
-  const mard = buildBrandPalette('MARD');
+  const mard = [...getBuiltinPalette('MARD').engineColors];
 
   it('0 或大于色板容量时返回全部可用色', () => {
     expect(selectKitColors(mard, 0)).toHaveLength(mard.length);
@@ -66,6 +66,36 @@ describe('selectKitColors（H-3 套装档位）', () => {
     expect(KIT_TIERS).toContain(24);
     expect(KIT_TIERS).toContain(48);
   });
+
+  it('档位选色排除空白、问号与 UNKNOWN-* 色号，并裁剪合法色号', () => {
+    const palette: PaletteColor[] = [
+      { hex: '#000000', code: null },
+      { hex: '#111111', code: ' ' },
+      { hex: '#222222', code: '?' },
+      { hex: '#333333', code: 'unknown-3' },
+      { hex: '#FFFFFF', code: '  W  ' },
+    ];
+    expect(selectKitColors(palette, 0)).toEqual([{ hex: '#FFFFFF', code: 'W' }]);
+  });
+});
+
+describe('paletteColorsForSelection', () => {
+  it('仅由持久化 selection 投影出可复现的引擎颜色数组', () => {
+    const palette = paletteColorsForSelection({
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 24,
+    });
+
+    expect(palette).toHaveLength(24);
+    expect(palette).toEqual(selectKitColors([...getBuiltinPalette('MARD').engineColors], 24));
+  });
+
+  it('拒绝超出当前色板容量的 selection，不静默退回全色板', () => {
+    expect(() => paletteColorsForSelection({
+      palette: { kind: 'custom', colors: [{ code: 'A', hex: '#000000' }] },
+      kitTier: 24,
+    })).toThrow('套装档位超出当前色板可生成颜色数');
+  });
 });
 
 describe('nearestInKit', () => {
@@ -77,5 +107,15 @@ describe('nearestInKit', () => {
     ];
     expect(nearestInKit('#0A0A0A', kit).code).toBe('K');
     expect(nearestInKit('#F5F5F5', kit).code).toBe('W');
+  });
+
+  it('即使调用方传入未过滤档位，也不会返回占位色号', () => {
+    const kit: PaletteColor[] = [
+      { hex: '#000000', code: '?' },
+      { hex: '#111111', code: ' UNKNOWN-1 ' },
+      { hex: '#FFFFFF', code: '  W  ' },
+    ];
+    expect(nearestInKit('#000000', kit)).toEqual({ hex: '#FFFFFF', code: 'W' });
+    expect(() => nearestInKit('#000000', kit.slice(0, 2))).toThrow('palette is empty');
   });
 });

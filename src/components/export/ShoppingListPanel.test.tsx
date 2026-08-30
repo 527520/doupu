@@ -66,4 +66,18 @@ describe('ShoppingListPanel', () => {
     const { container } = render(<ShoppingListPanel stats={[]} designName="空" width={1} height={1} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('兼容色板同一色号对应两个 HEX 时两项都稳定显示', () => {
+    render(<ShoppingListPanel
+      stats={[
+        { code: 'S4', hex: '#7FCD9D', count: 12 },
+        { code: 'S4', hex: '#F3C1C0', count: 8 },
+      ]}
+      designName="漫漫兼容图纸"
+      width={2}
+      height={1}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(zhCN.shopping.title) }));
+    expect(screen.getAllByText('S4')).toHaveLength(2);
+  });
 });

@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-08-17
 - Supersedes: the last-write-wins synchronization choice in ADR-0002
+- Superseded in part by: ADR-0012's strict ProjectFile v3 decision
 
 ## Context
 
@@ -40,5 +41,6 @@ the system cannot prove that an update is based on the latest server state.
   leave a recoverable duplicate, but never binds the old source to newly pulled pattern content.
 - A local-save indicator and a cloud-sync indicator are separate states; “saved locally” does not
   imply “synced to cloud”.
-- Clients created before this protocol must migrate imported v1 data once and then write only the
-  current project/API format; there is no dual-write compatibility path.
+- ADR-0012 supersedes this decision's former one-time v1 import migration. The application accepts
+  only strict ProjectFile v3 and does not migrate v1/v2 data, dual-write old formats, or clear old
+  test data automatically; test-data cleanup remains an explicit release operation outside the app.

@@ -14,6 +14,7 @@ import { hexToRgb } from './color';
 import { assertGenerationActive, type CancellationProbe, type EngineOutput, type ImageDataLike } from './types';
 import type { GenerationParams, PaletteColor, PatternCell, PatternStatsItem } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
+import { availablePaletteColors } from '@/lib/palettes/availability';
 
 /** 每格最多取 4×4 源像素；16 个连续覆盖样本足以保留格内主色/均值，
  * 同时给 200×200 + 291 色的精确 Oklab 抖动留出稳定的 2 秒硬预算。 */
@@ -64,9 +65,9 @@ export function generatePattern(
   shouldCancel?: CancellationProbe,
 ): EngineOutput {
   assertGenerationActive(shouldCancel);
-  // 可用性是引擎不变量：品牌色板中 code=null 表示该品牌没有此色号，
-  // 不能把过滤责任留给每个调用方，否则会生成无法采购的“?”色号。
-  const availablePalette = palette.filter((color) => color.code !== null);
+  // 可用性是引擎不变量：null、空白、?、UNKNOWN-* 都是不可采购占位符。
+  // 不能把过滤责任留给每个调用方。
+  const availablePalette = availablePaletteColors(palette);
   // 对空输入和“过滤后为空”保持同一领域错误，Worker/UI 不需要分辨内部原因。
   if (availablePalette.length === 0) throw new Error('palette is empty');
   const W = params.targetWidth;

@@ -13,6 +13,12 @@ import { hashToken } from '@/lib/auth/tokens';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 import { POST as sharePost, DELETE as shareDelete } from './route';
 
+const { generateTokenMock } = vi.hoisted(() => ({ generateTokenMock: vi.fn<() => string>() }));
+vi.mock('@/lib/auth/tokens', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/auth/tokens')>();
+  return { ...actual, generateToken: generateTokenMock };
+});
+
 const cookieJar = new Map<string, string>();
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({
@@ -37,19 +43,23 @@ const routeParams = { params: Promise.resolve({ id: DESIGN_ID }) };
 function project(name = '小熊'): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-02T00:00:00.000Z',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: DEFAULT_GENERATION_PARAMS,
     pattern: {
       width: 2,
       height: 1,
       cells: [
-        { hex: '#FF0000', code: 'A', transparent: false },
-        { hex: '#00FF00', code: 'B', transparent: false },
+        { hex: '#FAF4C8', code: 'A01', transparent: false },
+        { hex: '#63F347', code: 'B02', transparent: false },
       ],
     },
   };
@@ -57,6 +67,7 @@ function project(name = '小熊'): ProjectFile {
 
 let db: TestDatabase;
 let userId: string;
+let tokenSequence = 0;
 
 beforeAll(async () => {
   db = await createTestClient();
@@ -64,6 +75,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  tokenSequence = 0;
+  generateTokenMock.mockReset();
+  generateTokenMock.mockImplementation(() => `share-test-token-${String(++tokenSequence).padStart(4, '0')}`);
   await db.delete(designShares);
   await db.delete(designs);
   await db.delete(sessions);
@@ -107,6 +121,7 @@ describe('POST /api/designs/[id]/share', () => {
     const rows = await db.select().from(designShares);
     expect(rows).toHaveLength(1);
     expect(rows[0].tokenHash).toBe(hashToken(body.token));
+    expect(rows[0].snapshot).toMatchObject({ version: 3, boardProfile: '5mm-29' });
     // 明文 token 绝不能出现在库里
     expect(JSON.stringify(rows[0])).not.toContain(body.token);
   });
@@ -135,6 +150,30 @@ describe('POST /api/designs/[id]/share', () => {
     const rows = await db.select().from(designShares);
     expect(rows).toHaveLength(1);
     expect(rows[0].tokenHash).toBe(hashToken(second.token));
+  });
+
+  it('创建新链接失败时回滚删除，旧分享仍然有效', async () => {
+    generateTokenMock.mockReturnValueOnce('share-test-token-old');
+    const first = (await (await sharePost(request('POST'), routeParams)).json()) as { token: string };
+    const oldRows = await db.select().from(designShares).where(eq(designShares.designId, DESIGN_ID));
+    expect(oldRows).toHaveLength(1);
+
+    const collisionToken = 'share-test-token-collision';
+    await db.insert(designShares).values({
+      designId: '00000000-0000-4000-8000-0000000000b2',
+      userId,
+      tokenHash: hashToken(collisionToken),
+      snapshot: oldRows[0].snapshot,
+      name: '占用新 token 的分享',
+    });
+
+    generateTokenMock.mockReturnValueOnce(collisionToken);
+    const failed = await sharePost(request('POST'), routeParams);
+    expect(failed.status).toBe(500);
+
+    const retained = await db.select().from(designShares).where(eq(designShares.designId, DESIGN_ID));
+    expect(retained).toHaveLength(1);
+    expect(retained[0].tokenHash).toBe(hashToken(first.token));
   });
 
   it('别人的设计不能分享（越权返回 404，不泄露存在性）', async () => {

@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { generatePattern, computeStats } from './generate';
 import { clearLutCache } from './lut';
 import type { ImageDataLike } from './types';
-import { buildBrandPalette, getAvailableColors } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import {
   DEFAULT_GENERATION_PARAMS,
-  type Brand,
   type GenerationParams,
   type PaletteColor,
   type PatternCell,
@@ -46,7 +45,7 @@ function solidImage(w: number, h: number, r: number, g: number, b: number, a = 2
   return { data, width: w, height: h };
 }
 
-const MARD: PaletteColor[] = buildBrandPalette('MARD');
+const MARD: PaletteColor[] = [...getBuiltinPalette('MARD').engineColors];
 const MARD_HEXES = new Set(MARD.map((p) => p.hex));
 
 const params = (over: Partial<GenerationParams> = {}): GenerationParams => ({ ...DEFAULT_GENERATION_PARAMS, ...over });
@@ -173,8 +172,7 @@ describe('generatePattern 边界（E14–E19）', () => {
   });
 
   it('E19：漫漫色板中不可用色（#55514C）绝不出现，可用色 code 非空', () => {
-    const mm: Brand = '漫漫';
-    const palette = getAvailableColors(mm);
+    const palette = [...getBuiltinPalette('漫漫').engineColors];
     const img = solidImage(30, 30, 0x55, 0x51, 0x4c); // #55514C
     const out = generatePattern(img, params({ targetColorCount: 128 }), palette);
     for (const cell of out.pattern.cells) {
@@ -184,7 +182,7 @@ describe('generatePattern 边界（E14–E19）', () => {
   });
 
   it('E19：调用方传入完整品牌色板时，引擎仍会排除无色号颜色', () => {
-    const palette = buildBrandPalette('漫漫');
+    const palette = [...getBuiltinPalette('漫漫').colors];
     const img = solidImage(20, 20, 0x55, 0x51, 0x4c); // 漫漫中该颜色 code=null
     const out = generatePattern(img, params({ targetWidth: 20, targetColorCount: 128 }), palette);
 
@@ -199,6 +197,23 @@ describe('generatePattern 边界（E14–E19）', () => {
     expect(() =>
       generatePattern(img, params(), [{ hex: '#000000', code: null }]),
     ).toThrow('palette is empty');
+  });
+
+  it('引擎统一排除空白、问号和 UNKNOWN-* 色号，并输出裁剪后的合法色号', () => {
+    const palette: PaletteColor[] = [
+      { hex: '#000000', code: null },
+      { hex: '#111111', code: '   ' },
+      { hex: '#222222', code: '?' },
+      { hex: '#333333', code: ' UNKNOWN-03 ' },
+      { hex: '#FFFFFF', code: '  GOOD-1  ' },
+    ];
+    const out = generatePattern(
+      solidImage(20, 20, 255, 255, 255),
+      params({ targetWidth: 20, targetColorCount: 2 }),
+      palette,
+    );
+    expect(out.pattern.cells.every((item) => item.transparent || item.code === 'GOOD-1')).toBe(true);
+    expect(out.stats).toEqual([{ code: 'GOOD-1', hex: '#FFFFFF', count: 400 }]);
   });
 
   it('取消探针能中断冷启动 LUT，且不缓存半成品', () => {

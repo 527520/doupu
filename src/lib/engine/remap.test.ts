@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { remapPattern } from './remap';
 import { clearLutCache } from './lut';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import type { PaletteColor, Pattern } from '@/lib/types';
 
 const twoColor: PaletteColor[] = [
@@ -52,7 +52,7 @@ describe('remapPattern（H-1 换色板重映射）', () => {
 
   it('报告实际变化的格数；换成同一套色板时为 0', () => {
     clearLutCache();
-    const mard = buildBrandPalette('MARD');
+    const mard = [...getBuiltinPalette('MARD').engineColors];
     const source = remapPattern(pattern(), mard);
     expect(source.changedCells).toBeGreaterThan(0);
     // 已经是该色板的图纸再映射一次不该有变化
@@ -65,9 +65,21 @@ describe('remapPattern（H-1 换色板重映射）', () => {
     expect(() => remapPattern(pattern(), [{ hex: '#FF0000', code: null }])).toThrow('palette is empty');
   });
 
+  it('重映射统一排除空白、问号与 UNKNOWN-* 色号，并写入裁剪后色号', () => {
+    const palette: PaletteColor[] = [
+      { hex: '#000000', code: ' ' },
+      { hex: '#111111', code: '?' },
+      { hex: '#222222', code: 'UNKNOWN-2' },
+      { hex: '#FFFFFF', code: '  W  ' },
+    ];
+    const result = remapPattern(pattern(), palette);
+    expect(result.pattern.cells[0]).toMatchObject({ hex: '#FFFFFF', code: 'W' });
+    expect(result.pattern.cells[1]).toMatchObject({ hex: '#FFFFFF', code: 'W' });
+  });
+
   it('内置色板之间互换：色号全部来自目标色板', () => {
     clearLutCache();
-    const coco = buildBrandPalette('COCO');
+    const coco = [...getBuiltinPalette('COCO').engineColors];
     const cocoCodes = new Set(coco.map((color) => color.code));
     const result = remapPattern(pattern(), coco);
     for (const cell of result.pattern.cells) {

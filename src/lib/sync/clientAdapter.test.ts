@@ -12,12 +12,16 @@ import type { ProjectFile } from '@/lib/types';
 function makeProject(name: string, updatedAt: string): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: updatedAt,
     updatedAt,
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: {
       targetWidth: 20,
       targetColorCount: 40,
@@ -31,7 +35,7 @@ function makeProject(name: string, updatedAt: string): ProjectFile {
     pattern: {
       width: 1,
       height: 1,
-      cells: [{ hex: '#FF0000', code: 'F02', transparent: false }],
+      cells: [{ hex: '#FC3D46', code: 'F02', transparent: false }],
     },
   };
 }
@@ -186,7 +190,9 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
       height: 1,
       rgba: new Uint8ClampedArray([10, 20, 30, 255]).buffer,
     };
-    await storage.put(record('same-1', project, project.updatedAt, 0, 'dirty'), { mode: 'replace', source });
+    const sameRecord = record('same-1', project, project.updatedAt, 0, 'dirty');
+    sameRecord.thumbnail = 'data:image/png;base64,profile-aware-409';
+    await storage.put(sameRecord, { mode: 'replace', source });
 
     const outcome = await createSyncClient(storage, api).sync();
 
@@ -194,6 +200,7 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(outcome.cloud).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, deleted: false })]);
     expect(await storage.getAll()).toEqual([expect.objectContaining({ id: 'same-1', revision: 1, syncState: 'synced' })]);
     expect(await storage.getGenerationSource('same-1')).toEqual(source);
+    expect(storage.records.get('same-1')?.thumbnail).toBe('data:image/png;base64,profile-aware-409');
   });
 
   it('手动背景原型不同必须创建冲突副本，不能被内容等价判断静默覆盖', async () => {
@@ -210,6 +217,41 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
 
     expect(outcome.conflictCopies).toEqual([{ originalId: 'background-1', conflictId: 'background-conflict' }]);
     expect((await storage.getAll()).find((item) => item.id === 'background-conflict')).toBeTruthy();
+  });
+
+  it('制作规格不同必须创建冲突副本，不能被 canonical 比较忽略', async () => {
+    const remoteProject = makeProject('同一图纸', '2026-08-15T00:00:00.000Z');
+    remoteProject.paletteSelection.palette = { kind: 'custom', colors: [{ code: 'A', hex: '#FF0000' }] };
+    remoteProject.pattern.cells[0] = { code: 'A', hex: '#FF0000', transparent: false };
+    const localProject = structuredClone(remoteProject);
+    localProject.boardProfile = '2.6mm-50';
+    const api = new FakeApi([{ id: 'profile-1', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 1 }]);
+    api.listDesignsPage = async () => ({ items: [], nextCursor: null });
+    const storage = new FakeStorage();
+    await storage.put(record('profile-1', localProject, localProject.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api, { newId: () => 'profile-conflict' }).sync();
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'profile-1', conflictId: 'profile-conflict' }]);
+    expect((await storage.getAll()).find((item) => item.id === 'profile-conflict')).toBeTruthy();
+  });
+
+  it('套装档位不同必须创建冲突副本，不能被 canonical 比较忽略', async () => {
+    const remoteProject = makeProject('同一图纸', '2026-08-15T00:00:00.000Z');
+    remoteProject.pattern.cells[0] = { code: 'H07', hex: '#000000', transparent: false };
+    const localProject = structuredClone(remoteProject);
+    localProject.paletteSelection.kitTier = 24;
+    const api = new FakeApi([{ id: 'kit-1', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 1 }]);
+    api.listDesignsPage = async () => ({ items: [], nextCursor: null });
+    const storage = new FakeStorage();
+    await storage.put(record('kit-1', localProject, localProject.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api, { newId: () => 'kit-conflict' }).sync();
+
+    expect(outcome.conflictCopies).toEqual([{ originalId: 'kit-1', conflictId: 'kit-conflict' }]);
+    const conflict = storage.records.get('kit-conflict');
+    expect(conflict).toBeTruthy();
+    expect((JSON.parse(conflict!.projectJson) as ProjectFile).paletteSelection.kitTier).toBe(24);
   });
 
   it('CAS 冲突副本接管本地生成源，原 ID 切换到远端内容后清源', async () => {
@@ -267,6 +309,7 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
 
   it('远端不同内容覆盖原 ID 时清除仅属于旧内容的本地生成源', async () => {
     const cloudProject = makeProject('云端新版', '2026-08-15T10:00:00.000Z');
+    cloudProject.pattern.cells[0] = { hex: '#FAF4C8', code: 'A01', transparent: false };
     const api = new FakeApi([{ id: 'source-overwrite', name: cloudProject.name, project: cloudProject, updatedAt: cloudProject.updatedAt, revision: 2 }]);
     const storage = new FakeStorage();
     const localProject = makeProject('本地旧版', '2026-08-15T09:00:00.000Z');
@@ -295,13 +338,52 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
       height: 1,
       rgba: new Uint8ClampedArray([4, 5, 6, 255]).buffer,
     };
-    await storage.put(record('source-same-pull', localProject, localProject.updatedAt, 1, 'synced'), { mode: 'replace', source });
+    const localRecord = record('source-same-pull', localProject, localProject.updatedAt, 1, 'synced');
+    localRecord.thumbnail = 'data:image/png;base64,profile-aware-pull';
+    await storage.put(localRecord, { mode: 'replace', source });
 
     const outcome = await createSyncClient(storage, api).sync();
 
     expect(outcome.pulled).toBe(1);
     expect(storage.records.get('source-same-pull')?.revision).toBe(2);
     expect(await storage.getGenerationSource('source-same-pull')).toEqual(source);
+    expect(storage.records.get('source-same-pull')?.thumbnail).toBe('data:image/png;base64,profile-aware-pull');
+  });
+
+  it('远端只重命名时保留本地生成源与按制作规格生成的缩略图', async () => {
+    const localProject = makeProject('本机名称', '2026-08-15T09:00:00.000Z');
+    const remoteProject = {
+      ...structuredClone(localProject),
+      name: '另一设备重命名',
+      updatedAt: '2026-08-15T10:00:00.000Z',
+    };
+    const api = new FakeApi([{
+      id: 'rename-same-source',
+      name: remoteProject.name,
+      project: remoteProject,
+      updatedAt: remoteProject.updatedAt,
+      revision: 2,
+    }]);
+    const storage = new FakeStorage();
+    const source: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([4, 5, 6, 255]).buffer,
+    };
+    const localRecord = record('rename-same-source', localProject, localProject.updatedAt, 1, 'synced');
+    localRecord.thumbnail = 'data:image/png;base64,board-profile-thumbnail';
+    await storage.put(localRecord, { mode: 'replace', source });
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(outcome.pulled).toBe(1);
+    expect(storage.records.get('rename-same-source')).toMatchObject({
+      name: '另一设备重命名',
+      revision: 2,
+      thumbnail: 'data:image/png;base64,board-profile-thumbnail',
+    });
+    expect(await storage.getGenerationSource('rename-same-source')).toEqual(source);
   });
 
   it('E37：本地较新编辑（云端已删/较旧）→ 推送复活', async () => {
@@ -577,6 +659,38 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(local[0].name).toBe('云端设计');
     expect(local[0].thumbnail).toBeNull();
     expect(await storage.getGenerationSource('e1')).toBeNull();
+  });
+
+  it('pullDesign 请求在途出现同 ID 本地保存时保留本地数据与生成源', async () => {
+    const remoteProject = makeProject('云端设计', '2026-08-15T08:00:00.000Z');
+    const api = new FakeApi([{ id: 'pull-open-race', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt }]);
+    const originalGet = api.getDesign.bind(api);
+    let releaseGet!: () => void;
+    api.getDesign = async (id: string) => new Promise((resolve) => {
+      releaseGet = async () => resolve(await originalGet(id));
+    });
+    const storage = new FakeStorage();
+    const client = createSyncClient(storage, api);
+
+    const pulling = client.pullDesign('pull-open-race');
+    await vi.waitFor(() => expect(releaseGet).toBeTypeOf('function'));
+
+    const localProject = makeProject('另一标签刚保存', '2026-08-15T09:00:00.000Z');
+    const localSource: LocalGenerationSourceV1 = {
+      version: 1,
+      width: 1,
+      height: 1,
+      rgba: new Uint8ClampedArray([12, 34, 56, 255]).buffer,
+    };
+    await storage.put(
+      record('pull-open-race', localProject, localProject.updatedAt, 0, 'dirty'),
+      { mode: 'replace', source: localSource },
+    );
+    releaseGet();
+    await pulling;
+
+    expect(storage.records.get('pull-open-race')?.name).toBe('另一标签刚保存');
+    expect(await storage.getGenerationSource('pull-open-race')).toEqual(localSource);
   });
 
   it('本地数据损坏：跳过并记录错误，不影响其余设计同步', async () => {

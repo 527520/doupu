@@ -43,13 +43,16 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   const token = generateToken();
   const tokenHash = hashToken(token);
   // 一个设计同时只保留一条有效分享：重新分享会作废旧链接（用户预期「换个链接」）。
-  await db.delete(designShares).where(and(eq(designShares.userId, userId), eq(designShares.designId, id)));
-  await db.insert(designShares).values({
-    designId: id,
-    userId,
-    tokenHash,
-    snapshot,
-    name: rows[0].name,
+  // 删除旧链接和创建新链接必须原子完成；否则新 token 冲突或数据库故障会把仍可用的旧链接一并丢掉。
+  await db.transaction(async (tx) => {
+    await tx.delete(designShares).where(and(eq(designShares.userId, userId), eq(designShares.designId, id)));
+    await tx.insert(designShares).values({
+      designId: id,
+      userId,
+      tokenHash,
+      snapshot,
+      name: rows[0].name,
+    });
   });
   return okJson({ token, path: `/s/${token}` }, { status: 201 });
 }

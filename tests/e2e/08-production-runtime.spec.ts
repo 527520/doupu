@@ -44,9 +44,9 @@ test('standalone routes enforce PostgreSQL CAS and single-use token transactions
   };
   const id = '00000000-0000-4000-8000-000000000108';
   const project = {
-    format: 'doupu-project', version: 2, engineVersion: '2.0.0', name: '并发设计',
+    format: 'doupu-project', version: 3, engineVersion: '2.0.0', boardProfile: '5mm-29', name: '并发设计',
     createdAt: '2026-08-17T00:00:00.000Z', updatedAt: '2026-08-17T00:00:00.000Z',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
     params: { targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant', brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8 },
     pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'H07', transparent: false }] },
   };

@@ -2,9 +2,33 @@
  * 豆谱领域核心类型（spec §4.1）。
  * 客户端与服务端共享的唯一事实来源。
  */
+import type { BoardProfileId } from './boardProfiles';
+import type { KitTier } from './kitTiers';
+
+export type { BoardProfileId } from './boardProfiles';
+export type { KitTier } from './kitTiers';
 
 /** 内置拼豆品牌（spec §F6）。 */
 export type Brand = 'MARD' | 'COCO' | '漫漫' | '盼盼' | '咪小窝';
+
+/** Pinned upstream ids used to derive source-versioned persisted palette ids. */
+export type ExternalBuiltinPaletteSourceId =
+  | 'mard-291-github'
+  | 'coco-291'
+  | 'manman-278'
+  | 'panpan-289'
+  | 'mixiaowo-290'
+  | 'mard-221-alfonse-doudou'
+  | 'artkal-c-197-official'
+  | 'artkal-m-221-official';
+
+export type ExternalBuiltinPaletteRevision = '178dafbc9e77d3de556550dbd058270200129186';
+
+export type ExternalBuiltinPaletteId =
+  `pcd:${ExternalBuiltinPaletteSourceId}@${ExternalBuiltinPaletteRevision}`;
+
+/** Stable persisted palette id. Legacy Brand values remain valid forever. */
+export type BuiltinPaletteId = Brand | ExternalBuiltinPaletteId;
 
 export const BRANDS: readonly Brand[] = ['MARD', 'COCO', '漫漫', '盼盼', '咪小窝'];
 
@@ -90,19 +114,27 @@ export interface CustomPalette {
 
 /** 项目文件中的色板引用（spec §5.3）。 */
 export type ProjectPalette =
-  | { kind: 'builtin'; brand: Brand }
+  | { kind: 'builtin'; brand: BuiltinPaletteId }
   | { kind: 'custom'; colors: CustomPaletteColor[] };
+
+/** 可复现生成所需的色板定义与套装档位。 */
+export interface PaletteSelection {
+  palette: ProjectPalette;
+  kitTier: KitTier;
+}
 
 /** 项目文件（spec §5.3）。 */
 export interface ProjectFile {
   format: 'doupu-project';
-  version: 2;
+  version: 3;
   /** Engine semantics used to produce the committed pattern. */
   engineVersion: string;
+  /** Physical bead and pegboard specification used by this design. */
+  boardProfile: BoardProfileId;
   name: string;
   createdAt: string;
   updatedAt: string;
-  palette: ProjectPalette;
+  paletteSelection: PaletteSelection;
   params: GenerationParams;
   pattern: Pattern;
 }

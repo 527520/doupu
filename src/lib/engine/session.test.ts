@@ -17,9 +17,12 @@ const pattern = (hex = '#FFFFFF'): Pattern => ({
 });
 
 const commit = (targetWidth = 20): GenerationCommit => ({
+  boardProfile: '5mm-29',
   params: { ...DEFAULT_GENERATION_PARAMS, targetWidth },
-  palette: [{ hex: '#FFFFFF', code: 'A' }],
-  projectPalette: { kind: 'builtin', brand: 'MARD' },
+  paletteSelection: {
+    palette: { kind: 'builtin', brand: 'MARD' },
+    kitTier: 0,
+  },
   pattern: pattern(),
   stats: [{ hex: '#FFFFFF', code: 'A', count: 1 }],
   total: 1,
@@ -139,7 +142,66 @@ describe('generationSessionReducer', () => {
     expect(state.regenerationUndo).toEqual(edited);
     state = generationSessionReducer(state, { type: 'undo-regeneration' });
     expect(state.committed).toEqual(edited);
+    expect(state.hasManualEdits).toBe(true);
     expect(state.regenerationUndo).toBeNull();
+  });
+
+  it('switches palette and board profile in one remap snapshot and undoes both together', () => {
+    const original = commit();
+    let state = generationSessionReducer(createGenerationSession(), { type: 'restore', commit: original });
+    state = generationSessionReducer(state, {
+      type: 'remap',
+      pattern: pattern('#000000'),
+      stats: [{ hex: '#000000', code: 'M1', count: 1 }],
+      total: 1,
+      paletteSelection: {
+        palette: {
+          kind: 'builtin',
+          brand: 'pcd:artkal-m-221-official@178dafbc9e77d3de556550dbd058270200129186',
+        },
+        kitTier: 24,
+      },
+      boardProfile: '2.6mm-50',
+    });
+
+    expect(state.committed?.boardProfile).toBe('2.6mm-50');
+    expect(state.committed?.paletteSelection.kitTier).toBe(24);
+    expect(state.regenerationUndo?.boardProfile).toBe('5mm-29');
+    state = generationSessionReducer(state, { type: 'undo-regeneration' });
+    expect(state.status).toBe('restored-locked');
+    expect(state.committed?.boardProfile).toBe('5mm-29');
+    expect(state.committed?.paletteSelection).toEqual({
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    });
+    expect(state.hasManualEdits).toBe(false);
+  });
+
+  it('invalidates an older remap undo snapshot after new manual edits', () => {
+    const original = commit();
+    let state = generationSessionReducer(createGenerationSession(), { type: 'restore', commit: original });
+    state = generationSessionReducer(state, {
+      type: 'remap',
+      pattern: pattern('#000000'),
+      stats: [{ hex: '#000000', code: 'B', count: 1 }],
+      total: 1,
+      paletteSelection: {
+        palette: { kind: 'custom', colors: [{ hex: '#000000', code: 'B' }] },
+        kitTier: 0,
+      },
+      boardProfile: '5mm-29',
+    });
+    expect(state.regenerationUndo).toEqual(original);
+
+    state = generationSessionReducer(state, {
+      type: 'manual-edit',
+      pattern: pattern('#00FF00'),
+      stats: [{ hex: '#00FF00', code: 'C', count: 1 }],
+      total: 1,
+    });
+
+    expect(state.regenerationUndo).toBeNull();
+    expect(state.committed?.pattern.cells[0].hex).toBe('#00FF00');
   });
 
   it('owns the bounded source and releases it when a project is restored without original pixels', () => {

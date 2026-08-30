@@ -75,19 +75,40 @@ function projectsMatch(local: ProjectFile, remote: ProjectFile): boolean {
   return JSON.stringify(canonicalProject(local)) === JSON.stringify(canonicalProject(remote));
 }
 
+/**
+ * A local generation source is tied to the design content, not its title or
+ * timestamps. Renaming the same design on another device must not discard the
+ * only local copy of its pixels.
+ */
+function generationSourceMatches(local: ProjectFile, remote: ProjectFile): boolean {
+  const withoutMetadata = (project: ProjectFile): unknown => {
+    const canonical = canonicalProject(project) as Record<string, unknown>;
+    const { name: _name, createdAt: _createdAt, ...content } = canonical;
+    return content;
+  };
+  return JSON.stringify(withoutMetadata(local)) === JSON.stringify(withoutMetadata(remote));
+}
+
 function canonicalProject(project: ProjectFile): unknown {
   return {
     format: project.format,
     version: project.version,
     engineVersion: project.engineVersion,
+    boardProfile: project.boardProfile,
     name: project.name,
     createdAt: project.createdAt,
-    palette: project.palette.kind === 'builtin'
-      ? { kind: 'builtin', brand: project.palette.brand }
-      : {
-          kind: 'custom',
-          colors: project.palette.colors.map((color) => ({ code: color.code, hex: color.hex.toUpperCase() })),
-        },
+    paletteSelection: {
+      kitTier: project.paletteSelection.kitTier,
+      palette: project.paletteSelection.palette.kind === 'builtin'
+        ? { kind: 'builtin', brand: project.paletteSelection.palette.brand }
+        : {
+            kind: 'custom',
+            colors: project.paletteSelection.palette.colors.map((color) => ({
+              code: color.code,
+              hex: color.hex.toUpperCase(),
+            })),
+          },
+    },
     params: {
       targetWidth: project.params.targetWidth,
       targetColorCount: project.params.targetColorCount,
@@ -173,9 +194,10 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
   async function storeRemote(
     remote: CloudDesignFull,
     sourceWrite: GenerationSourceWrite = CLEAR_GENERATION_SOURCE,
+    thumbnail: string | null = null,
   ): Promise<void> {
     await storage.put(
-      { id: remote.id, name: remote.name, projectJson: JSON.stringify(remote.project), thumbnail: null, updatedAt: remote.updatedAt, revision: remote.revision, syncState: 'synced' },
+      { id: remote.id, name: remote.name, projectJson: JSON.stringify(remote.project), thumbnail, updatedAt: remote.updatedAt, revision: remote.revision, syncState: 'synced' },
       sourceWrite,
     );
   }
@@ -252,7 +274,7 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     if (remote && remote.name === local.name && projectsMatch(project, remote.project)) {
       upsertOutcomeCloud(outcome, remote);
       if (!latest) await recordDeleteIntent(local.id, remote.revision);
-      else if (matchesSnapshot(latest, local)) await storeRemote(remote, PRESERVE_GENERATION_SOURCE);
+      else if (matchesSnapshot(latest, local)) await storeRemote(remote, PRESERVE_GENERATION_SOURCE, latest.thumbnail);
       else await storage.put({ ...latest, revision: remote.revision, syncState: 'dirty' });
       return;
     }
@@ -287,11 +309,16 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     }
     if (matchesSnapshot(latest, snapshot)) {
       const snapshotProject = parseStoredProject(snapshot.projectJson);
+      const sameGenerationContent = snapshotProject !== null
+        && generationSourceMatches(snapshotProject, remote.project);
       await storeRemote(
         remote,
-        snapshotProject && projectsMatch(snapshotProject, remote.project)
+        sameGenerationContent
           ? PRESERVE_GENERATION_SOURCE
           : CLEAR_GENERATION_SOURCE,
+        sameGenerationContent
+          ? latest.thumbnail
+          : null,
       );
       return;
     }
@@ -409,6 +436,11 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     async pullDesign(id: string): Promise<void> {
       const full = await api.getDesign(id);
       if (!full) throw new ApiError(404, 'NOT_FOUND', '设计不存在');
+      // The cloud GET is intentionally outside IndexedDB. A different tab may
+      // save this id while the request is in flight; never turn that newer local
+      // row into a silent cloud overwrite (which would also clear its source).
+      const local = (await storage.getAll()).find((record) => record.id === id);
+      if (local) return;
       await storeRemote(full);
     },
     async deleteLocal(id: string, _nowIso?: string, baseRevisionHint = 0): Promise<void> {

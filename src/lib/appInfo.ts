@@ -7,7 +7,7 @@ export const AUTHOR_NAME = 'wuqian';
 export const AUTHOR_GITHUB_URL = 'https://github.com/527520';
 export const CONTACT_EMAIL = 'wqa527520@qq.com';
 export const PROJECT_FILE_FORMAT = 'doupu-project' as const;
-export const PROJECT_FILE_VERSION = 2 as const;
+export const PROJECT_FILE_VERSION = 3 as const;
 /** Changes whenever generation semantics can produce a materially different pattern. */
 export const ENGINE_VERSION = '2.0.0' as const;
 

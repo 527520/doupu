@@ -8,7 +8,7 @@ import ColorBand, { sampleColors } from './ColorBand';
 import PaletteSwatches from './PaletteSwatches';
 import PaletteEditor from './PaletteEditor';
 import { zhCN } from '@/messages/zh-CN';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import type { PaletteColor } from '@/lib/types';
 
 describe('ColorBand 取样（E-1）', () => {
@@ -40,7 +40,7 @@ describe('ColorBand 取样（E-1）', () => {
 });
 
 describe('PaletteSwatches（E-1）', () => {
-  const palette: PaletteColor[] = buildBrandPalette('MARD');
+  const palette: PaletteColor[] = [...getBuiltinPalette('MARD').colors];
 
   it('默认只显示色带，展开后铺出全部色格并带色号', () => {
     render(<PaletteSwatches name="MARD" colors={palette} />);
@@ -50,6 +50,32 @@ describe('PaletteSwatches（E-1）', () => {
     fireEvent.click(screen.getByRole('button', { name: zhCN.palettes.showColors }));
     expect(screen.getByLabelText(`${palette[0].code} ${palette[0].hex}`)).toBeTruthy();
     expect(screen.getByRole('button', { name: zhCN.palettes.hideColors })).toBeTruthy();
+  });
+
+  it('透明特殊材质使用棋盘格并明确标为仅展示', () => {
+    render(
+      <PaletteSwatches
+        name="Artkal C"
+        colors={[{ code: 'C-T', hex: '#FFFFFF00', excludedReason: 'transparent', group: 'Special', sourceId: 'transparent' }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: zhCN.palettes.showColors }));
+    const item = screen.getByRole('listitem', { name: /C-T.*#FFFFFF00.*仅展示/ });
+    expect(item.querySelector('.palette-swatch-transparent')).toBeTruthy();
+    expect(item).toHaveTextContent('透明材质');
+  });
+
+  it('未识别色号不把上游占位符伪装成采购色号', () => {
+    render(
+      <PaletteSwatches
+        name="待核对色板"
+        colors={[{ code: 'UNKNOWN-1', hex: '#123456', excludedReason: 'unidentified', group: null, sourceId: null }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: zhCN.palettes.showColors }));
+    expect(screen.getByText(zhCN.palettes.unidentifiedCode)).toBeTruthy();
+    expect(screen.queryByText('UNKNOWN-1')).toBeNull();
+    expect(screen.getByText(zhCN.palettes.displayOnly)).toBeTruthy();
   });
 });
 

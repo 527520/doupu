@@ -63,6 +63,22 @@ function drawnAsciiPlacements(bytes: Uint8Array): Array<{ text: string; size: nu
     }));
 }
 
+function drawnCellRectangles(bytes: Uint8Array): Array<{ x: number; y: number; width: number; height: number }> {
+  return decompressedText(bytes).split('q\n').flatMap((block) => {
+    if (!block.includes('0.35 w') || !block.includes('\nh\nB')) return [];
+    const transform = block.match(/1 0 0 1 ([-\d.]+) ([-\d.]+) cm/);
+    const points = [...block.matchAll(/^([-\d.]+) ([-\d.]+) l$/gm)]
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    if (!transform || points.length < 3) return [];
+    return [{
+      x: Number(transform[1]),
+      y: Number(transform[2]),
+      width: Math.max(...points.map((point) => point.x)),
+      height: Math.max(...points.map((point) => point.y)),
+    }];
+  });
+}
+
 describe('generatePatternPdf（CJK 字体嵌入）', () => {
   it(
     '嵌入 Noto Sans SC 子集：中文页眉/图例不抛错，PDF 含嵌入字体',
@@ -206,6 +222,60 @@ describe('generatePatternPdf（CJK 字体嵌入）', () => {
     const document = await PDFDocument.load(bytes);
     // 总览 1 + 图纸 3（一页一块板）+ 图例 1
     expect(document.getPageCount()).toBe(5);
+  }, 30000);
+
+  it('2.6mm / 50×50 规格保持一页一板且使用独立板边界', async () => {
+    const mini: Pattern = {
+      width: 51,
+      height: 50,
+      cells: Array.from({ length: 51 * 50 }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+    const bytes = await generatePatternPdf(
+      { name: 'mini 50', pattern: mini, stats: [{ code: 'A', hex: '#000000', count: 51 * 50 }] },
+      {
+        boardSize: 50,
+        metrics: { ...defaultPdfMetrics, cellMm: 2.6, pageCols: 50, pageRows: 50 },
+      },
+    );
+    const document = await PDFDocument.load(bytes);
+    // 总览 1 + 50列主板 1 + 余下1列板 1 + 图例 1。
+    expect(document.getPageCount()).toBe(4);
+  }, 30000);
+
+  it('2.6mm / 52×52 真实产物一页一板，单元格物理间距严格为 2.6mm', async () => {
+    const codes = ['A1', 'B2'];
+    const mini: Pattern = {
+      width: 53,
+      height: 52,
+      cells: Array.from({ length: 53 * 52 }, (_, index) => ({
+        hex: index % 2 === 0 ? '#000000' : '#FFFFFF',
+        code: codes[index % 2],
+        transparent: false,
+      })),
+    };
+    const miniStats = [
+      { code: 'A1', hex: '#000000', count: Math.ceil((53 * 52) / 2) },
+      { code: 'B2', hex: '#FFFFFF', count: Math.floor((53 * 52) / 2) },
+    ];
+    const bytes = await generatePatternPdf(
+      { name: 'mini 52', pattern: mini, stats: miniStats },
+      {
+        boardSize: 52,
+        metrics: { ...defaultPdfMetrics, cellMm: 2.6, pageCols: 52, pageRows: 52 },
+      },
+    );
+    const document = await PDFDocument.load(bytes);
+    expect(document.getPageCount()).toBe(4); // 总览 1 + 主板 1 + 余下 1 列板 1 + 图例 1
+
+    const rectangles = drawnCellRectangles(bytes);
+    expect(rectangles).toHaveLength(53 * 52);
+    const expectedCellPt = 2.6 * MM_TO_PT;
+    expect(rectangles[0].width).toBeCloseTo(expectedCellPt, 8);
+    expect(rectangles[0].height).toBeCloseTo(expectedCellPt, 8);
+    expect(rectangles[1].x - rectangles[0].x).toBeCloseTo(expectedCellPt, 8);
+
+    const text = new Set(drawnAsciiText(bytes));
+    for (const item of miniStats) expect(text.has(`${item.code} x${item.count}`)).toBe(true);
   }, 30000);
 
   it('板位总览页在 ASCII 降级路径下也有可读标题', async () => {

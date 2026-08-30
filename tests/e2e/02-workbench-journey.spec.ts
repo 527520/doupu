@@ -112,6 +112,28 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await widthInput.blur();
   await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
 
+  // 版本化 Mini 色板会原子切换到兼容的 2.6mm / 50×50；随后改参数，
+  // 确认真实生成链路使用新色板，而不是只在既有图纸上做一次重映射。
+  const paletteSelect = page.getByLabel('色板品牌');
+  const miniOption = paletteSelect.locator('option').filter({ hasText: 'C 系列 197 色' });
+  const miniPaletteId = await miniOption.getAttribute('value');
+  expect(miniPaletteId).toMatch(/^builtin:pcd:artkal-c-197-official@/);
+  await paletteSelect.selectOption(miniPaletteId!);
+  const boardProfileSelect = page.getByLabel('制作规格');
+  await expect(boardProfileSelect).toHaveValue('2.6mm-50');
+  await expect(page.getByText(/制作规格已切换为 2\.6mm \/ 50×50/).first()).toBeVisible();
+  // Artkal 同时支持两种 Mini 底板；主旅程继续切到 52×52，覆盖该规格的
+  // 生成、编辑、PNG/PDF/项目导出、保存和刷新恢复完整链路。
+  await boardProfileSelect.selectOption('2.6mm-52');
+  await expect(boardProfileSelect).toHaveValue('2.6mm-52');
+  await expect(page.getByText(/制作规格已切换为 2\.6mm \/ 52×52/).first()).toBeVisible();
+  await typeSpin(page, '目标颜色数', '3');
+  await colorsInput.blur();
+  await expect(page.getByText(/共 400 粒 · 3 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+  await typeSpin(page, '目标颜色数', '2');
+  await colorsInput.blur();
+  await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
+
   // 悬停显示格信息（工作台工具提示）：带重悬停重试（最终生成的画布重绘可能吞掉首次 mousemove）
   await expect(async () => {
     await page.locator('canvas').first().hover({ position: { x: 8, y: 8 } });
@@ -196,6 +218,11 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   const projectPath = await projectDownload.path();
   const project = JSON.parse(readFileSync(projectPath!, 'utf8'));
   expect(project.format).toBe('doupu-project');
+  expect(project.boardProfile).toBe('2.6mm-52');
+  expect(project.paletteSelection).toEqual({
+    palette: { kind: 'builtin', brand: miniPaletteId!.replace(/^builtin:/, '') },
+    kitTier: 0,
+  });
   expect(project.pattern.width).toBe(20);
   expect(project.pattern.cells[1].code).toBe(keyboardBrushCode);
 
@@ -205,6 +232,8 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.reload();
   await expect(page.getByLabel('设计名称').first()).toBeVisible();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel('色板品牌')).toHaveValue(miniPaletteId!);
+  await expect(page.getByLabel('制作规格')).toHaveValue('2.6mm-52');
   const restoredWidth = page.getByRole('spinbutton', { name: '目标宽度（格）' });
   await expect(restoredWidth).toBeEnabled();
   await typeSpin(page, '目标宽度（格）', '21');

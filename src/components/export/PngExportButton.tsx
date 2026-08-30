@@ -11,6 +11,7 @@ import { usePublicConfig } from '@/components/config/usePublicConfig';
 interface Props {
   pattern: Pattern;
   designName: string;
+  boardSize?: number;
   /** 测试/外部注入覆盖（优先于站点配置默认值） */
   cellPx?: number;
   cropToContent?: boolean;
@@ -23,6 +24,7 @@ const CELL_CHOICES = [8, 16, 24, 32, 48] as const;
 export default function PngExportButton({
   pattern,
   designName,
+  boardSize,
   cellPx,
   cropToContent,
   includeLegend,
@@ -85,6 +87,7 @@ export default function PngExportButton({
         cellPx: optCellPx,
         cropToContent: optCrop,
         includeLegend: optLegend,
+        boardSize,
       });
       if (!result.ok) {
         if (result.code === 'EMPTY_PATTERN') setError(zhCN.export.pngEmptyError);

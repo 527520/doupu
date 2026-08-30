@@ -4,7 +4,19 @@
  */
 import { z } from 'zod';
 import { LIMITS } from './appInfo';
-import { BRANDS, type ProjectFile } from './types';
+import {
+  BOARD_PROFILE_IDS,
+  compatibleBoardProfilesForPalette,
+} from './boardProfiles';
+import { isBuiltinPaletteId } from './palettes';
+import {
+  availablePaletteColors,
+  normalizeAvailableColorCode,
+} from './palettes/availability';
+import { firstPatternPaletteMismatch } from './palettes/projectIntegrity';
+import type { BuiltinPaletteId, ProjectFile } from './types';
+import { isKitTier, isKitTierAvailableForPalette, projectPaletteEngineColors } from './kitTiers';
+import { selectKitColors } from './engine/kit';
 import { zhCN } from '@/messages/zh-CN';
 
 // ---------- 基础 ----------
@@ -62,7 +74,7 @@ export const generationParamsSchema = z.object({
   backgroundRemoval: z.boolean(),
   bgTolerance: z.number().int().min(0).max(40),
   backgroundPrototype: hexSchema.nullable().optional().default(null),
-});
+}).strict();
 
 /** 解析生成参数；非法输入给出字段级错误。 */
 export function parseGenerationParams(
@@ -76,14 +88,26 @@ export function parseGenerationParams(
 
 // ---------- 图纸 ----------
 
-/** 单元格：透明格 hex/code 必须为 null；非透明格 hex 必填、code 可为 null 且 ≤20 字符。 */
+const availableColorCodeSchema = z
+  .string()
+  .transform((code) => code.trim())
+  .pipe(
+    z
+      .string()
+      .min(1, '色号不能为空')
+      .max(LIMITS.customPaletteCodeLength, `色号最长 ${LIMITS.customPaletteCodeLength} 字符`)
+      .refine((code) => normalizeAvailableColorCode(code) !== null, '色号不能使用未识别占位符'),
+  );
+
+/** 单元格：透明格 hex/code 必须为 null；非透明格 hex/code 必须是合法可采购颜色。 */
 export const patternCellSchema = z
   .object({
     hex: hexSchema.nullable(),
-    code: z.string().max(20).nullable(),
+    code: availableColorCodeSchema.nullable(),
     transparent: z.boolean(),
     external: z.boolean().optional(),
   })
+  .strict()
   .superRefine((cell, ctx) => {
     if (cell.transparent) {
       if (cell.hex !== null || cell.code !== null) {
@@ -105,6 +129,7 @@ export const patternSchema = z
     height: z.number().int().min(1).max(LIMITS.targetWidth.max),
     cells: z.array(patternCellSchema),
   })
+  .strict()
   .superRefine((pattern, ctx) => {
     if (pattern.cells.length !== pattern.width * pattern.height) {
       ctx.addIssue({
@@ -118,12 +143,9 @@ export const patternSchema = z
 // ---------- 色板 ----------
 
 export const customPaletteColorSchema = z.object({
-  code: z
-    .string()
-    .min(1, '色号不能为空')
-    .max(LIMITS.customPaletteCodeLength, `色号最长 ${LIMITS.customPaletteCodeLength} 字符`),
+  code: availableColorCodeSchema,
   hex: hexSchema,
-});
+}).strict();
 
 export const customPaletteColorsSchema = z
   .array(customPaletteColorSchema)
@@ -155,33 +177,87 @@ export const customPaletteSchema = z.object({
 });
 
 /** 项目文件色板引用。 */
+export const builtinPaletteIdSchema = z.custom<BuiltinPaletteId>(isBuiltinPaletteId, {
+  message: '未知内置色板',
+});
+
 export const projectPaletteSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('builtin'), brand: z.enum(BRANDS) }),
-  z.object({ kind: z.literal('custom'), colors: customPaletteColorsSchema }),
+  z.object({ kind: z.literal('builtin'), brand: builtinPaletteIdSchema }).strict(),
+  z.object({ kind: z.literal('custom'), colors: customPaletteColorsSchema }).strict(),
 ]);
+
+export const paletteSelectionSchema = z
+  .object({
+    palette: projectPaletteSchema,
+    kitTier: z.custom<ProjectFile['paletteSelection']['kitTier']>(isKitTier, { message: '未知套装档位' }),
+  })
+  .strict()
+  .superRefine((selection, ctx) => {
+    if (!isKitTierAvailableForPalette(selection.kitTier, selection.palette)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['kitTier'],
+        message: '套装档位超出当前色板可生成颜色数',
+      });
+    }
+  });
 
 // ---------- 项目文件（spec §5.3） ----------
 
-export const projectFileSchema = z.object({
+const projectFileObjectSchema = z.object({
   format: z.literal('doupu-project'),
-  version: z.literal(2),
+  version: z.literal(3),
   engineVersion: z.string().min(1).max(50),
+  boardProfile: z.enum(BOARD_PROFILE_IDS),
   name: designNameSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  palette: projectPaletteSchema,
+  paletteSelection: paletteSelectionSchema,
   params: generationParamsSchema,
   pattern: patternSchema,
 }).strict();
 
-/** v1 is read-only input. Successful imports are immediately normalized to v2. */
-const legacyProjectFileSchema = projectFileSchema.omit({ engineVersion: true }).extend({
-  version: z.literal(1),
+export const projectFileSchema = projectFileObjectSchema.superRefine((project, ctx) => {
+  const { palette, kitTier } = project.paletteSelection;
+  const compatible = compatibleBoardProfilesForPalette(palette);
+  if (!compatible.some((profile) => profile.id === project.boardProfile)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['boardProfile'],
+      message: '制作规格与所选色板不兼容',
+    });
+  }
+  const membershipPalette = kitTier === 0
+      ? palette
+      : {
+        kind: 'custom' as const,
+        colors: availablePaletteColors(
+          selectKitColors(projectPaletteEngineColors(palette), kitTier),
+        ).map((color) => ({
+          code: color.code,
+          hex: color.hex,
+        })),
+      };
+  const mismatch = firstPatternPaletteMismatch(project.pattern, membershipPalette);
+  if (mismatch) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['pattern', 'cells', mismatch.cellIndex],
+      message: `图纸颜色 ${mismatch.code ?? '无色号'} / ${mismatch.hex ?? '无颜色'} 不属于当前色板`,
+    });
+  }
 });
 
 export type ProjectFileParseResult =
   | { ok: true; value: ProjectFile }
   | { ok: false; errors: string[] };
+
+/** Strictly parse an already-decoded v3 project from IndexedDB or cloud JSON. */
+export function parseProjectFileValue(json: unknown): ProjectFileParseResult {
+  const current = projectFileSchema.safeParse(json);
+  if (current.success) return { ok: true, value: current.data };
+  return { ok: false, errors: zodErrorsToStrings(current.error) };
+}
 
 /**
  * 严格解析项目文件（spec §5.3 导入规则）。
@@ -199,22 +275,7 @@ export function parseProjectFile(input: string): ProjectFileParseResult {
   } catch {
     return { ok: false, errors: ['不是有效的 JSON 文件'] };
   }
-  const current = projectFileSchema.safeParse(json);
-  if (current.success) return { ok: true, value: current.data };
-
-  const legacy = legacyProjectFileSchema.safeParse(json);
-  if (legacy.success) {
-    return {
-      ok: true,
-      value: {
-        ...legacy.data,
-        version: 2,
-        engineVersion: 'legacy-v1',
-      },
-    };
-  }
-
-  return { ok: false, errors: zodErrorsToStrings(current.error) };
+  return parseProjectFileValue(json);
 }
 
 // ---------- API DTO ----------

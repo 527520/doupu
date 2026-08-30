@@ -123,11 +123,12 @@ describe('background sync queue', () => {
   it('replays an active no-callback pass outcome before a Workbench tail can hide its conflict', async () => {
     const updatedAt = '2026-08-17T00:00:00.000Z';
     const localProject: ProjectFile = {
-      format: 'doupu-project', version: 2, engineVersion: '2.0.0', name: '本地',
+      format: 'doupu-project', version: 3, engineVersion: '2.0.0', name: '本地',
+      boardProfile: '5mm-29',
       createdAt: updatedAt, updatedAt,
-      palette: { kind: 'builtin', brand: 'MARD' },
+      paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
       params: { targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant', brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8 },
-      pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'A', transparent: false }] },
+      pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'H07', transparent: false }] },
     };
     const remoteProject = { ...localProject, name: '云端' };
     const records = new Map<string, DesignRecord>([['original', {
@@ -205,11 +206,12 @@ describe('background sync queue', () => {
   it('replays a conflict created by a partially failed pass before a later retry', async () => {
     const updatedAt = '2026-08-17T00:00:00.000Z';
     const localProject: ProjectFile = {
-      format: 'doupu-project', version: 2, engineVersion: '2.0.0', name: '本地',
+      format: 'doupu-project', version: 3, engineVersion: '2.0.0', name: '本地',
+      boardProfile: '5mm-29',
       createdAt: updatedAt, updatedAt,
-      palette: { kind: 'builtin', brand: 'MARD' },
+      paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
       params: { targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant', brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8 },
-      pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'A', transparent: false }] },
+      pattern: { width: 1, height: 1, cells: [{ hex: '#000000', code: 'H07', transparent: false }] },
     };
     const records = new Map<string, DesignRecord>([
       ['conflict', {

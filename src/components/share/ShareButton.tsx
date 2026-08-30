@@ -41,10 +41,12 @@ export default function ShareButton({ designId, onBeforeShare, disabled, disable
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   const createShare = useCallback(async (): Promise<void> => {
     setState({ kind: 'creating' });
     setCopied(false);
+    setStopError(null);
     try {
       // 先确保这张图纸已经在云端：只读页由服务端渲染快照，本地没推上去就打不开。
       // 这里不能只看「云端：已同步」徽标——它表示上一次同步跑完了，
@@ -78,18 +80,22 @@ export default function ShareButton({ designId, onBeforeShare, disabled, disable
   }, [designId, onBeforeShare, t.createFailed, t.notSyncedYet]);
 
   const stopShare = useCallback(async (): Promise<void> => {
+    setStopError(null);
     try {
-      await fetch(`/api/designs/${designId}/share`, {
+      const response = await fetch(`/api/designs/${designId}/share`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
+      if (!response.ok) throw new Error(`stop share failed: ${response.status}`);
     } catch {
-      // 网络失败时也回到未分享显示；服务端记录不受影响，可重试
+      // 失败时旧链接仍可能有效，必须保留 ready 状态和链接供用户重试。
+      setStopError(t.stopFailed);
+      return;
     }
     setState({ kind: 'idle' });
     setOpen(false);
-  }, [designId]);
+  }, [designId, t.stopFailed]);
 
   const copyLink = async (): Promise<void> => {
     if (state.kind !== 'ready') return;
@@ -121,6 +127,7 @@ export default function ShareButton({ designId, onBeforeShare, disabled, disable
 
           {state.kind === 'creating' && <p role="status" className="text-sm text-ink-soft">{t.creating}</p>}
           {state.kind === 'failed' && <Notice kind="danger">{state.message}</Notice>}
+          {stopError && <Notice kind="danger">{stopError}</Notice>}
 
           {state.kind === 'ready' && (
             <div className="flex flex-col gap-3">

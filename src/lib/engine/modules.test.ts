@@ -7,8 +7,8 @@ import { mergeByTargetCount } from './merge';
 import { removeBackground } from './background';
 import { downscaleBox } from './downscale';
 import { clamp255, type ImageDataLike } from './types';
-import { BRANDS, type PaletteColor, type PatternCell } from '@/lib/types';
-import { getAvailableColors } from '@/lib/palettes';
+import type { PaletteColor, PatternCell } from '@/lib/types';
+import { getBuiltinPalette, listBuiltinPalettes } from '@/lib/palettes';
 import { hexToRgb, oklabSquaredDistance, rgbToOklab } from './color';
 
 function image(w: number, h: number, fill: (x: number, y: number, i: number) => [number, number, number, number]): ImageDataLike {
@@ -81,21 +81,23 @@ describe('buildLut / lutIndex', () => {
     expect(lutCacheKey([{ hex: '#000000', code: null }])).toBe('#000000:');
   });
 
-  it.each(BRANDS)('%s 的每个可用色精确匹配自身', (brand) => {
-    clearLutCache();
-    const brandPalette = getAvailableColors(brand);
-    const brandLut = buildLut(brandPalette);
-    for (const [expectedIndex, color] of brandPalette.entries()) {
-      const rgb = hexToRgb(color.hex)!;
-      expect(lutIndex(brandLut, rgb.r, rgb.g, rgb.b), `${brand} ${color.code} ${color.hex}`).toBe(
-        expectedIndex,
-      );
-    }
-  });
+  for (const summary of listBuiltinPalettes()) {
+    it(`${summary.label} 的每个可生成颜色都精确匹配自身`, () => {
+      clearLutCache();
+      const palette = [...getBuiltinPalette(summary.id).engineColors];
+      const lut = buildLut(palette);
+      for (const [expectedIndex, color] of palette.entries()) {
+        const rgb = hexToRgb(color.hex)!;
+        expect(lutIndex(lut, rgb.r, rgb.g, rgb.b), `${summary.id} ${color.code} ${color.hex}`).toBe(
+          expectedIndex,
+        );
+      }
+    });
+  }
 
   it('固定种子随机 RGB 与精确 Oklab 全扫描 oracle 完全一致', () => {
     clearLutCache();
-    const brandPalette = getAvailableColors('MARD');
+    const brandPalette = [...getBuiltinPalette('MARD').engineColors];
     const brandLut = buildLut(brandPalette);
     const paletteLabs = brandPalette.map((color) => rgbToOklab(hexToRgb(color.hex)!));
     let state = 0x12345678;

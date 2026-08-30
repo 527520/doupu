@@ -1,10 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deletePalette, listPalettes, savePalette } from './api';
+import { deletePalette, getPaletteColors, listPalettes, savePalette } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('palette revision API client', () => {
+  it('工作台投影统一剔除历史占位色号并裁剪合法色号', () => {
+    expect(getPaletteColors({
+      id: 'legacy',
+      name: '旧云色板',
+      updatedAt: 'x',
+      revision: 1,
+      colors: [
+        { code: ' A01 ', hex: '#112233' },
+        { code: '?', hex: '#223344' },
+        { code: 'UNKNOWN', hex: '#334455' },
+        { code: 'UNKNOWN_01', hex: '#445566' },
+      ],
+    })).toEqual([{ code: 'A01', hex: '#112233' }]);
+  });
+
   it('walks cursor pages and hides tombstones', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: 'a', name: 'A', colors: [], updatedAt: 'x', revision: 1 }, { id: 'gone', name: '', colors: [], updatedAt: 'x', revision: 2, deleted: true }], nextCursor: 'next' }), { status: 200 }))

@@ -6,7 +6,7 @@ import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternCell } from '@/lib/types';
 import { CANVAS_UI } from '@/lib/appInfo';
 import { drawPattern } from '@/lib/render/draw';
-import { clampZoom, fitCellSize, pointToCell } from '@/lib/render/layout';
+import { BOARD_SIZE, clampZoom, fitCellSize, pointToCell } from '@/lib/render/layout';
 
 export interface CellHoverInfo {
   row: number;
@@ -16,6 +16,7 @@ export interface CellHoverInfo {
 
 interface Props {
   pattern: Pattern;
+  boardSize?: number;
   /** 测试钩子：固定初始格尺寸（默认按容器自适应） */
   defaultCellPx?: number;
   onCellHover?: (info: CellHoverInfo | null) => void;
@@ -38,7 +39,7 @@ function PreviewToggle({
   );
 }
 
-export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: Props) {
+export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -87,8 +88,8 @@ export default function PatternPreview({ pattern, defaultCellPx, onCellHover }: 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawPattern(ctx, pattern, { cellPx, showGrid, showSeams, showLabels });
-  }, [pattern, cellPx, showGrid, showSeams, showLabels]);
+    drawPattern(ctx, pattern, { cellPx, boardSize, showGrid, showSeams, showLabels });
+  }, [pattern, cellPx, boardSize, showGrid, showSeams, showLabels]);
 
   useEffect(() => {
     draw();

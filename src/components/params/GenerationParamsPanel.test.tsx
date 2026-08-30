@@ -5,8 +5,8 @@ import GenerationParamsPanel from './GenerationParamsPanel';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 
 const builtinOptions = [
-  { value: 'MARD', label: 'MARD', kind: 'builtin' as const },
-  { value: 'COCO', label: 'COCO', kind: 'builtin' as const },
+  { value: 'MARD', label: 'MARD', kind: 'builtin' as const, group: 'MARD' },
+  { value: 'COCO', label: 'COCO', kind: 'builtin' as const, group: 'COCO' },
 ];
 
 function setup(over: Partial<GenerationParams> = {}) {
@@ -19,6 +19,13 @@ function setup(over: Partial<GenerationParams> = {}) {
       selectedPalette="MARD"
       onParamsChange={onChange}
       onPaletteSelect={onPalette}
+      boardProfileOptions={[
+        { value: '5mm-29', label: '5mm / 29×29', boardSize: 29 },
+        { value: '2.6mm-50', label: '2.6mm / 50×50', boardSize: 50 },
+      ]}
+      selectedBoardProfile="5mm-29"
+      onBoardProfileSelect={vi.fn()}
+      paletteColorCount={291}
     />,
   );
   return { onChange, onPalette };
@@ -82,6 +89,53 @@ describe('GenerationParamsPanel', () => {
     expect(onPalette).toHaveBeenCalledWith('COCO');
   });
 
+  it('按品牌分组色板，并切换独立制作规格', () => {
+    const onBoardProfileSelect = vi.fn();
+    render(
+      <GenerationParamsPanel
+        params={DEFAULT_GENERATION_PARAMS}
+        paletteOptions={builtinOptions}
+        selectedPalette="MARD"
+        onParamsChange={vi.fn()}
+        onPaletteSelect={vi.fn()}
+        boardProfileOptions={[
+          { value: '5mm-29', label: '5mm / 29×29', boardSize: 29 },
+          { value: '2.6mm-50', label: '2.6mm / 50×50', boardSize: 50 },
+        ]}
+        selectedBoardProfile="5mm-29"
+        onBoardProfileSelect={onBoardProfileSelect}
+        paletteColorCount={197}
+      />,
+    );
+
+    expect(document.querySelectorAll('#param-brand optgroup')).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText('制作规格'), { target: { value: '2.6mm-50' } });
+    expect(onBoardProfileSelect).toHaveBeenCalledWith('2.6mm-50');
+  });
+
+  it('全部颜色和套装档位随当前可生成色数变化', () => {
+    render(
+      <GenerationParamsPanel
+        params={DEFAULT_GENERATION_PARAMS}
+        paletteOptions={builtinOptions}
+        selectedPalette="MARD"
+        onParamsChange={vi.fn()}
+        onPaletteSelect={vi.fn()}
+        boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
+        selectedBoardProfile="5mm-29"
+        onBoardProfileSelect={vi.fn()}
+        paletteColorCount={70}
+      />,
+    );
+
+    const kit = screen.getByLabelText('手里的套装') as HTMLSelectElement;
+    expect([...kit.options].map((option) => option.textContent)).toEqual([
+      '全部可生成颜色（70 色）',
+      '24 色套装',
+      '48 色套装',
+    ]);
+  });
+
   it('高级面板默认收起，展开后显示取样模式与背景去除', () => {
     setup();
     expect(screen.queryByLabelText('取样模式')).toBeNull();
@@ -122,9 +176,13 @@ describe('GenerationParamsPanel', () => {
         <GenerationParamsPanel
           params={DEFAULT_GENERATION_PARAMS}
           paletteOptions={builtinOptions}
-          selectedPalette="MARD"
-          onParamsChange={onChange}
-          onPaletteSelect={vi.fn()}
+        selectedPalette="MARD"
+        onParamsChange={onChange}
+        onPaletteSelect={vi.fn()}
+        boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
+        selectedBoardProfile="5mm-29"
+        onBoardProfileSelect={vi.fn()}
+        paletteColorCount={291}
           backgroundSampleSource={{
             width: 2,
             height: 1,
@@ -159,6 +217,10 @@ describe('GenerationParamsPanel', () => {
         selectedPalette="MARD"
         onParamsChange={() => {}}
         onPaletteSelect={() => {}}
+        boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
+        selectedBoardProfile="5mm-29"
+        onBoardProfileSelect={() => {}}
+        paletteColorCount={291}
       />,
     );
     rerender(
@@ -168,6 +230,10 @@ describe('GenerationParamsPanel', () => {
         selectedPalette="MARD"
         onParamsChange={() => {}}
         onPaletteSelect={() => {}}
+        boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
+        selectedBoardProfile="5mm-29"
+        onBoardProfileSelect={() => {}}
+        paletteColorCount={291}
       />,
     );
     expect(widthSlider().value).toBe('60');

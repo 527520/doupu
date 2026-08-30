@@ -1,7 +1,7 @@
 /**
  * 项目文件导入（spec §5.3 导入规则）：复用 schemas.parseProjectFile 做严格校验
  * （体积上限/BOM/JSON/schema），本模块只做 UX 级包装与名称冲突处理。
- * 导入规则：hex 为准、code 仅展示（跨品牌可用）。
+ * 导入规则：只接受严格 v3，并校验色板、档位、制作规格与图纸成员关系。
  */
 import { LIMITS } from '@/lib/appInfo';
 import { parseProjectFile } from '@/lib/schemas';

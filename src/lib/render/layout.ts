@@ -1,6 +1,9 @@
 /** 图纸渲染的纯布局计算（spec §F7 渲染规则），供预览与导出共用。 */
 
-export const BOARD_SIZE = 29; // 拼豆板 29×29
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
+
+/** @deprecated 业务代码应传入当前制作规格；仅保留旧调用方的默认值。 */
+export const BOARD_SIZE = DEFAULT_BOARD_SIZE;
 export const MIN_LABEL_PX = 12; // 格 ≥12px 才标注色号
 export const ZOOM_MIN = 0.5; // 50%
 export const ZOOM_MAX = 16; // 1600%
@@ -17,6 +20,11 @@ export function contrastColor(hex: string): '#000000' | '#FFFFFF' {
   return luminance < 150 ? '#FFFFFF' : '#000000';
 }
 
+/** 颜色是否需要浅色前景；Canvas 可据此选择设计系统中的浅色语义 token。 */
+export function prefersLightContrast(hex: string): boolean {
+  return contrastColor(hex) === '#FFFFFF';
+}
+
 /** 当前格子尺寸下是否标注色号。 */
 export function labelVisible(cellPx: number): boolean {
   return cellPx >= MIN_LABEL_PX;
@@ -28,10 +36,11 @@ export function fitCellSize(patternW: number, patternH: number, containerW: numb
   return Math.max(1, Math.floor(Math.min(containerW / patternW, containerH / patternH)));
 }
 
-/** 板缝线位置（第 29、58… 格之后画粗线，含图纸边界）。 */
-export function boardSeamPositions(dim: number): number[] {
+/** 板缝线位置（按当前制作规格的板边长画粗线，不含图纸外边界）。 */
+export function boardSeamPositions(dim: number, boardSize = BOARD_SIZE): number[] {
   const positions: number[] = [];
-  for (let i = BOARD_SIZE; i < dim; i += BOARD_SIZE) positions.push(i);
+  const size = Number.isInteger(boardSize) && boardSize > 0 ? boardSize : BOARD_SIZE;
+  for (let i = size; i < dim; i += size) positions.push(i);
   return positions;
 }
 

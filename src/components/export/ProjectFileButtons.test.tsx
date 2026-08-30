@@ -9,13 +9,17 @@ const source: ProjectSource = {
   name: '测试设计',
   createdAt: '2026-08-14T10:00:00.000Z',
   engineVersion: '2.0.0',
-  palette: { kind: 'builtin', brand: 'MARD' },
+  boardProfile: '5mm-29',
+  paletteSelection: {
+    palette: { kind: 'builtin', brand: 'MARD' },
+    kitTier: 0,
+  },
   params: { ...DEFAULT_GENERATION_PARAMS },
   pattern: {
     width: 2,
     height: 1,
     cells: [
-      { hex: '#FF0000', code: 'F01', transparent: false },
+      { hex: '#FD957B', code: 'F01', transparent: false },
       { hex: null, code: null, transparent: true },
     ],
   },
@@ -80,8 +84,10 @@ describe('ProjectFileButtons', () => {
 
   it('导入未知 brand 显示对应错误', async () => {
     render(<ProjectFileButtons source={source} existingNames={[]} onImport={vi.fn()} />);
-    const json = JSON.parse(serializeProject(source)) as { palette: { kind: string; brand: string } };
-    json.palette = { kind: 'builtin', brand: 'Perler' };
+    const json = JSON.parse(serializeProject(source)) as {
+      paletteSelection: { palette: { kind: string; brand: string }; kitTier: number };
+    };
+    json.paletteSelection.palette = { kind: 'builtin', brand: 'Perler' };
     await importFile(makeFile(JSON.stringify(json)));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/palette/)).toBeTruthy();

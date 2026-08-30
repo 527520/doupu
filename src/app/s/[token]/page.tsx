@@ -67,7 +67,12 @@ export default async function SharedDesignPage({ params }: { params: Promise<{ t
           <strong>{t.summary(snapshot.pattern.width, snapshot.pattern.height, total, stats.length)}</strong>
         </header>
 
-        <SharedPatternView pattern={snapshot.pattern} stats={stats} />
+        <SharedPatternView
+          pattern={snapshot.pattern}
+          stats={stats}
+          boardProfile={snapshot.boardProfile}
+          palette={snapshot.palette}
+        />
 
         <footer className="share-studio-cta">
           <div><Icon name="spark" size={20} /><p>{t.cta}</p></div>

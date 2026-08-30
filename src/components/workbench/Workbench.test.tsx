@@ -84,6 +84,31 @@ class FakeStorage implements StorageAdapter {
   }
 }
 
+class SerialStitchStorage extends FakeStorage {
+  readonly writes: StitchProgress[] = [];
+  activeWrites = 0;
+  maxActiveWrites = 0;
+  private releaseFirstWrite: (() => void) | null = null;
+
+  releaseFirst(): void {
+    this.releaseFirstWrite?.();
+    this.releaseFirstWrite = null;
+  }
+
+  override async putStitchProgress(designId: string, progress: StitchProgress): Promise<void> {
+    this.writes.push({ ...progress, done: progress.done.slice(0) });
+    this.activeWrites += 1;
+    this.maxActiveWrites = Math.max(this.maxActiveWrites, this.activeWrites);
+    if (this.writes.length === 1) {
+      await new Promise<void>((resolve) => {
+        this.releaseFirstWrite = resolve;
+      });
+    }
+    await super.putStitchProgress(designId, progress);
+    this.activeWrites -= 1;
+  }
+}
+
 function fixtureBytes(name: string): Uint8Array {
   const url = new URL('../../../tests/fixtures/' + name, import.meta.url);
   return new Uint8Array(readFileSync(fileURLToPath(url)));
@@ -146,12 +171,16 @@ const instantGenerate: typeof runGenerate = (request, onProgress): GenerateTask 
 function savedProject(name: string, updatedAt: string): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: '2026-08-14T00:00:00.000Z',
     updatedAt,
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: {
       targetWidth: 100,
       targetColorCount: 40,
@@ -183,7 +212,27 @@ const selectUploadInput = (): HTMLInputElement => screen.getByLabelText(zhCN.upl
 async function renderRestored(storage: FakeStorage): Promise<HTMLInputElement> {
   storage.designs.set('id-last', record('id-last', savedProject('初始', '2026-08-14T12:00:00.000Z')));
   render(<Workbench storage={storage} />);
-  return (await screen.findByDisplayValue('初始')) as HTMLInputElement;
+  return (await screen.findAllByDisplayValue('初始'))[0] as HTMLInputElement;
+}
+
+function mockMobileViewport(): () => void {
+  const original = window.matchMedia;
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: vi.fn((query: string) => ({
+      matches: query === '(max-width: 720px)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+    })),
+  });
+  return () => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: original });
+  };
 }
 
 describe('Workbench 全流程', () => {
@@ -270,8 +319,9 @@ describe('Workbench 全流程', () => {
 
     fireEvent.click(screen.getByText(zhCN.workbench.editTab));
     const canvas = screen.getByLabelText(zhCN.editor.canvasAria);
-    fireEvent.pointerDown(canvas, { clientX: 1, clientY: 1, pointerType: 'mouse', pointerId: 1 });
-    fireEvent.pointerUp(canvas, { clientX: 1, clientY: 1, pointerType: 'mouse', pointerId: 1 });
+    // 有界视窗把整图居中；使用视窗中心命中图纸，而不是假定左上角从 (0,0) 开始。
+    fireEvent.pointerDown(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 1 });
 
     // C-7：破坏性确认改用品牌弹窗（不再是 window.confirm）
     const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
@@ -291,6 +341,73 @@ describe('Workbench 全流程', () => {
     await waitFor(() => expect(screen.getByText(/共 10000 粒/)).toBeTruthy());
     expect(screen.queryByText(zhCN.workbench.undoRegeneration)).toBeNull();
   }, 20_000);
+
+  it('手工修补后切换套装档位必须先确认，取消不改变档位也不重生成', async () => {
+    const generateFn = vi.fn(instantGenerate);
+    render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+
+    fireEvent.click(screen.getByText(zhCN.workbench.editTab));
+    const canvas = screen.getByLabelText(zhCN.editor.canvasAria);
+    fireEvent.pointerDown(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 91 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 91 });
+
+    const kit = screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement;
+    fireEvent.change(kit, { target: { value: '24' } });
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }, { timeout: 5000 }));
+    await waitFor(() => expect(kit.value).toBe('0'));
+    expect(generateFn).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(kit, { target: { value: '24' } });
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.confirmRegenerateAction }, { timeout: 5000 }));
+    await waitFor(() => expect(generateFn).toHaveBeenCalledTimes(2));
+    expect(kit.value).toBe('24');
+  }, 20_000);
+
+  it('套装档位重生成失败时回滚档位与实际色集', async () => {
+    let calls = 0;
+    const generateFn: typeof runGenerate = (request, onProgress): GenerateTask => {
+      calls += 1;
+      if (calls === 1) return instantGenerate(request, onProgress);
+      return { promise: Promise.reject(new Error('worker failed')), cancel: vi.fn() };
+    };
+    render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+
+    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
+    await screen.findByText(zhCN.workbench.generateFailed);
+    await waitFor(() => expect(
+      (screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value,
+    ).toBe('0'));
+  });
+
+  it('取消套装档位重生成时回滚档位与实际色集', async () => {
+    let calls = 0;
+    const cancel = vi.fn();
+    const generateFn: typeof runGenerate = (request, onProgress): GenerateTask => {
+      calls += 1;
+      if (calls === 1) return instantGenerate(request, onProgress);
+      return { promise: new Promise(() => undefined), cancel };
+    };
+    render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+
+    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.cancel }));
+    expect(cancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(
+      (screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value,
+    ).toBe('0'));
+  });
 
   it('重新生成失败会回滚参数控件并保留上一份已提交图纸', async () => {
     let calls = 0;
@@ -336,6 +453,48 @@ describe('Workbench 全流程', () => {
     expect(cancel).toHaveBeenCalledOnce();
     expect(await screen.findByLabelText(zhCN.upload.inputLabel)).toBeTruthy();
     expect(screen.queryByText(zhCN.workbench.previewTab)).toBeNull();
+  });
+
+  it('重新生成进行中禁用分享，不会创建旧图纸快照', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(JSON.stringify({ path: '/s/should-not-exist' }), { status: 201 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let calls = 0;
+    const generateFn: typeof runGenerate = (request, onProgress): GenerateTask => {
+      calls += 1;
+      if (calls === 1) return instantGenerate(request, onProgress);
+      return { promise: new Promise(() => undefined), cancel: vi.fn() };
+    };
+    try {
+      render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+      fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+      await screen.findByText(zhCN.crop.title);
+      fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+      await screen.findByText(/共 10000 粒/);
+      await waitFor(() => expect(screen.getByRole('button', { name: zhCN.share.button })).not.toBeDisabled());
+
+      const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth });
+      fireEvent.change(widthInput, { target: { value: '20' } });
+      fireEvent.blur(widthInput);
+      await screen.findByRole('button', { name: zhCN.workbench.cancel });
+
+      const share = screen.getByRole('button', { name: zhCN.share.button });
+      expect(share).toBeDisabled();
+      expect(share).toHaveAttribute('title', zhCN.share.generationInProgress);
+      fireEvent.click(share);
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/share'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('解码失败显示错误文案（不进入裁剪）', async () => {
@@ -550,7 +709,7 @@ describe('Workbench 本地保存', () => {
     const markRow = await screen.findByRole('button', { name: zhCN.stitch.markRowDone });
     fireEvent.click(markRow);
 
-    // 300ms 防抖后落盘
+    // 串行 latest 队列会异步落盘
     await waitFor(() => expect(storage.progress.has('id-last')).toBe(true), { timeout: 3000 });
     const saved = storage.progress.get('id-last')!;
     expect([...saved.done].some((value) => value === 1)).toBe(true);
@@ -583,6 +742,77 @@ describe('Workbench 本地保存', () => {
     // 旧进度被丢弃 → 已拼 0
     await waitFor(() => expect(screen.getByText(/已拼 0 \//)).toBeTruthy());
   });
+
+  it('同尺寸换色板不重读存储，也不覆盖页面内最新跟拼进度', async () => {
+    const storage = new FakeStorage();
+    const readProgress = vi.spyOn(storage, 'getStitchProgress');
+    await renderRestored(storage);
+    await waitFor(() => expect(readProgress).toHaveBeenCalled());
+    const readsAfterRestore = readProgress.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('tab', { name: zhCN.stitch.tab }));
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
+    await screen.findByText(/^已拼 1 \/ 1 粒/);
+
+    fireEvent.change(screen.getByLabelText(zhCN.params.brand), { target: { value: 'builtin:COCO' } });
+    await screen.findByText(/已换到新色板/);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(readProgress).toHaveBeenCalledTimes(readsAfterRestore);
+    expect(screen.getByText(/^已拼 1 \/ 1 粒/)).toBeTruthy();
+  });
+
+  it('跟拼进度串行写入且只保留等待期间的最新快照', async () => {
+    const storage = new SerialStitchStorage();
+    await renderRestored(storage);
+    fireEvent.click(screen.getByRole('tab', { name: zhCN.stitch.tab }));
+
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
+    await waitFor(() => expect(storage.writes).toHaveLength(1));
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowUndone }));
+
+    // 第一笔还在途时，第二个状态只进入 latest 槽，不会并发写库。
+    expect(storage.writes).toHaveLength(1);
+    expect(storage.maxActiveWrites).toBe(1);
+    storage.releaseFirst();
+
+    await waitFor(() => expect(storage.writes).toHaveLength(2));
+    await waitFor(() => expect(storage.progress.has('id-last')).toBe(true));
+    expect(storage.maxActiveWrites).toBe(1);
+    expect([...storage.writes[1].done].some(Boolean)).toBe(false);
+    expect([...storage.progress.get('id-last')!.done].some(Boolean)).toBe(false);
+  });
+
+  it('跟拼保存失败保留页面内进度，并允许显式重试', async () => {
+    const storage = new FakeStorage();
+    await renderRestored(storage);
+    fireEvent.click(screen.getByRole('tab', { name: zhCN.stitch.tab }));
+    storage.quotaExceeded = true;
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
+
+    await screen.findByText(zhCN.workbench.stitchSaveFailed);
+    expect(screen.getByText(/^已拼 1 \/ 1 粒/)).toBeTruthy();
+    expect(storage.progress.has('id-last')).toBe(false);
+
+    storage.quotaExceeded = false;
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.stitchSaveRetry }));
+    await waitFor(() => expect(storage.progress.has('id-last')).toBe(true));
+    expect(screen.queryByText(zhCN.workbench.stitchSaveFailed)).toBeNull();
+  });
+
+  it('页面隐藏时会重试刷新最后一份跟拼状态', async () => {
+    const storage = new FakeStorage();
+    await renderRestored(storage);
+    fireEvent.click(screen.getByRole('tab', { name: zhCN.stitch.tab }));
+    storage.quotaExceeded = true;
+    fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
+    await screen.findByText(zhCN.workbench.stitchSaveFailed);
+
+    storage.quotaExceeded = false;
+    fireEvent(window, new Event('pagehide'));
+
+    await waitFor(() => expect(storage.progress.has('id-last')).toBe(true));
+  });
 });
 
 describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
@@ -600,6 +830,52 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     expect(screen.getByText(zhCN.export.pngExport)).toBeTruthy();
   });
 
+  it('空白起稿可先选择 Mini 色板与 52×52 规格，并按一整板保存', async () => {
+    const storage = new FakeStorage();
+    render(<Workbench storage={storage} />);
+
+    const paletteSelect = await screen.findByLabelText(zhCN.params.brand) as HTMLSelectElement;
+    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
+    expect(artkalC).toBeTruthy();
+    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+
+    const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    expect(profileSelect.value).toBe('2.6mm-50');
+    fireEvent.change(profileSelect, { target: { value: '2.6mm-52' } });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 52) }));
+    await screen.findByRole('tab', { name: zhCN.workbench.editTab });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+
+    await waitFor(() => expect(storage.designs.size).toBe(1));
+    const project = JSON.parse([...storage.designs.values()][0].projectJson) as ProjectFile;
+    expect(project.boardProfile).toBe('2.6mm-52');
+    expect(project.pattern).toMatchObject({ width: 52, height: 52 });
+    expect(project.paletteSelection.palette).toEqual({
+      kind: 'builtin',
+      brand: 'pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186',
+    });
+  });
+
+  it('有生成源时选择 Mini 色板仍以一次重映射原子切规格，并可一步撤销', async () => {
+    const generateFn = vi.fn(instantGenerate);
+    render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+
+    const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
+    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
+    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+
+    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
+    expect(generateFn).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
+    expect(profile.value).toBe('5mm-29');
+    expect(paletteSelect.value).toBe('builtin:MARD');
+  });
+
   it('选套装档位后图纸只用档位内的色号（H-3）', async () => {
     const storage = new FakeStorage();
     storage.designs.set('id-last', record('id-last', savedProject('档位', '2026-08-14T12:00:00.000Z')));
@@ -612,6 +888,209 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 
     await waitFor(() => expect(screen.getByText(/已限定为 24 色套装/)).toBeTruthy());
     expect(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => {
+      const saved = JSON.parse(storage.designs.get('id-last')!.projectJson) as ProjectFile;
+      expect(saved.paletteSelection).toEqual({
+        palette: { kind: 'builtin', brand: 'MARD' },
+        kitTier: 24,
+      });
+    });
+  });
+
+  it('重新打开已保存设计时恢复套装档位', async () => {
+    const storage = new FakeStorage();
+    const project = savedProject('恢复档位', '2026-08-14T12:00:00.000Z');
+    project.paletteSelection.kitTier = 24;
+    storage.designs.set('id-last', record('id-last', project));
+
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('恢复档位');
+
+    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+  });
+
+  it('导入另一项目时不继承上一设计的套装档位', async () => {
+    const storage = new FakeStorage();
+    storage.designs.set('id-last', record('id-last', savedProject('旧设计', '2026-08-14T12:00:00.000Z')));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('旧设计');
+
+    const kit = screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement;
+    fireEvent.change(kit, { target: { value: '24' } });
+    await waitFor(() => expect(kit.value).toBe('24'));
+
+    const imported = savedProject('导入设计', '2026-08-15T12:00:00.000Z');
+    const file = new File([JSON.stringify(imported)], 'import.doupu.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
+
+    await screen.findByDisplayValue('导入设计');
+    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('0');
+  });
+
+  it('重新上传进入新设计后不继承上一设计的套装档位', async () => {
+    const storage = new FakeStorage();
+    render(<Workbench storage={storage} decodeFn={fakeDecode} generateFn={instantGenerate} />);
+    fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+    await screen.findByText(zhCN.crop.title);
+    fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+    await screen.findByText(/共 10000 粒/);
+
+    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
+    await waitFor(() => expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24'));
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => expect(storage.designs.size).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+
+    await screen.findByLabelText(zhCN.upload.inputLabel);
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 29) }));
+    await screen.findByRole('tab', { name: zhCN.workbench.editTab });
+    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('0');
+  });
+
+  it('公开配置延迟返回不会覆盖用户已选的 Mini 色板与 52×52 规格', async () => {
+    let resolveConfig!: (response: Response) => void;
+    const configResponse = new Promise<Response>((resolve) => { resolveConfig = resolve; });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === '/api/config') return configResponse;
+      return Promise.resolve(new Response(null, { status: 401 }));
+    }));
+    try {
+      const generateFn = vi.fn(instantGenerate);
+      render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
+      const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
+      const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'))!;
+      fireEvent.change(paletteSelect, { target: { value: artkalC.value } });
+      const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+      fireEvent.change(profileSelect, { target: { value: '2.6mm-52' } });
+
+      await act(async () => {
+        resolveConfig(new Response(JSON.stringify({
+          generation: { defaultWidth: 88, defaultColorCount: 32 },
+          exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+          exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+        }), { status: 200 }));
+        await configResponse;
+      });
+
+      fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
+      await screen.findByText(zhCN.crop.title);
+      fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
+      await screen.findByText(/共 7744 粒/);
+      expect((screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement).value).toBe(artkalC.value);
+      expect((screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement).value).toBe('2.6mm-52');
+      expect(generateFn.mock.calls[0][0].params).toMatchObject({ targetWidth: 88, targetColorCount: 32 });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('自定义色板可切换 2.6mm 规格，保存与一步撤销都包含制作规格', async () => {
+    const storage = new FakeStorage();
+    const project = savedProject('Mini', '2026-08-14T12:00:00.000Z');
+    project.paletteSelection.palette = { kind: 'custom', colors: [{ code: 'H07', hex: '#000000' }] };
+    storage.designs.set('id-last', record('id-last', project));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('Mini');
+    expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
+
+    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    expect([...profile.options].map((option) => option.value)).toEqual(['5mm-29', '2.6mm-50', '2.6mm-52']);
+    fireEvent.change(profile, { target: { value: '2.6mm-50' } });
+
+    expect(profile.value).toBe('2.6mm-50');
+    expect(screen.getByText(/制作规格已切换为 2.6mm \/ 50×50/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => {
+      const saved = storage.designs.get('id-last');
+      expect(saved).toBeTruthy();
+      expect((JSON.parse(saved!.projectJson) as ProjectFile).boardProfile).toBe('2.6mm-50');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
+    expect(profile.value).toBe('5mm-29');
+    expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
+  });
+
+  it('选择 Mini 专用内置色板时原子切到 2.6mm-50，并保存版本化色板 ID', async () => {
+    const storage = new FakeStorage();
+    storage.designs.set('id-last', record('id-last', savedProject('Artkal', '2026-08-14T12:00:00.000Z')));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('Artkal');
+
+    const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
+    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
+    expect(artkalC).toBeTruthy();
+    expect(artkalC?.textContent).toContain('178dafb');
+    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+
+    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
+    expect([...profile.options].map((option) => option.value)).toEqual(['2.6mm-50', '2.6mm-52']);
+    expect(screen.getByText(/制作规格已切换为 2.6mm \/ 50×50/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => {
+      const saved = JSON.parse(storage.designs.get('id-last')!.projectJson) as ProjectFile;
+      expect(saved.boardProfile).toBe('2.6mm-50');
+      expect(saved.paletteSelection.palette).toEqual({
+        kind: 'builtin',
+        brand: 'pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
+    expect(profile.value).toBe('5mm-29');
+    expect(paletteSelect.value).toBe('builtin:MARD');
+  });
+});
+
+describe('Workbench 移动沉浸工作区', () => {
+  it('进入编辑时压入同路由界面状态，顶部返回只退出到普通预览', async () => {
+    const restoreViewport = mockMobileViewport();
+    window.history.replaceState(null, '', '/app');
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    try {
+      const storage = new FakeStorage();
+      await renderRestored(storage);
+      const editTab = await screen.findByRole('tab', { name: zhCN.workbench.editTab });
+      fireEvent.click(editTab);
+
+      const workspace = await screen.findByTestId('mobile-immersive-workspace');
+      expect(workspace).toBeTruthy();
+      expect(window.location.pathname).toBe('/app');
+      expect(window.history.state).toBeTruthy();
+
+      fireEvent.click(within(workspace).getByRole('button', { name: /返回预览/ }));
+      await waitFor(() => expect(screen.queryByTestId('mobile-immersive-workspace')).toBeNull());
+      expect(back).toHaveBeenCalledOnce();
+      expect(screen.getByRole('tab', { name: zhCN.workbench.previewTab })).toHaveAttribute('aria-selected', 'true');
+    } finally {
+      back.mockRestore();
+      restoreViewport();
+      cleanup();
+    }
+  });
+
+  it('系统返回事件先退出沉浸跟拼，不离开 /app', async () => {
+    const restoreViewport = mockMobileViewport();
+    window.history.replaceState(null, '', '/app');
+    try {
+      const storage = new FakeStorage();
+      await renderRestored(storage);
+      fireEvent.click(await screen.findByRole('tab', { name: zhCN.stitch.tab }));
+      await screen.findByTestId('mobile-immersive-workspace');
+
+      window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+
+      await waitFor(() => expect(screen.queryByTestId('mobile-immersive-workspace')).toBeNull());
+      expect(window.location.pathname).toBe('/app');
+      expect(screen.getByRole('tab', { name: zhCN.workbench.previewTab })).toHaveAttribute('aria-selected', 'true');
+    } finally {
+      restoreViewport();
+      cleanup();
+    }
   });
 });
 
@@ -623,8 +1102,9 @@ describe('Workbench 编辑与导出接缝', () => {  it('编辑模式落笔后 o
 
     vi.useFakeTimers();
     try {
-      fireEvent.pointerDown(canvas, { clientX: 0, clientY: 0, pointerType: 'mouse' });
-      fireEvent.pointerUp(canvas, { clientX: 0, clientY: 0, pointerType: 'mouse' });
+      // 2×1 图纸以 64px 格居中在 640×520 视窗；(288,228) 是首格中心。
+      fireEvent.pointerDown(canvas, { clientX: 288, clientY: 228, pointerType: 'mouse', pointerId: 1 });
+      fireEvent.pointerUp(canvas, { clientX: 288, clientY: 228, pointerType: 'mouse', pointerId: 1 });
       await act(async () => {
         vi.advanceTimersByTime(1100);
       });
@@ -639,7 +1119,7 @@ describe('Workbench 编辑与导出接缝', () => {  it('编辑模式落笔后 o
 });
 
 describe('Workbench 云端自定义色板（优化票 06）', () => {
-  it('恢复项目仍加载云端色板，但没有原图时锁定重生成控件', async () => {
+  it('恢复项目无原图时锁定重生成，并按云端自定义色板 ID 撤销', async () => {
     enqueueDesignSyncMock.mockResolvedValue({
       pushed: 0,
       pulled: 0,
@@ -663,7 +1143,8 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
       if (url === '/api/palettes') {
         return new Response(JSON.stringify({
           items: [
-            { id: 'pal-1', name: '粉彩', colors: [{ hex: '#FFAA00', code: 'P1' }], updatedAt: '2026-08-15T00:00:00.000Z', revision: 1 },
+            { id: 'pal-1', name: '粉彩 A', colors: [{ hex: '#FFAA00', code: 'P1' }], updatedAt: '2026-08-15T00:00:00.000Z', revision: 1 },
+            { id: 'pal-same-colors', name: '粉彩 B', colors: [{ hex: '#FFAA00', code: 'P1' }], updatedAt: '2026-08-15T00:00:00.000Z', revision: 1 },
             { id: 'pal-2', name: '空板', colors: [], updatedAt: '2026-08-15T00:00:00.000Z', revision: 1 },
           ],
           nextCursor: null,
@@ -678,10 +1159,11 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('初始');
 
-    // 下拉出现「我的·粉彩」；空色板被过滤
+    // 下拉出现两个同色但身份不同的云端色板；空色板被过滤。
     const select = (await screen.findByLabelText(zhCN.params.brand)) as HTMLSelectElement;
     await waitFor(() => {
-      expect(select.textContent).toContain('我的·粉彩');
+      expect(select.textContent).toContain('我的·粉彩 A');
+      expect(select.textContent).toContain('我的·粉彩 B');
       expect(select.textContent).not.toContain('空板');
     });
 
@@ -690,11 +1172,18 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
     expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
     expect(select).not.toBeDisabled();
-    fireEvent.change(select, { target: { value: 'custom:pal-1' } });
-    await waitFor(() => expect(select.value).toBe('custom:pal-1'));
+    fireEvent.change(select, { target: { value: 'custom:pal-same-colors' } });
+    await waitFor(() => expect(select.value).toBe('custom:pal-same-colors'));
     // 重映射结果有明确反馈，且提供一步撤销
     expect(screen.getByText(/已换到新色板/)).toBeTruthy();
     expect(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeTruthy();
+
+    // 再换到内置色板后一步撤销，必须恢复刚才选中的 B；
+    // 不能按颜色相等错误命中列表中排在前面的 A。
+    fireEvent.change(select, { target: { value: 'builtin:COCO' } });
+    await waitFor(() => expect(select.value).toBe('builtin:COCO'));
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
+    await waitFor(() => expect(select.value).toBe('custom:pal-same-colors'));
 
     await waitFor(() => expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy());
     const callsBeforeOnline = enqueueDesignSyncMock.mock.calls.length;
@@ -765,7 +1254,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     const storage = new FakeStorage();
     storage.designs.set('id-last', record('id-last', savedProject('旧画面', '2026-08-14T12:00:00.000Z')));
     const remoteProject = savedProject('云端新版', '2026-08-14T13:00:00.000Z');
-    remoteProject.pattern.cells[0] = { hex: '#FF0000', code: 'F02', transparent: false };
+    remoteProject.pattern.cells[0] = { hex: '#FC3D46', code: 'F02', transparent: false };
     enqueueDesignSyncMock.mockImplementation(async () => {
       storage.designs.set('id-last', { ...record('id-last', remoteProject), revision: 2, syncState: 'synced' });
       return { pushed: 0, pulled: 1, overwrittenByCloud: ['id-last'], conflictCopies: [], errors: [], cloud: [] } as never;

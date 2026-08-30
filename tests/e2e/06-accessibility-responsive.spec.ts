@@ -136,6 +136,13 @@ test('移动工作台可切换编辑、用色与导出工具', async ({ page }, 
   await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByLabel('图纸编辑画布')).toBeVisible();
 
+  // 编辑/跟拼现在是沉浸工作区：先验证编辑器自己的「更多」抽屉，
+  // 再返回普通预览操作页面级的用色与导出工具。
+  await page.getByRole('button', { name: '更多', exact: true }).click();
+  await expect(page.getByRole('button', { name: '油漆桶', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回预览', exact: true }).click();
+  await expect(page.locator('#panel-preview')).toBeVisible();
+
   const colors = page.getByRole('button', { name: '用色', exact: true });
   await colors.click();
   await expect(colors).toHaveAttribute('aria-pressed', 'true');

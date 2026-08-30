@@ -7,15 +7,32 @@
  * 因此默认折叠成一条色带，点开才铺满色格——概览与细看两种需求各得其所。
  * 色格带色号 title/aria-label，方便对照采购。
  */
-import { useId, useState } from 'react';
+import { useId, useState, type CSSProperties } from 'react';
 import ColorBand from './ColorBand';
 import { zhCN } from '@/messages/zh-CN';
+import type { BuiltinPaletteExclusionReason } from '@/lib/palettes';
 import type { PaletteColor } from '@/lib/types';
+
+export interface PaletteSwatchColor extends PaletteColor {
+  excludedReason?: BuiltinPaletteExclusionReason;
+  group?: string | null;
+  sourceId?: string | null;
+}
 
 interface Props {
   /** 色板名（用于色带的可访问名） */
   name: string;
-  colors: readonly PaletteColor[];
+  colors: readonly PaletteSwatchColor[];
+}
+
+function exclusionLabel(reason: BuiltinPaletteExclusionReason): string {
+  const t = zhCN.palettes;
+  switch (reason) {
+    case 'transparent': return t.transparentMaterial;
+    case 'unidentified': return t.unidentifiedCode;
+    case 'duplicate-hex': return t.duplicateColor;
+    case 'unavailable-code': return t.unavailableCode;
+  }
 }
 
 export default function PaletteSwatches({ name, colors }: Props) {
@@ -39,18 +56,47 @@ export default function PaletteSwatches({ name, colors }: Props) {
       {open && (
         <ul
           id={gridId}
-          /* 限高 + 滚动：291 色铺开会把卡片撑到几千像素高，同排卡片也被拉长。 */
-          className="grid max-h-56 grid-cols-[repeat(auto-fill,minmax(1.25rem,1fr))] gap-1 overflow-auto pr-1"
+          /* 限高 + 滚动：大色板铺开不应把整页拉长。 */
+          className="palette-swatch-grid"
         >
-          {colors.map((color) => (
-            <li
-              key={`${color.code ?? ''}-${color.hex}`}
-              title={`${color.code ?? ''} ${color.hex}`.trim()}
-              aria-label={`${color.code ?? ''} ${color.hex}`.trim()}
-              className="aspect-square rounded-sm border border-lilac/30"
-              style={{ backgroundColor: color.hex }}
-            />
-          ))}
+          {colors.map((color, index) => {
+            const reason = color.excludedReason ?? null;
+            const transparent = reason === 'transparent';
+            const codeLabel = reason === 'unidentified'
+              ? t.unidentifiedCode
+              : color.code ?? t.unavailableCode;
+            const detail = reason && reason !== 'unidentified' && reason !== 'unavailable-code'
+              ? exclusionLabel(reason)
+              : null;
+            const accessibleLabel = [codeLabel, color.hex, reason ? t.displayOnly : null, detail]
+              .filter(Boolean)
+              .join(' ');
+            const swatchStyle = transparent
+              ? ({ '--palette-swatch-color': color.hex } as CSSProperties)
+              : { backgroundColor: color.hex };
+            return (
+              <li
+                key={`${color.code ?? ''}-${color.hex}-${index}`}
+                title={accessibleLabel}
+                aria-label={accessibleLabel}
+                className="palette-swatch-item"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`palette-swatch-chip${transparent ? ' palette-swatch-transparent' : ''}`}
+                  style={swatchStyle}
+                />
+                <span className="palette-swatch-code">{codeLabel}</span>
+                <span className="palette-swatch-hex">{color.hex}</span>
+                {reason && (
+                  <span className="palette-swatch-exclusion">
+                    <span>{t.displayOnly}</span>
+                    {detail && <span>{detail}</span>}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

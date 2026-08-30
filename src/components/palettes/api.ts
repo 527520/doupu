@@ -3,6 +3,7 @@
  * 供 /palettes 页面使用；getPaletteColors 同时是工作台接入自定义色板的接缝（T19）。
  */
 import type { CustomPaletteColor, PaletteColor } from '@/lib/types';
+import { availablePaletteColors } from '@/lib/palettes/availability';
 
 export interface PaletteRecord {
   id: string;
@@ -87,9 +88,7 @@ export async function deletePalette(id: string, baseRevision: number): Promise<v
  * hex 为准；code 缺失的条目跳过（引擎要求 code 非空）。
  */
 export function getPaletteColors(record: PaletteRecord): PaletteColor[] {
-  return record.colors
-    .filter((color) => color.code && color.code.trim().length > 0)
-    .map((color) => ({ hex: color.hex, code: color.code }));
+  return availablePaletteColors(record.colors);
 }
 
 /** 生成客户端 UUID（测试环境兜底）。 */

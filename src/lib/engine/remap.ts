@@ -13,6 +13,7 @@ import { buildLut, lutIndex } from './lut';
 import { hexToRgb } from './color';
 import { computeStats, totalBeadCount } from './generate';
 import type { PaletteColor, Pattern, PatternCell, PatternStatsItem } from '@/lib/types';
+import { availablePaletteColors } from '@/lib/palettes/availability';
 
 export interface RemapResult {
   pattern: Pattern;
@@ -27,13 +28,13 @@ export interface RemapResult {
  * 透明格与背景（external）格保持原样：它们不需要豆子，也不该被染上颜色。
  */
 export function remapPattern(pattern: Pattern, palette: PaletteColor[]): RemapResult {
-  // 可用性是引擎不变量（与 generatePattern 一致）：没有色号的颜色不能出现在成品里
-  const available = palette.filter((color) => color.code !== null);
+  // 可用性是引擎不变量（与 generatePattern 一致）：占位色号不能出现在成品里。
+  const available = availablePaletteColors(palette);
   if (available.length === 0) throw new Error('palette is empty');
 
   const lut = buildLut(available);
   /** 同一个 hex 只算一次最近色：图纸最多几百种颜色，但有几万个格子。 */
-  const mapped = new Map<string, { hex: string; code: string | null }>();
+  const mapped = new Map<string, { hex: string; code: string }>();
   let changedCells = 0;
 
   const cells: PatternCell[] = pattern.cells.map((cell) => {

@@ -18,12 +18,40 @@ import {
   legendColumnsForItems,
   paginateLegendItems,
   pageHeaderText,
+  resolveBoardPdfMetrics,
   sanitizeFilename,
   seamPositionsForPage,
   sortStatsForLegend,
   toWinAnsi,
   truncateTextToWidth,
 } from './pdfLayout';
+
+describe('resolveBoardPdfMetrics（制作规格整组几何）', () => {
+  it('站点配置与 2.6mm 覆盖组合后超出 A4 时，回退仍保持 2.6mm 且一页一块板', () => {
+    const configured = {
+      cellMm: 2,
+      marginMm: 8,
+      headerMm: 10,
+      pageCols: 80,
+      pageRows: 80,
+    };
+
+    expect(resolveBoardPdfMetrics(configured, 50, 2.6)).toEqual({
+      cellMm: 2.6,
+      marginMm: defaultPdfMetrics.marginMm,
+      headerMm: defaultPdfMetrics.headerMm,
+      pageCols: 50,
+      pageRows: 50,
+    });
+    expect(resolveBoardPdfMetrics(configured, 52, 2.6)).toEqual({
+      cellMm: 2.6,
+      marginMm: defaultPdfMetrics.marginMm,
+      headerMm: defaultPdfMetrics.headerMm,
+      pageCols: 52,
+      pageRows: 52,
+    });
+  });
+});
 
 describe('computePdfLayout（E25 分页）', () => {
   it('1×1 → 1 页图纸 + 1 页图例 = 2 页', () => {
@@ -55,6 +83,30 @@ describe('computePdfLayout（E25 分页）', () => {
     expect(wide.gridPages[1].colStart).toBe(29);
     expect(wide.gridPages[1].cols).toBe(1);
     expect(wide.gridPages[1].board).toEqual({ row: 1, col: 2, rows: 1, cols: 2 });
+  });
+
+  it('2.6mm 规格按 50×50 或 52×52 独立分页', () => {
+    const mini50 = computePdfLayout(
+      101,
+      52,
+      { ...defaultPdfMetrics, cellMm: 2.6, pageCols: 50, pageRows: 50 },
+      'byBoard',
+      50,
+    );
+    expect(mini50.gridPages).toHaveLength(6);
+    expect(mini50.boards).toEqual({ rows: 2, cols: 3 });
+    expect(mini50.gridPages[1]).toMatchObject({ colStart: 50, cols: 50, rowStart: 0, rows: 50 });
+    expect(mini50.gridPages[5]).toMatchObject({ colStart: 100, cols: 1, rowStart: 50, rows: 2 });
+
+    const mini52 = computePdfLayout(
+      53,
+      52,
+      { ...defaultPdfMetrics, cellMm: 2.6, pageCols: 52, pageRows: 52 },
+      'byBoard',
+      52,
+    );
+    expect(mini52.gridPages).toHaveLength(2);
+    expect(mini52.gridPages[1]).toMatchObject({ colStart: 52, cols: 1, rows: 52 });
   });
 
   it('free 模式沿用配置化的每页格数（31×45）', () => {
@@ -165,6 +217,13 @@ describe('seamPositionsForPage（板缝线）', () => {
     // 全局 187..200 区间内的 29 倍数：无（174、203 均不在 (186,200) 内）
     expect(last.cols).toEqual([]);
     expect(last.rows).toEqual([]);
+  });
+
+  it('free 模式按选择的 50×50 板定位全局板缝', () => {
+    const metrics = { ...defaultPdfMetrics, pageCols: 60, pageRows: 60 };
+    const layout = computePdfLayout(120, 120, metrics, 'free', 50);
+    expect(seamPositionsForPage(layout.gridPages[0], 50)).toEqual({ cols: [50], rows: [50] });
+    expect(seamPositionsForPage(layout.gridPages[3], 50)).toEqual({ cols: [100], rows: [100] });
   });
 
   it('小页无板缝', () => {

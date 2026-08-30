@@ -10,6 +10,7 @@ import {
   fitCellSize,
   labelVisible,
   pointToCell,
+  prefersLightContrast,
 } from './layout';
 
 describe('contrastColor', () => {
@@ -24,6 +25,11 @@ describe('contrastColor', () => {
 
   it('非法 hex 回退黑字', () => {
     expect(contrastColor('bad')).toBe('#000000');
+  });
+
+  it('暴露语义化的浅色前景判定，供 Canvas 选择设计 token', () => {
+    expect(prefersLightContrast('#000000')).toBe(true);
+    expect(prefersLightContrast('#FFFFFF')).toBe(false);
   });
 });
 
@@ -60,6 +66,11 @@ describe('boardSeamPositions', () => {
     expect(boardSeamPositions(59)).toEqual([29, 58]);
     expect(boardSeamPositions(200)).toEqual([29, 58, 87, 116, 145, 174]);
     expect(BOARD_SIZE).toBe(29);
+  });
+
+  it('按制作规格使用 50×50 与 52×52 板缝', () => {
+    expect(boardSeamPositions(101, 50)).toEqual([50, 100]);
+    expect(boardSeamPositions(105, 52)).toEqual([52, 104]);
   });
 });
 

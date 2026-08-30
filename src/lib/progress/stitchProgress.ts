@@ -13,6 +13,8 @@
  * 变换尺寸后宽高不再匹配，进度即失效（宁可让用户重新开始，也不能把
  * 「已拼」标记错位到别的格子上）。
  */
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
+
 export const STITCH_PROGRESS_VERSION = 1 as const;
 
 export interface StitchProgress {
@@ -22,6 +24,153 @@ export interface StitchProgress {
   /** 长度 = width × height，每格 0/1 */
   done: Uint8Array;
   updatedAt: string;
+}
+
+export type StitchCell = {
+  hex: string | null;
+  transparent: boolean;
+  external?: boolean;
+};
+
+/** 跟拼领域唯一的可拼格判定：必须有颜色，且不是透明/背景外部格。 */
+export function isStitchableCell(cell: StitchCell | null | undefined): cell is StitchCell {
+  return Boolean(cell?.hex) && cell?.transparent === false && cell.external !== true;
+}
+
+export interface BoardRect {
+  rowStart: number;
+  rowEndExclusive: number;
+  colStart: number;
+  colEndExclusive: number;
+  width: number;
+  height: number;
+}
+
+/** 取得指定板块在整张图纸中的范围；边缘板块会按图纸尺寸裁剪。 */
+export function getBoardRect(
+  patternWidth: number,
+  patternHeight: number,
+  boardRow: number,
+  boardCol: number,
+  boardSize = DEFAULT_BOARD_SIZE,
+): BoardRect | null {
+  if (
+    !Number.isInteger(patternWidth)
+    || !Number.isInteger(patternHeight)
+    || !Number.isInteger(boardRow)
+    || !Number.isInteger(boardCol)
+    || !Number.isInteger(boardSize)
+    || patternWidth <= 0
+    || patternHeight <= 0
+    || boardRow < 0
+    || boardCol < 0
+    || boardSize <= 0
+  ) return null;
+
+  const rowStart = boardRow * boardSize;
+  const colStart = boardCol * boardSize;
+  if (rowStart >= patternHeight || colStart >= patternWidth) return null;
+  const rowEndExclusive = Math.min(patternHeight, rowStart + boardSize);
+  const colEndExclusive = Math.min(patternWidth, colStart + boardSize);
+  return {
+    rowStart,
+    rowEndExclusive,
+    colStart,
+    colEndExclusive,
+    width: colEndExclusive - colStart,
+    height: rowEndExclusive - rowStart,
+  };
+}
+
+export interface StitchTarget {
+  boardRow: number;
+  boardCol: number;
+  /** 目标所在板块内的行号（0-based）。 */
+  localRow: number;
+  /** 目标在整张图纸中的行列（0-based）。 */
+  row: number;
+  col: number;
+}
+
+/**
+ * 寻找下一颗未拼的豆：板块横向优先，板块内逐行逐列。
+ * 空板、空行以及透明/背景外部格会被直接跳过。
+ */
+export function findNextStitchTarget(
+  progress: StitchProgress,
+  cells: readonly StitchCell[],
+  boardSize = DEFAULT_BOARD_SIZE,
+): StitchTarget | null {
+  if (!Number.isInteger(boardSize) || boardSize <= 0) return null;
+  const boardRows = Math.ceil(progress.height / boardSize);
+  const boardCols = Math.ceil(progress.width / boardSize);
+  for (let boardRow = 0; boardRow < boardRows; boardRow++) {
+    for (let boardCol = 0; boardCol < boardCols; boardCol++) {
+      const rect = getBoardRect(progress.width, progress.height, boardRow, boardCol, boardSize);
+      if (!rect) continue;
+      for (let row = rect.rowStart; row < rect.rowEndExclusive; row++) {
+        for (let col = rect.colStart; col < rect.colEndExclusive; col++) {
+          const index = row * progress.width + col;
+          if (isStitchableCell(cells[index]) && progress.done[index] !== 1) {
+            return { boardRow, boardCol, localRow: row - rect.rowStart, row, col };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 标记当前板块的一条局部行。只改动这一板范围内真正需要拼的格子；
+ * 相邻板块、透明格与背景外部格保持原样。
+ */
+export function setBoardRowDone(
+  progress: StitchProgress,
+  cells: readonly StitchCell[],
+  boardRow: number,
+  boardCol: number,
+  localRow: number,
+  value: boolean,
+  now = new Date(),
+  boardSize = DEFAULT_BOARD_SIZE,
+): StitchProgress {
+  const rect = getBoardRect(progress.width, progress.height, boardRow, boardCol, boardSize);
+  if (!rect || !Number.isInteger(localRow) || localRow < 0 || localRow >= rect.height) return progress;
+
+  const row = rect.rowStart + localRow;
+  const nextValue = value ? 1 : 0;
+  let done: Uint8Array | null = null;
+  for (let col = rect.colStart; col < rect.colEndExclusive; col++) {
+    const index = row * progress.width + col;
+    if (!isStitchableCell(cells[index]) || progress.done[index] === nextValue) continue;
+    done ??= progress.done.slice();
+    done[index] = nextValue;
+  }
+  return done ? { ...progress, done, updatedAt: now.toISOString() } : progress;
+}
+
+/** 空行不算完成；存在可拼格时，只有这一板局部行的可拼格全部已拼才返回 true。 */
+export function isBoardRowDone(
+  progress: StitchProgress,
+  cells: readonly StitchCell[],
+  boardRow: number,
+  boardCol: number,
+  localRow: number,
+  boardSize = DEFAULT_BOARD_SIZE,
+): boolean {
+  const rect = getBoardRect(progress.width, progress.height, boardRow, boardCol, boardSize);
+  if (!rect || !Number.isInteger(localRow) || localRow < 0 || localRow >= rect.height) return false;
+
+  const row = rect.rowStart + localRow;
+  let hasStitchableCell = false;
+  for (let col = rect.colStart; col < rect.colEndExclusive; col++) {
+    const index = row * progress.width + col;
+    if (!isStitchableCell(cells[index])) continue;
+    hasStitchableCell = true;
+    if (progress.done[index] !== 1) return false;
+  }
+  return hasStitchableCell;
 }
 
 export function createStitchProgress(width: number, height: number, now = new Date()): StitchProgress {
@@ -80,7 +229,7 @@ export function toggleCell(progress: StitchProgress, row: number, col: number, n
   return { ...progress, done, updatedAt: now.toISOString() };
 }
 
-/** 整行标记（拼豆是一行一行拼的，逐格点 29 次不现实）。 */
+/** 整行标记（拼豆是一行一行拼的，逐格点完整板宽不现实）。 */
 export function setRowDone(
   progress: StitchProgress,
   row: number,
@@ -113,7 +262,7 @@ export interface ProgressSummary {
  */
 export function summarizeProgress(
   progress: StitchProgress,
-  cells: readonly { transparent: boolean; external?: boolean }[],
+  cells: readonly StitchCell[],
 ): ProgressSummary {
   let total = 0;
   let doneCount = 0;
@@ -123,7 +272,7 @@ export function summarizeProgress(
     for (let col = 0; col < progress.width; col++) {
       const index = row * progress.width + col;
       const cell = cells[index];
-      if (!cell || cell.transparent || cell.external) continue;
+      if (!isStitchableCell(cell)) continue;
       total += 1;
       if (progress.done[index] === 1) doneCount += 1;
       else rowHasPending = true;

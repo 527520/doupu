@@ -7,6 +7,7 @@ export default function HelpPage() {
   const guides: Array<{ title: string; body: string; icon: IconName }> = [
     { title: t.uploadTitle, body: t.uploadBody, icon: 'upload' },
     { title: t.paramsTitle, body: t.paramsBody, icon: 'sliders' },
+    { title: t.paletteTitle, body: t.paletteBody, icon: 'palette' },
     { title: t.seamTitle, body: t.seamBody, icon: 'grid' },
     { title: t.exportTitle, body: t.exportBody, icon: 'download' },
   ];

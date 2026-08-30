@@ -25,12 +25,13 @@ const DESIGN_BYTES_PER_USER = 50 * 1024 * 1024;
 function project(name) {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: '2026-08-17T00:00:00.000Z',
     updatedAt: '2026-08-17T00:00:00.000Z',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
     params: {
       targetWidth: 20,
       targetColorCount: 2,

@@ -20,7 +20,7 @@ import {
 } from './index';
 import { serializeProject, type ProjectSource } from '@/lib/project/serialize';
 import { generatePattern } from '@/lib/engine/generate';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 
 /** 内存版 IndexedDB 假实现（测试专用）。 */
@@ -71,7 +71,11 @@ function makeProject(name: string, updatedAt: string): ProjectFile {
     name,
     createdAt: '2026-08-14T00:00:00.000Z',
     engineVersion: '2.0.0',
-    palette: { kind: 'builtin', brand: 'MARD' },
+    boardProfile: '5mm-29',
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: {
       targetWidth: 40,
       targetColorCount: 40,
@@ -210,7 +214,7 @@ describe('本地生成源契约', () => {
     };
     const restored = imageDataFromLocalGenerationSource(createLocalGenerationSource(image));
     const params = { ...DEFAULT_GENERATION_PARAMS, targetWidth: 6, targetColorCount: 12 };
-    const palette = buildBrandPalette('MARD');
+    const palette = [...getBuiltinPalette('MARD').engineColors];
 
     const before = generatePattern(image, params, palette);
     const after = generatePattern(restored, params, palette);

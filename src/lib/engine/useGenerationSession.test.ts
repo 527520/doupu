@@ -12,9 +12,12 @@ const source: ImageDataLike = {
   height: 1,
 };
 const draft: GenerationDraft = {
+  boardProfile: '5mm-29',
   params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 20 },
-  palette: [{ code: 'R', hex: '#FF0000' }],
-  projectPalette: { kind: 'custom', colors: [{ code: 'R', hex: '#FF0000' }] },
+  paletteSelection: {
+    palette: { kind: 'custom', colors: [{ code: 'R', hex: '#FF0000' }] },
+    kitTier: 0,
+  },
 };
 const commit: GenerationCommit = {
   ...draft,

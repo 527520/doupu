@@ -6,6 +6,46 @@ import type { Pattern } from '@/lib/types';
 afterEach(() => vi.restoreAllMocks());
 
 describe('exportPngBlob 真实布局路径', () => {
+  it.each([
+    { boardSize: 50, width: 101, seams: [400, 800], foreignSeam: 416 },
+    { boardSize: 52, width: 105, seams: [416, 832], foreignSeam: 400 },
+  ])('按 $boardSize×$boardSize 制作规格绘制 PNG 板缝并输出可编码产物', async ({
+    boardSize,
+    width,
+    seams,
+    foreignSeam,
+  }) => {
+    const moveTo = vi.fn();
+    const noop = vi.fn();
+    const context = new Proxy({} as CanvasRenderingContext2D, {
+      get(target, prop) {
+        if (prop === 'moveTo') return moveTo;
+        if (typeof prop === 'string' && ['fillRect', 'strokeRect', 'beginPath', 'lineTo', 'stroke', 'fillText'].includes(prop)) return noop;
+        return Reflect.get(target, prop);
+      },
+      set() { return true; },
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+    HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+      callback(new Blob(['png'], { type: 'image/png' }));
+    };
+    const pattern: Pattern = {
+      width,
+      height: 1,
+      cells: Array.from({ length: width }, () => ({ hex: '#000000', code: 'A', transparent: false })),
+    };
+
+    const result = await exportPngBlob(pattern, 'mini', { cellPx: 8, cropToContent: false, boardSize });
+
+    for (const seam of seams) expect(moveTo).toHaveBeenCalledWith(seam, 0);
+    expect(moveTo).not.toHaveBeenCalledWith(foreignSeam, 0);
+    expect(result).toMatchObject({
+      ok: true,
+      fileName: `豆谱-mini-${width}x1.png`,
+      blob: expect.objectContaining({ type: 'image/png' }),
+    });
+  });
+
   it('20 字符色号使用单元格内宽度绘制，不覆盖相邻格', async () => {
     const fillText = vi.fn();
     const noop = vi.fn();

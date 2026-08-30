@@ -1,9 +1,9 @@
 import type {
   GenerationParams,
-  PaletteColor,
+  BoardProfileId,
+  PaletteSelection,
   Pattern,
   PatternStatsItem,
-  ProjectPalette,
 } from '@/lib/types';
 import type { ImageDataLike } from './types';
 
@@ -17,9 +17,10 @@ export type GenerationSessionStatus =
 
 /** The only serializable/output-facing unit of generation state. */
 export interface GenerationDraft {
+  boardProfile: BoardProfileId;
   params: GenerationParams;
-  palette: PaletteColor[];
-  projectPalette: ProjectPalette;
+  /** Persisted palette identity and reproducible packaged-color subset. */
+  paletteSelection: PaletteSelection;
 }
 
 export interface GenerationCommit extends GenerationDraft {
@@ -44,6 +45,10 @@ export interface GenerationSessionState {
   hasManualEdits: boolean;
   /** One-step recovery of manual work replaced by a confirmed regeneration. */
   regenerationUndo: GenerationCommit | null;
+  /** Manual-edit flag belonging to regenerationUndo; profile-only undo must not invent edits. */
+  regenerationUndoHasManualEdits: boolean;
+  /** A remap of a source-less restored project must return to the locked state on undo. */
+  regenerationUndoWasRestoredLocked: boolean;
 }
 
 export type GenerationSessionAction =
@@ -66,8 +71,8 @@ export type GenerationSessionAction =
       pattern: Pattern;
       stats: PatternStatsItem[];
       total: number;
-      palette: PaletteColor[];
-      projectPalette: ProjectPalette;
+      paletteSelection: PaletteSelection;
+      boardProfile: BoardProfileId;
     }
   | { type: 'undo-regeneration' };
 
@@ -83,6 +88,8 @@ export const createGenerationSession = (draft: GenerationDraft | null = null): G
   error: null,
   hasManualEdits: false,
   regenerationUndo: null,
+  regenerationUndoHasManualEdits: false,
+  regenerationUndoWasRestoredLocked: false,
 });
 
 const completedStatus = (state: GenerationSessionState): GenerationSessionStatus =>
@@ -151,6 +158,8 @@ export function generationSessionReducer(
         error: null,
         hasManualEdits: false,
         regenerationUndo: state.hasManualEdits ? state.committed : null,
+        regenerationUndoHasManualEdits: state.hasManualEdits,
+        regenerationUndoWasRestoredLocked: false,
       };
     case 'failure':
       if (state.status !== 'generating' || state.activeTaskId !== action.taskId) return state;
@@ -185,6 +194,8 @@ export function generationSessionReducer(
         error: null,
         hasManualEdits: false,
         regenerationUndo: null,
+        regenerationUndoHasManualEdits: false,
+        regenerationUndoWasRestoredLocked: false,
       };
     case 'manual-edit':
       if (!state.committed || state.status === 'generating') return state;
@@ -197,6 +208,11 @@ export function generationSessionReducer(
           total: action.total,
         },
         hasManualEdits: true,
+        // The one-step snapshot predates this new manual work. Keeping it
+        // actionable would let a later click silently discard the edits.
+        regenerationUndo: null,
+        regenerationUndoHasManualEdits: false,
+        regenerationUndoWasRestoredLocked: false,
       };
     case 'remap': {
       // 换色板：committed 与 draft 一起换成新色板，图纸格子由调用方重映射好。
@@ -207,37 +223,41 @@ export function generationSessionReducer(
         pattern: action.pattern,
         stats: action.stats,
         total: action.total,
-        palette: action.palette,
-        projectPalette: action.projectPalette,
+        paletteSelection: action.paletteSelection,
+        boardProfile: action.boardProfile,
       };
       return {
         ...state,
         draft: {
           params: next.params,
-          palette: action.palette,
-          projectPalette: action.projectPalette,
+          paletteSelection: action.paletteSelection,
+          boardProfile: action.boardProfile,
         },
         committed: next,
         lastStableDraft: {
           params: next.params,
-          palette: action.palette,
-          projectPalette: action.projectPalette,
+          paletteSelection: action.paletteSelection,
+          boardProfile: action.boardProfile,
         },
         error: null,
         regenerationUndo: state.committed,
+        regenerationUndoHasManualEdits: state.hasManualEdits,
+        regenerationUndoWasRestoredLocked: state.status === 'restored-locked',
       };
     }
     case 'undo-regeneration':
       if (!state.regenerationUndo || state.status === 'generating') return state;
       return {
         ...state,
-        status: 'committed',
+        status: state.regenerationUndoWasRestoredLocked ? 'restored-locked' : 'committed',
         draft: state.regenerationUndo,
         committed: state.regenerationUndo,
         lastStableDraft: state.regenerationUndo,
         error: null,
-        hasManualEdits: true,
+        hasManualEdits: state.regenerationUndoHasManualEdits,
         regenerationUndo: null,
+        regenerationUndoHasManualEdits: false,
+        regenerationUndoWasRestoredLocked: false,
       };
   }
 }

@@ -6,7 +6,6 @@
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { normalizePdfMetrics } from '@/lib/config';
 import { totalBeadCount } from '@/lib/engine/generate';
 import { hexToRgb } from '@/lib/engine/color';
 import { contrastColor } from '@/lib/render/layout';
@@ -22,6 +21,7 @@ import {
   legendColumnsForItems,
   pageHeaderText,
   paginateLegendItems,
+  resolveBoardPdfMetrics,
   seamPositionsForPage,
   sortStatsForLegend,
   toWinAnsi,
@@ -42,6 +42,8 @@ export interface PdfExportOptions {
   fontBytes?: Uint8Array | null;
   /** 版式参数（票 02 配置化）；缺省用站点配置默认值 */
   metrics?: PdfPageMetrics;
+  /** 当前制作规格的一块板边长；缺省保持兼容规格。 */
+  boardSize?: number;
 }
 
 const PAGE_W_PT = A4_WIDTH_MM * MM_TO_PT;
@@ -174,11 +176,16 @@ export async function generatePatternPdf(
 ): Promise<Uint8Array> {
   const { name, pattern, stats } = input;
   const { width: W, height: H, cells } = pattern;
-  const metrics = normalizePdfMetrics(options.metrics ?? defaultPdfMetrics, defaultPdfMetrics);
+  const requestedMetrics = options.metrics ?? defaultPdfMetrics;
+  const metrics = resolveBoardPdfMetrics(
+    requestedMetrics,
+    options.boardSize,
+    requestedMetrics.cellMm,
+  );
   const marginPt = metrics.marginMm * MM_TO_PT;
   const headerPt = metrics.headerMm * MM_TO_PT;
   const cellPt = metrics.cellMm * MM_TO_PT;
-  const layout = computePdfLayout(W, H, metrics);
+  const layout = computePdfLayout(W, H, metrics, 'byBoard', options.boardSize);
   if (layout.gridPages.length === 0) {
     throw new Error(`empty pattern (${W}×${H})`);
   }
@@ -273,8 +280,8 @@ export async function generatePatternPdf(
       }
     }
 
-    // 板缝线（每 29 格，全局位置落在本页内）
-    const seams = seamPositionsForPage(page);
+    // 板缝线（按当前制作规格，全局位置落在本页内）
+    const seams = seamPositionsForPage(page, options.boardSize);
     for (const s of seams.cols) {
       const x = marginPt + (s - page.colStart) * cellPt;
       pdfPage.drawLine({

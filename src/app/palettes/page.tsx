@@ -1,11 +1,17 @@
 'use client';
 
-/** 色板管理页（spec §F6）：内置五套只读展示 + 自定义色板 CRUD。 */
-import { useCallback, useEffect, useState } from 'react';
+/** 色板管理页（spec §F6）：内置资料库只读展示 + 自定义色板 CRUD。 */
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zhCN } from '@/messages/zh-CN';
-import { BRANDS, buildBrandPalette } from '@/lib/palettes';
+import {
+  getBuiltinPalette,
+  listBuiltinPalettes,
+  type BuiltinPaletteExclusions,
+  type BuiltinPaletteSummary,
+} from '@/lib/palettes';
+import { compatibleBoardProfilesForPalette } from '@/lib/boardProfiles';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
 import PaletteSwatches from '@/components/palettes/PaletteSwatches';
 import Modal from '@/components/ui/Modal';
@@ -27,6 +33,46 @@ interface EditingState {
   revision: number;
 }
 
+const BUILTIN_PALETTES = listBuiltinPalettes();
+
+function matchesCatalogQuery(palette: BuiltinPaletteSummary, query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase('zh-CN');
+  if (!normalized) return true;
+  const compatibleSpecifications = compatibleBoardProfilesForPalette({ kind: 'builtin', brand: palette.id })
+    .map((profile) => profile.displayName)
+    .join(' ');
+  return [
+    palette.label,
+    palette.brand,
+    palette.series,
+    palette.description,
+    palette.specification,
+    compatibleSpecifications,
+    palette.source.repository,
+    palette.source.qualityLabel,
+    palette.source.qualitySummary,
+    palette.market?.label,
+    palette.market?.summary,
+  ].some((value) => value?.toLocaleLowerCase('zh-CN').includes(normalized));
+}
+
+function describeCompatibleSpecifications(palette: BuiltinPaletteSummary): string {
+  return compatibleBoardProfilesForPalette({ kind: 'builtin', brand: palette.id })
+    .map((profile) => profile.displayName)
+    .join('、');
+}
+
+function describeExclusions(exclusions: BuiltinPaletteExclusions): string {
+  const t = zhCN.palettes;
+  const parts = [
+    exclusions.unavailableCode > 0 ? t.exclusionUnavailable(exclusions.unavailableCode) : null,
+    exclusions.transparent > 0 ? t.exclusionTransparent(exclusions.transparent) : null,
+    exclusions.unidentified > 0 ? t.exclusionUnidentified(exclusions.unidentified) : null,
+    exclusions.duplicateHex > 0 ? t.exclusionDuplicate(exclusions.duplicateHex) : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join('、') : t.noExclusions;
+}
+
 export default function PalettesPage() {
   const t = zhCN.palettes;
   const router = useRouter();
@@ -37,6 +83,19 @@ export default function PalettesPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
+
+  const filteredCatalogGroups = useMemo(() => {
+    const groups = new Map<string, BuiltinPaletteSummary[]>();
+    for (const palette of BUILTIN_PALETTES) {
+      if (!matchesCatalogQuery(palette, catalogQuery)) continue;
+      const items = groups.get(palette.brand) ?? [];
+      items.push(palette);
+      groups.set(palette.brand, items);
+    }
+    return Array.from(groups);
+  }, [catalogQuery]);
+  const filteredCatalogCount = filteredCatalogGroups.reduce((total, [, palettes]) => total + palettes.length, 0);
 
   /** 未登录（或会话已失效）：跳转登录页，登录后回到本页。 */
   const goLogin = useCallback((): void => {
@@ -171,21 +230,79 @@ export default function PalettesPage() {
       <section aria-label={t.builtinTitle} className="palette-library-section">
         <h2>{t.builtinTitle}</h2>
         <p className="text-xs text-ink-soft/80">{t.builtinNote}</p>
-        <ul className="palette-brand-grid">
-          {BRANDS.map((brand) => {
-            const palette = buildBrandPalette(brand);
-            return (
-              <li key={brand} className="palette-brand-card">
-                <div>
-                  <p className="font-medium text-ink">{brand}</p>
-                  <p className="text-xs text-ink-soft">{t.colorCount(palette.length)}</p>
-                </div>
-                {/* E-1：这一页原本一个颜色都看不到，只有「291 色」这个数字。 */}
-                <PaletteSwatches name={brand} colors={palette} />
-              </li>
-            );
-          })}
-        </ul>
+        <div className="palette-catalog-toolbar">
+          <label className="palette-search-field">
+            <span>{t.searchLabel}</span>
+            <input
+              type="search"
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              placeholder={t.searchPlaceholder}
+              className="input-compact"
+            />
+          </label>
+          <p role="status" aria-live="polite" className="palette-search-status">
+            {t.searchResults(filteredCatalogCount, BUILTIN_PALETTES.length)}
+          </p>
+        </div>
+        {filteredCatalogGroups.length === 0 ? (
+          <p className="palette-empty">{t.noSearchResults}</p>
+        ) : (
+          <div className="palette-brand-groups">
+            {filteredCatalogGroups.map(([brandLabel, summaries], brandIndex) => {
+              const headingId = `palette-brand-${brandIndex}`;
+              return (
+                <section key={brandLabel} aria-labelledby={headingId} className="palette-brand-group">
+                  <div className="palette-brand-heading">
+                    <h3 id={headingId}>{brandLabel}</h3>
+                    <span>{t.paletteCount(summaries.length)}</span>
+                  </div>
+                  <ul className="palette-series-grid">
+                    {summaries.map((summary) => {
+                      const palette = getBuiltinPalette(summary.id);
+                      return (
+                        <li key={palette.id} className="palette-brand-card palette-series-card">
+                          <div className="palette-series-heading">
+                            <p className="palette-card-brand">{palette.brand}</p>
+                            <h4>{palette.series}</h4>
+                            <p>{palette.description}</p>
+                          </div>
+                          <dl className="palette-card-meta">
+                            <div>
+                              <dt>{t.collectedColors}</dt>
+                              <dd>{t.colorCount(palette.colorCount)}</dd>
+                            </div>
+                            <div>
+                              <dt>{t.engineColors}</dt>
+                              <dd>{t.colorCount(palette.engineColorCount)}</dd>
+                            </div>
+                            <div>
+                              <dt>{t.specification}</dt>
+                              <dd>{describeCompatibleSpecifications(palette)}</dd>
+                            </div>
+                            <div>
+                              <dt>{t.sourceQuality}</dt>
+                              <dd>
+                                <strong>{palette.source.qualityLabel}</strong>
+                                <span>{palette.source.qualitySummary}</span>
+                                <span>{palette.source.repository} · {palette.source.license}</span>
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>{t.exclusions}</dt>
+                              <dd>{describeExclusions(palette.exclusions)}</dd>
+                            </div>
+                          </dl>
+                          <PaletteSwatches name={palette.label} colors={palette.colors} />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section aria-label={t.customTitle} className="palette-library-section">

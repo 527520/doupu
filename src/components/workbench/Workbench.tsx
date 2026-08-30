@@ -36,19 +36,32 @@ import { useMobileLayout } from '@/components/layout/useMobileLayout';
 import DesignNameEditor from './DesignNameEditor';
 import SaveStatus, { type CloudSaveState, type SaveState } from './SaveStatus';
 import { zhCN } from '@/messages/zh-CN';
-import { DEFAULT_GENERATION_PARAMS, BRANDS, type Brand, type GenerationParams, type PaletteColor, type Pattern, type ProjectFile, type ProjectPalette } from '@/lib/types';
-import { buildBrandPalette } from '@/lib/palettes';
+import { DEFAULT_GENERATION_PARAMS, type GenerationParams, type PaletteColor, type PaletteSelection, type Pattern, type ProjectFile, type ProjectPalette } from '@/lib/types';
+import {
+  getBuiltinPalette,
+  isBuiltinPaletteId,
+  listBuiltinPalettes,
+  type BuiltinPaletteId,
+} from '@/lib/palettes';
 import { cropImageData, type Rect } from '@/lib/crop/layout';
 import { computeStats, totalBeadCount, MAX_GENERATION_SOURCE_DIMENSION } from '@/lib/engine/generate';
 import { remapPattern } from '@/lib/engine/remap';
-import { BOARD_SIZE } from '@/lib/export/pdfLayout';
-import { createBlankPattern, selectKitColors } from '@/lib/engine/kit';
+import { createBlankPattern, paletteColorsForSelection } from '@/lib/engine/kit';
+import { isKitTierAvailableForPalette, projectPaletteEngineColors } from '@/lib/kitTiers';
+import {
+  DEFAULT_BOARD_PROFILE_ID,
+  compatibleBoardProfilesForPalette,
+  defaultBoardProfileForPalette,
+  getBoardProfile,
+  isBoardProfileId,
+} from '@/lib/boardProfiles';
 
-/** 空白起稿的尺寸档（H-2）：按板给，1 板 29×29 是最常见的起手规格。 */
+/** 空白起稿的尺寸档（H-2）：按当前制作规格的整板倍数提供。 */
 const BLANK_PRESETS = [1, 2, 3] as const;
 import { disposeGenerateWorker, prepareGenerationSource, runGenerate } from '@/lib/engine/runGenerate';
 import {
   selectCommittedSnapshot,
+  type GenerationCommit,
   type GenerationDraft,
 } from '@/lib/engine/session';
 import { useGenerationSession } from '@/lib/engine/useGenerationSession';
@@ -86,7 +99,42 @@ import { getPaletteColors, listPalettes } from '@/components/palettes/api';
 
 type Step = 'upload' | 'crop' | 'workspace';
 type Tab = 'preview' | 'edit' | 'stitch';
-type PaletteKind = { kind: 'builtin'; brand: Brand } | { kind: 'custom' };
+type PaletteKind = { kind: 'builtin'; brand: BuiltinPaletteId } | { kind: 'custom' };
+
+const MOBILE_WORKSPACE_HISTORY_KEY = '__doupuMobileWorkspace';
+
+interface PendingStitchWrite {
+  adapter: StorageAdapter;
+  designId: string;
+  progress: StitchProgress;
+}
+
+function mobileWorkspaceFromHistory(state: unknown): Exclude<Tab, 'preview'> | null {
+  if (!state || typeof state !== 'object') return null;
+  const mode = (state as Record<string, unknown>)[MOBILE_WORKSPACE_HISTORY_KEY];
+  return mode === 'edit' || mode === 'stitch' ? mode : null;
+}
+
+function historyStateWithMobileWorkspace(mode: Exclude<Tab, 'preview'>): Record<string, unknown> {
+  const current = window.history.state;
+  const base = current && typeof current === 'object'
+    ? current as Record<string, unknown>
+    : {};
+  return { ...base, [MOBILE_WORKSPACE_HISTORY_KEY]: mode };
+}
+
+function paletteColorsMatch(
+  projectPalette: ProjectPalette,
+  colors: readonly PaletteColor[],
+): boolean {
+  if (projectPalette.kind !== 'custom' || projectPalette.colors.length !== colors.length) return false;
+  return projectPalette.colors.every((color, index) => {
+    const candidate = colors[index];
+    return candidate.code !== null
+      && color.code.trim().toUpperCase() === candidate.code.trim().toUpperCase()
+      && color.hex.toUpperCase() === candidate.hex.toUpperCase();
+  });
+}
 
 /** 清除 URL 上的 ?id= 参数（开始新设计后，刷新不应再恢复旧设计）。 */
 function clearDesignQuery(): void {
@@ -137,16 +185,26 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const pendingGenerationSourceRef = useRef<ImageDataLike | null>(null);
   /** 当前选中的云端自定义色板 id（null = 导入项目自带的色板或内置品牌）。 */
   const [customPaletteId, setCustomPaletteId] = useState<string | null>(null);
+  /**
+   * ProjectPalette 只保存颜色，不保存云端自定义色板 id。换色板的一步撤销因此需要
+   * 会话级身份元数据；snapshot 引用用于确保旧元数据不会误配给后续生成/重映射。
+   */
+  const paletteIdentityUndoRef = useRef<{
+    snapshot: GenerationCommit;
+    customPaletteId: string | null;
+  } | null>(null);
   /** 云端自定义色板列表（优化票 06：登录后从 /api/palettes 加载，工作台可选）。 */
   const [cloudPalettes, setCloudPalettes] = useState<Array<{ id: string; name: string; colors: PaletteColor[] }>>([]);
   /** 云端自定义色板加载失败（D-4）：内置色板仍可用，因此只是提示而非阻断。 */
   const [paletteLoadFailed, setPaletteLoadFailed] = useState(false);
   const initialGenerationDraft = useMemo<GenerationDraft>(() => {
-    const initialPalette = buildBrandPalette('MARD');
     return {
+      boardProfile: DEFAULT_BOARD_PROFILE_ID,
       params: defaultParams,
-      palette: initialPalette,
-      projectPalette: { kind: 'builtin', brand: 'MARD' },
+      paletteSelection: {
+        palette: { kind: 'builtin', brand: 'MARD' },
+        kitTier: 0,
+      },
     };
   }, [defaultParams]);
   const [designId, setDesignId] = useState<string>(() => newDesignId());
@@ -177,6 +235,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   // Pattern/statistics are projections of the session's immutable commit;
   // Workbench never mirrors a second independently mutable copy.
   const pattern = generationSession.committed?.pattern ?? null;
+  const patternWidth = pattern?.width ?? null;
+  const patternHeight = pattern?.height ?? null;
   const stats = generationSession.committed?.stats ?? [];
   const total = generationSession.committed?.total ?? 0;
   /**
@@ -188,9 +248,16 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const mobilePatternRegionRef = useRef<HTMLDivElement>(null);
   const firstDoneHandledRef = useRef(false);
   const generationDraft = generationSession.draft ?? initialGenerationDraft;
+  const paletteSelection = generationDraft.paletteSelection;
+  const kitTier = paletteSelection.kitTier;
   const params = generationDraft.params;
-  const palette = generationDraft.palette;
-  const projectPalette = generationDraft.projectPalette;
+  const projectPalette = paletteSelection.palette;
+  const palette = useMemo(
+    () => paletteColorsForSelection(paletteSelection),
+    [paletteSelection],
+  );
+  const boardProfile = generationDraft.boardProfile;
+  const boardSpec = getBoardProfile(boardProfile);
   const paletteKind: PaletteKind = useMemo(
     () => (projectPalette.kind === 'builtin'
       ? { kind: 'builtin', brand: projectPalette.brand }
@@ -259,16 +326,16 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * null 表示本地存储不可用（隐私模式）；尺寸不匹配时重建，避免把「已拼」错位。
    */
   const [stitchProgress, setStitchProgress] = useState<StitchProgress | null>(null);
-  const stitchSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [stitchSaveError, setStitchSaveError] = useState(false);
+  /**
+   * 跟拼写入只允许一个在途请求；pending 始终被最新快照覆盖。
+   * 这样快速点按不会让较慢的旧写入在最后反向覆盖新状态。
+   */
+  const pendingStitchWriteRef = useRef<PendingStitchWrite | null>(null);
+  const activeStitchWriteRef = useRef<Promise<void> | null>(null);
+  const stitchWriteFailedRef = useRef(false);
   /** 换色板结果提示（H-1）：告诉用户换了多少格，并提示可撤销。 */
   const [remapNotice, setRemapNotice] = useState<string | null>(null);
-  /**
-   * 套装档位（H-3）：0 表示用整套色板。
-   * 档位只影响「可用色号集合」，因此有生成源时重新生成，没有源时对现有图纸重映射——
-   * 两条路径都保证成品里不会出现档位外的色号。
-   */
-  const [kitTier, setKitTier] = useState(0);
-
   const adapterRef = useRef<StorageAdapter | null>(null);
   const dirtyRef = useRef(false);
   /** 编辑代数：每次置脏 +1；保存完成后仅当代数未变才清脏（避免抹掉保存期间的编辑）。 */
@@ -319,33 +386,93 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, [TAB_ORDER, tab]);
 
   const paletteOptions = useMemo<PaletteOption[]>(() => {
-    const builtin = BRANDS.map((brand) => ({ value: brand, label: brand, kind: 'builtin' as const }));
+    const builtin = listBuiltinPalettes().map((summary) => ({
+      value: `builtin:${summary.id}`,
+      label: zhCN.workbench.builtinPaletteOption(
+        summary.series,
+        summary.source.revision.length === 40
+          ? summary.source.revision.slice(0, 7)
+          : summary.source.revision,
+        summary.engineColorCount,
+      ),
+      kind: 'builtin' as const,
+      group: summary.brand,
+    }));
     const customEntries = cloudPalettes.map((p) => ({
       value: `custom:${p.id}`,
       label: zhCN.workbench.myPaletteLabel(p.name),
       kind: 'custom' as const,
+      group: zhCN.workbench.customPaletteLabel,
     }));
     // 导入项目自带的自定义色板（无云端 id）保留 '__custom' 占位，不可再切换
     if (paletteKind.kind === 'custom' && !customPaletteId) {
-      return [...builtin, ...customEntries, { value: '__custom', label: zhCN.workbench.customPaletteLabel, kind: 'custom' as const }];
+      return [...builtin, ...customEntries, {
+        value: '__custom',
+        label: zhCN.workbench.customPaletteLabel,
+        kind: 'custom' as const,
+        group: zhCN.workbench.customPaletteLabel,
+      }];
     }
     return [...builtin, ...customEntries];
   }, [paletteKind.kind, customPaletteId, cloudPalettes]);
+  const paletteOptionGroups = useMemo(() => {
+    const groups = new Map<string, PaletteOption[]>();
+    for (const option of paletteOptions) {
+      const group = option.group ?? (option.kind === 'custom'
+        ? zhCN.params.customPaletteGroup
+        : zhCN.params.builtinPaletteGroup);
+      const entries = groups.get(group) ?? [];
+      entries.push(option);
+      groups.set(group, entries);
+    }
+    return [...groups.entries()];
+  }, [paletteOptions]);
 
   const selectedPalette =
-    paletteKind.kind === 'custom' ? (customPaletteId ? `custom:${customPaletteId}` : '__custom') : paletteKind.brand;
+    paletteKind.kind === 'custom'
+      ? (customPaletteId ? `custom:${customPaletteId}` : '__custom')
+      : `builtin:${paletteKind.brand}`;
+
+  const fullPalette = useMemo<PaletteColor[]>(
+    () => projectPaletteEngineColors(projectPalette),
+    [projectPalette],
+  );
+  const paletteColorCount = fullPalette.length;
+  const boardProfileOptions = useMemo(
+    () => compatibleBoardProfilesForPalette(projectPalette).map((profile) => ({
+      value: profile.id,
+      label: profile.displayName,
+      boardSize: profile.boardCols,
+    })),
+    [projectPalette],
+  );
+  const paletteDisplayName = projectPalette.kind === 'builtin'
+    ? getBuiltinPalette(projectPalette.brand).label
+    : zhCN.workbench.customPaletteLabel;
+
+  const resolveCustomPaletteId = useCallback((
+    draftPalette: ProjectPalette,
+    preferredId: string | null,
+  ): string | null => {
+    if (draftPalette.kind !== 'custom') return null;
+    const preferred = preferredId
+      ? cloudPalettes.find((entry) => entry.id === preferredId)
+      : undefined;
+    if (preferred && paletteColorsMatch(draftPalette, preferred.colors)) return preferred.id;
+    return cloudPalettes.find((entry) => paletteColorsMatch(draftPalette, entry.colors))?.id ?? null;
+  }, [cloudPalettes]);
 
   const restoreDraftControls = useCallback((draft: GenerationDraft): void => {
     // Force a fresh controlled value even when React batches the rejected
     // draft and rollback into one render; otherwise the panel's local draft
     // can remain visible while the parent state bails out by object identity.
     updateGenerationDraft({
+      boardProfile: draft.boardProfile,
       params: { ...draft.params },
-      palette: [...draft.palette],
-      projectPalette: draft.projectPalette,
+      paletteSelection: draft.paletteSelection,
     });
-    setCustomPaletteId(null);
-  }, [updateGenerationDraft]);
+    setCustomPaletteId((current) => resolveCustomPaletteId(draft.paletteSelection.palette, current));
+  }, [resolveCustomPaletteId, updateGenerationDraft]);
 
   /** 用当前参数在给定源图上重新生成；失败给出可重试提示。
    * 优化票 07：Worker 后台执行（页面不冻结），进度按阶段上报（>300ms 才显示），
@@ -353,7 +480,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const regenerate = useCallback(
     (): void => {
       startGeneration({
-        create: (src, draft, onProgress) => (generateFn ?? runGenerate)({ src, params: draft.params, palette: draft.palette }, onProgress),
+        create: (src, draft, onProgress) => (generateFn ?? runGenerate)({
+          src,
+          params: draft.params,
+          palette: paletteColorsForSelection(draft.paletteSelection),
+        }, onProgress),
         commit: (output, draft) => ({
           ...draft,
           pattern: output.pattern,
@@ -506,7 +637,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       activeImageDecoder.clear();
       const rebindRestoredSource = rebindRestoredSourceRef.current;
       if (!rebindRestoredSource) setCreatedAt(new Date().toISOString());
-      const draft = { params, palette, projectPalette };
+      const draft = { boardProfile, params, paletteSelection };
       if (rebindRestoredSource) {
         reuploadGenerationSource(cropped, draft);
         // 绑定生成源本身就是可持久化变更；即使随后取消或生成失败，刷新也不应再次锁定。
@@ -519,7 +650,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         clearDesignQuery(); // 普通上传生成新设计；恢复项目的原图重绑保留原 id。
       }
     },
-    [activeImageDecoder, decodeFn, decodeRegionFn, decoded, markDirty, params, palette, projectPalette, regenerate, reuploadGenerationSource, uploadGenerationSource, t.decoding],
+    [activeImageDecoder, boardProfile, decodeFn, decodeRegionFn, decoded, markDirty, paletteSelection, params, regenerate, reuploadGenerationSource, uploadGenerationSource, t.decoding],
   );
 
   const handleCropCancel = useCallback((): void => {
@@ -568,10 +699,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * 换色板（H-1）。
    *
    * 两条路径，规则是「永不丢用户的工作」：
-   * - 图纸已有手工修补，或没有本地生成源（导入的项目文件、换设备打开的云端设计）
-   *   → 图纸级重映射：逐格换成新色板最近色，位置与修补全部保留，一步可撤销。
-   *   这也修掉了此前「没有生成源就根本换不了色板」的死路。
-   * - 既没有修补又有生成源 → 用新色板重新采样原图（色彩还原度更好，且无工作可丢）。
+   * - 已有图纸 → 始终做图纸级重映射，色板与自动兼容规格进入同一个撤销快照。
+   *   后续调参时再从本地生成源按新色板重新生成，避免一次选择产生两个不可分割状态。
+   * - 尚未开始的空白起稿 → 只更新草稿色板与兼容规格，不创建图纸或脏状态。
    */
   const handlePaletteSelect = useCallback(
     (value: string): void => {
@@ -590,45 +720,84 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             customId: found.id,
           };
         }
-        const brand = value as Brand;
-        return { palette: buildBrandPalette(brand), projectPalette: { kind: 'builtin', brand }, customId: null };
+        const paletteId = value.startsWith('builtin:') ? value.slice('builtin:'.length) : value;
+        if (!isBuiltinPaletteId(paletteId)) return null;
+        return {
+          palette: [...getBuiltinPalette(paletteId).engineColors],
+          projectPalette: { kind: 'builtin', brand: paletteId },
+          customId: null,
+        };
       })();
       if (!resolved) return;
 
+      const nextBoardProfile = defaultBoardProfileForPalette(resolved.projectPalette, boardProfile);
+      const nextKitTier = kitTier > resolved.palette.length ? 0 : kitTier;
+      const nextPaletteSelection: PaletteSelection = {
+        palette: resolved.projectPalette,
+        kitTier: nextKitTier,
+      };
+      const appliedPalette = paletteColorsForSelection(nextPaletteSelection);
+
       const committed = generationSession.committed;
-      const useRemap = committed !== null && (generationSession.hasManualEdits || !source);
-      if (useRemap) {
-        setCustomPaletteId(resolved.customId);
-        const result = remapPattern(committed.pattern, resolved.palette);
-        remapPalette({
-          pattern: result.pattern,
-          stats: result.stats,
-          total: result.totalBeadCount,
-          palette: resolved.palette,
-          projectPalette: resolved.projectPalette,
+      if (committed) {
+        paletteIdentityUndoRef.current = { snapshot: committed, customPaletteId };
+      }
+      setCustomPaletteId(resolved.customId);
+      if (!committed) {
+        updateGenerationDraft({
+          boardProfile: nextBoardProfile,
+          params,
+          paletteSelection: nextPaletteSelection,
         });
-        setRemapNotice(t.remapDone(result.changedCells));
-        markDirty();
         return;
       }
-      if (!source) return;
-      setCustomPaletteId(resolved.customId);
-      updateGenerationDraft({ params, palette: resolved.palette, projectPalette: resolved.projectPalette });
-      regenerate();
+
+      const result = remapPattern(committed.pattern, appliedPalette);
+      remapPalette({
+        pattern: result.pattern,
+        stats: result.stats,
+        total: result.totalBeadCount,
+        paletteSelection: nextPaletteSelection,
+        boardProfile: nextBoardProfile,
+      });
+      setRemapNotice(nextBoardProfile === boardProfile
+        ? t.remapDone(result.changedCells)
+        : `${t.remapDone(result.changedCells)} ${t.boardProfileChanged(getBoardProfile(nextBoardProfile).displayName)}`);
+      markDirty();
     },
     [
       cloudPalettes,
+      boardProfile,
+      customPaletteId,
       generationSession.committed,
-      generationSession.hasManualEdits,
       markDirty,
+      kitTier,
       params,
-      regenerate,
       remapPalette,
-      source,
       t,
       updateGenerationDraft,
     ],
   );
+
+  const handleBoardProfileSelect = useCallback((value: string): void => {
+    if (!isBoardProfileId(value) || value === boardProfile) return;
+    const compatible = compatibleBoardProfilesForPalette(projectPalette).some((profile) => profile.id === value);
+    const committed = generationSession.committed;
+    if (!compatible || generating) return;
+    if (!committed) {
+      updateGenerationDraft({ ...generationDraft, boardProfile: value });
+      return;
+    }
+    remapPalette({
+      pattern: committed.pattern,
+      stats: committed.stats,
+      total: committed.total,
+      paletteSelection: committed.paletteSelection,
+      boardProfile: value,
+    });
+    setRemapNotice(t.boardProfileChanged(getBoardProfile(value).displayName));
+    markDirty();
+  }, [boardProfile, generating, generationDraft, generationSession.committed, markDirty, projectPalette, remapPalette, t, updateGenerationDraft]);
 
   const handlePatternChange = useCallback((p: Pattern): void => {
     if (generating) return;
@@ -645,9 +814,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const startBlank = useCallback((width: number, height: number): void => {
     const blank = createBlankPattern(width, height);
     restoreGeneration({
+      boardProfile,
       params: { ...params, targetWidth: width },
-      palette,
-      projectPalette,
+      paletteSelection,
       pattern: blank,
       stats: [],
       total: 0,
@@ -656,40 +825,46 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setStep('workspace');
     setTab('edit'); // 空白图纸的第一步一定是画，直接落在修补页签
     markDirty();
-  }, [markDirty, palette, params, projectPalette, restoreGeneration]);
+  }, [boardProfile, markDirty, paletteSelection, params, restoreGeneration]);
 
   /**
    * 换档位（H-3）：把当前色板按档位裁成可用色子集后应用。
    * 有生成源 → 用子集重新生成；没有源 → 对现有图纸重映射（保留修补）。
    */
   const handleKitTierChange = useCallback((tier: number): void => {
-    setKitTier(tier);
-    const full = paletteKind.kind === 'builtin'
-      ? buildBrandPalette(paletteKind.brand)
-      : palette;
-    const kit = selectKitColors(full, tier);
-    const committed = generationSession.committed;
-    if (source) {
-      updateGenerationDraft({ params, palette: kit, projectPalette });
-      regenerate();
-      return;
-    }
-    if (!committed) return;
-    const result = remapPattern(committed.pattern, kit);
-    remapPalette({
-      pattern: result.pattern,
-      stats: result.stats,
-      total: result.totalBeadCount,
-      palette: kit,
-      projectPalette,
-    });
-    setRemapNotice(t.kitApplied(tier, result.changedCells));
-    markDirty();
+    void (async () => {
+      if (!isKitTierAvailableForPalette(tier, projectPalette)) return;
+      const normalizedTier = tier;
+      if (source && !(await confirmRegeneration())) return;
+
+      const nextPaletteSelection: PaletteSelection = {
+        palette: projectPalette,
+        kitTier: normalizedTier,
+      };
+      const kit = paletteColorsForSelection(nextPaletteSelection);
+      const committed = generationSession.committed;
+      if (source) {
+        updateGenerationDraft({ boardProfile, params, paletteSelection: nextPaletteSelection });
+        regenerate();
+        return;
+      }
+      if (!committed) return;
+      const result = remapPattern(committed.pattern, kit);
+      remapPalette({
+        pattern: result.pattern,
+        stats: result.stats,
+        total: result.totalBeadCount,
+        paletteSelection: nextPaletteSelection,
+        boardProfile,
+      });
+      setRemapNotice(t.kitApplied(normalizedTier, result.changedCells));
+      markDirty();
+    })();
   }, [
+    confirmRegeneration,
     generationSession.committed,
     markDirty,
-    palette,
-    paletteKind,
+    boardProfile,
     params,
     projectPalette,
     regenerate,
@@ -702,11 +877,17 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const handleUndoRegeneration = useCallback((): void => {
     const snapshot = generationSession.regenerationUndo;
     if (!snapshot || generating) return;
+    const paletteIdentity = paletteIdentityUndoRef.current;
     undoRegeneration();
-    setCustomPaletteId(null);
+    if (paletteIdentity?.snapshot === snapshot) {
+      setCustomPaletteId(paletteIdentity.customPaletteId);
+    } else {
+      setCustomPaletteId((current) => resolveCustomPaletteId(snapshot.paletteSelection.palette, current));
+    }
+    paletteIdentityUndoRef.current = null;
     setRemapNotice(null);
     markDirty();
-  }, [generationSession.regenerationUndo, generating, markDirty, undoRegeneration]);
+  }, [generationSession.regenerationUndo, generating, markDirty, resolveCustomPaletteId, undoRegeneration]);
 
   // ---------- 保存 ----------
 
@@ -717,10 +898,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       format: PROJECT_FILE_FORMAT,
       version: PROJECT_FILE_VERSION,
       engineVersion: committed.engineVersion,
+      boardProfile: committed.boardProfile,
       name: name.trim() || zhCN.project.unnamed,
       createdAt: createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      palette: committed.projectPalette,
+      paletteSelection: committed.paletteSelection,
       params: committed.params,
       pattern: committed.pattern,
     };
@@ -731,15 +913,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, [buildProject]);
 
   const loadCommittedProject = useCallback((project: ProjectFile, localSource: LocalGenerationSourceV1 | null = null): void => {
-    const restoredPalette = project.palette.kind === 'builtin'
-      ? buildBrandPalette(project.palette.brand)
-      : project.palette.colors.map((color) => ({ hex: color.hex, code: color.code || null }));
     const computed = computeStats(project.pattern.cells);
     const restoredTotal = totalBeadCount(computed);
     const commit = {
+      boardProfile: project.boardProfile,
       params: project.params,
-      palette: restoredPalette,
-      projectPalette: project.palette,
+      paletteSelection: project.paletteSelection,
       pattern: project.pattern,
       stats: computed,
       total: restoredTotal,
@@ -774,7 +953,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         if (currentProject && conflictProject) {
           const latestProject = { ...currentProject, name: conflictProject.name, updatedAt: new Date().toISOString() };
           await adapter.put({
-            ...createDesignRecord(conflict.conflictId, latestProject, renderThumbnail(latestProject.pattern, 256)),
+            ...createDesignRecord(
+              conflict.conflictId,
+              latestProject,
+              renderThumbnail(
+                latestProject.pattern,
+                256,
+                getBoardProfile(latestProject.boardProfile).boardCols,
+              ),
+            ),
             syncState: 'conflict',
           }, source
             ? replaceGenerationSource(createLocalGenerationSource(source))
@@ -798,7 +985,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             const conflictProjectName = conflictName(t.conflictCopyName(currentProject.name), records.map((item) => item.name));
             const conflictProject = { ...currentProject, name: conflictProjectName, updatedAt: new Date().toISOString() };
             await adapter.put({
-              ...createDesignRecord(conflictId, conflictProject, renderThumbnail(conflictProject.pattern, 256)),
+              ...createDesignRecord(
+                conflictId,
+                conflictProject,
+                renderThumbnail(
+                  conflictProject.pattern,
+                  256,
+                  getBoardProfile(conflictProject.boardProfile).boardCols,
+                ),
+              ),
               syncState: 'conflict',
             }, source
               ? replaceGenerationSource(createLocalGenerationSource(source))
@@ -861,7 +1056,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     const genBefore = editGenRef.current;
     setSaveState('saving');
     try {
-      const thumbnail = renderThumbnail(project.pattern, 256);
+      const thumbnail = renderThumbnail(
+        project.pattern,
+        256,
+        getBoardProfile(project.boardProfile).boardCols,
+      );
       await withDesignStorageLock(async () => {
         const shouldWriteSource = pendingSource !== null
           && pendingGenerationSourceRef.current === pendingSource
@@ -935,7 +1134,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * 尺寸不匹配（重新生成或旋转过）就从零开始——把旧标记套到新图纸上会错位。
    */
   useEffect(() => {
-    if (!storageReady || !pattern) return;
+    if (!storageReady || patternWidth === null || patternHeight === null) return;
     const adapter = adapterRef.current;
     if (!adapter) {
       setStitchProgress(null);
@@ -947,9 +1146,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         const stored = await adapter.getStitchProgress(designId);
         if (cancelled) return;
         setStitchProgress(
-          isProgressCompatible(stored, pattern)
+          isProgressCompatible(stored, { width: patternWidth, height: patternHeight })
             ? stored
-            : createStitchProgress(pattern.width, pattern.height),
+            : createStitchProgress(patternWidth, patternHeight),
         );
       } catch {
         if (!cancelled) setStitchProgress(null);
@@ -958,26 +1157,77 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => {
       cancelled = true;
     };
-  }, [designId, pattern, storageReady]);
+  }, [designId, patternHeight, patternWidth, storageReady]);
 
-  /** 跟拼进度写入：300ms 防抖（连点格子不该每次都写库）。 */
+  /**
+   * 串行排空跟拼写入；同一时刻最多一个 IndexedDB 写请求。
+   * 在途请求结束后只写 pending 中最后一个快照，中间状态无需逐个落库。
+   */
+  const drainStitchWrites = useCallback((retry = false): Promise<void> => {
+    if (retry) {
+      stitchWriteFailedRef.current = false;
+      setStitchSaveError(false);
+    }
+    if (activeStitchWriteRef.current) return activeStitchWriteRef.current;
+    if (stitchWriteFailedRef.current || !pendingStitchWriteRef.current) return Promise.resolve();
+
+    const run = async (): Promise<void> => {
+      while (pendingStitchWriteRef.current && !stitchWriteFailedRef.current) {
+        const write = pendingStitchWriteRef.current;
+        pendingStitchWriteRef.current = null;
+        try {
+          await write.adapter.putStitchProgress(write.designId, write.progress);
+          setStitchSaveError(false);
+        } catch {
+          // 若等待期间已有更新，保留更新后的快照；否则把失败快照放回队列。
+          if (!pendingStitchWriteRef.current) pendingStitchWriteRef.current = write;
+          stitchWriteFailedRef.current = true;
+          setStitchSaveError(true);
+          break;
+        }
+      }
+    };
+
+    const active = run().finally(() => {
+      if (activeStitchWriteRef.current === active) activeStitchWriteRef.current = null;
+    });
+    activeStitchWriteRef.current = active;
+    return active;
+  }, []);
+
   const updateStitchProgress = useCallback((next: StitchProgress): void => {
     setStitchProgress(next);
     const adapter = adapterRef.current;
     if (!adapter) return;
-    const id = designIdRef.current;
-    if (stitchSaveTimerRef.current) clearTimeout(stitchSaveTimerRef.current);
-    stitchSaveTimerRef.current = setTimeout(() => {
-      stitchSaveTimerRef.current = null;
-      void adapter.putStitchProgress(id, next).catch(() => {
-        // 进度写入失败不阻断跟拼（图纸本身不受影响）；下一次改动会再试。
-      });
-    }, 300);
-  }, []);
+    pendingStitchWriteRef.current = {
+      adapter,
+      designId: designIdRef.current,
+      progress: { ...next, done: next.done.slice(0) },
+    };
+    // 新操作本身也是一次显式重试，并取代此前失败的旧快照。
+    stitchWriteFailedRef.current = false;
+    setStitchSaveError(false);
+    void drainStitchWrites();
+  }, [drainStitchWrites]);
 
-  useEffect(() => () => {
-    if (stitchSaveTimerRef.current) clearTimeout(stitchSaveTimerRef.current);
-  }, []);
+  const retryStitchSave = useCallback((): void => {
+    void drainStitchWrites(true);
+  }, [drainStitchWrites]);
+
+  /** 离开沉浸区、页面隐藏和卸载前都尽力启动最后一次写入。 */
+  useEffect(() => {
+    const flush = (): void => { void drainStitchWrites(true); };
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      flush();
+    };
+  }, [drainStitchWrites]);
 
   useEffect(() => () => {
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
@@ -986,25 +1236,30 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   // beforeunload 防丢失
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent): void => {
+      void drainStitchWrites(true);
       if (!dirtyRef.current) return;
       event.preventDefault();
       event.returnValue = t.confirmLeave;
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [t.confirmLeave]);
+  }, [drainStitchWrites, t.confirmLeave]);
 
   // 保存状态接缝（T17）
   useEffect(() => {
     onSavedStatus?.(saveState);
   }, [saveState, onSavedStatus]);
 
-  // 上传步骤时应用配置默认参数（站点配置加载完成后/每次回到上传步骤都同步）
+  // 上传步骤时应用配置默认参数（站点配置加载完成后/每次回到上传步骤都同步）。
+  // 只更新参数：用户可能已在空白起稿区选好了色板/制作规格，异步配置响应不得覆盖该选择。
   useEffect(() => {
-    // The public configuration is loaded asynchronously and is the source of
-    // truth for a fresh upload draft.
-    if (step === 'upload' && !rebindRestoredSourceRef.current) updateGenerationDraft(initialGenerationDraft);
-  }, [step, initialGenerationDraft, updateGenerationDraft]);
+    if (step !== 'upload' || rebindRestoredSourceRef.current) return;
+    if (
+      generationDraft.params.targetWidth === defaultParams.targetWidth
+      && generationDraft.params.targetColorCount === defaultParams.targetColorCount
+    ) return;
+    updateGenerationDraft({ ...generationDraft, params: defaultParams });
+  }, [defaultParams, generationDraft, step, updateGenerationDraft]);
 
   // 卸载时作废在途任务。调用方注入的图片解码器不在本组件中销毁。
   useEffect(() => {
@@ -1077,13 +1332,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       const computed = computeStats(project.pattern.cells);
       const importedTotal = totalBeadCount(computed);
       setCustomPaletteId(null);
-      const importedPalette = project.palette.kind === 'builtin'
-        ? buildBrandPalette(project.palette.brand)
-        : project.palette.colors.map((c) => ({ hex: c.hex, code: c.code || null }));
       const importedCommit = {
+        boardProfile: project.boardProfile,
         params: project.params,
-        palette: importedPalette,
-        projectPalette: project.palette,
+        paletteSelection: project.paletteSelection,
         pattern: project.pattern,
         stats: computed,
         total: importedTotal,
@@ -1121,6 +1373,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   /** Flush dirty state before an in-app transition. Only a failed flush asks
    * the user whether to discard the unsaved work. */
   const saveBeforeLeave = useCallback(async (leave: () => void): Promise<void> => {
+    await drainStitchWrites(true);
     if (!dirtyRef.current) {
       leave();
       return;
@@ -1136,7 +1389,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       confirmLabel: t.confirmLeaveAction,
       danger: true,
     })) leave();
-  }, [confirm, doSave, t.confirmLeave, t.confirmLeaveAction, t.confirmLeaveTitle]);
+  }, [confirm, doSave, drainStitchWrites, t.confirmLeave, t.confirmLeaveAction, t.confirmLeaveTitle]);
 
   const handleNavigationClick = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string): void => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -1158,6 +1411,56 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     void saveBeforeLeave(leave);
   }, [activeImageDecoder, generationSession.status, resetWorkbench, saveBeforeLeave]);
 
+  const mobileWorkspaceOpen = mobileLayout && step === 'workspace' && tab !== 'preview';
+
+  /**
+   * 手机编辑/跟拼是 /app 内的一层界面状态：首次进入 push，一层内切换只 replace。
+   * 因此系统 Back 会先回到普通预览，不会直接离开工作台路由。
+   */
+  useEffect(() => {
+    if (!mobileWorkspaceOpen) return;
+    const nextState = historyStateWithMobileWorkspace(tab);
+    if (mobileWorkspaceFromHistory(window.history.state)) {
+      window.history.replaceState(nextState, '', window.location.href);
+    } else {
+      window.history.pushState(nextState, '', window.location.href);
+    }
+  }, [mobileWorkspaceOpen, tab]);
+
+  useEffect(() => {
+    if (!mobileLayout) return;
+    const handlePopState = (event: PopStateEvent): void => {
+      const mode = mobileWorkspaceFromHistory(event.state);
+      setTab(mode ?? 'preview');
+      if (!mode) void drainStitchWrites(true);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [drainStitchWrites, mobileLayout]);
+
+  useEffect(() => {
+    if (!mobileWorkspaceOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileWorkspaceOpen]);
+
+  const previousTabRef = useRef<Tab>(tab);
+  useEffect(() => {
+    if (previousTabRef.current === 'stitch' && tab !== 'stitch') {
+      void drainStitchWrites(true);
+    }
+    previousTabRef.current = tab;
+  }, [drainStitchWrites, tab]);
+
+  const exitMobileWorkspace = useCallback((): void => {
+    void drainStitchWrites(true);
+    setTab('preview');
+    if (mobileWorkspaceFromHistory(window.history.state)) window.history.back();
+  }, [drainStitchWrites]);
+
   return (
     <div className="workspace-content flex w-full flex-col gap-4">
       <SiteHeader
@@ -1169,7 +1472,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
             <span className="shrink-0 text-xs text-ink-soft/80">
-              {paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}
+              {paletteDisplayName} · {boardSpec.displayName}
             </span>
           </div>
         ) : undefined}
@@ -1250,16 +1553,50 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
             <p className="font-medium text-ink">{t.blankTitle}</p>
             <p className="text-xs text-ink-soft">{t.blankHint}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-soft" htmlFor="blank-palette">
+                <span>{zhCN.params.brand}</span>
+                <select
+                  id="blank-palette"
+                  value={selectedPalette}
+                  disabled={busy || generating}
+                  onChange={(event) => handlePaletteSelect(event.target.value)}
+                  className="min-w-0 input-compact py-1.5"
+                >
+                  {paletteOptionGroups.map(([group, options]) => (
+                    <optgroup key={group} label={group}>
+                      {options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-soft" htmlFor="blank-board-profile">
+                <span>{zhCN.params.boardProfile}</span>
+                <select
+                  id="blank-board-profile"
+                  value={boardProfile}
+                  disabled={busy || generating}
+                  onChange={(event) => handleBoardProfileSelect(event.target.value)}
+                  className="min-w-0 input-compact py-1.5"
+                >
+                  {boardProfileOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               {BLANK_PRESETS.map((boards) => (
                 <button
                   key={boards}
                   type="button"
-                  onClick={() => startBlank(boards * BOARD_SIZE, boards * BOARD_SIZE)}
+                  onClick={() => startBlank(boards * boardSpec.boardCols, boards * boardSpec.boardRows)}
                   disabled={busy}
                   className="btn-outline btn-sm"
                 >
-                  {t.blankPreset(boards, boards * BOARD_SIZE)}
+                  {t.blankPreset(boards, boards * boardSpec.boardCols)}
                 </button>
               ))}
             </div>
@@ -1276,9 +1613,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         // 需要滚很远才能改参数。md 起就并列两栏，侧栏在该区间收窄到 260px。
         mobileLayout ? (
         <div className="mobile-workbench">
+          <div className="mobile-workbench-overview" aria-hidden={mobileWorkspaceOpen || undefined}>
           <div className="mobile-project-bar">
             <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
-            <span>{paletteKind.kind === 'builtin' ? paletteKind.brand : zhCN.workbench.customPaletteLabel}</span>
+            <span>{paletteDisplayName} · {boardSpec.displayName}</span>
           </div>
           {doneToken > 0 && !generating && (
             <p key={doneToken} role="status" className="animate-rise mobile-workbench-feedback text-success">
@@ -1297,9 +1635,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <section className="mobile-canvas-shell">
             <header><span className="saved-dot" />{saveState === 'dirty' ? t.unsaved : t.saved}<strong>{pattern.width} × {pattern.height}</strong></header>
             <div className="mobile-canvas-stage">
-              {tab === 'preview' && <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>}
-              {tab === 'edit' && <div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" className={generating ? 'pointer-events-none opacity-60' : undefined} aria-busy={generating}><PixelEditorCanvas pattern={pattern} palette={palette} autoFocus onPatternChange={handlePatternChange} /></div>}
-              {tab === 'stitch' && <div id="panel-stitch" role="tabpanel" aria-labelledby="tab-stitch">{stitchProgress ? <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} /> : <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>}</div>}
+              <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} boardSize={boardSpec.boardCols} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>
             </div>
             <footer>{t.statsTotal(total)} · {t.colorCount(stats.length)}<span>{t.editorHint}</span></footer>
           </section>
@@ -1329,6 +1665,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 selectedPalette={selectedPalette}
                 onParamsChange={handleParamsChange}
                 onPaletteSelect={handlePaletteSelect}
+                boardProfileOptions={boardProfileOptions}
+                selectedBoardProfile={boardProfile}
+                onBoardProfileSelect={handleBoardProfileSelect}
+                paletteColorCount={paletteColorCount}
                 backgroundSampleSource={source}
                 disabled={!source || generating}
                 paletteDisabled={generating || !generationSession.committed}
@@ -1345,17 +1685,104 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
             {mobilePanel === 'export' && generationSession.committed && (
               <div className="mobile-export-stack">
-                <PngExportButton pattern={generationSession.committed.pattern} designName={name.trim() || zhCN.project.unnamed} disabled={generating} />
-                <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={generationSession.committed.pattern} stats={generationSession.committed.stats} disabled={generating} />
-                <ProjectFileButtons source={{ name: name.trim() || zhCN.project.unnamed, createdAt: createdAt || new Date().toISOString(), engineVersion: generationSession.committed.engineVersion, palette: generationSession.committed.projectPalette, params: generationSession.committed.params, pattern: generationSession.committed.pattern }} existingNames={savedNames} onImport={handleImport} disabled={generating} />
-                <ShareButton designId={designId} onBeforeShare={prepareShare} disabled={authStatus.kind !== 'user'} disabledReason={zhCN.share.requiresCloud} />
+                <PngExportButton pattern={generationSession.committed.pattern} designName={name.trim() || zhCN.project.unnamed} boardSize={boardSpec.boardCols} disabled={generating} />
+                <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={generationSession.committed.pattern} stats={generationSession.committed.stats} boardSize={boardSpec.boardCols} cellMm={boardProfile === DEFAULT_BOARD_PROFILE_ID ? undefined : boardSpec.pdfCellMm} disabled={generating} />
+                <ProjectFileButtons source={{ name: name.trim() || zhCN.project.unnamed, createdAt: createdAt || new Date().toISOString(), engineVersion: generationSession.committed.engineVersion, boardProfile: generationSession.committed.boardProfile, paletteSelection: generationSession.committed.paletteSelection, params: generationSession.committed.params, pattern: generationSession.committed.pattern }} existingNames={savedNames} onImport={handleImport} disabled={generating} />
+                <ShareButton
+                  designId={designId}
+                  onBeforeShare={prepareShare}
+                  disabled={authStatus.kind !== 'user' || generating}
+                  disabledReason={generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
+                />
               </div>
             )}
           </section>
+          </div>
+
+          {mobileWorkspaceOpen && (
+            <section
+              data-testid="mobile-immersive-workspace"
+              className="mobile-immersive-workspace"
+              role="dialog"
+              aria-modal="true"
+              aria-label={tab === 'edit' ? t.editTab : zhCN.stitch.tab}
+            >
+              <header className="mobile-immersive-header">
+                <button type="button" className="mobile-immersive-back" onClick={exitMobileWorkspace}>
+                  <Icon name="back" />
+                  <span>{t.mobileWorkspaceBack}</span>
+                </button>
+                <strong>{name.trim() || zhCN.project.unnamed}</strong>
+                <span>{pattern.width} × {pattern.height}</span>
+              </header>
+              <div className="mobile-immersive-mode-switcher" role="tablist" aria-label={t.mobileWorkspaceModes}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'edit'}
+                  aria-controls="mobile-panel-edit"
+                  onClick={() => setTab('edit')}
+                >
+                  {t.editTab}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === 'stitch'}
+                  aria-controls="mobile-panel-stitch"
+                  onClick={() => setTab('stitch')}
+                >
+                  {zhCN.stitch.tab}
+                </button>
+              </div>
+              <div className="mobile-immersive-body">
+                {tab === 'edit' && (
+                  <div
+                    id="mobile-panel-edit"
+                    role="tabpanel"
+                    className={generating ? 'pointer-events-none opacity-60' : undefined}
+                    aria-busy={generating}
+                  >
+                    <PixelEditorCanvas
+                      pattern={pattern}
+                      palette={palette}
+                      boardSize={boardSpec.boardCols}
+                      layout="mobile"
+                      autoFocus
+                      onPatternChange={handlePatternChange}
+                    />
+                  </div>
+                )}
+                {tab === 'stitch' && (
+                  <div id="mobile-panel-stitch" role="tabpanel">
+                    {stitchSaveError && (
+                      <Notice kind="danger" compact as="div" className="stitch-save-notice">
+                        <span>{t.stitchSaveFailed}</span>
+                        <button type="button" className="btn-outline btn-sm" onClick={retryStitchSave}>
+                          {t.stitchSaveRetry}
+                        </button>
+                      </Notice>
+                    )}
+                    {stitchProgress ? (
+                      <StitchView
+                        pattern={pattern}
+                        progress={stitchProgress}
+                        boardSize={boardSpec.boardCols}
+                        layout="mobile"
+                        onChange={updateStitchProgress}
+                      />
+                    ) : (
+                      <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
         </div>
         ) : (
-        <div className="desktop-workbench-layout grid grid-cols-1 gap-4 md:grid-cols-[1fr_260px] lg:grid-cols-[1fr_320px]">
-          <section className="flex flex-col gap-3">
+        <div className="desktop-workbench-layout grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_260px] lg:grid-cols-[minmax(0,1fr)_320px]">
+          <section className="flex min-w-0 flex-col gap-3">
             {/*
               生成完成的结果句（D-1 第一段）：礼貌播报 + 上浮出现。
               以前生成完成没有任何反馈——进度行消失、图纸静默替换，用户不确定是否已完成。
@@ -1430,6 +1857,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 */}
                 <PatternPreview
                   pattern={pattern}
+                  boardSize={boardSpec.boardCols}
                   onCellHover={(info) =>
                     setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)
                   }
@@ -1442,6 +1870,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   <PixelEditorCanvas
                     pattern={pattern}
                     palette={palette}
+                    boardSize={boardSpec.boardCols}
+                    layout="desktop"
                     autoFocus
                     onPatternChange={handlePatternChange}
                   />
@@ -1450,8 +1880,16 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
             {tab === 'stitch' && (
               <div id="panel-stitch" role="tabpanel" aria-labelledby="tab-stitch">
+                {stitchSaveError && (
+                  <Notice kind="danger" compact as="div" className="stitch-save-notice">
+                    <span>{t.stitchSaveFailed}</span>
+                    <button type="button" className="btn-outline btn-sm" onClick={retryStitchSave}>
+                      {t.stitchSaveRetry}
+                    </button>
+                  </Notice>
+                )}
                 {stitchProgress ? (
-                  <StitchView pattern={pattern} progress={stitchProgress} onChange={updateStitchProgress} />
+                  <StitchView pattern={pattern} progress={stitchProgress} boardSize={boardSpec.boardCols} layout="desktop" onChange={updateStitchProgress} />
                 ) : (
                   <Notice kind="warning">{zhCN.stitch.unavailable}</Notice>
                 )}
@@ -1488,6 +1926,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               selectedPalette={selectedPalette}
               onParamsChange={handleParamsChange}
               onPaletteSelect={handlePaletteSelect}
+              boardProfileOptions={boardProfileOptions}
+              selectedBoardProfile={boardProfile}
+              onBoardProfileSelect={handleBoardProfileSelect}
+              paletteColorCount={paletteColorCount}
               backgroundSampleSource={source}
               disabled={!source || generating}
               /* 换色板不需要原图（H-1）：只要有已提交的图纸就能重映射。 */
@@ -1525,12 +1967,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 <PngExportButton
                   pattern={generationSession.committed.pattern}
                   designName={name.trim() || zhCN.project.unnamed}
+                  boardSize={boardSpec.boardCols}
                   disabled={generating}
                 />
                 <PdfExportButton
                   name={name.trim() || zhCN.project.unnamed}
                   pattern={generationSession.committed.pattern}
                   stats={generationSession.committed.stats}
+                  boardSize={boardSpec.boardCols}
+                  cellMm={boardProfile === DEFAULT_BOARD_PROFILE_ID ? undefined : boardSpec.pdfCellMm}
                   disabled={generating}
                 />
                 <ProjectFileButtons
@@ -1538,7 +1983,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                     name: name.trim() || zhCN.project.unnamed,
                     createdAt: createdAt || new Date().toISOString(),
                     engineVersion: generationSession.committed.engineVersion,
-                    palette: generationSession.committed.projectPalette,
+                    boardProfile: generationSession.committed.boardProfile,
+                    paletteSelection: generationSession.committed.paletteSelection,
                     params: generationSession.committed.params,
                     pattern: generationSession.committed.pattern,
                   }}
@@ -1550,8 +1996,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 <ShareButton
                   designId={designId}
                   onBeforeShare={prepareShare}
-                  disabled={authStatus.kind !== 'user'}
-                  disabledReason={zhCN.share.requiresCloud}
+                  disabled={authStatus.kind !== 'user' || generating}
+                  disabledReason={generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
                 />
               </div>
             )}

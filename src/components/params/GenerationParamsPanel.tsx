@@ -4,10 +4,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import Notice from '@/components/ui/Notice';
-import type { Brand, GenerationParams } from '@/lib/types';
+import type { BoardProfileId, GenerationParams } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
 import { patternRows } from '@/lib/engine/generate';
-import { BOARD_SIZE } from '@/lib/export/pdfLayout';
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
 import { KIT_TIERS } from '@/lib/engine/kit';
 import type { ImageDataLike } from '@/lib/engine/types';
 
@@ -18,6 +18,13 @@ export interface PaletteOption {
   value: string;
   label: string;
   kind: 'builtin' | 'custom';
+  group?: string;
+}
+
+export interface BoardProfileOption {
+  value: BoardProfileId;
+  label: string;
+  boardSize: number;
 }
 
 interface Props {
@@ -26,6 +33,10 @@ interface Props {
   selectedPalette: string;
   onParamsChange: (params: GenerationParams) => void;
   onPaletteSelect: (value: string) => void;
+  boardProfileOptions: readonly BoardProfileOption[];
+  selectedBoardProfile: BoardProfileId;
+  onBoardProfileSelect: (value: BoardProfileId) => void;
+  paletteColorCount: number;
   backgroundSampleSource?: ImageDataLike | null;
   /** 生成参数是否锁定：改参数需要重新采样原图，没有生成源时必须锁。 */
   disabled?: boolean;
@@ -61,6 +72,10 @@ export default function GenerationParamsPanel({
   selectedPalette,
   onParamsChange,
   onPaletteSelect,
+  boardProfileOptions,
+  selectedBoardProfile,
+  onBoardProfileSelect,
+  paletteColorCount,
   backgroundSampleSource,
   disabled,
   paletteDisabled,
@@ -119,6 +134,18 @@ export default function GenerationParamsPanel({
 
   const paletteValue = useMemo(() => selectedPalette, [selectedPalette]);
   const t = zhCN.params;
+  const boardSize = boardProfileOptions.find((option) => option.value === selectedBoardProfile)?.boardSize ?? DEFAULT_BOARD_SIZE;
+  const paletteOptionGroups = useMemo(() => {
+    const groups = new Map<string, PaletteOption[]>();
+    for (const option of paletteOptions) {
+      const label = option.group ?? (option.kind === 'custom' ? t.customPaletteGroup : t.builtinPaletteGroup);
+      const entries = groups.get(label) ?? [];
+      entries.push(option);
+      groups.set(label, entries);
+    }
+    return [...groups.entries()];
+  }, [paletteOptions, t.builtinPaletteGroup, t.customPaletteGroup]);
+  const availableKitTiers = KIT_TIERS.filter((tier) => tier === 0 || tier <= paletteColorCount);
 
   /**
    * 越界输入提示（B：invalidWidth/invalidColors 两条文案此前从未渲染，
@@ -191,7 +218,8 @@ export default function GenerationParamsPanel({
         */}
         <div className="mb-2 flex flex-wrap items-center gap-1" role="group" aria-label={t.boardPresetGroup}>
           {BOARD_PRESETS.map((boards) => {
-            const width = boards * BOARD_SIZE;
+            const width = boards * boardSize;
+            if (width > LIMITS.targetWidth.max) return null;
             const active = local.targetWidth === width;
             return (
               <button
@@ -222,7 +250,7 @@ export default function GenerationParamsPanel({
               patch({ targetWidth: n });
               setWidthText(String(n));
             }}
-            className="flex-1"
+            className="min-w-0 flex-1"
           />
           <input
             type="number"
@@ -234,7 +262,7 @@ export default function GenerationParamsPanel({
             onChange={(e) => setWidthText(e.target.value)}
             onBlur={commitWidth}
             onKeyDown={(e) => e.key === 'Enter' && commitWidth()}
-            className="w-20 input-compact"
+            className="w-20 max-w-full shrink-0 input-compact"
           />
         </div>
         {widthError && (
@@ -269,7 +297,7 @@ export default function GenerationParamsPanel({
               patch({ targetColorCount: n });
               setColorsText(String(n));
             }}
-            className="flex-1"
+            className="min-w-0 flex-1"
           />
           <input
             type="number"
@@ -281,7 +309,7 @@ export default function GenerationParamsPanel({
             onChange={(e) => setColorsText(e.target.value)}
             onBlur={commitColors}
             onKeyDown={(e) => e.key === 'Enter' && commitColors()}
-            className="w-20 input-compact"
+            className="w-20 max-w-full shrink-0 input-compact"
           />
         </div>
         {colorsError && (
@@ -442,12 +470,33 @@ export default function GenerationParamsPanel({
           onChange={(e) => onPaletteSelect(e.target.value)}
           className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {paletteOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+          {paletteOptionGroups.map(([group, options]) => (
+            <optgroup key={group} label={group}>
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
+      </div>
+      <div className="mb-2 text-sm">
+        <label htmlFor="param-board-profile" className="mb-1 block font-medium text-ink-soft">
+          {t.boardProfile}
+        </label>
+        <select
+          id="param-board-profile"
+          value={selectedBoardProfile}
+          disabled={paletteLocked}
+          onChange={(event) => onBoardProfileSelect(event.target.value as BoardProfileId)}
+          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {boardProfileOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-ink-soft">{t.boardProfileHint}</p>
       </div>
       <div className="mb-2 text-sm">
         <label htmlFor="param-kit" className="mb-1 block font-medium text-ink-soft">
@@ -465,9 +514,9 @@ export default function GenerationParamsPanel({
           onChange={(e) => onKitTierChange?.(Number(e.target.value))}
           className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {KIT_TIERS.map((tier) => (
+          {availableKitTiers.map((tier) => (
             <option key={tier} value={tier}>
-              {tier === 0 ? t.kitTierAll : t.kitTierOption(tier)}
+              {tier === 0 ? t.kitTierAll(paletteColorCount) : t.kitTierOption(tier)}
             </option>
           ))}
         </select>
@@ -476,5 +525,3 @@ export default function GenerationParamsPanel({
     </section>
   );
 }
-
-export type { Brand };

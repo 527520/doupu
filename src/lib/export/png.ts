@@ -23,6 +23,8 @@ export interface ExportPngOptions {
   cropToContent?: boolean;
   /** 下方换行图例（色块+色号+数量），默认关 */
   includeLegend?: boolean;
+  /** 当前制作规格的一块板边长；缺省保持兼容规格。 */
+  boardSize?: number;
 }
 
 export type ExportPngResult =
@@ -118,19 +120,19 @@ export function exportPngBlob(
   }
   ctx.stroke();
 
-  // 板缝粗线（每 29 格；按内容坐标系）
+  // 板缝粗线（间距由当前制作规格决定；按内容坐标系）
   if (cellPx >= 4) {
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     ctx.lineWidth = Math.max(2, Math.round(cellPx / 8));
     ctx.beginPath();
-    for (const p of boardSeamPositions(pattern.width)) {
+    for (const p of boardSeamPositions(pattern.width, options.boardSize)) {
       const lineX = (p - x0) * cellPx;
       if (lineX > 0 && lineX < patternPxW) {
         ctx.moveTo(lineX, 0);
         ctx.lineTo(lineX, patternPxH);
       }
     }
-    for (const p of boardSeamPositions(pattern.height)) {
+    for (const p of boardSeamPositions(pattern.height, options.boardSize)) {
       const lineY = (p - y0) * cellPx;
       if (lineY > 0 && lineY < patternPxH) {
         ctx.moveTo(0, lineY);

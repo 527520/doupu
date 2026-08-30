@@ -10,6 +10,7 @@ import { LIMITS } from '@/lib/appInfo';
 import type { ImageDataLike } from '@/lib/engine/types';
 import { parseStitchProgress, type StitchProgress } from '@/lib/progress/stitchProgress';
 import type { Pattern, ProjectFile } from '@/lib/types';
+import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
 
 // ---------- 类型 ----------
 
@@ -305,7 +306,11 @@ export function buildThumbnailSize(
 }
 
 /** 用 Canvas 渲染缩略图 data URL；任何失败（含 jsdom 无 canvas）返回 null。 */
-export function renderThumbnail(pattern: Pattern, maxSide = 256): string | null {
+export function renderThumbnail(
+  pattern: Pattern,
+  maxSide = 256,
+  boardSize = DEFAULT_BOARD_SIZE,
+): string | null {
   try {
     if (typeof document === 'undefined') return null;
     const { cellPx, width, height } = buildThumbnailSize(pattern.width, pattern.height, maxSide);
@@ -314,7 +319,13 @@ export function renderThumbnail(pattern: Pattern, maxSide = 256): string | null 
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    drawPattern(ctx, pattern, { cellPx, showGrid: false, showSeams: true, showLabels: false });
+    drawPattern(ctx, pattern, {
+      cellPx,
+      showGrid: false,
+      showSeams: true,
+      showLabels: false,
+      boardSize,
+    });
     const dataUrl = canvas.toDataURL('image/png');
     return dataUrl === 'data:,' ? null : dataUrl;
   } catch {

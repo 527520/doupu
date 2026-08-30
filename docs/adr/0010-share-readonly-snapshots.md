@@ -13,8 +13,8 @@ must survive the author's continued editing without changing what the recipient 
 
 ## Decision
 
-- A share is a frozen **snapshot** taken at share time: pattern cells, palette declaration, name and
-  creation time only. Generation parameters, the author's identity, the original photo and the local
+- A share is a frozen **snapshot** taken at share time: pattern cells, palette declaration, board
+  profile, name and creation time only. Generation parameters, kit tier, the author's identity, the original photo and the local
   generation source (D13/D37) are all excluded. Project-file format upgrades never break old links.
 - `POST /api/designs/[id]/share` creates the snapshot; `DELETE` revokes it. One design holds at most
   one live share: re-sharing invalidates the previous link (the user intent is "rotate the link").
@@ -26,8 +26,9 @@ must survive the author's continued editing without changing what the recipient 
 
 ## Consequences
 
-- Sharing is decoupled from both the project-file format and the sync protocol: the snapshot version
-  (currently 1) is the only contract the public page consumes.
+- Sharing is decoupled from both the project-file format and the sync protocol. Snapshot v3 is the
+  only contract the public page consumes. There are no historical public shares or user data, so
+  v1/v2 are deliberately rejected instead of carrying permanent compatibility branches.
 - Revoking a share deletes the row, so recipients lose access instantly; the author must re-share to
   send an updated pattern (a fresh snapshot).
 - The `design_shares` table (migration 0003) stores the snapshot as `jsonb` plus a hashed token with

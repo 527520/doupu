@@ -11,7 +11,7 @@ import {
   type GenerationSessionAction,
 } from './session';
 import type { ImageDataLike } from './types';
-import type { PaletteColor, Pattern, PatternStatsItem, ProjectPalette } from '@/lib/types';
+import type { BoardProfileId, PaletteSelection, Pattern, PatternStatsItem } from '@/lib/types';
 
 interface GenerateOptions<Result> {
   create(source: ImageDataLike, draft: GenerationDraft, onProgress: (percent: number) => void): CancellableGenerationTask<Result>;
@@ -122,8 +122,8 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     pattern: Pattern;
     stats: PatternStatsItem[];
     total: number;
-    palette: PaletteColor[];
-    projectPalette: ProjectPalette;
+    paletteSelection: PaletteSelection;
+    boardProfile: BoardProfileId;
   }): void => {
     dispatch({ type: 'remap', ...input });
   }, [dispatch]);

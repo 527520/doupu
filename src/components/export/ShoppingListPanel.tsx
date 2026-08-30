@@ -82,7 +82,7 @@ export default function ShoppingListPanel({ stats, designName, width, height }: 
 
           <ul className="flex max-h-56 flex-col gap-1 overflow-auto pr-1">
             {list.items.map((item) => (
-              <li key={item.code} className="flex items-center gap-2 text-xs">
+              <li key={`${item.code}-${item.hex}`} className="flex items-center gap-2 text-xs">
                 <span
                   aria-hidden="true"
                   className="inline-block h-3 w-3 shrink-0 rounded-sm border border-lilac/40"

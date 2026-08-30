@@ -10,7 +10,7 @@ import {
 } from './runGenerate';
 import type { EngineOutput, ImageDataLike } from './types';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 
 function makeSrc(red = 255): ImageDataLike {
   const data = new Uint8ClampedArray(8 * 8 * 4);
@@ -25,7 +25,7 @@ function makeRequest(src = makeSrc()): GenerateRequest {
   return {
     src,
     params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 20 },
-    palette: buildBrandPalette('MARD'),
+    palette: [...getBuiltinPalette('MARD').engineColors],
   };
 }
 

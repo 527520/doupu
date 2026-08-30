@@ -20,12 +20,16 @@ const iso = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
 function makeProject(name: string, updatedAt: string): ProjectFile {
   return {
     format: 'doupu-project',
-    version: 2,
+    version: 3,
     engineVersion: '2.0.0',
+    boardProfile: '5mm-29',
     name,
     createdAt: updatedAt,
     updatedAt,
-    palette: { kind: 'builtin', brand: 'MARD' },
+    paletteSelection: {
+      palette: { kind: 'builtin', brand: 'MARD' },
+      kitTier: 0,
+    },
     params: {
       targetWidth: 20,
       targetColorCount: 40,
@@ -39,7 +43,7 @@ function makeProject(name: string, updatedAt: string): ProjectFile {
     pattern: {
       width: 30,
       height: 20,
-      cells: Array.from({ length: 600 }, () => ({ hex: '#FF0000', code: 'F02', transparent: false })),
+      cells: Array.from({ length: 600 }, () => ({ hex: '#FC3D46', code: 'F02', transparent: false })),
     },
   };
 }

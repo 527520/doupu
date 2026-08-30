@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkerRequest, WorkerResponse } from './runGenerate';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 
 interface WorkerSelfMock {
   onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
@@ -20,7 +20,7 @@ const source = (): Extract<WorkerRequest, { type: 'source' }> => {
   return { type: 'source', sourceId: 1, src: { data, width: 8, height: 8 } };
 };
 
-const generate = (taskId = 1, palette = buildBrandPalette('MARD'), cancelled = false): Extract<WorkerRequest, { type: 'generate' }> => {
+const generate = (taskId = 1, palette = [...getBuiltinPalette('MARD').engineColors], cancelled = false): Extract<WorkerRequest, { type: 'generate' }> => {
   const cancelBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   if (cancelled) Atomics.store(new Int32Array(cancelBuffer), 0, 1);
   return {
@@ -63,7 +63,7 @@ describe('generate.worker 持久消息协议', () => {
 
   it('原子取消标记使引擎在工作中止点退出，不产生 done/progress', () => {
     dispatch(source());
-    dispatch(generate(9, buildBrandPalette('MARD'), true));
+    dispatch(generate(9, [...getBuiltinPalette('MARD').engineColors], true));
     expect(posted()).toEqual([{ type: 'cancelled', taskId: 9 }]);
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Worker } from 'node:worker_threads';
-import { buildBrandPalette } from '@/lib/palettes';
+import { getBuiltinPalette } from '@/lib/palettes';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 import { generatePattern } from './generate';
 import { clearLutCache } from './lut';
@@ -69,7 +69,7 @@ describe('生成引擎性能预算（无 coverage instrumentation）', () => {
     const image = randomImage(42, 1600, 1600);
     clearLutCache(); // 生产 Worker 每个任务都是冷启动，基准必须包含 matcher 构建
     const start = performance.now();
-    const output = generatePattern(image, params, buildBrandPalette('MARD'));
+    const output = generatePattern(image, params, [...getBuiltinPalette('MARD').engineColors]);
     const elapsed = performance.now() - start;
 
     expect(output.pattern.width).toBe(200);

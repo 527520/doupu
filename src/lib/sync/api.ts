@@ -5,7 +5,7 @@
 import { ApiError, type CloudApi, type CloudDesignFull, type CloudDesignMeta, type CloudDesignPage } from './clientAdapter';
 import type { ProjectFile } from '@/lib/types';
 import { z } from 'zod';
-import { projectFileSchema } from '@/lib/schemas';
+import { parseProjectFileValue } from '@/lib/schemas';
 
 export type MeInfo =
   | { state: 'guest' }
@@ -40,10 +40,16 @@ const cloudDesignPageSchema = z.object({
   items: z.array(cloudDesignMetaSchema),
   nextCursor: z.string().min(1).nullable(),
 });
+const compatibleProjectFileSchema = z.unknown().transform((value, ctx) => {
+  const parsed = parseProjectFileValue(value);
+  if (parsed.ok) return parsed.value;
+  ctx.addIssue({ code: 'custom', message: parsed.errors.join('; ') });
+  return z.NEVER;
+});
 const cloudDesignFullSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  project: projectFileSchema,
+  project: compatibleProjectFileSchema,
   updatedAt: z.string().datetime(),
   revision: z.number().int().positive(),
   deleted: z.boolean().optional(),

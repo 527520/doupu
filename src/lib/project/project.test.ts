@@ -8,33 +8,61 @@ const source: ProjectSource = {
   name: '测试设计',
   createdAt: '2026-08-14T10:00:00.000Z',
   engineVersion: ENGINE_VERSION,
-  palette: { kind: 'builtin', brand: 'MARD' },
+  boardProfile: '2.6mm-50',
+  paletteSelection: {
+    palette: {
+      kind: 'builtin',
+      brand: 'pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186',
+    },
+    kitTier: 0,
+  },
   params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 60, dithering: true },
   pattern: {
     width: 2,
     height: 1,
     cells: [
-      { hex: '#FF0000', code: 'F01', transparent: false, external: true },
+      { hex: '#FFFFFF', code: 'C01', transparent: false, external: true },
       { hex: null, code: null, transparent: true },
     ],
   },
 };
 
 describe('serializeProject / importProjectFile round-trip', () => {
+  it('v3 将色板定义与套装档位作为一个 paletteSelection 往返', () => {
+    const text = serializeProject({
+      ...source,
+      paletteSelection: { ...source.paletteSelection, kitTier: 24 },
+    }, new Date('2026-08-14T12:00:00.000Z'));
+
+    const result = importProjectFile(text);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.project.version).toBe(3);
+    expect(result.project.paletteSelection).toEqual({ palette: source.paletteSelection.palette, kitTier: 24 });
+    expect(result.project).not.toHaveProperty('palette');
+    expect(result.project).not.toHaveProperty('kitTier');
+  });
+
   it('导出 → 导入 → 逐字段相等', () => {
     const before = new Date('2026-08-14T12:00:00.000Z');
-    const text = serializeProject(source, before);
+    const text = serializeProject({
+      ...source,
+      paletteSelection: { ...source.paletteSelection, kitTier: 24 },
+    }, before);
     const result = importProjectFile(text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const project = result.project;
     expect(project.format).toBe('doupu-project');
-    expect(project.version).toBe(2);
+    expect(project.version).toBe(3);
     expect(project.engineVersion).toBe(ENGINE_VERSION);
+    expect(project.boardProfile).toBe('2.6mm-50');
+    expect(project.paletteSelection.kitTier).toBe(24);
     expect(project.name).toBe(source.name);
     expect(project.createdAt).toBe(source.createdAt);
     expect(project.updatedAt).toBe(before.toISOString());
-    expect(project.palette).toEqual(source.palette);
+    expect(project.paletteSelection.palette).toEqual(source.paletteSelection.palette);
     expect(project.params).toEqual(source.params);
     expect(project.pattern).toEqual(source.pattern); // 含 external 标记与透明格
   });
@@ -53,6 +81,21 @@ describe('serializeProject / importProjectFile round-trip', () => {
     const ts = new Date(result.project.updatedAt).getTime();
     expect(ts).toBeGreaterThanOrEqual(before - 1000);
     expect(ts).toBeLessThanOrEqual(after + 1000);
+  });
+
+  it('导出前自校验，拒绝无法重新导入的占位色号项目', () => {
+    expect(() => serializeProject({
+      ...source,
+      paletteSelection: {
+        palette: { kind: 'custom', colors: [{ code: '?', hex: '#112233' }] },
+        kitTier: 0,
+      },
+      pattern: {
+        width: 1,
+        height: 1,
+        cells: [{ code: '?', hex: '#112233', transparent: false }],
+      },
+    })).toThrow();
   });
 });
 
@@ -78,27 +121,27 @@ describe('importProjectFile 坏文件矩阵（§5.3 / E38）', () => {
     expect(importProjectFile(JSON.stringify(json)).ok).toBe(false);
   });
 
-  it('v1 只允许导入并迁移成带 legacy 引擎标记的 v2', () => {
-    const legacy = JSON.parse(valid()) as Record<string, unknown>;
-    legacy.version = 1;
-    delete legacy.engineVersion;
+  it('v1 和旧 v2 项目文件都明确拒绝', () => {
+    const current = JSON.parse(valid()) as Record<string, unknown>;
+    const paletteSelection = current.paletteSelection as { palette: unknown; kitTier: unknown };
 
-    const result = importProjectFile(JSON.stringify(legacy));
+    const oldV2: Record<string, unknown> = {
+      ...current,
+      version: 2,
+      palette: paletteSelection.palette,
+      kitTier: paletteSelection.kitTier,
+    };
+    delete oldV2.paletteSelection;
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.project.version).toBe(2);
-    expect(result.project.engineVersion).toBe('legacy-v1');
+    const v1: Record<string, unknown> = { ...oldV2, version: 1 };
+    delete v1.engineVersion;
+    delete v1.boardProfile;
+
+    expect(importProjectFile(JSON.stringify(oldV2)).ok).toBe(false);
+    expect(importProjectFile(JSON.stringify(v1)).ok).toBe(false);
   });
 
-  it('v1 携带 v2 engineVersion 的混代文件必须拒绝', () => {
-    const mixed = JSON.parse(valid()) as Record<string, unknown>;
-    mixed.version = 1;
-
-    expect(importProjectFile(JSON.stringify(mixed)).ok).toBe(false);
-  });
-
-  it('v2 顶层未知字段必须拒绝', () => {
+  it('v3 顶层未知字段必须拒绝', () => {
     const withUnknownField = JSON.parse(valid()) as Record<string, unknown>;
     withUnknownField.futureFormatFlag = true;
 
@@ -106,9 +149,48 @@ describe('importProjectFile 坏文件矩阵（§5.3 / E38）', () => {
   });
 
   it('未知 brand 拒绝', () => {
-    const json = JSON.parse(valid()) as { palette: { kind: string; brand: string } };
-    json.palette = { kind: 'builtin', brand: 'Perler' };
+    const json = JSON.parse(valid()) as { paletteSelection: { palette: { kind: string; brand: string } } };
+    json.paletteSelection.palette = { kind: 'builtin', brand: 'Perler' };
     expect(importProjectFile(JSON.stringify(json)).ok).toBe(false);
+  });
+
+  it('新增内置色板只按登记的稳定 ID 导入', () => {
+    const external = JSON.parse(valid()) as { paletteSelection: { palette: { kind: string; brand: string } } };
+    external.paletteSelection.palette = {
+      kind: 'builtin',
+      brand: 'pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186',
+    };
+    expect(importProjectFile(JSON.stringify(external)).ok).toBe(true);
+
+    external.paletteSelection.palette = { kind: 'builtin', brand: 'artkal-c-197-official' };
+    expect(importProjectFile(JSON.stringify(external)).ok).toBe(false);
+  });
+
+  it('未知制作规格拒绝', () => {
+    const json = JSON.parse(valid()) as { boardProfile: string };
+    json.boardProfile = '2.6mm-51';
+    expect(importProjectFile(JSON.stringify(json)).ok).toBe(false);
+  });
+
+  it('拒绝色板与制作规格不兼容的组合', () => {
+    const standardBeadsOnMiniBoard = JSON.parse(valid()) as {
+      boardProfile: string;
+      paletteSelection: { palette: { kind: string; brand: string } };
+    };
+    standardBeadsOnMiniBoard.paletteSelection.palette = { kind: 'builtin', brand: 'MARD' };
+    standardBeadsOnMiniBoard.boardProfile = '2.6mm-50';
+    expect(importProjectFile(JSON.stringify(standardBeadsOnMiniBoard)).ok).toBe(false);
+
+    const miniBeadsOnStandardBoard = JSON.parse(valid()) as {
+      boardProfile: string;
+      paletteSelection: { palette: { kind: string; brand: string } };
+    };
+    miniBeadsOnStandardBoard.paletteSelection.palette = {
+      kind: 'builtin',
+      brand: 'pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186',
+    };
+    miniBeadsOnStandardBoard.boardProfile = '5mm-29';
+    expect(importProjectFile(JSON.stringify(miniBeadsOnStandardBoard)).ok).toBe(false);
   });
 
   it('宽度超限（300）拒绝', () => {
@@ -131,18 +213,27 @@ describe('importProjectFile 坏文件矩阵（§5.3 / E38）', () => {
     expect(importProjectFile(JSON.stringify(json)).ok).toBe(false);
   });
 
+  it('拒绝非透明格中不属于声明色板的 FAKE code+hex 组合', () => {
+    const json = JSON.parse(valid()) as {
+      pattern: { cells: Array<{ hex: string | null; code: string | null; transparent: boolean }> };
+    };
+    json.pattern.cells[0] = { hex: '#FFFFFF', code: 'FAKE', transparent: false };
+    const result = importProjectFile(JSON.stringify(json));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.some((error) => error.includes('pattern.cells.0'))).toBe(true);
+  });
+
   it('UTF-8 BOM 容忍（端到端）', () => {
     const withBom = '\uFEFF' + valid();
     const result = importProjectFile(withBom);
     expect(result.ok).toBe(true);
   });
 
-  it('hex 为准、code 仅展示：跨品牌导入仍成立', () => {
-    // 导出时用 MARD 色号，导入后不改 hex；code 保留原值（展示语义）
+  it('合法 code+hex 组合导入时保持原值', () => {
     const text = valid();
     const result = importProjectFile(text);
     if (!result.ok) throw new Error('should parse');
-    expect(result.project.pattern.cells[0]).toEqual({ hex: '#FF0000', code: 'F01', transparent: false, external: true });
+    expect(result.project.pattern.cells[0]).toEqual({ hex: '#FFFFFF', code: 'C01', transparent: false, external: true });
   });
 });
 

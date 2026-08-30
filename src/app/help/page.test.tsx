@@ -10,6 +10,7 @@ describe('帮助页', () => {
     expect(screen.getByRole('heading', { name: '帮助' })).toBeTruthy();
     expect(screen.getByText('上传要求')).toBeTruthy();
     expect(screen.getByText('参数说明')).toBeTruthy();
+    expect(screen.getByText('色板资料与制作规格')).toBeTruthy();
     expect(screen.getByText('板缝线')).toBeTruthy();
     expect(screen.getByText('导出说明')).toBeTruthy();
     expect(screen.getByText('常见问题')).toBeTruthy();
@@ -17,6 +18,12 @@ describe('帮助页', () => {
     expect(screen.getByText(/透明底的像素画/)).toBeTruthy();
     expect(screen.getAllByText(/8000×8000/).length).toBeGreaterThan(0);
     expect(screen.getByText(/色号是拼豆品牌/)).toBeTruthy();
+    expect(screen.getByText(/内置 13 套色板/)).toBeTruthy();
+    expect(screen.getByText(/178dafb/)).toBeTruthy();
+    expect(screen.getByText(/50 与 52 的 Mini 底板钉距不兼容/)).toBeTruthy();
+    expect(screen.getByText('为什么“收录数”和“可生成数”不一样？')).toBeTruthy();
+    expect(screen.getByText('项目文件会保存原图吗？')).toBeTruthy();
+    expect(screen.getByText(/v3 项目文件只保存图纸、生成参数、制作规格、色板与套装档位/)).toBeTruthy();
     expect(screen.getByText('图纸宽度选多少合适？')).toBeTruthy();
     expect(screen.getByText(/熨烫时有什么技巧/)).toBeTruthy();
     expect(screen.getByText(/豆谱会收费吗/)).toBeTruthy();
@@ -29,6 +36,10 @@ describe('关于页', () => {
     expect(screen.getByRole('heading', { name: '关于豆谱' })).toBeTruthy();
     expect(screen.getByText(/AGPL-3.0/)).toBeTruthy();
     expect(screen.getByText(/Zippland\/perler-beads/)).toBeTruthy();
+    expect(screen.getByText(/HansBug\/pindou-color-data/)).toBeTruthy();
+    expect(screen.getByText(/178dafbc9e77d3de556550dbd058270200129186/)).toBeTruthy();
+    expect(screen.getByText(/内置 13 套版本化色板/)).toBeTruthy();
+    expect(screen.getByText(/2.6mm \/ 50×50、52×52/)).toBeTruthy();
     const sourceLink = screen.getByText('源码仓库');
     expect(sourceLink.getAttribute('href')).toBe('https://github.com/527520/doupu');
     expect(screen.getByRole('heading', { name: '隐私政策' })).toBeTruthy();
