@@ -125,6 +125,58 @@ class FakeApi {
 }
 
 describe('createSyncClient（E35–E37 适配层行为）', () => {
+  it('严格隔离非法本地项目：记录结构化 issue，其他合法 v3 仍完成同步', async () => {
+    const storage = new FakeStorage();
+    const api = new FakeApi();
+    const valid = makeProject('合法 v3', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('valid-v3', valid, valid.updatedAt));
+    await storage.put({
+      ...record('legacy-v2', valid, valid.updatedAt),
+      projectJson: JSON.stringify({ ...valid, version: 2 }),
+    });
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(api.putCalls).toEqual(['valid-v3']);
+    expect(outcome.syncedIds).toEqual(['valid-v3']);
+    expect(outcome.issues).toEqual([
+      {
+        designId: 'legacy-v2',
+        operation: 'validate-local',
+        code: 'INVALID_PROJECT_V3',
+        message: '本地项目不是严格 ProjectFile v3，已跳过同步',
+      },
+    ]);
+  });
+
+  it('严格隔离非法云端项目：单条拉取失败不阻断其他合法 v3', async () => {
+    const storage = new FakeStorage();
+    const valid = makeProject('合法云端 v3', '2026-08-15T00:00:00.000Z');
+    const invalid = makeProject('损坏云端记录', '2026-08-15T00:00:00.000Z');
+    const api = new FakeApi([
+      { id: 'bad-cloud', name: invalid.name, project: invalid, updatedAt: invalid.updatedAt },
+      { id: 'good-cloud', name: valid.name, project: valid, updatedAt: valid.updatedAt },
+    ]);
+    const originalGet = api.getDesign.bind(api);
+    api.getDesign = async (id) => {
+      if (id === 'bad-cloud') throw new ApiError(502, 'INVALID_RESPONSE', '云端返回了不兼容的数据');
+      return originalGet(id);
+    };
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect((await storage.getAll()).map((item) => item.id)).toEqual(['good-cloud']);
+    expect(outcome.syncedIds).toEqual(['good-cloud']);
+    expect(outcome.issues).toEqual([
+      {
+        designId: 'bad-cloud',
+        operation: 'pull',
+        code: 'INVALID_RESPONSE',
+        message: '云端返回了不兼容的数据',
+      },
+    ]);
+  });
+
   it('成功 push 只上传 ProjectFile 并保留本地生成源', async () => {
     const storage = new FakeStorage();
     const api = new FakeApi();
@@ -144,6 +196,20 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     expect(api.putProjects).toHaveLength(1);
     expect(api.putProjects[0]).not.toHaveProperty('source');
     expect(JSON.parse(storage.records.get('source-push')!.projectJson)).not.toHaveProperty('source');
+  });
+
+  it('冲突副本即使已创建云端 revision，显式解决前也不得进入 syncedIds', async () => {
+    const storage = new FakeStorage();
+    const api = new FakeApi();
+    const project = makeProject('未解决冲突副本', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('conflict-copy', project, project.updatedAt, 0, 'conflict'));
+
+    const first = await createSyncClient(storage, api).sync();
+    const second = await createSyncClient(storage, api).sync();
+
+    expect(storage.records.get('conflict-copy')).toMatchObject({ revision: 1, syncState: 'conflict' });
+    expect(first.syncedIds).not.toContain('conflict-copy');
+    expect(second.syncedIds).not.toContain('conflict-copy');
   });
 
   it('E35：本地独有设计推送到云端，采纳服务端时间戳；重复同步幂等', async () => {
@@ -456,13 +522,68 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     };
     await storage.put(record('racing', newer, newer.updatedAt, 0, 'dirty'), { mode: 'replace', source: newerSource });
     release();
-    await syncing;
+    const outcome = await syncing;
 
     const [local] = await storage.getAll();
     expect(local.name).toBe('同步期间的新编辑');
     expect(local.revision).toBe(1);
     expect(local.syncState).toBe('dirty');
     expect(await storage.getGenerationSource('racing')).toEqual(newerSource);
+    expect(outcome.syncedIds).not.toContain('racing');
+  });
+
+  it('同步 PUT 在途删除本地设计时转为墓碑，不得误报已同步', async () => {
+    const api = new FakeApi();
+    let release!: () => void;
+    api.putDesign = async (id, name, project, baseRevision) => new Promise((resolve) => {
+      release = () => {
+        const revision = baseRevision + 1;
+        const updatedAt = '2026-08-15T00:00:01.000Z';
+        api.cloud.set(id, { id, name, project: { ...project, updatedAt }, updatedAt, revision, deleted: false });
+        resolve({ updatedAt, revision });
+      };
+    });
+    const storage = new FakeStorage();
+    const project = makeProject('即将删除', '2026-08-15T00:00:00.000Z');
+    await storage.put(record('delete-racing', project, project.updatedAt, 0, 'dirty'));
+
+    const syncing = createSyncClient(storage, api).sync();
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await storage.delete('delete-racing');
+    release();
+    const outcome = await syncing;
+
+    expect(await storage.getAll()).toEqual([]);
+    expect(outcome.syncedIds).not.toContain('delete-racing');
+    expect(JSON.parse(storage.meta.get('sync-tombstones-v2') ?? '[]')).toEqual([
+      { id: 'delete-racing', baseRevision: 1 },
+    ]);
+  });
+
+  it('409 后读取冲突详情失败只记录该设计，后续合法设计仍会上传', async () => {
+    const remoteProject = makeProject('云端冲突', '2026-08-15T00:00:03.000Z');
+    const api = new FakeApi([{ id: 'broken-conflict', name: remoteProject.name, project: remoteProject, updatedAt: remoteProject.updatedAt, revision: 1 }]);
+    const originalGet = api.getDesign.bind(api);
+    api.getDesign = async (id) => {
+      if (id === 'broken-conflict') throw new ApiError(503, 'CLOUD_READ_FAILED', '无法读取冲突详情');
+      return originalGet(id);
+    };
+    const storage = new FakeStorage();
+    const conflicting = makeProject('本地冲突', '2026-08-15T00:00:00.000Z');
+    const sibling = makeProject('合法后续设计', '2026-08-15T00:00:01.000Z');
+    await storage.put(record('broken-conflict', conflicting, conflicting.updatedAt, 0, 'dirty'));
+    await storage.put(record('good-sibling', sibling, sibling.updatedAt, 0, 'dirty'));
+
+    const outcome = await createSyncClient(storage, api).sync();
+
+    expect(api.putCalls).toContain('good-sibling');
+    expect(outcome.syncedIds).toEqual(['good-sibling']);
+    expect(outcome.issues).toContainEqual({
+      designId: 'broken-conflict',
+      operation: 'push',
+      code: 'CLOUD_READ_FAILED',
+      message: '无法读取冲突详情',
+    });
   });
 
   it('同步 GET 在途发生的新本地编辑会进入冲突副本，不能被云端回写覆盖', async () => {
@@ -544,6 +665,44 @@ describe('createSyncClient（E35–E37 适配层行为）', () => {
     const again = await client.sync();
     expect(again.pushed).toBe(0);
     expect(again.pulled).toBe(0);
+  });
+
+  it('墓碑 409 后读取云端失败时保留该墓碑，并继续删除后续设计', async () => {
+    const badProject = makeProject('冲突删除', '2026-08-15T00:00:00.000Z');
+    const goodProject = makeProject('正常删除', '2026-08-15T00:00:00.000Z');
+    const api = new FakeApi([
+      { id: 'bad-delete', name: badProject.name, project: badProject, updatedAt: badProject.updatedAt, revision: 2 },
+      { id: 'good-delete', name: goodProject.name, project: goodProject, updatedAt: goodProject.updatedAt, revision: 1 },
+    ]);
+    const originalDelete = api.deleteDesign.bind(api);
+    api.deleteDesign = async (id, baseRevision) => {
+      if (id === 'bad-delete') throw new ApiError(409, 'REVISION_CONFLICT', '删除冲突');
+      return originalDelete(id, baseRevision);
+    };
+    const originalGet = api.getDesign.bind(api);
+    api.getDesign = async (id) => {
+      if (id === 'bad-delete') throw new ApiError(503, 'CLOUD_READ_FAILED', '无法读取删除冲突');
+      return originalGet(id);
+    };
+    const storage = new FakeStorage();
+    const client = createSyncClient(storage, api);
+    await storage.put(record('bad-delete', badProject, badProject.updatedAt, 1, 'synced'));
+    await storage.put(record('good-delete', goodProject, goodProject.updatedAt, 1, 'synced'));
+    await client.deleteLocal('bad-delete');
+    await client.deleteLocal('good-delete');
+
+    const outcome = await client.sync();
+
+    expect(api.deleted).toEqual(['good-delete']);
+    expect(outcome.issues).toContainEqual({
+      designId: 'bad-delete',
+      operation: 'delete',
+      code: 'CLOUD_READ_FAILED',
+      message: '无法读取删除冲突',
+    });
+    expect(JSON.parse(storage.meta.get('sync-tombstones-v2') ?? '[]')).toEqual([
+      { id: 'bad-delete', baseRevision: 1 },
+    ]);
   });
 
   it('本地 revision 尚未回写时，使用已知云端 revision 删除且不会被云端复活', async () => {

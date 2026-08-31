@@ -8,6 +8,7 @@ import type { PaletteColor, Pattern } from '@/lib/types';
 
 const RED: PaletteColor = { hex: '#FF0000', code: 'A' };
 const BLUE: PaletteColor = { hex: '#0000FF', code: 'B' };
+const GREEN: PaletteColor = { hex: '#00FF00', code: 'C' };
 
 function patternOf(W: number, H: number): Pattern {
   return {
@@ -81,6 +82,145 @@ describe('PixelEditorCanvas', () => {
     pointer(canvas, 'pointerUp', { clientX: 71, clientY: 1 });
     const emitted = onPatternChange.mock.calls[0][0] as Pattern;
     expect(emitted.cells.every((cell) => cell.code === 'B')).toBe(true);
+  });
+
+  it('外部图纸替换会终止旧连续笔迹，迟到的取消与撤销不会污染新图纸', () => {
+    const onPatternChange = vi.fn();
+    const palette = [BLUE, RED];
+    const replacement: Pattern = {
+      width: 3,
+      height: 1,
+      cells: Array.from({ length: 3 }, () => makeSolid(GREEN.hex, GREEN.code)),
+    };
+    const { rerender } = render(
+      <PixelEditorCanvas
+        pattern={patternOf(3, 1)}
+        palette={palette}
+        defaultCellPx={10}
+        onPatternChange={onPatternChange}
+      />,
+    );
+    const canvas = screen.getByLabelText('图纸编辑画布');
+
+    pointer(canvas, 'pointerDown', { pointerId: 1, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 1, clientX: 11, clientY: 1 });
+    rerender(
+      <PixelEditorCanvas
+        pattern={replacement}
+        palette={palette}
+        defaultCellPx={10}
+        onPatternChange={onPatternChange}
+      />,
+    );
+    fireEvent.pointerCancel(canvas, { pointerId: 1, pointerType: 'mouse' });
+
+    pointer(canvas, 'pointerDown', { pointerId: 2, clientX: 21, clientY: 1 });
+    pointer(canvas, 'pointerUp', { pointerId: 2, clientX: 21, clientY: 1 });
+    expect((onPatternChange.mock.calls.at(-1)?.[0] as Pattern).cells.map((cell) => cell.code))
+      .toEqual(['C', 'C', 'B']);
+
+    fireEvent.keyDown(canvas.parentElement!, { key: 'z', ctrlKey: true });
+    expect((onPatternChange.mock.calls.at(-1)?.[0] as Pattern).cells.map((cell) => cell.code))
+      .toEqual(['C', 'C', 'C']);
+  });
+
+  it('外部图纸替换后旧 pointer 迟到的 cancel 不得回滚新 pointer 的笔迹', () => {
+    const onPatternChange = vi.fn();
+    const palette = [BLUE, RED];
+    const replacement: Pattern = {
+      width: 3,
+      height: 1,
+      cells: Array.from({ length: 3 }, () => makeSolid(GREEN.hex, GREEN.code)),
+    };
+    const { rerender } = render(
+      <PixelEditorCanvas
+        pattern={patternOf(3, 1)}
+        palette={palette}
+        defaultCellPx={10}
+        onPatternChange={onPatternChange}
+      />,
+    );
+    const canvas = screen.getByLabelText('图纸编辑画布');
+
+    pointer(canvas, 'pointerDown', { pointerId: 1, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 1, clientX: 11, clientY: 1 });
+    rerender(
+      <PixelEditorCanvas
+        pattern={replacement}
+        palette={palette}
+        defaultCellPx={10}
+        onPatternChange={onPatternChange}
+      />,
+    );
+
+    pointer(canvas, 'pointerDown', { pointerId: 2, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 2, clientX: 11, clientY: 1 });
+    fireEvent.pointerCancel(canvas, { pointerId: 1, pointerType: 'mouse' });
+    pointer(canvas, 'pointerUp', { pointerId: 2, clientX: 11, clientY: 1 });
+
+    expect(onPatternChange).toHaveBeenCalledTimes(1);
+    expect((onPatternChange.mock.calls[0][0] as Pattern).cells.map((cell) => cell.code))
+      .toEqual(['B', 'B', 'C']);
+  });
+
+  it('外部图纸替换后忽略旧连续笔迹的迟到松手，旧历史不可撤销到新图纸', () => {
+    const onPatternChange = vi.fn();
+    const palette = [BLUE, RED];
+    const replacement: Pattern = {
+      width: 3,
+      height: 1,
+      cells: Array.from({ length: 3 }, () => makeSolid(GREEN.hex, GREEN.code)),
+    };
+    const { rerender } = render(
+      <PixelEditorCanvas pattern={patternOf(3, 1)} palette={palette} defaultCellPx={10} onPatternChange={onPatternChange} />,
+    );
+    const canvas = screen.getByLabelText('图纸编辑画布');
+
+    pointer(canvas, 'pointerDown', { pointerId: 1, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 1, clientX: 11, clientY: 1 });
+    rerender(
+      <PixelEditorCanvas pattern={replacement} palette={palette} defaultCellPx={10} onPatternChange={onPatternChange} />,
+    );
+    pointer(canvas, 'pointerUp', { pointerId: 1, clientX: 11, clientY: 1 });
+    fireEvent.keyDown(canvas.parentElement!, { key: 'z', ctrlKey: true });
+
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('外部图纸替换后忽略旧精准候选的迟到松手', () => {
+    const onPatternChange = vi.fn();
+    const palette = [BLUE, RED];
+    const replacement: Pattern = {
+      width: 3,
+      height: 1,
+      cells: Array.from({ length: 3 }, () => makeSolid(GREEN.hex, GREEN.code)),
+    };
+    const { rerender } = render(
+      <PixelEditorCanvas
+        pattern={patternOf(3, 1)}
+        palette={palette}
+        defaultCellPx={10}
+        layout="mobile"
+        onPatternChange={onPatternChange}
+      />,
+    );
+    const canvas = screen.getByLabelText('图纸编辑画布');
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 11, clientY: 1 });
+    rerender(
+      <PixelEditorCanvas
+        pattern={replacement}
+        palette={palette}
+        defaultCellPx={10}
+        layout="mobile"
+        onPatternChange={onPatternChange}
+      />,
+    );
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 11, clientY: 1 });
+
+    expect(onPatternChange).not.toHaveBeenCalled();
   });
 
   it('可搜索选择未出现在图纸中的色板颜色', () => {
@@ -225,7 +365,7 @@ describe('PixelEditorCanvas', () => {
   it('触屏按住显示 7×7 放大镜，不再触发长按吸色', () => {
     const { onColorChange, canvas } = setup();
     fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 });
-    expect(screen.getByLabelText(/第 1 行，第 1 列，B/)).toBeTruthy();
+    expect(screen.getByLabelText(/第 1 行，第 1 列，A/)).toBeTruthy();
     expect(onColorChange).not.toHaveBeenCalledWith(RED);
     fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 5, clientY: 5 });
   });
@@ -240,6 +380,87 @@ describe('PixelEditorCanvas', () => {
     );
   });
 
+  it('桌面布局收到触摸拖动时仍默认精准落笔，只修改松手格', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { onPatternChange });
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.map((cell) => cell.code)).toEqual(['A', 'A', 'A', 'B']);
+  });
+
+  it('移动端画笔默认精准模式，拖动只在松手的最终格落笔', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.map((cell) => cell.code)).toEqual(['A', 'A', 'A', 'B']);
+  });
+
+  it('移动端可切换连续模式，快速拖动保持连续插值', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    expect(screen.getByRole('button', { name: '精准模式' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: '连续模式' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.map((cell) => cell.code)).toEqual(['A', 'B', 'B', 'B']);
+  });
+
+  it('移动布局的精准开关只约束触摸，鼠标拖动仍连续绘制', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    expect(screen.getByRole('button', { name: '精准模式' })).toHaveAttribute('aria-pressed', 'true');
+
+    pointer(canvas, 'pointerDown', { pointerId: 1, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 1, clientX: 31, clientY: 1 });
+    pointer(canvas, 'pointerUp', { pointerId: 1, clientX: 31, clientY: 1 });
+
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.map((cell) => cell.code)).toEqual(['A', 'B', 'B', 'B']);
+  });
+
+  it('移动端连续模式一旦越界会回滚整条未提交笔迹', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    fireEvent.click(screen.getByRole('button', { name: '连续模式' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 500 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('移动端连续模式在图内拖动后直接于图外松手也会回滚', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(4, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    fireEvent.click(screen.getByRole('button', { name: '连续模式' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 31, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 500 });
+
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
   it('第二根手指加入时完整回滚未提交笔迹', () => {
     const onPatternChange = vi.fn();
     const { canvas } = setup(4, 1, { onPatternChange });
@@ -252,14 +473,137 @@ describe('PixelEditorCanvas', () => {
     expect(onPatternChange).not.toHaveBeenCalled();
   });
 
-  it('油漆桶拖动超过阈值不会写入', () => {
+  it('油漆桶拖动对准后在松手的最终格填充', () => {
     const onPatternChange = vi.fn();
-    const { canvas } = setup(4, 1, { onPatternChange });
+    const pattern: Pattern = {
+      width: 3,
+      height: 1,
+      cells: [makeSolid(BLUE.hex, BLUE.code), makeSolid(RED.hex, RED.code), makeSolid(RED.hex, RED.code)],
+    };
+    const { canvas } = setup(3, 1, { pattern, onPatternChange, layout: 'mobile', defaultCellPx: 20 });
     fireEvent.click(screen.getByRole('button', { name: /油漆桶/ }));
     fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
     fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
     fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    const emitted = onPatternChange.mock.calls[0][0] as Pattern;
+    expect(emitted.cells.every((cell) => cell.code === 'B')).toBe(true);
+  });
+
+  it('桌面油漆桶拖动仍按点击语义取消，不在松手格执行破坏性填充', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(3, 1, { onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: /油漆桶/ }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'mouse', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'mouse', clientX: 21, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'mouse', clientX: 21, clientY: 1 });
     expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('吸管拖动时跟随放大镜目标，松手吸取最终格', () => {
+    const pattern: Pattern = {
+      width: 2,
+      height: 1,
+      cells: [makeSolid(RED.hex, RED.code), makeSolid(BLUE.hex, BLUE.code)],
+    };
+    const { onColorChange, canvas } = setup(2, 1, { pattern, layout: 'mobile', defaultCellPx: 20 });
+    fireEvent.click(screen.getByRole('button', { name: /吸管/ }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 21, clientY: 1 });
+    expect(screen.getByLabelText(/第 1 行，第 2 列，B/)).toBeTruthy();
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    expect(onColorChange).toHaveBeenLastCalledWith(BLUE);
+  });
+
+  it('吸取透明或无色格保留当前颜色并明确提示', () => {
+    const pattern: Pattern = {
+      width: 1,
+      height: 1,
+      cells: [{ hex: null, code: null, transparent: true }],
+    };
+    const { onColorChange, canvas } = setup(1, 1, { pattern, layout: 'mobile', defaultCellPx: 20 });
+    fireEvent.click(screen.getByRole('button', { name: /吸管/ }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+
+    expect(onColorChange).not.toHaveBeenCalledWith(null);
+    expect(screen.getByText('该格没有可吸取颜色，已保留当前颜色')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '当前颜色: B' })).toBeTruthy();
+  });
+
+  it('精准模式手指越界后即使返回图纸也取消本次落笔', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(3, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 500, clientY: 500 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 11, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 11, clientY: 1 });
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('精准落笔在 pointercancel 或工具切换时不提交', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(3, 1, { layout: 'mobile', onPatternChange });
+    fireEvent.click(screen.getByRole('button', { name: '画笔' }));
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 11, clientY: 1 });
+    fireEvent.pointerCancel(canvas, { pointerId: 1, pointerType: 'touch' });
+    expect(onPatternChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 2, pointerType: 'touch', clientX: 11, clientY: 1 });
+    fireEvent.click(screen.getByRole('button', { name: '橡皮' }));
+    fireEvent.pointerUp(canvas, { pointerId: 2, pointerType: 'touch', clientX: 11, clientY: 1 });
+    expect(onPatternChange).not.toHaveBeenCalled();
+  });
+
+  it('吸管对准期间加入第二指会取消，不改变当前颜色', () => {
+    const { onColorChange, canvas } = setup(3, 1, { layout: 'mobile', defaultCellPx: 20 });
+    fireEvent.click(screen.getByRole('button', { name: /吸管/ }));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch', clientX: 11, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 2, pointerType: 'touch', clientX: 11, clientY: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    expect(onColorChange).not.toHaveBeenCalledWith(RED);
+    expect(screen.getByRole('status', { name: '当前颜色: B' })).toBeTruthy();
+  });
+
+  it('pinch 只被参与该手势的 pointer cancel 终止', () => {
+    const { canvas } = setup(20, 1, { layout: 'mobile', defaultCellPx: 10 });
+    const scale = screen.getByLabelText('当前格子大小');
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 1, clientY: 1 });
+    fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch', clientX: 21, clientY: 1 });
+    fireEvent.pointerMove(canvas, { pointerId: 2, pointerType: 'touch', clientX: 41, clientY: 1 });
+    expect(scale).toHaveTextContent('20px');
+
+    fireEvent.pointerCancel(canvas, { pointerId: 99, pointerType: 'touch' });
+    fireEvent.pointerMove(canvas, { pointerId: 2, pointerType: 'touch', clientX: 61, clientY: 1 });
+    expect(scale).toHaveTextContent('30px');
+
+    fireEvent.pointerCancel(canvas, { pointerId: 1, pointerType: 'touch' });
+    fireEvent.pointerMove(canvas, { pointerId: 2, pointerType: 'touch', clientX: 81, clientY: 1 });
+    expect(scale).toHaveTextContent('30px');
+  });
+
+  it('活跃笔迹上的撤销只取消本次未提交操作，不会额外撤销上一笔', () => {
+    const onPatternChange = vi.fn();
+    const { canvas } = setup(3, 1, { onPatternChange });
+    const wrapper = canvas.parentElement!;
+
+    pointer(canvas, 'pointerDown', { pointerId: 1, clientX: 1, clientY: 1 });
+    pointer(canvas, 'pointerUp', { pointerId: 1, clientX: 1, clientY: 1 });
+    expect(onPatternChange).toHaveBeenCalledTimes(1);
+
+    pointer(canvas, 'pointerDown', { pointerId: 2, clientX: 11, clientY: 1 });
+    pointer(canvas, 'pointerMove', { pointerId: 2, clientX: 21, clientY: 1 });
+    fireEvent.keyDown(wrapper, { key: 'z', ctrlKey: true });
+    expect(onPatternChange).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(wrapper, { key: 'z', ctrlKey: true });
+    const reverted = onPatternChange.mock.calls.at(-1)?.[0] as Pattern;
+    expect(reverted.cells.every((cell) => cell.code === 'A')).toBe(true);
   });
 
   it('手机选择编辑工具时自动放大到单格至少 20px', () => {
@@ -279,14 +623,14 @@ describe('PixelEditorCanvas', () => {
     expect(emitted.cells[0].code).toBe('B');
   });
 
-  it('触屏快速跨格拖动包含首格且连续插值', () => {
+  it('触屏快速跨格拖动默认只修改松手格', () => {
     const onPatternChange = vi.fn();
     const { canvas } = setup(4, 1, { onPatternChange });
     fireEvent.pointerDown(canvas, { pointerType: 'touch', clientX: 1, clientY: 1 });
     fireEvent.pointerMove(canvas, { pointerType: 'touch', clientX: 31, clientY: 1 });
     fireEvent.pointerUp(canvas, { pointerType: 'touch', clientX: 31, clientY: 1 });
     const emitted = onPatternChange.mock.calls[0][0] as Pattern;
-    expect(emitted.cells.every((cell) => cell.code === 'B')).toBe(true);
+    expect(emitted.cells.map((cell) => cell.code)).toEqual(['A', 'A', 'A', 'B']);
   });
 
   it('颜色替换：命中显示数量，未命中显示提示（E23）', () => {

@@ -27,6 +27,10 @@ operation with an explicit interaction mode, not an incidental side effect of a 
   area padding. Mobile editing opens in an explicit hand/navigation mode; drawing, erasing, filling
   and picking require selecting their respective tools. Desktop uses the same bounded camera in the
   normal workbench layout and is not immersive.
+- Touch brush and eraser gestures default to a precision mode: movement only updates the candidate
+  cell and `pointerup` commits exactly the final valid cell. A session-only continuous mode is an
+  explicit opt-in for interpolated strokes. Fill and pick likewise track the candidate while moving
+  and commit the final valid cell on `pointerup`; desktop mouse brush/eraser remains continuous.
 - One-finger pan, two-finger pan/zoom, wheel zoom and other camera navigation never edit a cell or
   follow-along progress. Adding a second pointer cancels any uncommitted data gesture. Pointer
   cancellation, tool changes and navigation-mode changes likewise commit no data.
@@ -42,8 +46,9 @@ operation with an explicit interaction mode, not an incidental side effect of a 
   an editing or marking gesture, but it is hidden during pan or multi-pointer zoom and cannot itself
   commit data.
 - `StitchProgress` remains version 1 and remains local to IndexedDB; it is not added to project files
-  or cloud synchronization. Camera position, active interaction mode, loupe state and undo history
-  are session state only. Follow-along history is capped at 100 entries and is not persisted.
+  or cloud synchronization. Camera position, active interaction mode, mobile stroke mode, loupe
+  state and undo history are session state only. Follow-along history is capped at 100 entries and
+  is not persisted.
 
 ## Alternatives considered
 
@@ -69,7 +74,8 @@ operation with an explicit interaction mode, not an incidental side effect of a 
   `pointercancel` sequences.
 - Mobile users can navigate safely with one hand, at the cost of an explicit mode switch before
   drawing or marking. Persistent mode controls and cursor/loupe feedback must make the current mode
-  visible.
+  visible. Precision is the safe touch default; continuous drawing must remain visibly opt-in and
+  fully rollback when a second pointer, cancellation, tool switch or out-of-bounds move intervenes.
 - Row progress now has a board-local meaning. Overall percentages and persisted done bits retain
   their existing semantics, so no `StitchProgress`, project-file, API or database migration is
   required.

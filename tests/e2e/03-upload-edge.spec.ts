@@ -97,8 +97,8 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
   await expect(page.getByText(/共 10000 粒/).first()).toBeVisible({ timeout: 30_000 });
   await mark('square-generated');
 
-  // 重构后「重新上传」收进顶栏「菜单与账户」溢出面板，先展开再点击。
-  await page.getByRole('button', { name: '菜单与账户' }).click();
+  // 游客的「重新上传」留在顶栏溢出面板，先展开再点击。
+  await page.getByRole('button', { name: '更多操作' }).click();
   await page.getByRole('button', { name: '重新上传' }).click();
   await mark('tall-upload-start');
   await uploadFile(page, fixture('max-100x8000.png'));

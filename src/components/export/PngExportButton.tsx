@@ -3,8 +3,10 @@
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useMemo, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
-import { contentBounds, largestFittingCellPx, pngCellPxFits } from '@/lib/export/layout';
+import { contentBounds, EXPORT_CELL_PX_CHOICES } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
+import { createPngArchiveBlob } from '@/lib/export/pngArchive';
+import { createPngExportPlan, largestFittingPngCellPx } from '@/lib/export/pngPlan';
 import type { Pattern } from '@/lib/types';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
 
@@ -19,7 +21,7 @@ interface Props {
   disabled?: boolean;
 }
 
-const CELL_CHOICES = [8, 16, 24, 32, 48] as const;
+const OBJECT_URL_REVOKE_DELAY_MS = 1_500;
 
 export default function PngExportButton({
   pattern,
@@ -45,27 +47,35 @@ export default function PngExportButton({
   const bounds = useMemo(() => contentBounds(pattern), [pattern]);
   const empty = bounds === null;
 
-  /**
-   * 每个格子档位是否放得下（A-03）：超限档位禁用并注明原因，
-   * 而不是让用户选了之后拿到一句无信息量的「导出失败，请重试」。
-   */
-  const fitInput = useMemo(() => {
-    const contentWidth = optCrop && bounds ? bounds.x1 - bounds.x0 + 1 : pattern.width;
-    const contentHeight = optCrop && bounds ? bounds.y1 - bounds.y0 + 1 : pattern.height;
-    const legendCount = optLegend ? new Set(
-      pattern.cells.filter((cell) => !cell.transparent && !cell.external).map((cell) => cell.code),
-    ).size : 0;
-    return { contentWidth, contentHeight, legendCount };
-  }, [bounds, optCrop, optLegend, pattern]);
-
   const fits = useMemo(
     () => new Map<number, boolean>(
-      CELL_CHOICES.map((size) => [size, pngCellPxFits({ ...fitInput, cellPx: size })]),
+      EXPORT_CELL_PX_CHOICES.map((size) => {
+        const plan = createPngExportPlan(pattern, {
+          cellPx: size,
+          cropToContent: optCrop,
+          includeLegend: optLegend,
+        });
+        return [size, plan.kind === 'single' || plan.kind === 'split'];
+      }),
     ),
-    [fitInput],
+    [optCrop, optLegend, pattern],
   );
-  const suggestedCellPx = useMemo(() => largestFittingCellPx(CELL_CHOICES, fitInput), [fitInput]);
-  const currentFits = fits.get(optCellPx) ?? true;
+  const currentPlan = useMemo(
+    () => createPngExportPlan(pattern, {
+      cellPx: optCellPx,
+      cropToContent: optCrop,
+      includeLegend: optLegend,
+    }),
+    [optCellPx, optCrop, optLegend, pattern],
+  );
+  const suggestedCellPx = useMemo(
+    () => largestFittingPngCellPx(pattern, EXPORT_CELL_PX_CHOICES, {
+      cropToContent: optCrop,
+      includeLegend: optLegend,
+    }),
+    [optCrop, optLegend, pattern],
+  );
+  const currentFits = currentPlan.kind === 'single' || currentPlan.kind === 'split';
 
   const t = zhCN.exportPng;
 
@@ -95,14 +105,27 @@ export default function PngExportButton({
         else setError(zhCN.export.pngFailed);
         return;
       }
-      const url = URL.createObjectURL(result.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = result.fileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      let downloadBlob: Blob;
+      let downloadName: string;
+      if (result.kind === 'single') {
+        downloadBlob = result.artifact.blob;
+        downloadName = result.artifact.fileName;
+      } else {
+        downloadBlob = await createPngArchiveBlob([result.pattern, result.legend]);
+        downloadName = result.archiveFileName;
+      }
+      const url = URL.createObjectURL(downloadBlob);
+      let anchor: HTMLAnchorElement | null = null;
+      try {
+        anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = downloadName;
+        document.body.appendChild(anchor);
+        anchor.click();
+      } finally {
+        anchor?.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), OBJECT_URL_REVOKE_DELAY_MS);
+      }
       setOpen(false);
     } catch {
       setError(zhCN.export.pngFailed);
@@ -139,7 +162,7 @@ export default function PngExportButton({
                 onChange={(e) => setOptCellPx(Number(e.target.value))}
                 className="input-compact"
               >
-                {CELL_CHOICES.map((size) => (
+                {EXPORT_CELL_PX_CHOICES.map((size) => (
                   <option key={size} value={size} disabled={!fits.get(size)}>
                     {fits.get(size) ? t.cellSizeValue(size) : t.cellSizeTooLarge(size)}
                   </option>
@@ -149,6 +172,11 @@ export default function PngExportButton({
             {!currentFits && (
               <p role="alert" className="text-xs text-danger">
                 {zhCN.export.pngTooLargeError(suggestedCellPx)}
+              </p>
+            )}
+            {currentPlan.kind === 'split' && (
+              <p role="status" className="text-xs text-ink-soft">
+                {t.splitArchiveNotice}
               </p>
             )}
             <label className="flex items-center gap-2 text-ink-soft">

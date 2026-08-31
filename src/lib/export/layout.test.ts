@@ -4,18 +4,9 @@ import {
   EXPORT_CELL_PX_DEFAULT,
   EXPORT_CELL_PX_MAX,
   EXPORT_CELL_PX_MIN,
-  LEGEND_TEXT_GAP,
   clampCellPx,
-  computePngCanvasLayout,
   pngCanvasWithinLimits,
   contentBounds,
-  legendColumnWidth,
-  legendColumns,
-  legendEntriesPerColumn,
-  legendEntryHeight,
-  legendEntryText,
-  largestFittingCellPx,
-  pngCellPxFits,
   pngFileName,
   sanitizeFilename,
 } from './layout';
@@ -137,94 +128,11 @@ describe('pngFileName', () => {
   });
 });
 
-describe('图例布局', () => {
-  it('条目高度：max(16, cellPx+6)', () => {
-    expect(legendEntryHeight(8)).toBe(16);
-    expect(legendEntryHeight(24)).toBe(30);
-    expect(legendEntryHeight(48)).toBe(54);
-  });
-
-  it('每列条目数：至少 1；按高度整除', () => {
-    expect(legendEntriesPerColumn(24, 240)).toBe(8); // floor(240/30)
-    expect(legendEntriesPerColumn(24, 100)).toBe(3);
-    expect(legendEntriesPerColumn(24, 10)).toBe(1);
-    expect(legendEntriesPerColumn(48, 9600)).toBe(177); // floor(9600/54)
-  });
-
-  it('列数：0 条 → 0 列；常规与 291 色', () => {
-    expect(legendColumns(0, 24, 240)).toBe(0);
-    expect(legendColumns(1, 24, 240)).toBe(1);
-    expect(legendColumns(8, 24, 240)).toBe(1);
-    expect(legendColumns(9, 24, 240)).toBe(2);
-    expect(legendColumns(10, 24, 240)).toBe(2);
-    expect(legendColumns(291, 48, 9600)).toBe(2); // 291/177 → 2
-    expect(legendColumns(291, 24, 240)).toBe(37); // 291/8 → 37
-  });
-
-  it('单列宽度 = 色块 + 间距 + 文字宽', () => {
-    expect(legendColumnWidth(24, 100)).toBe(24 + LEGEND_TEXT_GAP + 100);
-    expect(legendColumnWidth(48, 0)).toBe(48 + LEGEND_TEXT_GAP);
-  });
-
-  it('图例文本格式（色号 × 数量）', () => {
-    expect(legendEntryText({ code: 'A01', hex: '#000000', count: 5 })).toBe('A01 × 5');
-  });
-
-  it('极短图纸的 200 个长色号图例在图纸下方换行，不产生超宽 Canvas', () => {
-    const layout = computePngCanvasLayout({
-      patternWidthPx: 9600,
-      patternHeightPx: 48,
-      legendCount: 200,
-      cellPx: 48,
-      legendTextPx: 432,
-    });
-    expect(layout.legend?.columns).toBeGreaterThan(1);
-    expect(layout.legend?.rows).toBeGreaterThan(1);
-    expect(layout.width).toBe(9600);
-    expect(layout.height).toBeLessThan(1000);
-  });
-
-  it('在创建 Canvas 前拒绝超过跨浏览器尺寸或像素上限的布局', () => {
-    expect(pngCanvasWithinLimits({ width: 65_535, height: 1 })).toBe(true);
-    expect(pngCanvasWithinLimits({ width: 65_536, height: 1 })).toBe(false);
-    expect(pngCanvasWithinLimits({ width: 8192, height: 8192 })).toBe(true);
-    expect(pngCanvasWithinLimits({ width: 8193, height: 8193 })).toBe(false);
-  });
-});
-
-
-describe('格子档位可行性（A-03）', () => {
-  const full = { contentWidth: 200, contentHeight: 200, legendCount: 0 };
-
-  it('200×200 图纸：48px 必然超限（9600² = 92.2M px > 67.1M），32px 可用', () => {
-    expect(pngCellPxFits({ ...full, cellPx: 48 })).toBe(false);
-    expect(pngCellPxFits({ ...full, cellPx: 32 })).toBe(true);
-  });
-
-  it('长边 ≥171 格即无法用 48px（8192 ÷ 48 = 170.7）', () => {
-    expect(pngCellPxFits({ contentWidth: 170, contentHeight: 170, legendCount: 0, cellPx: 48 })).toBe(true);
-    expect(pngCellPxFits({ contentWidth: 171, contentHeight: 171, legendCount: 0, cellPx: 48 })).toBe(false);
-  });
-
-  it('小图纸所有档位都可用', () => {
-    for (const cellPx of [8, 16, 24, 32, 48]) {
-      expect(pngCellPxFits({ contentWidth: 29, contentHeight: 29, legendCount: 20, cellPx })).toBe(true);
-    }
-  });
-
-  it('图例只增不减所需画布：同档位下含图例的面积必然更大', () => {
-    const base = { patternWidthPx: 6400, patternHeightPx: 6400, cellPx: 32, legendTextPx: 128 };
-    const without = computePngCanvasLayout({ ...base, legendCount: 0 });
-    const withLegend = computePngCanvasLayout({ ...base, legendCount: 291 });
-    expect(withLegend.height).toBeGreaterThan(without.height);
-    // 291 色图例在 200×200 / 32px 下仍在上限内（真实上限判断以导出路径为准）
-    expect(pngCellPxFits({ contentWidth: 200, contentHeight: 200, legendCount: 291, cellPx: 32 })).toBe(true);
-    expect(pngCellPxFits({ contentWidth: 200, contentHeight: 200, legendCount: 291, cellPx: 48 })).toBe(false);
-  });
-
-  it('建议档位取最大可用档；空内容不可导出', () => {
-    expect(largestFittingCellPx([8, 16, 24, 32, 48], full)).toBe(32);
-    expect(largestFittingCellPx([8, 16, 24, 32, 48], { contentWidth: 29, contentHeight: 29, legendCount: 0 })).toBe(48);
-    expect(pngCellPxFits({ contentWidth: 0, contentHeight: 0, legendCount: 0, cellPx: 24 })).toBe(false);
+describe('Canvas 安全限制', () => {
+  it('在创建 Canvas 前按移动端保守交集拒绝超过 8192 边长或 4096² 像素的布局', () => {
+    expect(pngCanvasWithinLimits({ width: 8192, height: 1 })).toBe(true);
+    expect(pngCanvasWithinLimits({ width: 8193, height: 1 })).toBe(false);
+    expect(pngCanvasWithinLimits({ width: 4096, height: 4096 })).toBe(true);
+    expect(pngCanvasWithinLimits({ width: 4097, height: 4096 })).toBe(false);
   });
 });

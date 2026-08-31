@@ -8,6 +8,7 @@
  */
 const { createHash, randomUUID } = require('node:crypto');
 const { Pool } = require('pg');
+const { strictV3Project: project } = require('./protocol-fixtures.cjs');
 
 const connectionString = process.env.DATABASE_URL;
 const baseUrl = process.env.E2E_BASE_URL;
@@ -21,34 +22,6 @@ const createdIds = new Set();
 const createdPaletteIds = new Set();
 const cookie = `doupu_session=${sessionToken}`;
 const DESIGN_BYTES_PER_USER = 50 * 1024 * 1024;
-
-function project(name) {
-  return {
-    format: 'doupu-project',
-    version: 3,
-    engineVersion: '2.0.0',
-    boardProfile: '5mm-29',
-    name,
-    createdAt: '2026-08-17T00:00:00.000Z',
-    updatedAt: '2026-08-17T00:00:00.000Z',
-    paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
-    params: {
-      targetWidth: 20,
-      targetColorCount: 2,
-      dithering: false,
-      mode: 'dominant',
-      brightness: 0,
-      contrast: 0,
-      backgroundRemoval: false,
-      bgTolerance: 8,
-    },
-    pattern: {
-      width: 1,
-      height: 1,
-      cells: [{ hex: '#000000', code: 'H07', transparent: false }],
-    },
-  };
-}
 
 async function request(method, path, data) {
   const response = await fetch(new URL(path, baseUrl), {

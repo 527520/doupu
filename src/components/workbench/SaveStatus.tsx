@@ -50,7 +50,7 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
         {current.text}
       </span>
       {loggedIn && (
-        <span role="status" className="hidden text-xs text-ink-soft sm:inline">
+        <span role="status" className="text-xs text-ink-soft">
           {cloudText[cloudState]}
         </span>
       )}

@@ -9,7 +9,7 @@ describe('SaveStatus', () => {
     render(<SaveStatus state="saved" cloudState="synced" loggedIn onSave={vi.fn()} />);
 
     expect(screen.getByText(zhCN.workbench.saved)).toBeTruthy();
-    expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy();
+    expect(screen.getByText(zhCN.workbench.cloudSynced)).not.toHaveClass('hidden');
   });
 
   it('未登录时不显示误导性的云端状态', () => {

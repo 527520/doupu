@@ -114,11 +114,11 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
 
   // 版本化 Mini 色板会原子切换到兼容的 2.6mm / 50×50；随后改参数，
   // 确认真实生成链路使用新色板，而不是只在既有图纸上做一次重映射。
-  const paletteSelect = page.getByLabel('色板品牌');
-  const miniOption = paletteSelect.locator('option').filter({ hasText: 'C 系列 197 色' });
-  const miniPaletteId = await miniOption.getAttribute('value');
+  const paletteBrandSelect = page.getByLabel('色板品牌');
+  const paletteSeriesSelect = page.getByRole('combobox', { name: '色板系列', exact: true });
+  await paletteBrandSelect.selectOption({ label: '优肯 Artkal' });
+  const miniPaletteId = await paletteSeriesSelect.inputValue();
   expect(miniPaletteId).toMatch(/^builtin:pcd:artkal-c-197-official@/);
-  await paletteSelect.selectOption(miniPaletteId!);
   const boardProfileSelect = page.getByLabel('制作规格');
   await expect(boardProfileSelect).toHaveValue('2.6mm-50');
   await expect(page.getByText(/制作规格已切换为 2\.6mm \/ 50×50/).first()).toBeVisible();
@@ -232,7 +232,8 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.reload();
   await expect(page.getByLabel('设计名称').first()).toBeVisible();
   await expect(page.getByText(/共 400 粒/).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByLabel('色板品牌')).toHaveValue(miniPaletteId!);
+  await expect(page.getByLabel('色板品牌')).toHaveValue('优肯 Artkal');
+  await expect(page.getByRole('combobox', { name: '色板系列', exact: true })).toHaveValue(miniPaletteId!);
   await expect(page.getByLabel('制作规格')).toHaveValue('2.6mm-52');
   const restoredWidth = page.getByRole('spinbutton', { name: '目标宽度（格）' });
   await expect(restoredWidth).toBeEnabled();

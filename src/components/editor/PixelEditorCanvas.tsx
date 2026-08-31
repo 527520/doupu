@@ -58,6 +58,7 @@ interface Props {
 }
 
 type InteractionMode = 'pan' | 'edit';
+export type MobileStrokeMode = 'precision' | 'continuous';
 type Point = { x: number; y: number };
 type Cell = { row: number; col: number };
 type Gesture =
@@ -68,8 +69,11 @@ type Gesture =
       pointerId: number;
       startX: number;
       startY: number;
-      hit: Cell;
-      tool: 'fill' | 'pick';
+      hit: Cell | null;
+      startHit: Cell;
+      cancelled: boolean;
+      allowDrag: boolean;
+      tool: 'brush' | 'eraser' | 'fill' | 'pick';
     }
   | {
       kind: 'pan';
@@ -128,6 +132,7 @@ export default function PixelEditorCanvas({
 
   const [tool, setToolState] = useState<ToolId>('brush');
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(layout === 'mobile' ? 'pan' : 'edit');
+  const [mobileStrokeMode, setMobileStrokeMode] = useState<MobileStrokeMode>('precision');
   const [brushSize, setBrushSizeState] = useState<BrushSize>(1);
   const [currentColor, setCurrentColorState] = useState<PaletteColor | null>(availablePalette[0] ?? null);
   const [cursor, setCursor] = useState<Cell | null>(null);
@@ -143,11 +148,13 @@ export default function PixelEditorCanvas({
   const [replaceMsg, setReplaceMsg] = useState<string | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
+  const [editNotice, setEditNotice] = useState<string | null>(null);
 
   const toolRef = useRef(tool);
   const brushSizeRef = useRef(brushSize);
   const colorRef = useRef(currentColor);
   const interactionModeRef = useRef(interactionMode);
+  const mobileStrokeModeRef = useRef(mobileStrokeMode);
   const { width: W, height: H } = stateRef.current;
   const viewport = useGridViewport({ patternWidth: W, patternHeight: H, boardSize, testCellPx: defaultCellPx });
   const readCamera = viewport.readCamera;
@@ -158,7 +165,8 @@ export default function PixelEditorCanvas({
     brushSizeRef.current = brushSize;
     colorRef.current = currentColor;
     interactionModeRef.current = interactionMode;
-  }, [brushSize, currentColor, interactionMode, onPatternChange, tool]);
+    mobileStrokeModeRef.current = mobileStrokeMode;
+  }, [brushSize, currentColor, interactionMode, mobileStrokeMode, onPatternChange, tool]);
 
   useEffect(() => {
     if (autoFocus) viewport.viewportRef.current?.focus();
@@ -177,6 +185,11 @@ export default function PixelEditorCanvas({
 
   useEffect(() => {
     if (pattern === lastEmittedRef.current) return;
+    // 父组件传入的新图纸会建立新的编辑事务边界。必须先丢弃旧手势再替换状态，
+    // 否则迟到的回滚会把上一张图纸的格子写进新图纸。
+    gestureRef.current = { kind: 'idle' };
+    pointersRef.current.clear();
+    setLoupe(null);
     stateRef.current = createEditorState(pattern);
     historyRef.current = new EditHistory();
     setCanUndo(false);
@@ -197,6 +210,7 @@ export default function PixelEditorCanvas({
   }, [syncFlags]);
 
   const setColor = useCallback((color: PaletteColor | null) => {
+    setEditNotice(null);
     setCurrentColorState(color);
     onColorChange?.(color);
   }, [onColorChange]);
@@ -217,9 +231,12 @@ export default function PixelEditorCanvas({
   const pickAtCell = useCallback((row: number, col: number): void => {
     const width = stateRef.current.width;
     const cell = stateRef.current.cells[row * width + col];
-    if (!cell || cell.transparent) setColor(null);
-    else setColor({ hex: cell.hex!, code: cell.code });
-  }, [setColor]);
+    if (!cell || cell.transparent || !cell.hex || !cell.code) {
+      setEditNotice(t.pickUnavailable);
+      return;
+    }
+    setColor({ hex: cell.hex, code: cell.code });
+  }, [setColor, t.pickUnavailable]);
 
   const cursorCellLabel = useCallback((row: number, col: number): string => {
     const cell = stateRef.current.cells[row * stateRef.current.width + col];
@@ -227,13 +244,15 @@ export default function PixelEditorCanvas({
     return cell.transparent ? t.emptyCell : (cell.code ?? cell.hex ?? '—');
   }, [t.emptyCell]);
 
-  const cancelGesture = useCallback((redraw = true): void => {
+  const cancelGesture = useCallback((redraw = true): boolean => {
     const gesture = gestureRef.current;
+    const cancelledDataGesture = gesture.kind === 'stroke' || gesture.kind === 'candidate';
     if (gesture.kind === 'stroke') rollbackSnapshots(stateRef.current.cells, gesture.snapshots);
     gestureRef.current = { kind: 'idle' };
     pointersRef.current.clear();
     setLoupe(null);
     if (gesture.kind === 'stroke' && redraw) setVersion((value) => value + 1);
+    return cancelledDataGesture;
   }, []);
 
   useEffect(() => () => {
@@ -270,6 +289,12 @@ export default function PixelEditorCanvas({
     }
     if (selected === 'replace') setReplaceOpen((open) => !open);
   }, [cancelGesture, cursor, layout, showEditScaleNotice, viewport]);
+
+  const changeMobileStrokeMode = useCallback((next: MobileStrokeMode): void => {
+    cancelGesture();
+    mobileStrokeModeRef.current = next;
+    setMobileStrokeMode(next);
+  }, [cancelGesture]);
 
   const draw = useCallback((): void => {
     void version;
@@ -420,6 +445,23 @@ export default function PixelEditorCanvas({
     if (!hit) return;
     setCursor(hit);
     const active = toolRef.current;
+    if ((active === 'brush' || active === 'eraser')
+      && event.pointerType === 'touch'
+      && mobileStrokeModeRef.current === 'precision') {
+      gestureRef.current = {
+        kind: 'candidate',
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        hit,
+        startHit: hit,
+        cancelled: false,
+        allowDrag: true,
+        tool: active,
+      };
+      updateLoupe(event, hit);
+      return;
+    }
     if (active === 'brush' || active === 'eraser') {
       const snapshots = paintAtCell(hit.row, hit.col);
       gestureRef.current = {
@@ -439,6 +481,9 @@ export default function PixelEditorCanvas({
         startX: point.x,
         startY: point.y,
         hit,
+        startHit: hit,
+        cancelled: false,
+        allowDrag: layout === 'mobile' && (event.pointerType === 'touch' || event.pointerType === 'pen'),
         tool: active,
       };
       updateLoupe(event, hit);
@@ -469,12 +514,29 @@ export default function PixelEditorCanvas({
 
     const hit = viewport.cellAtClientPoint(event.clientX, event.clientY);
     if (gesture.kind === 'candidate' && gesture.pointerId === event.pointerId) {
+      if (!gesture.allowDrag) {
+        if (Math.hypot(point.x - gesture.startX, point.y - gesture.startY) > MOVE_THRESHOLD_PX
+          || !sameGridCell(hit, gesture.startHit)) gesture.cancelled = true;
+        if (gesture.cancelled) updateLoupe(event, null);
+        return;
+      }
+      if (!hit) gesture.cancelled = true;
+      if (gesture.cancelled) {
+        gesture.hit = null;
+        updateLoupe(event, null);
+        return;
+      }
+      gesture.hit = hit;
+      if (hit) setCursor(hit);
       updateLoupe(event, hit);
       return;
     }
     if (gesture.kind === 'stroke' && gesture.pointerId === event.pointerId) {
       updateLoupe(event, hit);
-      if (!hit) return;
+      if (!hit) {
+        cancelGesture();
+        return;
+      }
       const width = stateRef.current.width;
       const nextIndex = hit.row * width + hit.col;
       if (nextIndex === gesture.lastCell) return;
@@ -508,32 +570,54 @@ export default function PixelEditorCanvas({
       return;
     }
     if (gesture.kind === 'stroke' && gesture.pointerId === event.pointerId) {
+      if (!hit) {
+        cancelGesture();
+        return;
+      }
       gestureRef.current = { kind: 'idle' };
       commit(toolRef.current === 'eraser' ? 'eraser' : 'brush', gesture.snapshots);
       return;
     }
     if (gesture.kind === 'candidate' && gesture.pointerId === event.pointerId) {
       gestureRef.current = { kind: 'idle' };
-      const moved = Math.hypot(point.x - gesture.startX, point.y - gesture.startY);
-      if (moved > MOVE_THRESHOLD_PX || !sameGridCell(hit, gesture.hit)) return;
-      if (gesture.tool === 'pick') pickAtCell(gesture.hit.row, gesture.hit.col);
+      if (gesture.cancelled || !hit || !gesture.hit) return;
+      if (!gesture.allowDrag) {
+        const moved = Math.hypot(point.x - gesture.startX, point.y - gesture.startY);
+        if (moved > MOVE_THRESHOLD_PX || !sameGridCell(hit, gesture.startHit)) return;
+      }
+      const target = gesture.hit;
+      if (gesture.tool === 'brush' || gesture.tool === 'eraser') {
+        commit(gesture.tool, paintAtCell(target.row, target.col));
+      } else if (gesture.tool === 'pick') pickAtCell(target.row, target.col);
       else commit('fill', floodFill(
         stateRef.current.cells,
         stateRef.current.width,
         stateRef.current.height,
-        gesture.hit.row,
-        gesture.hit.col,
+        target.row,
+        target.col,
         colorRef.current,
       ));
     }
   };
 
-  const onPointerCancel = (): void => {
+  const onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    const gesture = gestureRef.current;
+    if (gesture.kind === 'idle') {
+      pointersRef.current.delete(event.pointerId);
+      return;
+    }
+    const ownsGesture = gesture.kind === 'pinch'
+      ? gesture.ids.includes(event.pointerId)
+      : gesture.pointerId === event.pointerId;
+    if (!ownsGesture) {
+      pointersRef.current.delete(event.pointerId);
+      return;
+    }
     cancelGesture();
   };
 
   const undo = (): void => {
-    cancelGesture(false);
+    if (cancelGesture()) return;
     const entry = historyRef.current.undo(stateRef.current.cells);
     if (!entry) return;
     if (entry.dims) {
@@ -546,7 +630,7 @@ export default function PixelEditorCanvas({
   };
 
   const redo = (): void => {
-    cancelGesture(false);
+    if (cancelGesture()) return;
     const entry = historyRef.current.redo(stateRef.current.cells);
     if (!entry) return;
     if (entry.dims) {
@@ -661,6 +745,14 @@ export default function PixelEditorCanvas({
     viewport.zoomAt(readCamera().cellPx * Math.exp(-event.deltaY * 0.002), point.x, point.y);
   };
 
+  const onStudioPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if ((event.pointerType === 'touch' || event.pointerType === 'pen')
+      && event.target !== canvasRef.current
+      && gestureRef.current.kind !== 'idle') {
+      cancelGesture();
+    }
+  };
+
   const filteredPalette = availablePalette.filter((color) => {
     const query = paletteQuery.trim().toLowerCase();
     if (!query) return true;
@@ -672,7 +764,10 @@ export default function PixelEditorCanvas({
     : { boardRow: 0, boardCol: 0 };
 
   return (
-    <div className={`pixel-editor-studio flex flex-col gap-2${layout === 'mobile' ? ' is-mobile' : ''}`}>
+    <div
+      className={`pixel-editor-studio flex flex-col gap-2${layout === 'mobile' ? ' is-mobile' : ''}`}
+      onPointerDownCapture={onStudioPointerDownCapture}
+    >
       <EditorToolbar
         tool={tool}
         brushSize={brushSize}
@@ -693,6 +788,32 @@ export default function PixelEditorCanvas({
         onClear={() => setClearOpen(true)}
         onTransform={onTransform}
       />
+
+      {layout === 'mobile' && interactionMode === 'edit' && (tool === 'brush' || tool === 'eraser') && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-lilac/40 bg-white px-2 py-1.5 text-xs" role="group" aria-label={t.strokeMode}>
+          <button
+            type="button"
+            aria-pressed={mobileStrokeMode === 'precision'}
+            onClick={() => changeMobileStrokeMode('precision')}
+            className={`editor-tool-button${mobileStrokeMode === 'precision' ? ' is-active' : ''}`}
+          >
+            {t.precisionMode}
+          </button>
+          <button
+            type="button"
+            aria-pressed={mobileStrokeMode === 'continuous'}
+            onClick={() => changeMobileStrokeMode('continuous')}
+            className={`editor-tool-button${mobileStrokeMode === 'continuous' ? ' is-active' : ''}`}
+          >
+            {t.continuousMode}
+          </button>
+          <span className="text-ink-soft">
+            {mobileStrokeMode === 'precision' ? t.precisionHint : t.continuousHint}
+          </span>
+        </div>
+      )}
+
+      {editNotice && <p role="status" className="text-xs text-ink-soft">{editNotice}</p>}
 
       <section
         aria-label={t.paletteTray}

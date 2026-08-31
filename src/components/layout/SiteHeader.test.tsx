@@ -20,7 +20,7 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('我的设计');
     expect(screen.getByRole('button', { name: '新建设计' })).toBeTruthy();
-    const more = screen.getByRole('button', { name: '菜单与账户' });
+    const more = screen.getByRole('button', { name: '更多操作' });
     expect(more).toHaveAttribute('aria-expanded', 'false');
     await user.click(more);
     expect(more).toHaveAttribute('aria-expanded', 'true');
@@ -45,4 +45,5 @@ describe('SiteHeader', () => {
 
     expect(onNavigate.mock.calls.map((call) => call[1])).toEqual(['/', '/about', '/account', '/', '/account']);
   });
+
 });

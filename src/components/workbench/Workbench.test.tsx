@@ -15,13 +15,42 @@ import type {
 import type { ProjectFile } from '@/lib/types';
 import { zhCN } from '@/messages/zh-CN';
 import { runGenerate, type GenerateTask } from '@/lib/engine/runGenerate';
+import { resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
-const { pushMock, enqueueDesignSyncMock, createDoupuApiMock, cloudApiStub } = vi.hoisted(() => ({
-  pushMock: vi.fn(),
-  enqueueDesignSyncMock: vi.fn(async () => undefined),
-  createDoupuApiMock: vi.fn(),
-  cloudApiStub: {},
-}));
+const {
+  pushMock,
+  enqueueDesignSyncMock,
+  enqueueDesignSyncFacadeMock,
+  defaultEnqueueDesignSyncMock,
+  withDesignStorageLockMock,
+  createDoupuApiMock,
+  cloudApiStub,
+} = vi.hoisted(() => {
+  const innerSync = vi.fn(async (): Promise<unknown> => undefined);
+  const defaultFacade = async (...args: unknown[]): Promise<unknown> => {
+    const outcome = await innerSync();
+    const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+    if (outcome && onOutcome) await onOutcome(outcome);
+    // 模拟 enqueueDesignSync：先交付不可逆的冲突/覆盖结果，
+    // 再因同批次其他设计失败而拒绝整轮同步。
+    const errors = outcome && typeof outcome === 'object'
+      ? (outcome as { errors?: unknown }).errors
+      : undefined;
+    if (Array.isArray(errors) && errors.length > 0) {
+      throw new Error('同步未完整完成，请稍后重试');
+    }
+    return outcome;
+  };
+  return {
+    pushMock: vi.fn(),
+    enqueueDesignSyncMock: innerSync,
+    enqueueDesignSyncFacadeMock: vi.fn(defaultFacade),
+    defaultEnqueueDesignSyncMock: defaultFacade,
+    withDesignStorageLockMock: vi.fn((run: () => Promise<unknown>) => run()),
+    createDoupuApiMock: vi.fn(),
+    cloudApiStub: {},
+  };
+});
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }));
@@ -29,13 +58,8 @@ vi.mock('@/lib/sync/api', () => ({
   createDoupuApi: createDoupuApiMock.mockReturnValue(cloudApiStub),
 }));
 vi.mock('@/lib/sync/queue', () => ({
-  enqueueDesignSync: async (...args: unknown[]) => {
-    const outcome = await enqueueDesignSyncMock();
-    const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
-    if (outcome && onOutcome) await onOutcome(outcome);
-    return outcome;
-  },
-  withDesignStorageLock: <T,>(run: () => Promise<T>) => run(),
+  enqueueDesignSync: (...args: unknown[]) => enqueueDesignSyncFacadeMock(...args),
+  withDesignStorageLock: <T,>(run: () => Promise<T>) => withDesignStorageLockMock(run) as Promise<T>,
 }));
 
 /** 内存版存储假实现（测试专用）。 */
@@ -207,6 +231,13 @@ function record(id: string, project: ProjectFile): DesignRecord {
 }
 
 const selectUploadInput = (): HTMLInputElement => screen.getByLabelText(zhCN.upload.inputLabel) as HTMLInputElement;
+const selectPaletteBrand = (): HTMLSelectElement => screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
+const selectPaletteSeries = (): HTMLSelectElement => screen.getByLabelText(zhCN.params.series) as HTMLSelectElement;
+const clickGuestRestart = (): void => {
+  fireEvent.click(screen.getByRole('button', { name: zhCN.nav.more }));
+  fireEvent.click(within(screen.getByTestId('site-overflow-panel'))
+    .getByRole('button', { name: zhCN.workbench.restart }));
+};
 
 /** 常见准备：预置一个已保存设计并渲染，等待恢复完成（真实计时器阶段）。 */
 async function renderRestored(storage: FakeStorage): Promise<HTMLInputElement> {
@@ -508,6 +539,50 @@ describe('Workbench 全流程', () => {
   });
 });
 
+describe('Workbench 项目操作栏', () => {
+  it('游客把重新上传留在菜单，并提供纵向登录与注册操作', async () => {
+    resetAuthStatusCache();
+    await renderRestored(new FakeStorage());
+
+    const more = await screen.findByRole('button', { name: zhCN.nav.more });
+    fireEvent.click(more);
+    const panel = screen.getByTestId('site-overflow-panel');
+    const login = within(panel).getByRole('link', { name: zhCN.nav.login });
+    const register = within(panel).getByRole('link', { name: zhCN.nav.registerAccount });
+    expect(login).toHaveClass('btn-primary', 'workspace-overflow-action');
+    expect(register).toHaveClass('btn-outline', 'workspace-overflow-action');
+    expect(within(panel).getByRole('button', { name: zhCN.workbench.restart })).toBeTruthy();
+  });
+
+  it('登录后不展示邮箱，并把重新上传与保存并列放在项目操作栏', async () => {
+    resetAuthStatusCache();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/auth/me') {
+        return new Response(JSON.stringify({ email: 'a@b.com', username: '小豆', emailVerified: true }), { status: 200 });
+      }
+      if (url === '/api/config') return new Response(null, { status: 404 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+    try {
+      await renderRestored(new FakeStorage());
+      const actions = await waitFor(() => {
+        const element = document.querySelector('.workbench-save-actions');
+        expect(element).toBeTruthy();
+        return element as HTMLElement;
+      });
+      expect(within(actions).getByRole('button', { name: zhCN.workbench.save })).toBeTruthy();
+      expect(within(actions).getByRole('button', { name: zhCN.workbench.restart })).toBeTruthy();
+      expect(screen.queryByText('a@b.com')).toBeNull();
+      expect(screen.queryByRole('button', { name: zhCN.nav.more })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+});
+
 describe('Workbench 本地保存', () => {
   it('保存裁剪后的生成源，刷新后恢复并可继续调参，项目 JSON 不携带源', async () => {
     window.history.replaceState(null, '', '/app');
@@ -586,6 +661,64 @@ describe('Workbench 本地保存', () => {
     }
   });
 
+  it('自动保存等待存储锁期间继续编辑，不会写入旧代际快照', async () => {
+    const storage = new FakeStorage();
+    const writtenNames: string[] = [];
+    const put = storage.put.bind(storage);
+    vi.spyOn(storage, 'put').mockImplementation(async (next, sourceWrite) => {
+      writtenNames.push(next.name);
+      await put(next, sourceWrite);
+    });
+    const nameInput = await renderRestored(storage);
+
+    let blockedRun!: () => Promise<unknown>;
+    let markSaveWaiting!: () => void;
+    const saveWaiting = new Promise<void>((resolve) => { markSaveWaiting = resolve; });
+    let releaseStorageLock!: () => Promise<void>;
+    withDesignStorageLockMock
+      .mockImplementationOnce((run: () => Promise<unknown>) => {
+        blockedRun = run;
+        markSaveWaiting();
+        return new Promise<unknown>((resolve, reject) => {
+          releaseStorageLock = async () => {
+            try {
+              resolve(await blockedRun());
+            } catch (error) {
+              reject(error);
+            }
+          };
+        });
+      })
+      .mockImplementation((run: () => Promise<unknown>) => run());
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(nameInput, { target: { value: '第一版' } });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await saveWaiting;
+      });
+      fireEvent.change(nameInput, { target: { value: '第二版' } });
+
+      await act(async () => {
+        await releaseStorageLock();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(writtenNames).toEqual(['第二版']);
+      expect(storage.designs.get('id-last')?.name).toBe('第二版');
+    } finally {
+      vi.useRealTimers();
+      withDesignStorageLockMock.mockReset();
+      withDesignStorageLockMock.mockImplementation((run: () => Promise<unknown>) => run());
+    }
+  });
+
   it('手动保存按钮立即写入', async () => {
     const storage = new FakeStorage();
     enqueueDesignSyncMock.mockClear();
@@ -638,12 +771,12 @@ describe('Workbench 本地保存', () => {
     fireEvent.change(nameInput, { target: { value: '未保存名称' } });
 
     // 第一次：在确认弹窗里点「取消」，留在工作台
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    clickGuestRestart();
     fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }));
     expect(screen.getByText(zhCN.workbench.previewTab)).toBeTruthy();
 
     // 第二次：确认「仍要离开」，回到上传入口
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    clickGuestRestart();
     fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.confirmLeaveAction }));
     await screen.findByLabelText(zhCN.upload.inputLabel);
   });
@@ -657,7 +790,7 @@ describe('Workbench 本地保存', () => {
     await screen.findByDisplayValue('保留身份');
     expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    clickGuestRestart();
     fireEvent.change(await screen.findByLabelText(zhCN.upload.inputLabel), { target: { files: [makeFile()] } });
     await screen.findByText(zhCN.crop.title);
     fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
@@ -683,7 +816,7 @@ describe('Workbench 本地保存', () => {
     const first = render(<Workbench storage={storage} decodeFn={fakeDecode} generateFn={pendingGenerate} />);
     await screen.findByDisplayValue('取消重绑生成');
 
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    clickGuestRestart();
     fireEvent.change(await screen.findByLabelText(zhCN.upload.inputLabel), { target: { files: [makeFile()] } });
     await screen.findByText(zhCN.crop.title);
     fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
@@ -754,7 +887,7 @@ describe('Workbench 本地保存', () => {
     fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
     await screen.findByText(/^已拼 1 \/ 1 粒/);
 
-    fireEvent.change(screen.getByLabelText(zhCN.params.brand), { target: { value: 'builtin:COCO' } });
+    fireEvent.change(selectPaletteBrand(), { target: { value: 'COCO' } });
     await screen.findByText(/已换到新色板/);
     await act(async () => { await Promise.resolve(); });
 
@@ -816,6 +949,28 @@ describe('Workbench 本地保存', () => {
 });
 
 describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
+  it('把 13 套内置色板按品牌与系列完整展示，主文案不泄露稳定 ID', async () => {
+    render(<Workbench storage={new FakeStorage()} />);
+    await screen.findByLabelText(zhCN.params.brand);
+
+    const brandSelect = selectPaletteBrand();
+    const brands = [...brandSelect.options].map((option) => option.value);
+    expect(brands).toEqual(['MARD', 'COCO', '漫漫', '盼盼', '咪小窝', '优肯 Artkal']);
+
+    let seriesCount = 0;
+    for (const brand of brands) {
+      fireEvent.change(brandSelect, { target: { value: brand } });
+      seriesCount += selectPaletteSeries().options.length;
+    }
+    expect(seriesCount).toBe(13);
+    const visibleOptionCopy = [...document.querySelectorAll('select option')]
+      .map((option) => option.textContent)
+      .join(' ');
+    expect(visibleOptionCopy).not.toMatch(/pcd:|[0-9a-f]{40}/i);
+    expect([...document.querySelectorAll('details.palette-picker-technical')]
+      .every((details) => !(details as HTMLDetailsElement).open)).toBe(true);
+  });
+
   it('不上传图片也能进入工作台：空白图纸落在修补页签，参数锁定但可导出', async () => {
     render(<Workbench storage={new FakeStorage()} />);
     // 上传页同时给出空白起稿入口
@@ -834,10 +989,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     const storage = new FakeStorage();
     render(<Workbench storage={storage} />);
 
-    const paletteSelect = await screen.findByLabelText(zhCN.params.brand) as HTMLSelectElement;
-    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
-    expect(artkalC).toBeTruthy();
-    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+    await screen.findByLabelText(zhCN.params.brand);
+    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+    expect(selectPaletteSeries().value).toBe('builtin:pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186');
 
     const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
     expect(profileSelect.value).toBe('2.6mm-50');
@@ -864,16 +1018,40 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
     await screen.findByText(/共 10000 粒/);
 
-    const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
-    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
-    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
 
     const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
     await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
     expect(generateFn).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
     expect(profile.value).toBe('5mm-29');
-    expect(paletteSelect.value).toBe('builtin:MARD');
+    expect(selectPaletteBrand().value).toBe('MARD');
+    expect(selectPaletteSeries().value).toBe('builtin:MARD');
+  });
+
+  it('同品牌切换系列只产生一份重映射快照，一步撤销恢复原系列', async () => {
+    const storage = new FakeStorage();
+    const project = savedProject('同品牌系列', '2026-08-14T12:00:00.000Z');
+    project.paletteSelection.kitTier = 24;
+    storage.designs.set('id-last', record('id-last', project));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('同品牌系列');
+
+    const series = selectPaletteSeries();
+    const publicMard = 'builtin:pcd:mard-291-github@178dafbc9e77d3de556550dbd058270200129186';
+    expect([...series.options].map((option) => option.value)).toContain(publicMard);
+    fireEvent.change(series, { target: { value: publicMard } });
+
+    expect(selectPaletteBrand().value).toBe('MARD');
+    expect(selectPaletteSeries().value).toBe(publicMard);
+    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+    const undo = screen.getByRole('button', { name: zhCN.workbench.undoRegeneration });
+    fireEvent.click(undo);
+
+    expect(selectPaletteBrand().value).toBe('MARD');
+    expect(selectPaletteSeries().value).toBe('builtin:MARD');
+    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+    expect(screen.queryByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeNull();
   });
 
   it('选套装档位后图纸只用档位内的色号（H-3）', async () => {
@@ -941,7 +1119,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await waitFor(() => expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24'));
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
     await waitFor(() => expect(storage.designs.size).toBe(1));
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.restart }));
+    clickGuestRestart();
 
     await screen.findByLabelText(zhCN.upload.inputLabel);
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 29) }));
@@ -959,9 +1137,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     try {
       const generateFn = vi.fn(instantGenerate);
       render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
-      const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
-      const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'))!;
-      fireEvent.change(paletteSelect, { target: { value: artkalC.value } });
+      fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+      const selectedArtkalSeries = selectPaletteSeries().value;
       const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
       fireEvent.change(profileSelect, { target: { value: '2.6mm-52' } });
 
@@ -978,7 +1155,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
       await screen.findByText(zhCN.crop.title);
       fireEvent.click(screen.getByText(zhCN.crop.useWholeImage));
       await screen.findByText(/共 7744 粒/);
-      expect((screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement).value).toBe(artkalC.value);
+      expect(selectPaletteBrand().value).toBe('优肯 Artkal');
+      expect(selectPaletteSeries().value).toBe(selectedArtkalSeries);
       expect((screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement).value).toBe('2.6mm-52');
       expect(generateFn.mock.calls[0][0].params).toMatchObject({ targetWidth: 88, targetColorCount: 32 });
     } finally {
@@ -1019,11 +1197,11 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('Artkal');
 
-    const paletteSelect = screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
-    const artkalC = [...paletteSelect.options].find((option) => option.textContent?.includes('C 系列 197 色'));
-    expect(artkalC).toBeTruthy();
-    expect(artkalC?.textContent).toContain('178dafb');
-    fireEvent.change(paletteSelect, { target: { value: artkalC!.value } });
+    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+    expect(selectPaletteSeries().value).toBe('builtin:pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186');
+    const technicalDetails = screen.getByText(zhCN.params.paletteDataVersion).closest('details');
+    expect(technicalDetails?.open).toBe(false);
+    expect(technicalDetails?.textContent).toContain('178dafbc9e77d3de556550dbd058270200129186');
 
     const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
     await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
@@ -1042,7 +1220,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
     expect(profile.value).toBe('5mm-29');
-    expect(paletteSelect.value).toBe('builtin:MARD');
+    expect(selectPaletteBrand().value).toBe('MARD');
+    expect(selectPaletteSeries().value).toBe('builtin:MARD');
   });
 });
 
@@ -1126,6 +1305,13 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
       overwrittenByCloud: [],
       conflictCopies: [],
       errors: [],
+      syncedIds: ['id-last'],
+      issues: [{
+        designId: 'another-invalid-design',
+        operation: 'validate-local',
+        code: 'INVALID_PROJECT_V3',
+        message: '本地项目不是严格 ProjectFile v3，已跳过同步',
+      }],
       cloud: [],
     } as never);
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -1160,30 +1346,34 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     await screen.findByDisplayValue('初始');
 
     // 下拉出现两个同色但身份不同的云端色板；空色板被过滤。
-    const select = (await screen.findByLabelText(zhCN.params.brand)) as HTMLSelectElement;
+    const brandSelect = (await screen.findByLabelText(zhCN.params.brand)) as HTMLSelectElement;
     await waitFor(() => {
-      expect(select.textContent).toContain('我的·粉彩 A');
-      expect(select.textContent).toContain('我的·粉彩 B');
-      expect(select.textContent).not.toContain('空板');
+      expect(brandSelect.textContent).toContain(zhCN.params.customPaletteGroup);
     });
+    fireEvent.change(brandSelect, { target: { value: zhCN.params.customPaletteGroup } });
+    const seriesSelect = selectPaletteSeries();
+    expect(seriesSelect.value).toBe('');
+    expect(seriesSelect.textContent).toContain('粉彩 A');
+    expect(seriesSelect.textContent).toContain('粉彩 B');
+    expect(seriesSelect.textContent).not.toContain('空板');
 
     // 项目文件不含原图：参数控件锁定（改参数要重新采样原图），
     // 但色板可以换——走图纸级重映射，保留手工修补（H-1）。
     expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
     expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
-    expect(select).not.toBeDisabled();
-    fireEvent.change(select, { target: { value: 'custom:pal-same-colors' } });
-    await waitFor(() => expect(select.value).toBe('custom:pal-same-colors'));
+    expect(brandSelect).not.toBeDisabled();
+    fireEvent.change(seriesSelect, { target: { value: 'custom:pal-same-colors' } });
+    await waitFor(() => expect(selectPaletteSeries().value).toBe('custom:pal-same-colors'));
     // 重映射结果有明确反馈，且提供一步撤销
     expect(screen.getByText(/已换到新色板/)).toBeTruthy();
     expect(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeTruthy();
 
     // 再换到内置色板后一步撤销，必须恢复刚才选中的 B；
     // 不能按颜色相等错误命中列表中排在前面的 A。
-    fireEvent.change(select, { target: { value: 'builtin:COCO' } });
-    await waitFor(() => expect(select.value).toBe('builtin:COCO'));
+    fireEvent.change(selectPaletteBrand(), { target: { value: 'COCO' } });
+    await waitFor(() => expect(selectPaletteSeries().value).toBe('builtin:COCO'));
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
-    await waitFor(() => expect(select.value).toBe('custom:pal-same-colors'));
+    await waitFor(() => expect(selectPaletteSeries().value).toBe('custom:pal-same-colors'));
 
     await waitFor(() => expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy());
     const callsBeforeOnline = enqueueDesignSyncMock.mock.calls.length;
@@ -1222,10 +1412,12 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
           overwrittenByCloud: ['id-last'],
           conflictCopies: [{ originalId: 'id-last', conflictId: 'conflict-id' }],
           errors: [],
+          syncedIds: ['id-last'],
+          issues: [],
           cloud: [],
         } as never;
       })
-      .mockResolvedValue({ pushed: 0, pulled: 0, overwrittenByCloud: [], conflictCopies: [], errors: [], cloud: [] } as never);
+      .mockResolvedValue({ pushed: 0, pulled: 0, overwrittenByCloud: [], conflictCopies: [], errors: [], syncedIds: ['conflict-id'], issues: [], cloud: [] } as never);
 
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('本机修改 (冲突副本)');
@@ -1236,6 +1428,579 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     await waitFor(() => expect(storage.designs.get('conflict-id')?.name).toBe('冲突副本继续编辑'));
     expect(storage.designs.get('id-last')?.name).toBe('云端原件');
     vi.unstubAllGlobals();
+  });
+
+  it('活动设计发生冲突后即使用户不再操作，也会自动保存副本并完成下一轮同步', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机修改', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    const conflict = { ...local, name: '本机修改 (冲突副本)' };
+    storage.designs.set('original-id', record('original-id', local));
+
+    let releaseInitialSync!: () => void;
+    const initialSyncGate = new Promise<void>((resolve) => { releaseInitialSync = resolve; });
+    enqueueDesignSyncMock
+      .mockImplementationOnce(async () => {
+        await initialSyncGate;
+        storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+        storage.designs.set('conflict-id', { ...record('conflict-id', conflict), revision: 0, syncState: 'conflict' });
+        return {
+          pushed: 0,
+          pulled: 1,
+          overwrittenByCloud: ['original-id'],
+          conflictCopies: [{ originalId: 'original-id', conflictId: 'conflict-id' }],
+          errors: [],
+          syncedIds: ['original-id'],
+          issues: [],
+          cloud: [],
+        };
+      })
+      .mockImplementationOnce(async () => {
+        expect(storage.designs.get('conflict-id')?.syncState).toBe('dirty');
+        storage.designs.set('conflict-id', {
+          ...storage.designs.get('conflict-id')!,
+          revision: 1,
+          syncState: 'synced',
+        });
+        return {
+          pushed: 1,
+          pulled: 0,
+          overwrittenByCloud: [],
+          conflictCopies: [],
+          errors: [],
+          syncedIds: ['conflict-id'],
+          issues: [],
+          cloud: [],
+        };
+      });
+
+    try {
+      render(<Workbench storage={storage} />);
+      await screen.findByDisplayValue('本机修改');
+      await waitFor(() => expect(enqueueDesignSyncMock).toHaveBeenCalledTimes(1));
+
+      vi.useFakeTimers();
+      await act(async () => {
+        releaseInitialSync();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByDisplayValue('本机修改 (冲突副本)')).toBeTruthy();
+      expect(enqueueDesignSyncMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(enqueueDesignSyncMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy();
+      expect(storage.designs.get('conflict-id')).toMatchObject({ revision: 1, syncState: 'synced' });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('冲突副本切换后同步队列因其他设计失败，不得把副本误标为已同步', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+    const storage = new FakeStorage();
+    const local = savedProject('本机修改', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    const conflict = { ...local, name: '本机修改 (冲突副本)' };
+    storage.designs.set('original-id', record('original-id', local));
+    enqueueDesignSyncMock.mockImplementationOnce(async () => {
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      storage.designs.set('conflict-id', { ...record('conflict-id', conflict), revision: 0, syncState: 'conflict' });
+      return {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [{ originalId: 'original-id', conflictId: 'conflict-id' }],
+        errors: ['sibling-id: 云端不可用'],
+        syncedIds: ['original-id'],
+        issues: [{ designId: 'sibling-id', operation: 'push', code: 'OFFLINE', message: '云端不可用' }],
+        cloud: [],
+      };
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      await screen.findByDisplayValue('本机修改 (冲突副本)');
+      await waitFor(() => expect(screen.getAllByRole('status').map((node) => node.textContent)).toContain(zhCN.workbench.cloudPending));
+      expect(screen.queryByText(zhCN.workbench.cloudSynced)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('冲突副本合并写入期间的新编辑保留在新 ID，并由自动保存落盘', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    const conflict = { ...local, name: '本机旧稿 (冲突副本)' };
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let deliverOutcome!: () => Promise<void>;
+    const outcomeReady = new Promise<void>((resolve) => {
+      deliverOutcome = async () => { resolve(); };
+    });
+    let releaseConflictWrite!: () => void;
+    let markConflictWriteStarted!: () => void;
+    const conflictWriteStarted = new Promise<void>((resolve) => { markConflictWriteStarted = resolve; });
+    const originalPut = storage.put.bind(storage);
+    let conflictWriteDelayed = false;
+    vi.spyOn(storage, 'put').mockImplementation(async (design, sourceWrite) => {
+      if (design.id === 'conflict-id' && !conflictWriteDelayed) {
+        conflictWriteDelayed = true;
+        markConflictWriteStarted();
+        await new Promise<void>((resolve) => { releaseConflictWrite = resolve; });
+      }
+      await originalPut(design, sourceWrite);
+    });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeReady;
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      storage.designs.set('conflict-id', { ...record('conflict-id', conflict), revision: 0, syncState: 'conflict' });
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [{ originalId: 'original-id', conflictId: 'conflict-id' }],
+        errors: [],
+        syncedIds: ['original-id'],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      vi.useFakeTimers();
+      fireEvent.change(nameInput, { target: { value: '冲突合并时的编辑' } });
+      await act(async () => { await deliverOutcome(); });
+      await act(async () => { await conflictWriteStarted; });
+
+      fireEvent.change(nameInput, { target: { value: '写入期间的最新名称' } });
+      await act(async () => {
+        releaseConflictWrite();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByDisplayValue('写入期间的最新名称')).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(storage.designs.get('conflict-id')?.name).toBe('写入期间的最新名称');
+      expect(storage.designs.get('original-id')?.name).toBe('云端原件');
+    } finally {
+      vi.useRealTimers();
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('云端覆盖的冲突副本写入期间导入新项目，迟到结果不得切回旧设计', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let releaseOutcome!: () => void;
+    const outcomeGate = new Promise<void>((resolve) => { releaseOutcome = resolve; });
+    let releaseConflictWrite!: () => void;
+    let markConflictWriteStarted!: () => void;
+    const conflictWriteStarted = new Promise<void>((resolve) => { markConflictWriteStarted = resolve; });
+    let createdConflictId: string | null = null;
+    const originalPut = storage.put.bind(storage);
+    vi.spyOn(storage, 'put').mockImplementation(async (design, sourceWrite) => {
+      if (design.id !== 'original-id' && createdConflictId === null) {
+        createdConflictId = design.id;
+        markConflictWriteStarted();
+        await new Promise<void>((resolve) => { releaseConflictWrite = resolve; });
+      }
+      await originalPut(design, sourceWrite);
+    });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeGate;
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: ['original-id'],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+      fireEvent.change(nameInput, { target: { value: '同步捕获的本机编辑' } });
+
+      await act(async () => { releaseOutcome(); });
+      await act(async () => { await conflictWriteStarted; });
+
+      const imported = savedProject('新会话项目', '2026-08-15T12:00:00.000Z');
+      const file = new File([JSON.stringify(imported)], 'new-session.doupu.json', { type: 'application/json' });
+      fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
+      await screen.findByDisplayValue('新会话项目');
+
+      await act(async () => {
+        releaseConflictWrite();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByDisplayValue('新会话项目')).toBeTruthy();
+      expect(window.location.search).toBe('');
+      expect(createdConflictId).not.toBeNull();
+      expect(storage.designs.get(createdConflictId!)?.name).toContain('同步捕获的本机编辑');
+    } finally {
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('云端覆盖的冲突副本写入期间继续编辑，保留最新名称并重排自动保存', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let releaseOutcome!: () => void;
+    const outcomeGate = new Promise<void>((resolve) => { releaseOutcome = resolve; });
+    let releaseConflictWrite!: () => void;
+    let markConflictWriteStarted!: () => void;
+    const conflictWriteStarted = new Promise<void>((resolve) => { markConflictWriteStarted = resolve; });
+    let createdConflictId: string | null = null;
+    const originalPut = storage.put.bind(storage);
+    vi.spyOn(storage, 'put').mockImplementation(async (design, sourceWrite) => {
+      if (design.id !== 'original-id' && createdConflictId === null) {
+        createdConflictId = design.id;
+        markConflictWriteStarted();
+        await new Promise<void>((resolve) => { releaseConflictWrite = resolve; });
+      }
+      await originalPut(design, sourceWrite);
+    });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeGate;
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: ['original-id'],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      vi.useFakeTimers();
+      fireEvent.change(nameInput, { target: { value: '云端覆盖时的本机编辑' } });
+      await act(async () => { releaseOutcome(); });
+      await act(async () => { await conflictWriteStarted; });
+
+      fireEvent.change(nameInput, { target: { value: '冲突写入后的最新名称' } });
+      await act(async () => {
+        releaseConflictWrite();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByDisplayValue('冲突写入后的最新名称')).toBeTruthy();
+      expect(createdConflictId).not.toBeNull();
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(storage.designs.get(createdConflictId!)?.name).toBe('冲突写入后的最新名称');
+      expect(storage.designs.get('original-id')?.name).toBe('云端原件');
+    } finally {
+      vi.useRealTimers();
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('读取云端覆盖结果的本机源期间开始编辑，改为冲突副本而不覆盖 UI', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端新版', '2026-08-14T13:00:00.000Z');
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let releaseOutcome!: () => void;
+    const outcomeGate = new Promise<void>((resolve) => { releaseOutcome = resolve; });
+    let delayOutcomeSourceRead = false;
+    let releaseSourceRead!: () => void;
+    let markSourceReadStarted!: () => void;
+    const sourceReadStarted = new Promise<void>((resolve) => { markSourceReadStarted = resolve; });
+    const originalGetGenerationSource = storage.getGenerationSource.bind(storage);
+    vi.spyOn(storage, 'getGenerationSource').mockImplementation(async (id) => {
+      if (delayOutcomeSourceRead && id === 'original-id') {
+        delayOutcomeSourceRead = false;
+        markSourceReadStarted();
+        await new Promise<void>((resolve) => { releaseSourceRead = resolve; });
+      }
+      return originalGetGenerationSource(id);
+    });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeGate;
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      delayOutcomeSourceRead = true;
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: ['original-id'],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      await act(async () => { releaseOutcome(); });
+      await act(async () => { await sourceReadStarted; });
+      fireEvent.change(nameInput, { target: { value: '源读取期间的新编辑' } });
+      await act(async () => {
+        releaseSourceRead();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByDisplayValue('云端新版')).toBeNull();
+      expect(screen.getByDisplayValue(/源读取期间的新编辑/)).toBeTruthy();
+      const conflictRecord = [...storage.designs.values()].find((design) => design.id !== 'original-id');
+      expect(conflictRecord?.name).toContain('源读取期间的新编辑');
+      expect(storage.designs.get('original-id')?.name).toBe('云端新版');
+      expect(window.location.search).toBe(`?id=${conflictRecord?.id}`);
+    } finally {
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('读取云端删除结果期间导入新项目，迟到结果不得清空新会话', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('即将被云端删除', '2026-08-14T12:00:00.000Z');
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'synced' });
+
+    let releaseOutcome!: () => void;
+    const outcomeGate = new Promise<void>((resolve) => { releaseOutcome = resolve; });
+    let delayOutcomeRecordsRead = false;
+    let releaseRecordsRead!: () => void;
+    let markRecordsReadStarted!: () => void;
+    const recordsReadStarted = new Promise<void>((resolve) => { markRecordsReadStarted = resolve; });
+    const originalGetAll = storage.getAll.bind(storage);
+    vi.spyOn(storage, 'getAll').mockImplementation(async () => {
+      if (delayOutcomeRecordsRead) {
+        delayOutcomeRecordsRead = false;
+        markRecordsReadStarted();
+        await new Promise<void>((resolve) => { releaseRecordsRead = resolve; });
+      }
+      return originalGetAll();
+    });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeGate;
+      storage.designs.delete('original-id');
+      delayOutcomeRecordsRead = true;
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: [],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      await screen.findByDisplayValue('即将被云端删除');
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      await act(async () => { releaseOutcome(); });
+      await act(async () => { await recordsReadStarted; });
+
+      const imported = savedProject('新会话项目', '2026-08-15T12:00:00.000Z');
+      const file = new File([JSON.stringify(imported)], 'new-session.doupu.json', { type: 'application/json' });
+      fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
+      await screen.findByDisplayValue('新会话项目');
+
+      await act(async () => {
+        releaseRecordsRead();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByDisplayValue('新会话项目')).toBeTruthy();
+      expect(screen.queryByLabelText(zhCN.upload.inputLabel)).toBeNull();
+      expect(window.location.search).toBe('');
+    } finally {
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
   });
 
   it('活动设计被云端新版覆盖后立即刷新工作台，不再保留旧画面和旧 revision', async () => {
@@ -1257,7 +2022,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     remoteProject.pattern.cells[0] = { hex: '#FC3D46', code: 'F02', transparent: false };
     enqueueDesignSyncMock.mockImplementation(async () => {
       storage.designs.set('id-last', { ...record('id-last', remoteProject), revision: 2, syncState: 'synced' });
-      return { pushed: 0, pulled: 1, overwrittenByCloud: ['id-last'], conflictCopies: [], errors: [], cloud: [] } as never;
+      return { pushed: 0, pulled: 1, overwrittenByCloud: ['id-last'], conflictCopies: [], errors: [], syncedIds: ['id-last'], issues: [], cloud: [] } as never;
     });
 
     render(<Workbench storage={storage} />);
@@ -1266,5 +2031,283 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     expect(screen.queryByDisplayValue('旧画面')).toBeNull();
     expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
     vi.unstubAllGlobals();
+  });
+
+  it('保存等待存储锁期间切到冲突副本，会丢弃旧设计快照并自动重排新设计保存', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    const conflict = { ...local, name: '本机旧稿 (冲突副本)' };
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let deliverInitialSync!: () => Promise<void>;
+    const initialSync = new Promise<unknown>((resolve) => {
+      deliverInitialSync = async () => {
+        storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+        storage.designs.set('conflict-id', { ...record('conflict-id', conflict), revision: 0, syncState: 'conflict' });
+        resolve({
+          pushed: 0,
+          pulled: 1,
+          overwrittenByCloud: ['original-id'],
+          conflictCopies: [{ originalId: 'original-id', conflictId: 'conflict-id' }],
+          errors: [],
+          syncedIds: ['original-id'],
+          issues: [],
+          cloud: [],
+        });
+      };
+    });
+    enqueueDesignSyncFacadeMock
+      .mockImplementationOnce(async (...args: unknown[]) => {
+        const outcome = await initialSync;
+        const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+        if (onOutcome) await onOutcome(outcome);
+        return outcome;
+      })
+      .mockResolvedValue({
+        pushed: 0, pulled: 0, overwrittenByCloud: [], conflictCopies: [], errors: [],
+        syncedIds: ['conflict-id'], issues: [], cloud: [],
+      });
+
+    let storageRun!: () => Promise<unknown>;
+    let markSaveWaiting!: () => void;
+    const saveWaiting = new Promise<void>((resolve) => { markSaveWaiting = resolve; });
+    let releaseStorageLock!: () => Promise<void>;
+    withDesignStorageLockMock
+      .mockImplementationOnce((run: () => Promise<unknown>) => {
+        storageRun = run;
+        markSaveWaiting();
+        return new Promise<unknown>((resolve, reject) => {
+          releaseStorageLock = async () => {
+            try {
+              resolve(await storageRun());
+            } catch (error) {
+              reject(error);
+            }
+          };
+        });
+      })
+      .mockImplementation((run: () => Promise<unknown>) => run());
+
+    try {
+      render(<Workbench storage={storage} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      vi.useFakeTimers();
+      fireEvent.change(nameInput, { target: { value: '等待锁期间的新编辑' } });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await saveWaiting;
+      });
+
+      await act(async () => {
+        await deliverInitialSync();
+        await Promise.resolve();
+      });
+      expect(screen.getByDisplayValue('等待锁期间的新编辑 (冲突副本)')).toBeTruthy();
+
+      await act(async () => {
+        await releaseStorageLock();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(1100);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(storage.designs.get('original-id')?.name).toBe('云端原件');
+      expect(storage.designs.get('conflict-id')?.name).toBe('等待锁期间的新编辑 (冲突副本)');
+      expect(enqueueDesignSyncFacadeMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      withDesignStorageLockMock.mockReset();
+      withDesignStorageLockMock.mockImplementation((run: () => Promise<unknown>) => run());
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('旧设计保存令牌失效时，不得覆盖同步回调为冲突副本设置的 dirty 状态', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    const onSavedStatus = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const local = savedProject('本机旧稿', '2026-08-14T12:00:00.000Z');
+    const remote = savedProject('云端原件', '2026-08-14T13:00:00.000Z');
+    storage.designs.set('original-id', { ...record('original-id', local), revision: 1, syncState: 'dirty' });
+
+    let releaseOutcome!: () => void;
+    const outcomeGate = new Promise<void>((resolve) => { releaseOutcome = resolve; });
+    enqueueDesignSyncFacadeMock.mockImplementationOnce(async (...args: unknown[]) => {
+      await outcomeGate;
+      storage.designs.set('original-id', { ...record('original-id', remote), revision: 2, syncState: 'synced' });
+      const outcome = {
+        pushed: 0,
+        pulled: 1,
+        overwrittenByCloud: ['original-id'],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: ['original-id'],
+        issues: [],
+        cloud: [],
+      };
+      const onOutcome = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      if (onOutcome) await onOutcome(outcome);
+      return outcome;
+    });
+
+    let storageRun!: () => Promise<unknown>;
+    let markSaveWaiting!: () => void;
+    const saveWaiting = new Promise<void>((resolve) => { markSaveWaiting = resolve; });
+    let releaseStorageLock!: () => Promise<void>;
+    withDesignStorageLockMock
+      .mockImplementationOnce((run: () => Promise<unknown>) => {
+        storageRun = run;
+        markSaveWaiting();
+        return new Promise<unknown>((resolve, reject) => {
+          releaseStorageLock = async () => {
+            try {
+              resolve(await storageRun());
+            } catch (error) {
+              reject(error);
+            }
+          };
+        });
+      })
+      .mockImplementation((run: () => Promise<unknown>) => run());
+
+    try {
+      render(<Workbench storage={storage} onSavedStatus={onSavedStatus} />);
+      const nameInput = (await screen.findAllByDisplayValue('本机旧稿'))[0] as HTMLInputElement;
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+      fireEvent.change(nameInput, { target: { value: '等锁的本机编辑' } });
+      fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+      await act(async () => { await saveWaiting; });
+
+      await act(async () => {
+        releaseOutcome();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await screen.findByDisplayValue('等锁的本机编辑 (冲突副本)');
+      await waitFor(() => expect(onSavedStatus.mock.calls.at(-1)?.[0]).toBe('dirty'));
+
+      await act(async () => {
+        await releaseStorageLock();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(onSavedStatus.mock.calls.at(-1)?.[0]).toBe('dirty');
+    } finally {
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      withDesignStorageLockMock.mockReset();
+      withDesignStorageLockMock.mockImplementation((run: () => Promise<unknown>) => run());
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
+  });
+
+  it('后加入同一单飞同步的等待者在部分失败时，从当前设计持久状态保持已同步', async () => {
+    window.history.replaceState(null, '', '/app');
+    resetAuthStatusCache();
+    enqueueDesignSyncFacadeMock.mockClear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/config') return new Response(JSON.stringify({
+        generation: { defaultWidth: 100, defaultColorCount: 40 },
+        exportPng: { cellPx: 24, cropToContent: true, includeLegend: false },
+        exportPdf: { cellMm: 6, marginMm: 8, headerMm: 10, pageCols: 31, pageRows: 45 },
+      }), { status: 200 });
+      if (url === '/api/auth/me') return new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 });
+      if (url === '/api/palettes') return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+      return new Response(null, { status: 404 });
+    }));
+
+    const storage = new FakeStorage();
+    const project = savedProject('当前设计', '2026-08-14T12:00:00.000Z');
+    storage.designs.set('current-id', { ...record('current-id', project), revision: 0, syncState: 'dirty' });
+
+    let firstOutcomeConsumer: ((value: unknown) => void | Promise<void>) | undefined;
+    let rejectSingleFlight!: (error: Error) => void;
+    const singleFlight = new Promise<unknown>((_resolve, reject) => { rejectSingleFlight = reject; });
+    enqueueDesignSyncFacadeMock.mockImplementation((...args: unknown[]) => {
+      if (!firstOutcomeConsumer) {
+        firstOutcomeConsumer = args[2] as ((value: unknown) => void | Promise<void>) | undefined;
+      }
+      return singleFlight;
+    });
+
+    try {
+      render(<Workbench storage={storage} />);
+      await screen.findByDisplayValue('当前设计');
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(1));
+
+      act(() => window.dispatchEvent(new Event('online')));
+      await waitFor(() => expect(enqueueDesignSyncFacadeMock).toHaveBeenCalledTimes(2));
+      expect(enqueueDesignSyncFacadeMock.mock.results[0]?.value)
+        .toBe(enqueueDesignSyncFacadeMock.mock.results[1]?.value);
+
+      storage.designs.set('current-id', {
+        ...record('current-id', { ...project, updatedAt: '2026-08-14T13:00:00.000Z' }),
+        revision: 1,
+        syncState: 'synced',
+      });
+      await act(async () => {
+        await firstOutcomeConsumer?.({
+          pushed: 1,
+          pulled: 0,
+          overwrittenByCloud: [],
+          conflictCopies: [],
+          errors: ['sibling-id: 云端不可用'],
+          syncedIds: ['current-id'],
+          issues: [{ designId: 'sibling-id', operation: 'push', code: 'OFFLINE', message: '云端不可用' }],
+          cloud: [],
+        });
+        rejectSingleFlight(new Error('同步未完整完成，请稍后重试'));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(screen.getByText(zhCN.workbench.cloudSynced)).toBeTruthy());
+      expect(screen.queryByText(zhCN.workbench.cloudPending)).toBeNull();
+    } finally {
+      enqueueDesignSyncFacadeMock.mockReset();
+      enqueueDesignSyncFacadeMock.mockImplementation(defaultEnqueueDesignSyncMock);
+      vi.unstubAllGlobals();
+      resetAuthStatusCache();
+    }
   });
 });

@@ -11,4 +11,3 @@ docs
 !.env.example
 docker-compose*.yml
 Caddyfile
-deploy

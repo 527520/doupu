@@ -25,7 +25,8 @@ import StepIndicator from '@/components/workbench/StepIndicator';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useAuthStatus } from '@/components/account/useAuthStatus';
 import { ImageCropper } from '@/components/crop/ImageCropper';
-import GenerationParamsPanel, { type PaletteOption } from '@/components/params/GenerationParamsPanel';
+import GenerationParamsPanel from '@/components/params/GenerationParamsPanel';
+import PalettePicker, { type PalettePickerOption } from '@/components/palettes/PalettePicker';
 import PatternPreview from '@/components/preview/PatternPreview';
 import PixelEditorCanvas from '@/components/editor/PixelEditorCanvas';
 import PngExportButton from '@/components/export/PngExportButton';
@@ -34,6 +35,7 @@ import ProjectFileButtons from '@/components/export/ProjectFileButtons';
 import SiteHeader from '@/components/layout/SiteHeader';
 import { useMobileLayout } from '@/components/layout/useMobileLayout';
 import DesignNameEditor from './DesignNameEditor';
+import WorkbenchProjectBar from './WorkbenchProjectBar';
 import SaveStatus, { type CloudSaveState, type SaveState } from './SaveStatus';
 import { zhCN } from '@/messages/zh-CN';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams, type PaletteColor, type PaletteSelection, type Pattern, type ProjectFile, type ProjectPalette } from '@/lib/types';
@@ -231,6 +233,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     undoRegeneration,
   } = useGenerationSession<EngineOutput>(initialGenerationDraft);
   const source = generationSession.source;
+  const sourceRef = useRef(source);
+  useEffect(() => {
+    sourceRef.current = source;
+  }, [source]);
   const generating = generationSession.status === 'generating';
   // Pattern/statistics are projections of the session's immutable commit;
   // Workbench never mirrors a second independently mutable copy.
@@ -385,48 +391,65 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     refs[next].current?.focus();
   }, [TAB_ORDER, tab]);
 
-  const paletteOptions = useMemo<PaletteOption[]>(() => {
-    const builtin = listBuiltinPalettes().map((summary) => ({
-      value: `builtin:${summary.id}`,
-      label: zhCN.workbench.builtinPaletteOption(
-        summary.series,
-        summary.source.revision.length === 40
-          ? summary.source.revision.slice(0, 7)
-          : summary.source.revision,
-        summary.engineColorCount,
-      ),
-      kind: 'builtin' as const,
-      group: summary.brand,
-    }));
+  const paletteOptions = useMemo<PalettePickerOption[]>(() => {
+    const builtin = listBuiltinPalettes().map((summary) => {
+      const palette = getBuiltinPalette(summary.id);
+      const selection: ProjectPalette = { kind: 'builtin', brand: summary.id };
+      return {
+        value: `builtin:${summary.id}`,
+        brand: summary.brand,
+        series: summary.series,
+        colors: palette.engineColors.map((color) => color.hex),
+        collectedCount: summary.colorCount,
+        usableCount: summary.engineColorCount,
+        sourceQuality: summary.source.qualityLabel,
+        boardProfiles: compatibleBoardProfilesForPalette(selection).map((profile) => profile.displayName),
+        technicalVersion: summary.source.versionId,
+        defaultForBrand: summary.defaultForBrand,
+      };
+    });
     const customEntries = cloudPalettes.map((p) => ({
       value: `custom:${p.id}`,
-      label: zhCN.workbench.myPaletteLabel(p.name),
-      kind: 'custom' as const,
-      group: zhCN.workbench.customPaletteLabel,
+      brand: zhCN.params.customPaletteGroup,
+      series: p.name,
+      colors: p.colors.map((color) => color.hex),
+      collectedCount: p.colors.length,
+      usableCount: p.colors.length,
+      sourceQuality: zhCN.params.customPaletteQuality,
+      boardProfiles: compatibleBoardProfilesForPalette({ kind: 'custom', colors: [] })
+        .map((profile) => profile.displayName),
+      defaultForBrand: false,
     }));
+    if (paletteKind.kind === 'custom' && customPaletteId
+      && !cloudPalettes.some((candidate) => candidate.id === customPaletteId)) {
+      customEntries.push({
+        value: `custom:${customPaletteId}`,
+        brand: zhCN.params.customPaletteGroup,
+        series: zhCN.params.currentProjectPalette,
+        colors: projectPalette.kind === 'custom' ? projectPalette.colors.map((color) => color.hex) : [],
+        collectedCount: projectPalette.kind === 'custom' ? projectPalette.colors.length : 0,
+        usableCount: projectPalette.kind === 'custom' ? projectPalette.colors.length : 0,
+        sourceQuality: zhCN.params.customPaletteQuality,
+        boardProfiles: compatibleBoardProfilesForPalette(projectPalette).map((profile) => profile.displayName),
+        defaultForBrand: false,
+      });
+    }
     // 导入项目自带的自定义色板（无云端 id）保留 '__custom' 占位，不可再切换
     if (paletteKind.kind === 'custom' && !customPaletteId) {
       return [...builtin, ...customEntries, {
         value: '__custom',
-        label: zhCN.workbench.customPaletteLabel,
-        kind: 'custom' as const,
-        group: zhCN.workbench.customPaletteLabel,
+        brand: zhCN.params.customPaletteGroup,
+        series: zhCN.workbench.customPaletteLabel,
+        colors: projectPalette.kind === 'custom' ? projectPalette.colors.map((color) => color.hex) : [],
+        collectedCount: projectPalette.kind === 'custom' ? projectPalette.colors.length : 0,
+        usableCount: projectPalette.kind === 'custom' ? projectPalette.colors.length : 0,
+        sourceQuality: zhCN.params.customPaletteQuality,
+        boardProfiles: compatibleBoardProfilesForPalette(projectPalette).map((profile) => profile.displayName),
+        defaultForBrand: false,
       }];
     }
     return [...builtin, ...customEntries];
-  }, [paletteKind.kind, customPaletteId, cloudPalettes]);
-  const paletteOptionGroups = useMemo(() => {
-    const groups = new Map<string, PaletteOption[]>();
-    for (const option of paletteOptions) {
-      const group = option.group ?? (option.kind === 'custom'
-        ? zhCN.params.customPaletteGroup
-        : zhCN.params.builtinPaletteGroup);
-      const entries = groups.get(group) ?? [];
-      entries.push(option);
-      groups.set(group, entries);
-    }
-    return [...groups.entries()];
-  }, [paletteOptions]);
+  }, [paletteKind.kind, customPaletteId, cloudPalettes, projectPalette]);
 
   const selectedPalette =
     paletteKind.kind === 'custom'
@@ -943,15 +966,29 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   const consumeSyncOutcome = useCallback(async (adapter: StorageAdapter, outcome: SyncOutcome): Promise<void> => {
       const activeId = designIdRef.current;
+      const scheduleConflictCopySave = (): void => {
+        // 冲突副本是在本轮同步快照之后创建的，必须经过一次正常 save→sync 才能确认上云。
+        // 即使用户没有继续编辑，也不能把本地 conflict 记录留到下一次刷新或 online 事件。
+        dirtyRef.current = true;
+        setSaveState('dirty');
+        scheduleAutosave();
+      };
       const conflict = outcome.conflictCopies.find((item) => item.originalId === activeId);
       if (conflict) {
-        const conflictRecord = (await adapter.getAll()).find((item) => item.id === conflict.conflictId);
+        const records = await adapter.getAll();
+        if (designIdRef.current !== activeId) return;
+        const conflictRecord = records.find((item) => item.id === conflict.conflictId);
         const conflictProject = conflictRecord ? parseStoredProject(conflictRecord.projectJson) : null;
-        // If the UI acquired another unsaved edit after the storage snapshot,
-        // fold that latest committed view into the already-created conflict id.
+        // 若存储快照之后界面又产生了未保存编辑，就把最新提交态并入已创建的冲突副本。
         const currentProject = dirtyRef.current ? buildProjectRef.current() : null;
         if (currentProject && conflictProject) {
-          const latestProject = { ...currentProject, name: conflictProject.name, updatedAt: new Date().toISOString() };
+          const capturedEditGen = editGenRef.current;
+          const latestName = conflictName(
+            t.conflictCopyName(currentProject.name),
+            records.filter((item) => item.id !== conflict.conflictId).map((item) => item.name),
+          );
+          const latestProject = { ...currentProject, name: latestName, updatedAt: new Date().toISOString() };
+          const latestSource = pendingGenerationSourceRef.current ?? sourceRef.current;
           await adapter.put({
             ...createDesignRecord(
               conflict.conflictId,
@@ -963,59 +1000,98 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               ),
             ),
             syncState: 'conflict',
-          }, source
-            ? replaceGenerationSource(createLocalGenerationSource(source))
+          }, latestSource
+            ? replaceGenerationSource(createLocalGenerationSource(latestSource))
             : undefined);
-          if (pendingGenerationSourceRef.current === source) pendingGenerationSourceRef.current = null;
+          if (designIdRef.current !== activeId) return;
+          setActiveDesignId(conflict.conflictId);
+          if (editGenRef.current === capturedEditGen) {
+            if (pendingGenerationSourceRef.current === latestSource) {
+              pendingGenerationSourceRef.current = null;
+            }
+            setName(latestName);
+          }
+        } else {
+          setActiveDesignId(conflict.conflictId);
+          if (conflictProject) setName(conflictProject.name);
         }
-        setActiveDesignId(conflict.conflictId);
-        if (conflictProject) setName(conflictProject.name);
+        scheduleConflictCopySave();
         window.history.replaceState(null, '', `/app?id=${encodeURIComponent(conflict.conflictId)}`);
         setSyncNotice(t.syncConflictCopy);
         setCloudSaveState('pending');
         return;
       }
       if (outcome.overwrittenByCloud.includes(activeId)) {
-        const record = (await adapter.getAll()).find((item) => item.id === activeId);
-        if (dirtyRef.current) {
+        const preserveCurrentEditsAsConflict = async (records: Awaited<ReturnType<StorageAdapter['getAll']>>): Promise<boolean> => {
+          if (designIdRef.current !== activeId) return true;
+          if (!dirtyRef.current) return false;
           const currentProject = buildProjectRef.current();
-          if (currentProject) {
-            const records = await adapter.getAll();
-            const conflictId = newDesignId();
-            const conflictProjectName = conflictName(t.conflictCopyName(currentProject.name), records.map((item) => item.name));
-            const conflictProject = { ...currentProject, name: conflictProjectName, updatedAt: new Date().toISOString() };
-            await adapter.put({
-              ...createDesignRecord(
-                conflictId,
-                conflictProject,
-                renderThumbnail(
-                  conflictProject.pattern,
-                  256,
-                  getBoardProfile(conflictProject.boardProfile).boardCols,
-                ),
+          if (!currentProject) return true;
+
+          // 从这一刻起 project/source/edit generation 属于 activeId 的同一快照。
+          // put 在途时 UI 仍可继续编辑，所以写后必须用代际决定能否清脏。
+          const capturedEditGen = editGenRef.current;
+          const capturedSource = pendingGenerationSourceRef.current ?? sourceRef.current;
+          const conflictId = newDesignId();
+          const conflictProjectName = conflictName(
+            t.conflictCopyName(currentProject.name),
+            records.map((item) => item.name),
+          );
+          const conflictProject = {
+            ...currentProject,
+            name: conflictProjectName,
+            updatedAt: new Date().toISOString(),
+          };
+          await adapter.put({
+            ...createDesignRecord(
+              conflictId,
+              conflictProject,
+              renderThumbnail(
+                conflictProject.pattern,
+                256,
+                getBoardProfile(conflictProject.boardProfile).boardCols,
               ),
-              syncState: 'conflict',
-            }, source
-              ? replaceGenerationSource(createLocalGenerationSource(source))
-              : undefined);
-            if (pendingGenerationSourceRef.current === source) pendingGenerationSourceRef.current = null;
-            setActiveDesignId(conflictId);
+            ),
+            syncState: 'conflict',
+          }, capturedSource
+            ? replaceGenerationSource(createLocalGenerationSource(capturedSource))
+            : undefined);
+          if (designIdRef.current !== activeId) return true;
+
+          setActiveDesignId(conflictId);
+          window.history.replaceState(null, '', `/app?id=${encodeURIComponent(conflictId)}`);
+          if (editGenRef.current === capturedEditGen) {
+            if (pendingGenerationSourceRef.current === capturedSource) {
+              pendingGenerationSourceRef.current = null;
+            }
             setName(conflictProjectName);
-            window.history.replaceState(null, '', `/app?id=${encodeURIComponent(conflictId)}`);
-            dirtyRef.current = false;
-            setSaveState('saved');
-            setSyncNotice(t.syncConflictCopy);
-            setCloudSaveState('pending');
-            return;
           }
-        }
+          scheduleConflictCopySave();
+          setSyncNotice(t.syncConflictCopy);
+          setCloudSaveState('pending');
+          return true;
+        };
+
+        const records = await adapter.getAll();
+        if (designIdRef.current !== activeId) return;
+        if (await preserveCurrentEditsAsConflict(records)) return;
+        if (designIdRef.current !== activeId) return;
+        const record = records.find((item) => item.id === activeId);
         const remoteProject = record ? parseStoredProject(record.projectJson) : null;
         if (remoteProject) {
+          const loadEditGen = editGenRef.current;
           const localSource = await adapter.getGenerationSource(activeId);
+          if (designIdRef.current !== activeId) return;
+          if (dirtyRef.current || editGenRef.current !== loadEditGen) {
+            const latestRecords = await adapter.getAll();
+            if (designIdRef.current !== activeId) return;
+            await preserveCurrentEditsAsConflict(latestRecords);
+            return;
+          }
           loadCommittedProject(remoteProject, localSource);
           setSyncNotice(t.syncCloudUpdated);
         } else {
-          // A clean active design was deleted on another device.
+          // 另一台设备删除了当前这份无本地改动的设计。
           pendingGenerationSourceRef.current = null;
           setActiveDesignId(newDesignId());
           uploadGenerationSource(null, initialGenerationDraft);
@@ -1024,22 +1100,47 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           setSyncNotice(t.syncCloudDeleted);
         }
       }
-      setCloudSaveState('synced');
-  }, [initialGenerationDraft, loadCommittedProject, setActiveDesignId, source, t, uploadGenerationSource]);
+      // 同步按设计隔离：其他设计损坏或不可用，不能降级已经确认上传的当前设计；
+      // 反之，本轮没有确认当前设计时也不能声称云端同步成功。
+      setCloudSaveState(
+        !dirtyRef.current && outcome.syncedIds.includes(designIdRef.current)
+          ? 'synced'
+          : 'pending',
+      );
+  }, [initialGenerationDraft, loadCommittedProject, scheduleAutosave, setActiveDesignId, t, uploadGenerationSource]);
 
   const syncCloud = useCallback(async (adapter: StorageAdapter): Promise<void> => {
     if (authStatus.kind !== 'user') return;
     setCloudSaveState('syncing');
+    const confirmedIds = new Set<string>();
     try {
       const outcome = await enqueueDesignSync(
         adapter,
         createDoupuApi(),
-        (current) => consumeSyncOutcome(adapter, current),
+        async (current) => {
+          for (const id of current.syncedIds) confirmedIds.add(id);
+          await consumeSyncOutcome(adapter, current);
+        },
       );
       if (!outcome) setCloudSaveState('pending');
     } catch {
       // 本地保存已经成功；durable marker 会留到 online 或下次启动重试。
-      setCloudSaveState('pending');
+      // 其他设计的问题可以保留重试标记，但不能抹掉当前设计独立确认的云端状态。
+      const activeId = designIdRef.current;
+      let activeDesignSynced = confirmedIds.has(activeId);
+      if (!activeDesignSynced) {
+        try {
+          const activeRecord = (await adapter.getAll()).find((record) => record.id === activeId);
+          activeDesignSynced = activeRecord?.syncState === 'synced';
+        } catch {
+          // 状态读取失败时保持保守的待同步状态，durable marker 会继续负责重试。
+        }
+      }
+      setCloudSaveState(
+        designIdRef.current === activeId && !dirtyRef.current && activeDesignSynced
+          ? 'synced'
+          : 'pending',
+      );
     }
   }, [authStatus.kind, consumeSyncOutcome]);
 
@@ -1061,7 +1162,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         256,
         getBoardProfile(project.boardProfile).boardCols,
       );
-      await withDesignStorageLock(async () => {
+      const writeResult = await withDesignStorageLock(async (): Promise<'saved' | 'stale'> => {
+        // 排队期间同步可能已经把活动设计切到了冲突副本，用户也可能继续编辑。
+        // 拿到锁后必须重新核对保存令牌，旧快照绝不能再写回原设计。
+        if (designIdRef.current !== saveDesignId || editGenRef.current !== genBefore) {
+          return 'stale';
+        }
         const shouldWriteSource = pendingSource !== null
           && pendingGenerationSourceRef.current === pendingSource
           && designIdRef.current === saveDesignId;
@@ -1074,9 +1180,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         if (shouldWriteSource && pendingGenerationSourceRef.current === pendingSource) {
           pendingGenerationSourceRef.current = null;
         }
+        return 'saved';
       });
-      // Local persistence is authoritative. Cloud sync is durable, coalesced,
-      // and deliberately cannot turn an offline cloud into a failed save.
+      if (writeResult === 'stale') {
+        // 旧保存令牌不得覆盖同步回调或新编辑已经设置的状态。
+        if (dirtyRef.current) scheduleAutosave();
+        return false;
+      }
+      // 本地持久化是保存成功的依据；云端同步可持久重试且会合并突发请求，
+      // 离线云端不能反过来把已经成功的本地保存标成失败。
       void syncCloud(adapter);
       setSavedNames((prev) => (prev.includes(project.name) ? prev : [...prev, project.name]));
       // 仅当保存期间没有新的编辑才清脏；否则保持脏标记（自动保存会再兜底一次）
@@ -1091,7 +1203,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       setSaveState(isQuotaError(error) ? 'quota' : 'error');
       return false;
     }
-  }, [buildProject, syncCloud]);
+  }, [buildProject, scheduleAutosave, syncCloud]);
 
   /**
    * 分享前的准备（批次 K）：把当前设计**确实**保存并推到云端。
@@ -1468,45 +1580,48 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         currentPath="/app"
         subtitle={zhCN.workspace.workbenchSubtitle}
         onNavigate={handleNavigationClick}
-        context={step === 'workspace' ? (
+      />
+      {step === 'workspace' && (
+        <WorkbenchProjectBar
+          context={(
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
-            <span className="shrink-0 text-xs text-ink-soft/80">
+            <span className="workspace-palette-summary shrink-0 text-xs text-ink-soft/80">
               {paletteDisplayName} · {boardSpec.displayName}
             </span>
           </div>
-        ) : undefined}
-        primaryActions={step === 'workspace' ? (
-          <SaveStatus
-            state={saveState}
-            cloudState={cloudSaveState}
-            loggedIn={authStatus.kind === 'user'}
-            onSave={() => { void doSave(); }}
-            disabled={generating || !generationSession.committed}
-          />
-        ) : undefined}
-        overflowActions={step === 'workspace' ? (
-          <>
-            {authStatus.kind === 'guest' ? (
-              <>
-                <Link href="/login" className="link-soft" onClick={(event) => handleNavigationClick(event, '/login')}>
-                  {zhCN.nav.login}
-                </Link>
-                <Link href="/register" className="link-soft" onClick={(event) => handleNavigationClick(event, '/register')}>
-                  {zhCN.nav.register}
-                </Link>
-              </>
-            ) : (
-              <span className="max-w-[160px] truncate text-sm text-ink-soft" title={authStatus.email}>
-                {authStatus.email}
-              </span>
+          )}
+          actions={(
+          <div className="workbench-save-actions">
+            <SaveStatus
+              state={saveState}
+              cloudState={cloudSaveState}
+              loggedIn={authStatus.kind === 'user'}
+              onSave={() => { void doSave(); }}
+              disabled={generating || !generationSession.committed}
+            />
+            {authStatus.kind === 'user' && (
+              <button type="button" onClick={handleRestart} className="btn-outline workbench-restart-button">
+                {t.restart}
+              </button>
             )}
-            <button type="button" onClick={handleRestart} className="btn-outline px-3 py-1 text-sm">
+          </div>
+          )}
+          overflowActions={authStatus.kind !== 'user' ? (
+          <>
+            <Link href="/login" className="btn-primary workspace-overflow-action" onClick={(event) => handleNavigationClick(event, '/login')}>
+              {zhCN.nav.login}
+            </Link>
+            <Link href="/register" className="btn-outline workspace-overflow-action" onClick={(event) => handleNavigationClick(event, '/register')}>
+              {zhCN.nav.registerAccount}
+            </Link>
+            <button type="button" onClick={handleRestart} className="workspace-overflow-restart">
               {t.restart}
             </button>
           </>
         ) : undefined}
-      />
+        />
+      )}
 
       {/* 三步位置提示（D-2）：上传/裁剪页最需要，工作台阶段也保留一行让路径可见。 */}
       <StepIndicator step={step} />
@@ -1553,25 +1668,14 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
             <p className="font-medium text-ink">{t.blankTitle}</p>
             <p className="text-xs text-ink-soft">{t.blankHint}</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-soft" htmlFor="blank-palette">
-                <span>{zhCN.params.brand}</span>
-                <select
-                  id="blank-palette"
-                  value={selectedPalette}
-                  disabled={busy || generating}
-                  onChange={(event) => handlePaletteSelect(event.target.value)}
-                  className="min-w-0 input-compact py-1.5"
-                >
-                  {paletteOptionGroups.map(([group, options]) => (
-                    <optgroup key={group} label={group}>
-                      {options.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
+            <div className="blank-start-controls">
+              <PalettePicker
+                options={paletteOptions}
+                value={selectedPalette}
+                disabled={busy || generating}
+                onSelect={handlePaletteSelect}
+                className="blank-palette-picker"
+              />
               <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-soft" htmlFor="blank-board-profile">
                 <span>{zhCN.params.boardProfile}</span>
                 <select
@@ -1614,10 +1718,6 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         mobileLayout ? (
         <div className="mobile-workbench">
           <div className="mobile-workbench-overview" aria-hidden={mobileWorkspaceOpen || undefined}>
-          <div className="mobile-project-bar">
-            <DesignNameEditor name={name} onChange={(nextName) => { setName(nextName); markDirty(); }} />
-            <span>{paletteDisplayName} · {boardSpec.displayName}</span>
-          </div>
           {doneToken > 0 && !generating && (
             <p key={doneToken} role="status" className="animate-rise mobile-workbench-feedback text-success">
               {t.generateDone(pattern.width, pattern.height, total, stats.length)}

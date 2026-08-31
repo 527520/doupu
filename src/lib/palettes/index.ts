@@ -175,6 +175,8 @@ export interface BuiltinPalette {
   label: string;
   brand: string;
   series: string;
+  /** 品牌选择器切换到该品牌时应进入的唯一默认系列。 */
+  defaultForBrand: boolean;
   description: string;
   group: BuiltinPaletteGroup;
   specification: string;
@@ -273,6 +275,7 @@ interface CatalogStub {
   id: BuiltinPaletteId;
   sourceId?: ExternalBuiltinPaletteSourceId;
   group: BuiltinPaletteGroup;
+  defaultForBrand: boolean;
   copy: {
     label: string;
     brand: string;
@@ -286,19 +289,19 @@ interface CatalogStub {
 
 const catalogCopy = zhCN.palettes.builtinCatalog;
 const CATALOG_STUBS: readonly CatalogStub[] = [
-  { id: 'MARD', group: 'legacy-domestic', copy: catalogCopy.MARD },
-  { id: 'COCO', group: 'legacy-domestic', copy: catalogCopy.COCO },
-  { id: '漫漫', group: 'legacy-domestic', copy: catalogCopy.manmanLegacy },
-  { id: '盼盼', group: 'legacy-domestic', copy: catalogCopy.panpanLegacy },
-  { id: '咪小窝', group: 'legacy-domestic', copy: catalogCopy.mixiaowoLegacy },
-  { id: toVersionedExternalId('mard-291-github'), sourceId: 'mard-291-github', group: 'domestic', copy: catalogCopy.mard291Public },
-  { id: toVersionedExternalId('coco-291'), sourceId: 'coco-291', group: 'domestic', copy: catalogCopy.coco291Public },
-  { id: toVersionedExternalId('manman-278'), sourceId: 'manman-278', group: 'domestic', copy: catalogCopy.manman278Public },
-  { id: toVersionedExternalId('panpan-289'), sourceId: 'panpan-289', group: 'domestic', copy: catalogCopy.panpan289Public },
-  { id: toVersionedExternalId('mixiaowo-290'), sourceId: 'mixiaowo-290', group: 'domestic', copy: catalogCopy.mixiaowo290Public },
-  { id: toVersionedExternalId('mard-221-alfonse-doudou'), sourceId: 'mard-221-alfonse-doudou', group: 'domestic', copy: catalogCopy.mard221Reviewed },
-  { id: toVersionedExternalId('artkal-c-197-official'), sourceId: 'artkal-c-197-official', group: 'artkal', copy: catalogCopy.artkalC197 },
-  { id: toVersionedExternalId('artkal-m-221-official'), sourceId: 'artkal-m-221-official', group: 'artkal', copy: catalogCopy.artkalM221 },
+  { id: 'MARD', group: 'legacy-domestic', defaultForBrand: true, copy: catalogCopy.MARD },
+  { id: 'COCO', group: 'legacy-domestic', defaultForBrand: true, copy: catalogCopy.COCO },
+  { id: '漫漫', group: 'legacy-domestic', defaultForBrand: true, copy: catalogCopy.manmanLegacy },
+  { id: '盼盼', group: 'legacy-domestic', defaultForBrand: true, copy: catalogCopy.panpanLegacy },
+  { id: '咪小窝', group: 'legacy-domestic', defaultForBrand: true, copy: catalogCopy.mixiaowoLegacy },
+  { id: toVersionedExternalId('mard-291-github'), sourceId: 'mard-291-github', group: 'domestic', defaultForBrand: false, copy: catalogCopy.mard291Public },
+  { id: toVersionedExternalId('coco-291'), sourceId: 'coco-291', group: 'domestic', defaultForBrand: false, copy: catalogCopy.coco291Public },
+  { id: toVersionedExternalId('manman-278'), sourceId: 'manman-278', group: 'domestic', defaultForBrand: false, copy: catalogCopy.manman278Public },
+  { id: toVersionedExternalId('panpan-289'), sourceId: 'panpan-289', group: 'domestic', defaultForBrand: false, copy: catalogCopy.panpan289Public },
+  { id: toVersionedExternalId('mixiaowo-290'), sourceId: 'mixiaowo-290', group: 'domestic', defaultForBrand: false, copy: catalogCopy.mixiaowo290Public },
+  { id: toVersionedExternalId('mard-221-alfonse-doudou'), sourceId: 'mard-221-alfonse-doudou', group: 'domestic', defaultForBrand: false, copy: catalogCopy.mard221Reviewed },
+  { id: toVersionedExternalId('artkal-c-197-official'), sourceId: 'artkal-c-197-official', group: 'artkal', defaultForBrand: true, copy: catalogCopy.artkalC197 },
+  { id: toVersionedExternalId('artkal-m-221-official'), sourceId: 'artkal-m-221-official', group: 'artkal', defaultForBrand: false, copy: catalogCopy.artkalM221 },
 ];
 
 interface CatalogRecord {
@@ -355,6 +358,7 @@ function createCatalogRecord(stub: CatalogStub): CatalogRecord {
   const exclusions = Object.freeze({ ...analysis.exclusions });
   const summary: BuiltinPaletteSummary = Object.freeze({
     id: stub.id,
+    defaultForBrand: stub.defaultForBrand,
     ...displayCopy,
     group: stub.group,
     source,

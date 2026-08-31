@@ -21,6 +21,10 @@ the system cannot prove that an update is based on the latest server state.
 - Saving is local-first. A successful local write records a durable pending-sync marker; verified
   accounts then synchronize in the background. Network failure must not turn a successful local
   save into a failed save, and the marker is cleared only after synchronization succeeds.
+- A synchronization pass isolates failures per design. `SyncOutcome.syncedIds` names only designs
+  whose current v3 payload was independently confirmed, while structured `issues` retain the
+  design ID, operation and error code for rejected or unavailable records. An invalid v1/v2 row or
+  one failed conflict reconciliation must not prevent unrelated valid v3 designs from synchronizing.
 - On 409, the cloud original is preserved. The divergent local version becomes a clearly labelled
   local conflict copy so the user can compare or recover both versions; the client never retries it
   as an unconditional overwrite.
@@ -40,7 +44,8 @@ the system cannot prove that an update is based on the latest server state.
   is serialized by the origin-wide design lock and copies before clearing; an interruption may
   leave a recoverable duplicate, but never binds the old source to newly pulled pattern content.
 - A local-save indicator and a cloud-sync indicator are separate states; “saved locally” does not
-  imply “synced to cloud”.
+  imply “synced to cloud”. The active design's cloud indicator is derived from its own durable
+  `syncState`/`syncedIds` evidence, never from a batch-wide success or failure alone.
 - ADR-0012 supersedes this decision's former one-time v1 import migration. The application accepts
   only strict ProjectFile v3 and does not migrate v1/v2 data, dual-write old formats, or clear old
   test data automatically; test-data cleanup remains an explicit release operation outside the app.

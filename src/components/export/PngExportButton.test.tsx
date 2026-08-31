@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Blob as NodeBlob } from 'node:buffer';
 import PngExportButton from './PngExportButton';
 import type { Pattern, PatternCell } from '@/lib/types';
 
@@ -52,6 +53,15 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
   });
 
   it('点击导出先打开选项面板；确认后触发下载并释放 objectURL', async () => {
+    const originalSetTimeout = window.setTimeout.bind(window);
+    let delayedRevoke: (() => void) | null = null;
+    const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      if (timeout === 1_500 && typeof handler === 'function') {
+        delayedRevoke = () => handler(...args);
+        return 1;
+      }
+      return originalSetTimeout(handler, timeout, ...args);
+    }) as typeof window.setTimeout);
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const p = makePattern(2, 1, [cell('#000000', 'A01'), cell('#FFFFFF', 'T01')]);
     render(<PngExportButton pattern={p} designName="我的设计" />);
@@ -66,6 +76,10 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     // 等面板关闭与 busy 复位（finally 阶段），避免悬空更新
     await waitFor(() => expect(screen.queryByRole('region', { name: 'PNG 导出选项' })).toBeNull());
     expect((URL.createObjectURL as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1_500);
+    expect((URL.revokeObjectURL as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(delayedRevoke).not.toBeNull();
+    (delayedRevoke as unknown as () => void)();
     expect((URL.revokeObjectURL as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('blob:mock-url');
     clickSpy.mockRestore();
   });
@@ -132,4 +146,38 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'PNG 导出选项' })).toBeNull());
     HTMLAnchorElement.prototype.click = origClick;
   });
+
+  it('合并超限但两张分别可导出时，动态打包为只含图纸与图例的 ZIP', async () => {
+    // jsdom 的旧 Blob 缺少 stream()；真实浏览器具备该 API，测试改用 Node 的 WHATWG Blob。
+    vi.stubGlobal('Blob', NodeBlob);
+    let downloadName = '';
+    const origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) {
+      downloadName = this.download;
+    };
+    (URL.createObjectURL as unknown as ReturnType<typeof vi.fn>).mockReturnValue('blob:zip-url');
+    const p: Pattern = {
+      width: 170,
+      height: 170,
+      cells: Array.from({ length: 170 * 170 }, (_, index) => {
+        const color = index % 500;
+        return cell(
+          `#${(color + 1).toString(16).padStart(6, '0')}`,
+          `LONG-COLOR-${color.toString().padStart(9, '0')}`,
+        );
+      }),
+    };
+    render(<PngExportButton pattern={p} designName="极限" />);
+    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.change(screen.getByLabelText('格子大小'), { target: { value: '24' } });
+    fireEvent.click(screen.getByLabelText('包含图例与色号清单'));
+
+    expect(screen.getByRole('status').textContent).toContain('打包为两张 PNG');
+    fireEvent.click(screen.getByRole('button', { name: '导出' }));
+
+    await waitFor(() => expect(downloadName).toBe('豆谱-极限-170x170-PNG.zip'));
+    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: 'application/zip' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'PNG 导出选项' })).toBeNull());
+    HTMLAnchorElement.prototype.click = origClick;
+  }, 15_000);
 });

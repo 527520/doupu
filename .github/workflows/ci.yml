@@ -162,12 +162,13 @@ jobs:
           COS_REGION: ap-guangzhou
           BACKUP_ALERT_TOKEN: ci
           ADMIN_EMAIL: ops@example.test
-      - name: Native Argon2 and PostgreSQL migration smoke
-        run: |
-          docker run --rm doupu-app:local node -e "require('argon2').hash('ci-password').then(()=>process.exit(0)).catch(()=>process.exit(1))"
-          docker run --rm --network host -e DATABASE_URL="$DATABASE_URL" doupu-app:local node db/migrate.cjs
+      - name: Native Argon2 smoke
+        run: docker run --rm doupu-app:local node -e "require('argon2').hash('ci-password').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+      - name: Final-image strict-v3 preflight and PostgreSQL migration contract
+        run: npm run test:protocol-preflight
         env:
           DATABASE_URL: postgresql://doupu:doupu-ci-password@127.0.0.1:5432/doupu
+          PROTOCOL_PREFLIGHT_IMAGE: doupu-app:local
       - name: PostgreSQL revision and quota contract
         run: npm run test:postgres-contract
         env:

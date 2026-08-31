@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { type MouseEvent, type ReactNode } from 'react';
 import Brand from '@/components/layout/Brand';
 import Icon, { type IconName } from '@/components/ui/Icon';
+import ActionOverflow from '@/components/layout/ActionOverflow';
 import { useAuthStatus } from '@/components/account/useAuthStatus';
 import { zhCN } from '@/messages/zh-CN';
 
@@ -11,7 +12,6 @@ interface SiteHeaderProps {
   title: string;
   currentPath: string;
   subtitle?: string;
-  context?: ReactNode;
   primaryActions?: ReactNode;
   overflowActions?: ReactNode;
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
@@ -38,19 +38,17 @@ export default function SiteHeader({
   title,
   currentPath,
   subtitle,
-  context,
   primaryActions,
   overflowActions,
   onNavigate,
 }: SiteHeaderProps) {
   const auth = useAuthStatus();
-  const [overflowOpen, setOverflowOpen] = useState(false);
   const navigate = (event: MouseEvent<HTMLAnchorElement>, href: string): void => {
-    setOverflowOpen(false);
     onNavigate?.(event, href);
   };
   const displayName = auth.kind === 'user' ? auth.username || auth.email.split('@')[0] : zhCN.workspace.localCreator;
   const avatar = displayName.trim().charAt(0).toUpperCase() || zhCN.app.name.charAt(0);
+  const overflowControl = overflowActions ? <ActionOverflow actions={overflowActions} /> : null;
 
   return (
     <>
@@ -85,24 +83,18 @@ export default function SiteHeader({
         </Link>
       </aside>
 
-      <header className="workspace-topbar">
-        <div className="workspace-mobile-brand"><Brand compact onClick={(event) => navigate(event, '/')} /></div>
-        <div className="workspace-page-heading">
-          <h1>{title}</h1>
-          {subtitle && <p>{subtitle}</p>}
-        </div>
-        <div className="workspace-top-actions">
-          {context && <div className="workspace-context">{context}</div>}
-          {primaryActions}
-          {overflowActions && (
-            <div className="workspace-overflow">
-              <button type="button" className="icon-button" aria-label={zhCN.nav.more} aria-expanded={overflowOpen} aria-controls="site-overflow-panel" onClick={() => setOverflowOpen((open) => !open)}>
-                <Icon name="more" />
-              </button>
-              <div id="site-overflow-panel" data-testid="site-overflow-panel" className={`workspace-overflow-panel${overflowOpen ? ' is-open' : ''}`}>{overflowActions}</div>
-            </div>
-          )}
-          <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
+      <header className="workspace-header">
+        <div className="workspace-topbar">
+          <div className="workspace-mobile-brand"><Brand compact onClick={(event) => navigate(event, '/')} /></div>
+          <div className="workspace-page-heading">
+            <h1>{title}</h1>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <div className="workspace-top-actions">
+            {primaryActions}
+            {overflowControl}
+            <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
+          </div>
         </div>
       </header>
 

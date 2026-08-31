@@ -1,10 +1,85 @@
 import AxeBuilder from '@axe-core/playwright';
-import { devices, expect, test } from '@playwright/test';
+import { devices, expect, test, type Locator, type Page } from '@playwright/test';
 import { resolve } from 'node:path';
-import { BASE_URL, uploadFile, waitHydrated } from './helpers';
+import {
+  BASE_URL,
+  fillField,
+  uniqueEmail,
+  uploadFile,
+  waitForMailLink,
+  waitHydrated,
+} from './helpers';
 
 const widths = [350, 390, 768, 944, 1180, 1280, 1440] as const;
 const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
+
+async function registerAndLogin(page: Page): Promise<string> {
+  const email = uniqueEmail('responsive');
+  const password = 'responsive-password-123';
+  await page.goto('/register');
+  await fillField(page, '邮箱', email);
+  await fillField(page, '密码', password);
+  await fillField(page, '确认密码', password);
+  await page.getByRole('button', { name: '注册', exact: true }).click();
+  await expect(page.getByText(/验证邮件已发送/).first()).toBeVisible({ timeout: 15_000 });
+  await page.goto(await waitForMailLink('verify', email));
+  await expect(page.getByText(/邮箱验证成功/).first()).toBeVisible({ timeout: 10_000 });
+  await page.goto('/login');
+  await fillField(page, '邮箱', email);
+  await fillField(page, '密码', password);
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.waitForURL(/\/designs|\/app/, { timeout: 15_000 });
+  return email;
+}
+
+async function assertProjectBarLayout(
+  page: Page,
+  projectBar: Locator,
+  width: number,
+  expectedLeafCount: number,
+): Promise<void> {
+  await page.setViewportSize({ width, height: 800 });
+  await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()))));
+
+  const geometry = await projectBar.evaluate((bar) => {
+    const candidates: Array<[string, Element | null]> = [
+      ['name', bar.querySelector('input[aria-label="设计名称"]')],
+      ['palette', bar.querySelector('.workspace-palette-summary')],
+      ...Array.from(bar.querySelectorAll('.workbench-save-actions [role="status"], .workbench-save-actions button'))
+        .map((element, index): [string, Element] => [`save-${index}`, element]),
+      ['overflow', bar.querySelector('.workspace-project-actions > .workspace-overflow > button')],
+    ];
+    const visible = candidates.flatMap(([name, element]) => {
+      if (!(element instanceof HTMLElement)) return [];
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (rect.width <= 0 || rect.height <= 0 || style.display === 'none' || style.visibility === 'hidden') return [];
+      return [{ name, rect }];
+    });
+    const rects = visible.map(({ rect }) => rect);
+    const intersects = rects.some((first, firstIndex) => rects
+      .slice(firstIndex + 1)
+      .some((second) => first.left < second.right
+        && first.right > second.left
+        && first.top < second.bottom
+        && first.bottom > second.top));
+    return {
+      count: rects.length,
+      visibleNames: visible.map(({ name }) => name),
+      intersects,
+      left: Math.min(...rects.map((rect) => rect.left)),
+      right: Math.max(...rects.map((rect) => rect.right)),
+      viewportWidth: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+
+  expect(geometry.count, `${width}px 项目操作栏应完整显示：${geometry.visibleNames.join(', ')}`).toBe(expectedLeafCount);
+  expect(geometry.intersects, `${width}px 名称、色板、保存状态与操作不得重叠`).toBe(false);
+  expect(geometry.left, `${width}px 工作区操作不得越出视口左侧`).toBeGreaterThanOrEqual(0);
+  expect(geometry.right, `${width}px 工作区操作不得越出视口`).toBeLessThanOrEqual(geometry.viewportWidth);
+  expect(geometry.documentWidth, `${width}px 页面不得产生横向滚动`).toBeLessThanOrEqual(geometry.viewportWidth);
+}
 
 for (const width of widths) {
   test(`工作台 ${width}px 无横向溢出且关键操作可见`, async ({ page }) => {
@@ -76,48 +151,57 @@ test('桌面设计库与色板页不被固定侧栏撑出视口', async ({ page 
   }
 });
 
-test('工作区页头在全部目标宽度下导航行与设计操作行不相交', async ({ page }, testInfo) => {
+test('工作区项目操作栏在游客与登录态的全部目标宽度下不重叠', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
   await page.setViewportSize({ width: widths[0], height: 800 });
   await page.goto('/app');
   await uploadFile(page, PHOTO);
   await page.getByRole('button', { name: '使用整张图片' }).click();
-  const save = page.getByRole('button', { name: '保存', exact: true });
-  await expect(page.getByLabel('设计名称').last()).toBeVisible({ timeout: 20_000 });
+  let projectBar = page.getByRole('region', { name: '当前设计操作' });
+  await expect(projectBar.getByLabel('设计名称')).toBeVisible({ timeout: 20_000 });
+  await expect(projectBar.getByText('设计名称', { exact: true })).toBeVisible();
+  await expect(projectBar.locator('.workspace-palette-summary')).toBeVisible();
 
   for (const width of widths) {
-    await page.setViewportSize({ width, height: 800 });
-    await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()))));
-
-    const geometry = await page.evaluate(() => {
-      const visibleRect = (element: Element | null): DOMRect | null => {
-        if (!(element instanceof HTMLElement) || element.offsetParent === null) return null;
-        return element.getBoundingClientRect();
-      };
-      const projectActions = [
-        ...Array.from(document.querySelectorAll('input[aria-label="设计名称"]')).map(visibleRect),
-        ...Array.from(document.querySelectorAll('button'))
-          .filter((button) => button.textContent?.trim() === '保存')
-          .map(visibleRect),
-      ].filter((rect): rect is DOMRect => rect !== null);
-      const intersections = projectActions.flatMap((first, firstIndex) => projectActions
-        .slice(firstIndex + 1)
-        .map((second) => first.left < second.right
-          && first.right > second.left
-          && first.top < second.bottom
-          && first.bottom > second.top));
+    await assertProjectBarLayout(page, projectBar, width, 5);
+    await expect(projectBar.getByRole('button', { name: '保存', exact: true })).toBeVisible();
+    const more = projectBar.getByRole('button', { name: '更多操作' });
+    await more.click();
+    const overflowPanel = projectBar.getByTestId('site-overflow-panel');
+    await expect(overflowPanel).toBeVisible();
+    const overflowGeometry = await overflowPanel.evaluate((panel) => {
+      const rect = panel.getBoundingClientRect();
+      const actionHeights = Array.from(panel.querySelectorAll('a, button'))
+        .map((element) => element.getBoundingClientRect().height);
       return {
-        count: projectActions.length,
-        intersects: intersections.some(Boolean),
-        right: Math.max(...projectActions.map((rect) => rect.right)),
+        left: rect.left,
+        right: rect.right,
         viewportWidth: document.documentElement.clientWidth,
+        actionHeights,
       };
     });
+    expect(overflowGeometry.left, `${width}px 游客菜单不得越出视口左侧`).toBeGreaterThanOrEqual(0);
+    expect(overflowGeometry.right, `${width}px 游客菜单不得越出视口右侧`).toBeLessThanOrEqual(overflowGeometry.viewportWidth);
+    expect(
+      overflowGeometry.actionHeights.every((height) => height >= 44),
+      `${width}px 游客菜单点击目标不得小于 44px`,
+    ).toBe(true);
+    await more.click();
+  }
 
-    expect(geometry.count, `${width}px 应同时提供名称与保存操作`).toBe(2);
-    expect(geometry.intersects, `${width}px 名称与保存按钮不得重叠`).toBe(false);
-    expect(geometry.right, `${width}px 工作区操作不得越出视口`).toBeLessThanOrEqual(geometry.viewportWidth);
-    await expect(save).toBeVisible();
+  await projectBar.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(projectBar.getByRole('status').filter({ hasText: /已保存/ })).toBeVisible({ timeout: 15_000 });
+  const email = await registerAndLogin(page);
+  await page.goto('/app');
+  projectBar = page.getByRole('region', { name: '当前设计操作' });
+  await expect(projectBar.getByLabel('设计名称')).toBeVisible({ timeout: 20_000 });
+  await expect(projectBar.getByText('设计名称', { exact: true })).toBeVisible();
+  await expect(page.getByText(email, { exact: true })).toHaveCount(0);
+  await expect(projectBar.getByRole('button', { name: '重新上传', exact: true })).toBeVisible();
+  await expect(projectBar.getByText(/云端：/)).toBeVisible();
+
+  for (const width of widths) {
+    await assertProjectBarLayout(page, projectBar, width, 6);
   }
 });
 

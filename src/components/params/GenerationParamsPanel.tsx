@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import Notice from '@/components/ui/Notice';
+import PalettePicker, { type PalettePickerOption } from '@/components/palettes/PalettePicker';
 import type { BoardProfileId, GenerationParams } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
 import { patternRows } from '@/lib/engine/generate';
@@ -14,13 +15,6 @@ import type { ImageDataLike } from '@/lib/engine/types';
 /** 板数快捷档（F-2）：1/2/3/4 块板宽，超过 200 格上限的档位不提供。 */
 const BOARD_PRESETS = [1, 2, 3, 4, 6] as const;
 
-export interface PaletteOption {
-  value: string;
-  label: string;
-  kind: 'builtin' | 'custom';
-  group?: string;
-}
-
 export interface BoardProfileOption {
   value: BoardProfileId;
   label: string;
@@ -29,7 +23,7 @@ export interface BoardProfileOption {
 
 interface Props {
   params: GenerationParams;
-  paletteOptions: PaletteOption[];
+  paletteOptions: readonly PalettePickerOption[];
   selectedPalette: string;
   onParamsChange: (params: GenerationParams) => void;
   onPaletteSelect: (value: string) => void;
@@ -132,19 +126,8 @@ export default function GenerationParamsPanel({
     patch({ targetColorCount: n });
   };
 
-  const paletteValue = useMemo(() => selectedPalette, [selectedPalette]);
   const t = zhCN.params;
   const boardSize = boardProfileOptions.find((option) => option.value === selectedBoardProfile)?.boardSize ?? DEFAULT_BOARD_SIZE;
-  const paletteOptionGroups = useMemo(() => {
-    const groups = new Map<string, PaletteOption[]>();
-    for (const option of paletteOptions) {
-      const label = option.group ?? (option.kind === 'custom' ? t.customPaletteGroup : t.builtinPaletteGroup);
-      const entries = groups.get(label) ?? [];
-      entries.push(option);
-      groups.set(label, entries);
-    }
-    return [...groups.entries()];
-  }, [paletteOptions, t.builtinPaletteGroup, t.customPaletteGroup]);
   const availableKitTiers = KIT_TIERS.filter((tier) => tier === 0 || tier <= paletteColorCount);
 
   /**
@@ -455,31 +438,18 @@ export default function GenerationParamsPanel({
       )}
       </fieldset>
       <div className="mb-2 text-sm">
-        <label htmlFor="param-brand" className="mb-1 block font-medium text-ink-soft">
-          {t.brand}
-        </label>
         {/*
           色板选择独立于 fieldset 的禁用（H-1）：换色板走图纸级重映射，不需要原图，
           所以「没有生成源」时参数锁定但色板仍可换——这正是此前导入的项目文件
           换不了色板的原因。
         */}
-        <select
-          id="param-brand"
-          value={paletteValue}
+        <PalettePicker
+          options={paletteOptions}
+          value={selectedPalette}
           disabled={paletteLocked}
-          onChange={(e) => onPaletteSelect(e.target.value)}
-          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {paletteOptionGroups.map(([group, options]) => (
-            <optgroup key={group} label={group}>
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          onSelect={onPaletteSelect}
+          className="generation-palette-picker"
+        />
       </div>
       <div className="mb-2 text-sm">
         <label htmlFor="param-board-profile" className="mb-1 block font-medium text-ink-soft">

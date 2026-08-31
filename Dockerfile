@@ -34,6 +34,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # 迁移：独立脚本 + 迁移目录（drizzle-orm/pg 为生产依赖，随 standalone 打包）
 COPY --from=builder /app/db/migrate.cjs ./db/migrate.cjs
 COPY --from=builder /app/db/migrations ./db/migrations
+# 发布检查是构建阶段由正式 schema 打包出的独立只读程序，不携带第二套协议实现。
+COPY --from=builder /app/.artifacts/check-protocol-v3.cjs ./deploy/scripts/check-protocol-v3.cjs
 
 # 补全 drizzle-orm：nft 只追踪了 ESM 变体，而 db/migrate.cjs 以 CJS require
 # node-postgres/index.cjs 与 node-postgres/migrator 子路径，需整包覆盖。

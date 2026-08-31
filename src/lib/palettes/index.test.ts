@@ -6,6 +6,7 @@ import {
   getBuiltinPalette,
   isBuiltinPaletteId,
   listBuiltinPalettes,
+  type BuiltinPaletteSummary,
 } from './index';
 import rawColorSystemMapping from './data/colorSystemMapping.json';
 import { BRANDS, type Brand } from '@/lib/types';
@@ -88,6 +89,22 @@ describe('内置色板目录', () => {
       expect(Object.isFrozen(summary)).toBe(true);
       expect(Object.isFrozen(summary.source)).toBe(true);
       expect(Object.isFrozen(summary.exclusions)).toBe(true);
+    }
+  });
+
+  it('每个品牌由目录明确指定且只指定一个默认系列', () => {
+    const byBrand = new Map<string, BuiltinPaletteSummary[]>();
+    for (const summary of listBuiltinPalettes()) {
+      const siblings = byBrand.get(summary.brand) ?? [];
+      siblings.push(summary);
+      byBrand.set(summary.brand, siblings);
+    }
+
+    for (const [brand, palettes] of byBrand) {
+      expect(
+        palettes.filter((palette) => palette.defaultForBrand),
+        `${brand} 必须恰好有一个默认系列`,
+      ).toHaveLength(1);
     }
   });
 

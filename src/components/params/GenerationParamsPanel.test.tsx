@@ -5,8 +5,18 @@ import GenerationParamsPanel from './GenerationParamsPanel';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 
 const builtinOptions = [
-  { value: 'MARD', label: 'MARD', kind: 'builtin' as const, group: 'MARD' },
-  { value: 'COCO', label: 'COCO', kind: 'builtin' as const, group: 'COCO' },
+  {
+    value: 'builtin:mard-classic', brand: 'MARD', series: '豆谱经典 291 色', colors: ['#fff000'],
+    collectedCount: 291, usableCount: 291, sourceQuality: '固定数据', boardProfiles: ['5mm / 29×29'], defaultForBrand: true,
+  },
+  {
+    value: 'builtin:mard-public', brand: 'MARD', series: '291 色公开资料版', colors: ['#00ff00'],
+    collectedCount: 291, usableCount: 291, sourceQuality: '公开资料', boardProfiles: ['5mm / 29×29'], defaultForBrand: false,
+  },
+  {
+    value: 'builtin:coco-classic', brand: 'COCO', series: '豆谱经典 291 色', colors: ['#0000ff'],
+    collectedCount: 291, usableCount: 291, sourceQuality: '固定数据', boardProfiles: ['5mm / 29×29'], defaultForBrand: true,
+  },
 ];
 
 function setup(over: Partial<GenerationParams> = {}) {
@@ -16,7 +26,7 @@ function setup(over: Partial<GenerationParams> = {}) {
     <GenerationParamsPanel
       params={{ ...DEFAULT_GENERATION_PARAMS, ...over }}
       paletteOptions={builtinOptions}
-      selectedPalette="MARD"
+      selectedPalette="builtin:mard-classic"
       onParamsChange={onChange}
       onPaletteSelect={onPalette}
       boardProfileOptions={[
@@ -44,6 +54,7 @@ describe('GenerationParamsPanel', () => {
     expect(colorsSlider()).toBeTruthy();
     expect(screen.getByText('抖动')).toBeTruthy();
     expect(screen.getByLabelText('色板品牌')).toBeTruthy();
+    expect(screen.getByLabelText('色板系列')).toBeTruthy();
   });
 
   it('滑杆只能产生合法值（浏览器 min/max 约束）', () => {
@@ -86,7 +97,8 @@ describe('GenerationParamsPanel', () => {
     const { onPalette } = setup();
     const select = screen.getByLabelText('色板品牌');
     fireEvent.change(select, { target: { value: 'COCO' } });
-    expect(onPalette).toHaveBeenCalledWith('COCO');
+    expect(onPalette).toHaveBeenCalledTimes(1);
+    expect(onPalette).toHaveBeenCalledWith('builtin:coco-classic');
   });
 
   it('按品牌分组色板，并切换独立制作规格', () => {
@@ -95,7 +107,7 @@ describe('GenerationParamsPanel', () => {
       <GenerationParamsPanel
         params={DEFAULT_GENERATION_PARAMS}
         paletteOptions={builtinOptions}
-        selectedPalette="MARD"
+        selectedPalette="builtin:mard-classic"
         onParamsChange={vi.fn()}
         onPaletteSelect={vi.fn()}
         boardProfileOptions={[
@@ -108,7 +120,14 @@ describe('GenerationParamsPanel', () => {
       />,
     );
 
-    expect(document.querySelectorAll('#param-brand optgroup')).toHaveLength(2);
+    expect([...screen.getByLabelText<HTMLSelectElement>('色板品牌').options].map((option) => option.textContent)).toEqual([
+      'MARD',
+      'COCO',
+    ]);
+    expect([...screen.getByLabelText<HTMLSelectElement>('色板系列').options].map((option) => option.textContent)).toEqual([
+      '豆谱经典 291 色',
+      '291 色公开资料版',
+    ]);
     fireEvent.change(screen.getByLabelText('制作规格'), { target: { value: '2.6mm-50' } });
     expect(onBoardProfileSelect).toHaveBeenCalledWith('2.6mm-50');
   });
@@ -118,7 +137,7 @@ describe('GenerationParamsPanel', () => {
       <GenerationParamsPanel
         params={DEFAULT_GENERATION_PARAMS}
         paletteOptions={builtinOptions}
-        selectedPalette="MARD"
+        selectedPalette="builtin:mard-classic"
         onParamsChange={vi.fn()}
         onPaletteSelect={vi.fn()}
         boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
@@ -176,7 +195,7 @@ describe('GenerationParamsPanel', () => {
         <GenerationParamsPanel
           params={DEFAULT_GENERATION_PARAMS}
           paletteOptions={builtinOptions}
-        selectedPalette="MARD"
+        selectedPalette="builtin:mard-classic"
         onParamsChange={onChange}
         onPaletteSelect={vi.fn()}
         boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
@@ -214,7 +233,7 @@ describe('GenerationParamsPanel', () => {
       <GenerationParamsPanel
         params={{ ...DEFAULT_GENERATION_PARAMS, targetWidth: 80 }}
         paletteOptions={builtinOptions}
-        selectedPalette="MARD"
+        selectedPalette="builtin:mard-classic"
         onParamsChange={() => {}}
         onPaletteSelect={() => {}}
         boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}
@@ -227,7 +246,7 @@ describe('GenerationParamsPanel', () => {
       <GenerationParamsPanel
         params={{ ...DEFAULT_GENERATION_PARAMS, targetWidth: 60 }}
         paletteOptions={builtinOptions}
-        selectedPalette="MARD"
+        selectedPalette="builtin:mard-classic"
         onParamsChange={() => {}}
         onPaletteSelect={() => {}}
         boardProfileOptions={[{ value: '5mm-29', label: '5mm / 29×29', boardSize: 29 }]}

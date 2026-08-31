@@ -12,7 +12,8 @@
     },
     "scripts": {
         "dev": "next dev",
-        "prebuild": "node scripts/build-pdf-font-subset.mjs && node scripts/build-ui-font-subset.mjs",
+        "prebuild": "npm run build:protocol-preflight && node scripts/build-pdf-font-subset.mjs && node scripts/build-ui-font-subset.mjs",
+        "build:protocol-preflight": "node scripts/build-protocol-preflight.mjs",
         "build": "next build",
         "start": "next start",
         "lint": "eslint .",
@@ -21,6 +22,7 @@
         "test:unit": "vitest run --project unit --project serial",
         "test:integration": "vitest run --project integration",
         "test:postgres-contract": "node tests/postgres/revision-contract.cjs",
+        "test:protocol-preflight": "node tests/postgres/protocol-preflight-contract.cjs",
         "test:coverage": "vitest run --no-file-parallelism --maxWorkers=1 --coverage --project unit --project serial --project integration",
         "test:coverage:stable": "node tests/ci/repeat.cjs 5 npm run test:coverage",
         "test:performance": "vitest run --project performance",
@@ -35,6 +37,7 @@
     "dependencies": {
         "@pdf-lib/fontkit": "^1.1.1",
         "argon2": "^0.45.1",
+        "client-zip": "2.5.0",
         "drizzle-orm": "^0.45.2",
         "heic2any": "^0.0.4",
         "next": "16.3.1",
@@ -64,6 +67,7 @@
         "@vitest/coverage-v8": "^4.1.10",
         "axe-core": "^4.13.0",
         "drizzle-kit": "^0.31.10",
+        "esbuild": "0.28.2",
         "eslint": "^9.39.5",
         "eslint-config-next": "16.3.1",
         "jsdom": "^30.0.1",

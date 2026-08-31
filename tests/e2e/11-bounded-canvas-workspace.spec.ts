@@ -5,7 +5,8 @@
  * - Playwright 的 iPhone / Pixel 设备模拟都能落笔；跟拼触摸拖动零写入，短点可标记且可撤销；
  * - 三浏览器桌面 944/1280/1440px 下编辑与跟拼都不会撑宽页面。
  */
-import { devices, expect, test, type Locator, type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+import { devices, expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { resolve } from 'node:path';
 import { BASE_URL, uploadFile } from './helpers';
 
@@ -15,7 +16,7 @@ const FIXED_TIME = '2026-08-30T00:00:00.000Z';
 function project(width: number, height: number) {
   const colors = [
     { code: 'A01', hex: '#F35B78' },
-    { code: 'B02', hex: '#6752A3' },
+    { code: 'ZG6', hex: '#6752A3' },
   ];
   return {
     format: 'doupu-project',
@@ -47,18 +48,18 @@ function project(width: number, height: number) {
   };
 }
 
-async function importProject(page: Page, width: number, height: number): Promise<void> {
+async function importProject(page: Page, width: number, height: number, testInfo: TestInfo): Promise<void> {
   const value = project(width, height);
-  await page.getByLabel('项目文件选择器').setInputFiles({
-    name: 'bounded-canvas.doupu.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(value)),
-  });
+  // 大图纸 JSON 通过真实文件路径交给浏览器，避免 WebKit 偶发卡在把数 MB
+  // 内存 payload 复制进子进程的协议步骤；这也更接近用户实际导入文件的路径。
+  const projectPath = testInfo.outputPath(`bounded-canvas-${width}x${height}.doupu.json`);
+  await writeFile(projectPath, JSON.stringify(value), 'utf8');
+  await page.getByLabel('项目文件选择器').setInputFiles(projectPath);
   await expect(page.getByRole('textbox', { name: '设计名称' }).last()).toHaveValue(value.name);
   await expect(page.getByText(`共 ${width * height} 粒`).first()).toBeVisible();
 }
 
-async function enterWorkbenchWithProject(page: Page, width = 200, height = 200): Promise<void> {
+async function enterWorkbenchWithProject(page: Page, testInfo: TestInfo, width = 200, height = 200): Promise<void> {
   await page.goto('/app');
   await uploadFile(page, PHOTO);
   await page.getByRole('button', { name: '使用整张图片' }).click();
@@ -67,7 +68,7 @@ async function enterWorkbenchWithProject(page: Page, width = 200, height = 200):
   // 移动布局把项目文件入口放在「导出」抽屉；桌面入口始终存在。
   const exportTools = page.getByRole('button', { name: '导出', exact: true });
   if (await exportTools.isVisible().catch(() => false)) await exportTools.click();
-  await importProject(page, width, height);
+  await importProject(page, width, height, testInfo);
 }
 
 async function expectNoDocumentOverflow(page: Page): Promise<void> {
@@ -165,8 +166,39 @@ async function tapCanvasOffset(page: Page, canvas: Locator, xOffset = 0): Promis
   await page.touchscreen.tap(box!.x + box!.width / 2 + xOffset, box!.y + box!.height / 2);
 }
 
-async function exerciseMobileWorkspace(page: Page): Promise<void> {
-  await enterWorkbenchWithProject(page);
+async function dispatchEditorTouchAim(
+  canvas: Locator,
+  startXOffset: number,
+  endXOffset: number,
+  pointerUpXOffset = endXOffset,
+): Promise<void> {
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const centerX = box!.x + box!.width / 2;
+  const centerY = box!.y + box!.height / 2 + 5;
+  const common = { pointerId: 72, pointerType: 'touch', isPrimary: true };
+  await canvas.dispatchEvent('pointerdown', {
+    ...common,
+    buttons: 1,
+    clientX: centerX + startXOffset,
+    clientY: centerY,
+  });
+  await canvas.dispatchEvent('pointermove', {
+    ...common,
+    buttons: 1,
+    clientX: centerX + endXOffset,
+    clientY: centerY,
+  });
+  await canvas.dispatchEvent('pointerup', {
+    ...common,
+    buttons: 0,
+    clientX: centerX + pointerUpXOffset,
+    clientY: centerY,
+  });
+}
+
+async function exerciseMobileWorkspace(page: Page, testInfo: TestInfo): Promise<void> {
+  await enterWorkbenchWithProject(page, testInfo);
   await expectNoDocumentOverflow(page);
 
   const previewTab = page.getByRole('tab', { name: '预览', exact: true });
@@ -180,18 +212,34 @@ async function exerciseMobileWorkspace(page: Page): Promise<void> {
   await expectViewportSizedBacking(editCanvas, page);
   await expectNoDocumentOverflow(page);
 
-  // 手机默认手形。切换画笔会进入可编辑比例；缩放按钮再放大一级。
+  // 手机默认手形。先用吸管验证「拖到 ZG6，松手时手指轻微回漂」仍以放大镜最终目标为准。
   const editor = workspace.locator('.pixel-editor-studio');
   const editorUndo = editor.getByRole('button', { name: '撤销', exact: true });
   await expect(editorUndo).toBeDisabled();
+  await editor.getByRole('button', { name: '更多', exact: true }).click();
+  await editor.getByRole('button', { name: '吸管', exact: true }).click();
+  await dispatchEditorTouchAim(editCanvas, 0, 15, 0);
+  await expect(editor.getByRole('button', { name: '选择当前颜色' })).toHaveAttribute('title', /ZG6/);
+
+  // 精准画笔只在松手时修改最终格；连续模式必须由用户显式打开。
+  await editor.getByRole('button', { name: /A01 #F35B78/i }).click();
   await editor.getByRole('button', { name: '画笔', exact: true }).click();
   const cellSize = editor.getByLabel('当前格子大小');
   await expect(cellSize).toHaveText('20px');
   await editor.getByRole('button', { name: '放大画布' }).click();
   await expect(cellSize).toHaveText('25px');
-  // 200×200 图纸中心为 A01，右侧相邻格为 B02；画笔当前色为 A01，因此会产生真实改动。
-  await tapCanvasOffset(page, editCanvas, 25);
+  await expect(editor.getByRole('button', { name: '精准模式', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // 200×200 图纸中心为 A01，右侧相邻格为 ZG6；终点改为 A01 会产生真实改动。
+  await dispatchEditorTouchAim(editCanvas, 0, 20, 0);
   await expect(editorUndo).toBeEnabled();
+  await editorUndo.click();
+  await expect(editorUndo).toBeDisabled();
+
+  await editor.getByRole('button', { name: '连续模式', exact: true }).click();
+  await expect(editor.getByRole('button', { name: '连续模式', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await dispatchEditorTouchAim(editCanvas, 0, 70);
+  await expect(editorUndo).toBeEnabled();
+  await editorUndo.click();
 
   // 沉浸层内切换使用 replaceState，最终一次 Back 仍只退回普通预览。
   await workspace.getByRole('tab', { name: '跟拼', exact: true }).click();
@@ -232,7 +280,7 @@ test('[设备模拟] iPhone 13 390×844 可绘制、跟拼标记/撤销并安全
   });
   try {
     const page = await context.newPage();
-    await exerciseMobileWorkspace(page);
+    await exerciseMobileWorkspace(page, testInfo);
     expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   } finally {
     await context.close();
@@ -248,16 +296,16 @@ test('[设备模拟] Pixel 7 412×915 可绘制、跟拼标记/撤销并安全�
   });
   try {
     const page = await context.newPage();
-    await exerciseMobileWorkspace(page);
+    await exerciseMobileWorkspace(page, testInfo);
     expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
   } finally {
     await context.close();
   }
 });
 
-test('29×29、58×58、100×63 在桌面 944/1280/1440px 保持有界且不撑宽页面', async ({ page }) => {
+test('29×29、58×58、100×63 在桌面 944/1280/1440px 保持有界且不撑宽页面', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 944, height: 800 });
-  await enterWorkbenchWithProject(page, 29, 29);
+  await enterWorkbenchWithProject(page, testInfo, 29, 29);
 
   for (const [width, patternWidth, patternHeight] of [
     [944, 29, 29],
@@ -266,7 +314,7 @@ test('29×29、58×58、100×63 在桌面 944/1280/1440px 保持有界且不撑�
   ] as const) {
     await page.setViewportSize({ width, height: 800 });
     if (patternWidth !== 29 || patternHeight !== 29) {
-      await importProject(page, patternWidth, patternHeight);
+      await importProject(page, patternWidth, patternHeight, testInfo);
     }
     await page.getByRole('tab', { name: '编辑', exact: true }).click();
     await expectViewportSizedBacking(page.getByLabel('图纸编辑画布'), page);

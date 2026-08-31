@@ -60,12 +60,29 @@ export interface SyncOutcome {
   overwrittenByCloud: string[];
   conflictCopies: Array<{ originalId: string; conflictId: string }>;
   errors: string[];
+  /** 本轮逐条确认其 v3 内容已同步的设计 ID。 */
+  syncedIds: string[];
+  /** 逐设计结构化问题；单条坏记录不得中断无关设计。 */
+  issues: SyncIssue[];
   cloud: CloudDesignMeta[];
+}
+
+export interface SyncIssue {
+  designId: string;
+  operation: 'validate-local' | 'push' | 'pull' | 'delete';
+  code: string;
+  message: string;
+}
+
+function addSyncIssue(outcome: SyncOutcome, value: SyncIssue): void {
+  outcome.issues.push(value);
+  outcome.errors.push(`${value.designId}: ${value.message}`);
 }
 
 interface TombstoneShape { id: string; baseRevision: number }
 interface SyncClientOptions { newId?: () => string; now?: () => Date }
 const TOMBSTONES_META_KEY = 'sync-tombstones-v2';
+type SyncDisposition = 'synced' | 'dirty' | 'deleted' | 'conflict';
 
 function normalizeRecord(record: DesignRecord): DesignRecord {
   return { ...record, revision: record.revision ?? 0, syncState: record.syncState ?? ((record.revision ?? 0) > 0 ? 'synced' : 'dirty') };
@@ -244,15 +261,16 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
     local: DesignRecord,
     project: ProjectFile,
     response: { updatedAt: string; revision: number },
-  ): Promise<void> {
+  ): Promise<SyncDisposition> {
     const latest = (await storage.getAll()).find((record) => record.id === local.id);
     if (!latest) {
       // The user deleted the row while PUT was in flight. Convert that intent
       // into a tombstone based on the newly-created cloud revision.
       await recordDeleteIntent(local.id, response.revision);
-      return;
+      return 'deleted';
     }
     if (matchesSnapshot(latest, local)) {
+      const disposition = local.syncState === 'conflict' ? 'conflict' : 'synced';
       await storage.put({
         ...latest,
         projectJson: JSON.stringify({ ...project, updatedAt: response.updatedAt }),
@@ -260,35 +278,42 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
         revision: response.revision,
         // A conflict copy is a real independent cloud design, but it keeps its
         // visible conflict marker until the user explicitly edits/resolves it.
-        syncState: local.syncState === 'conflict' ? 'conflict' : 'synced',
+        syncState: disposition,
       });
-      return;
+      return disposition;
     }
     // A newer local edit arrived after this pass took its snapshot. Preserve it
     // and advance only its base revision so the mandatory tail pass can CAS it.
     await storage.put({ ...latest, revision: response.revision, syncState: 'dirty' });
+    return 'dirty';
   }
-  async function resolvePutConflict(local: DesignRecord, project: ProjectFile, outcome: SyncOutcome): Promise<void> {
+  async function resolvePutConflict(local: DesignRecord, project: ProjectFile, outcome: SyncOutcome): Promise<SyncDisposition> {
     const remote = await api.getDesign(local.id);
     const latest = (await storage.getAll()).find((record) => record.id === local.id);
     if (remote && remote.name === local.name && projectsMatch(project, remote.project)) {
       upsertOutcomeCloud(outcome, remote);
-      if (!latest) await recordDeleteIntent(local.id, remote.revision);
-      else if (matchesSnapshot(latest, local)) await storeRemote(remote, PRESERVE_GENERATION_SOURCE, latest.thumbnail);
-      else await storage.put({ ...latest, revision: remote.revision, syncState: 'dirty' });
-      return;
+      if (!latest) {
+        await recordDeleteIntent(local.id, remote.revision);
+        return 'deleted';
+      }
+      if (matchesSnapshot(latest, local)) {
+        await storeRemote(remote, PRESERVE_GENERATION_SOURCE, latest.thumbnail);
+        return 'synced';
+      }
+      await storage.put({ ...latest, revision: remote.revision, syncState: 'dirty' });
+      return 'dirty';
     }
     if (!latest) {
       if (remote) {
         await recordDeleteIntent(local.id, remote.revision);
         upsertOutcomeCloud(outcome, remote);
       }
-      return;
+      return 'deleted';
     }
     const latestProject = parseStoredProject(latest.projectJson);
     if (!latestProject) {
-      outcome.errors.push(`${local.id}: 冲突时本地数据无法解析`);
-      return;
+      addSyncIssue(outcome, { designId: local.id, operation: 'validate-local', code: 'INVALID_PROJECT_V3', message: '冲突时本地项目不是严格 ProjectFile v3' });
+      return 'dirty';
     }
     await createConflictCopy(latest, latestProject, outcome);
     if (remote) {
@@ -296,16 +321,17 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
       upsertOutcomeCloud(outcome, remote);
     } else await storage.delete(local.id);
     outcome.overwrittenByCloud.push(local.id);
+    return remote ? 'synced' : 'deleted';
   }
   async function storePulledRemote(
     snapshot: DesignRecord,
     remote: CloudDesignFull,
     outcome: SyncOutcome,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const latest = (await storage.getAll()).find((record) => record.id === snapshot.id);
     if (!latest) {
       await recordDeleteIntent(snapshot.id, remote.revision);
-      return;
+      return false;
     }
     if (matchesSnapshot(latest, snapshot)) {
       const snapshotProject = parseStoredProject(snapshot.projectJson);
@@ -320,33 +346,35 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
           ? latest.thumbnail
           : null,
       );
-      return;
+      return true;
     }
     const latestProject = parseStoredProject(latest.projectJson);
     if (!latestProject) {
-      outcome.errors.push(`${snapshot.id}: 拉取时本地数据无法解析`);
-      return;
+      addSyncIssue(outcome, { designId: snapshot.id, operation: 'validate-local', code: 'INVALID_PROJECT_V3', message: '拉取时本地项目不是严格 ProjectFile v3' });
+      return false;
     }
     await createConflictCopy(latest, latestProject, outcome);
     await storeRemote(remote);
+    return true;
   }
-  async function applyRemoteDeletion(snapshot: DesignRecord, outcome: SyncOutcome): Promise<void> {
+  async function applyRemoteDeletion(snapshot: DesignRecord, outcome: SyncOutcome): Promise<boolean> {
     const latest = (await storage.getAll()).find((record) => record.id === snapshot.id);
-    if (!latest) return;
+    if (!latest) return true;
     if (matchesSnapshot(latest, snapshot)) {
       await storage.delete(snapshot.id);
-      return;
+      return true;
     }
     // A user edit landed while the cloud listing was in flight. The cloud
     // tombstone remains authoritative for the original id, but the newer local
     // bytes must survive under a conflict id.
     const latestProject = parseStoredProject(latest.projectJson);
     if (!latestProject) {
-      outcome.errors.push(`${snapshot.id}: 删除冲突时本地数据无法解析`);
-      return;
+      addSyncIssue(outcome, { designId: snapshot.id, operation: 'validate-local', code: 'INVALID_PROJECT_V3', message: '删除冲突时本地项目不是严格 ProjectFile v3' });
+      return false;
     }
     await createConflictCopy(latest, latestProject, outcome);
     await storage.delete(snapshot.id);
+    return true;
   }
 
   return {
@@ -355,53 +383,118 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
       const tombstones = await loadTombstones();
       const cloud = await listAllDesigns(api);
       const cloudById = new Map(cloud.map((row) => [row.id, row]));
-      const outcome: SyncOutcome = { pushed: 0, pulled: 0, overwrittenByCloud: [], conflictCopies: [], errors: [], cloud };
+      const syncedIds = new Set<string>();
+      const outcome: SyncOutcome = {
+        pushed: 0,
+        pulled: 0,
+        overwrittenByCloud: [],
+        conflictCopies: [],
+        errors: [],
+        syncedIds: [],
+        issues: [],
+        cloud,
+      };
+      const issue = (value: SyncIssue): void => addSyncIssue(outcome, value);
 
       for (const local of all) {
         const project = parseStoredProject(local.projectJson);
-        if (!project) { outcome.errors.push(`${local.id}: 本地数据无法解析，已跳过同步`); continue; }
+        if (!project) {
+          issue({
+            designId: local.id,
+            operation: 'validate-local',
+            code: 'INVALID_PROJECT_V3',
+            message: '本地项目不是严格 ProjectFile v3，已跳过同步',
+          });
+          continue;
+        }
         const remoteMeta = cloudById.get(local.id);
         const baseRevision = local.revision ?? 0;
         if (local.syncState === 'dirty' || (local.syncState === 'conflict' && baseRevision === 0)) {
           try {
             const response = await api.putDesign(local.id, local.name, project, baseRevision);
-            await storePutResult(local, project, response);
+            const disposition = await storePutResult(local, project, response);
             const meta: CloudDesignMeta = { id: local.id, name: local.name, width: project.pattern.width, height: project.pattern.height, updatedAt: response.updatedAt, deleted: false, revision: response.revision };
             cloudById.set(local.id, meta);
             const index = outcome.cloud.findIndex((item) => item.id === local.id);
             if (index >= 0) outcome.cloud[index] = meta; else outcome.cloud.push(meta);
             outcome.pushed++;
+            if (disposition === 'synced') syncedIds.add(local.id);
           } catch (error) {
             if (error instanceof ApiError && error.status === 409 && error.code === 'REVISION_CONFLICT') {
-              await resolvePutConflict(local, project, outcome);
+              try {
+                const disposition = await resolvePutConflict(local, project, outcome);
+                if (disposition === 'synced') syncedIds.add(local.id);
+              } catch (reconcileError) {
+                issue({
+                  designId: local.id,
+                  operation: 'push',
+                  code: reconcileError instanceof ApiError ? reconcileError.code : 'RECONCILE_FAILED',
+                  message: reconcileError instanceof Error ? reconcileError.message : '冲突协调失败',
+                });
+              }
             }
-            else outcome.errors.push(`${local.id}: ${error instanceof Error ? error.message : '推送失败'}`);
+            else issue({
+              designId: local.id,
+              operation: 'push',
+              code: error instanceof ApiError ? error.code : 'PUSH_FAILED',
+              message: error instanceof Error ? error.message : '推送失败',
+            });
           }
           continue;
         }
         if (!remoteMeta) {
           if (baseRevision > 0) {
-            await applyRemoteDeletion(local, outcome);
-            outcome.pulled++;
-            outcome.overwrittenByCloud.push(local.id);
+            if (await applyRemoteDeletion(local, outcome)) {
+              outcome.pulled++;
+              outcome.overwrittenByCloud.push(local.id);
+            }
           }
           continue;
         }
-        if (remoteMeta.revision <= baseRevision) continue;
-        if (remoteMeta.deleted) await applyRemoteDeletion(local, outcome);
-        else {
-          const remote = await api.getDesign(local.id);
-          if (remote) await storePulledRemote(local, remote, outcome);
+        if (remoteMeta.revision <= baseRevision) {
+          if (local.syncState === 'synced') syncedIds.add(local.id);
+          continue;
         }
-        outcome.pulled++;
-        outcome.overwrittenByCloud.push(local.id);
+        try {
+          let applied: boolean;
+          if (remoteMeta.deleted) applied = await applyRemoteDeletion(local, outcome);
+          else {
+            const remote = await api.getDesign(local.id);
+            if (!remote) throw new ApiError(502, 'MISSING_PROJECT', '云端列表中的设计无法读取');
+            applied = await storePulledRemote(local, remote, outcome);
+          }
+          if (applied) {
+            outcome.pulled++;
+            outcome.overwrittenByCloud.push(local.id);
+            if (!remoteMeta.deleted) syncedIds.add(local.id);
+          }
+        } catch (error) {
+          issue({
+            designId: local.id,
+            operation: 'pull',
+            code: error instanceof ApiError ? error.code : 'PULL_FAILED',
+            message: error instanceof Error ? error.message : '拉取失败',
+          });
+        }
       }
 
       const localIds = new Set([...all.map((row) => row.id), ...tombstones.map((row) => row.id)]);
       for (const remoteMeta of cloud) {
         if (localIds.has(remoteMeta.id) || remoteMeta.deleted) continue;
-        const remote = await api.getDesign(remoteMeta.id);
-        if (remote) { await storeRemote(remote); outcome.pulled++; }
+        try {
+          const remote = await api.getDesign(remoteMeta.id);
+          if (!remote) throw new ApiError(502, 'MISSING_PROJECT', '云端列表中的设计无法读取');
+          await storeRemote(remote);
+          outcome.pulled++;
+          syncedIds.add(remoteMeta.id);
+        } catch (error) {
+          issue({
+            designId: remoteMeta.id,
+            operation: 'pull',
+            code: error instanceof ApiError ? error.code : 'PULL_FAILED',
+            message: error instanceof Error ? error.message : '拉取失败',
+          });
+        }
       }
 
       const remainingTombstones: TombstoneShape[] = [];
@@ -421,16 +514,44 @@ export function createSyncClient(storage: StorageAdapter, api: CloudApi, options
         }
         catch (error) {
           if (error instanceof ApiError && error.status === 409 && error.code === 'REVISION_CONFLICT') {
-            const current = await api.getDesign(tombstone.id);
-            if (current) await storeRemote(current);
-            outcome.overwrittenByCloud.push(tombstone.id);
+            try {
+              const current = await api.getDesign(tombstone.id);
+              if (current) await storeRemote(current);
+              outcome.overwrittenByCloud.push(tombstone.id);
+            } catch (reconcileError) {
+              remainingTombstones.push(tombstone);
+              issue({
+                designId: tombstone.id,
+                operation: 'delete',
+                code: reconcileError instanceof ApiError ? reconcileError.code : 'RECONCILE_FAILED',
+                message: reconcileError instanceof Error ? reconcileError.message : '删除冲突协调失败',
+              });
+            }
           } else {
             remainingTombstones.push(tombstone);
-            outcome.errors.push(`${tombstone.id}: ${error instanceof Error ? error.message : '删除失败'}`);
+            issue({
+              designId: tombstone.id,
+              operation: 'delete',
+              code: error instanceof ApiError ? error.code : 'DELETE_FAILED',
+              message: error instanceof Error ? error.message : '删除失败',
+            });
           }
         }
       }
-      await saveTombstones(remainingTombstones);
+      // PUT 可能在本地记录删除后才完成，并在本轮同步期间创建新的墓碑；
+      // 提交上方处理过的墓碑快照时，不得抹掉这个更新的删除意图。
+      const initialTombstoneKeys = new Set(tombstones.map((item) => `${item.id}:${item.baseRevision}`));
+      const remainingTombstoneKeys = new Set(remainingTombstones.map((item) => `${item.id}:${item.baseRevision}`));
+      const currentTombstones = await loadTombstones();
+      const finalTombstones = currentTombstones.filter((item) => {
+        const key = `${item.id}:${item.baseRevision}`;
+        return !initialTombstoneKeys.has(key) || remainingTombstoneKeys.has(key);
+      });
+      for (const item of remainingTombstones) {
+        if (!finalTombstones.some((current) => current.id === item.id)) finalTombstones.push(item);
+      }
+      await saveTombstones(finalTombstones);
+      outcome.syncedIds = [...syncedIds];
       return outcome;
     },
     async pullDesign(id: string): Promise<void> {

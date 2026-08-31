@@ -3,6 +3,12 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { projectFileSchema } from '@/lib/schemas';
+import { parseShareSnapshot } from '@/lib/share/snapshot';
+import {
+  inspectProtocolDatabase,
+  inspectProtocolRows,
+} from '../../deploy/scripts/check-protocol-v3';
 
 const read = (path: string): string => readFileSync(path, 'utf8');
 
@@ -22,6 +28,168 @@ const posixShell = process.platform === 'linux' && spawnSync('sh', ['-c', 'exit 
 const shellIt = posixShell ? it : it.skip;
 
 describe('backup and release safety gates', () => {
+  it('全新空库没有协议表时视为无历史数据并允许后续迁移', async () => {
+    const queries: string[] = [];
+    const inspection = await inspectProtocolDatabase({
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('to_regclass')) {
+          return { rows: [{ designs_exists: false, shares_exists: false }] };
+        }
+        throw new Error(`不应查询尚未创建的表：${sql}`);
+      },
+    });
+
+    expect(inspection).toEqual({ issues: [], designCount: 0, shareCount: 0 });
+    expect(queries).toHaveLength(1);
+  });
+
+  it('旧库只有设计表时严格拒绝旧项目且不查询尚未创建的分享表', async () => {
+    const queries: string[] = [];
+    const inspection = await inspectProtocolDatabase({
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('to_regclass')) {
+          return { rows: [{ designs_exists: true, shares_exists: false }] };
+        }
+        if (sql.includes('FROM designs')) {
+          return { rows: [{ id: 'legacy-design', project: { version: 2 } }] };
+        }
+        throw new Error(`不应查询尚未创建的表：${sql}`);
+      },
+    });
+
+    expect(inspection).toEqual({
+      issues: [{
+        kind: 'design',
+        id: 'legacy-design',
+        reason: 'not strict ProjectFile v3',
+      }],
+      designCount: 1,
+      shareCount: 0,
+    });
+    expect(queries).toHaveLength(2);
+  });
+
+  it('分享表已存在时严格拒绝旧分享快照', async () => {
+    const inspection = await inspectProtocolDatabase({
+      query: async (sql: string) => {
+        if (sql.includes('to_regclass')) {
+          return { rows: [{ designs_exists: false, shares_exists: true }] };
+        }
+        if (sql.includes('FROM design_shares')) {
+          return { rows: [{ id: 'legacy-share', snapshot: { version: 2 } }] };
+        }
+        throw new Error(`不应读取不存在的设计表：${sql}`);
+      },
+    });
+
+    expect(inspection).toEqual({
+      issues: [{
+        kind: 'share',
+        id: 'legacy-share',
+        reason: 'not strict ShareSnapshot v3',
+      }],
+      designCount: 0,
+      shareCount: 1,
+    });
+  });
+
+  it('release protocol preflight rejects legacy active designs/shares without mutating data', () => {
+    const v3Project = {
+      format: 'doupu-project', version: 3, boardProfile: '5mm-29',
+      engineVersion: '2.0.0', name: '发布前检查',
+      createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:01:00.000Z',
+      params: {
+        targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant',
+        brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8,
+        backgroundPrototype: null,
+      },
+      pattern: {
+        width: 1, height: 1,
+        cells: [{ hex: '#FAF4C8', code: 'A01', transparent: false }],
+      },
+      paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
+    };
+    const v3Share = {
+      version: 3, name: '分享', createdAt: '2026-08-30T00:00:00.000Z',
+      boardProfile: '5mm-29', palette: { kind: 'builtin', brand: 'MARD' },
+      pattern: v3Project.pattern,
+    };
+
+    expect(inspectProtocolRows({
+      designs: [{ id: 'valid', project: v3Project }],
+      shares: [{ id: 'valid-share', snapshot: v3Share }],
+    })).toEqual([]);
+    expect(inspectProtocolRows({
+      designs: [{ id: 'legacy-design', project: { ...v3Project, version: 2 } }],
+      shares: [{ id: 'legacy-share', snapshot: { ...v3Share, version: 2 } }],
+    })).toEqual([
+      { kind: 'design', id: 'legacy-design', reason: 'not strict ProjectFile v3' },
+      { kind: 'share', id: 'legacy-share', reason: 'not strict ShareSnapshot v3' },
+    ]);
+
+    expect(inspectProtocolRows({
+      designs: [
+        { id: 'missing-params', project: { ...v3Project, params: {} } },
+        {
+          id: 'broken-pattern',
+          project: { ...v3Project, pattern: { width: 2, height: 1, cells: v3Project.pattern.cells } },
+        },
+        { id: 'unknown-field', project: { ...v3Project, legacyPayload: true } },
+      ],
+      shares: [
+        { id: 'bad-share-pattern', snapshot: { ...v3Share, pattern: { width: 1, height: 1, cells: [] } } },
+        { id: 'unknown-share-field', snapshot: { ...v3Share, params: v3Project.params } },
+      ],
+    })).toEqual([
+      { kind: 'design', id: 'missing-params', reason: 'not strict ProjectFile v3' },
+      { kind: 'design', id: 'broken-pattern', reason: 'not strict ProjectFile v3' },
+      { kind: 'design', id: 'unknown-field', reason: 'not strict ProjectFile v3' },
+      { kind: 'share', id: 'bad-share-pattern', reason: 'not strict ShareSnapshot v3' },
+      { kind: 'share', id: 'unknown-share-field', reason: 'not strict ShareSnapshot v3' },
+    ]);
+  });
+
+  it('rejects bad builtin pairs and unavailable placeholder codes in both project and share rows', () => {
+    const baseProject = {
+      format: 'doupu-project', version: 3, boardProfile: '5mm-29',
+      engineVersion: '2.0.0', name: '发布前检查',
+      createdAt: '2026-08-30T00:00:00.000Z', updatedAt: '2026-08-30T00:01:00.000Z',
+      params: {
+        targetWidth: 20, targetColorCount: 2, dithering: false, mode: 'dominant',
+        brightness: 0, contrast: 0, backgroundRemoval: false, bgTolerance: 8,
+        backgroundPrototype: null,
+      },
+      paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
+      pattern: { width: 1, height: 1, cells: [{ hex: '#FAF4C8', code: 'A01', transparent: false }] },
+    };
+    const baseShare = {
+      version: 3, name: '分享', createdAt: baseProject.createdAt, boardProfile: '5mm-29',
+      palette: baseProject.paletteSelection.palette, pattern: baseProject.pattern,
+    };
+    const wrongPair = { width: 1, height: 1, cells: [{ hex: '#FAF4C8', code: 'A02', transparent: false }] };
+    const placeholder = { width: 1, height: 1, cells: [{ hex: '#FAF4C8', code: '?', transparent: false, external: true }] };
+
+    const badProjectPair = { ...baseProject, pattern: wrongPair };
+    const badProjectPlaceholder = { ...baseProject, pattern: placeholder };
+    const badSharePair = { ...baseShare, pattern: wrongPair };
+    expect(projectFileSchema.safeParse(badProjectPair).success).toBe(false);
+    expect(projectFileSchema.safeParse(badProjectPlaceholder).success).toBe(false);
+    expect(parseShareSnapshot(badSharePair)).toBeNull();
+    expect(inspectProtocolRows({
+      designs: [
+        { id: 'wrong-pair', project: badProjectPair },
+        { id: 'placeholder', project: badProjectPlaceholder },
+      ],
+      shares: [{ id: 'wrong-share-pair', snapshot: badSharePair }],
+    })).toEqual([
+      { kind: 'design', id: 'wrong-pair', reason: 'not strict ProjectFile v3' },
+      { kind: 'design', id: 'placeholder', reason: 'not strict ProjectFile v3' },
+      { kind: 'share', id: 'wrong-share-pair', reason: 'not strict ShareSnapshot v3' },
+    ]);
+  });
+
   it('creates, validates and atomically promotes a custom-format backup', () => {
     const script = read('deploy/scripts/backup.sh');
     expect(script).toContain('pg_dump --format=custom');
@@ -152,17 +320,34 @@ describe('backup and release safety gates', () => {
     expect(result.stderr).not.toContain('backup alert delivery also failed');
   });
 
-  it('runs migration before replacing the serving app', () => {
+  it('在线预检后停流并再次检查 v3，终检通过才迁移和替换应用', () => {
     const script = read('deploy/scripts/deploy.sh');
+    const dockerfile = read('Dockerfile');
+    const dockerignore = read('.dockerignore').split(/\r?\n/).map((line) => line.trim());
     const migration = script.indexOf('node db/migrate.cjs');
     const cutover = script.indexOf('up -d --force-recreate --no-deps --no-build app');
+    const caddyStop = script.indexOf('stop caddy');
+    const protocolPreflights = [...script.matchAll(/node deploy\/scripts\/check-protocol-v3\.cjs/g)]
+      .map((match) => match.index ?? -1);
     expect(migration).toBeGreaterThan(-1);
+    expect(protocolPreflights).toHaveLength(2);
+    expect(protocolPreflights[0]).toBeLessThan(caddyStop);
+    expect(caddyStop).toBeLessThan(protocolPreflights[1]);
+    expect(protocolPreflights[1]).toBeLessThan(migration);
     expect(cutover).toBeGreaterThan(migration);
+    expect(dockerignore).not.toContain('deploy');
+    expect(dockerfile).toContain('/app/.artifacts/check-protocol-v3.cjs');
+    expect(dockerfile).not.toContain('/app/src/lib/palettes/data');
+    const packageJson = JSON.parse(read('package.json')) as { scripts?: Record<string, string> };
+    expect(packageJson.scripts?.prebuild).toContain('build:protocol-preflight');
+    expect(read('scripts/build-protocol-preflight.mjs')).toContain("external: ['pg']");
+    expect(read('deploy/scripts/check-protocol-v3.ts')).toContain("import { projectFileSchema } from '@/lib/schemas'");
+    expect(read('deploy/scripts/check-protocol-v3.ts')).toContain("import { parseShareSnapshot } from '@/lib/share/snapshot'");
     expect(script).not.toContain('docker tag "${OLD_APP_IMAGE}"');
     expect(script).toContain('禁止回滚旧协议镜像');
   });
 
-  shellIt('keeps the serving containers untouched when migration execution fails', () => {
+  shellIt('迁移失败时保持入口停止，禁止把旧应用重新暴露到单向迁移后的数据库', () => {
     const root = mkdtempSync(join(tmpdir(), 'doupu-deploy-migration-failure-'));
     const scripts = join(root, 'deploy', 'scripts');
     const bin = join(root, 'bin');
@@ -190,11 +375,97 @@ esac
     });
     const calls = readFileSync(deployLog, 'utf8');
     expect(result.status).toBe(42);
-    expect(result.stderr).toContain('数据库迁移失败；现有 Caddy/app 未停止或替换');
+    expect(result.stderr).toContain('数据库迁移失败；保持 Caddy 停止，禁止恢复旧协议应用');
     expect(calls).toContain('run --rm --no-deps app node db/migrate.cjs');
-    expect(calls).not.toContain('stop caddy');
+    expect(calls).toContain('stop caddy');
+    expect(calls).not.toContain('up -d caddy');
     expect(calls).not.toContain('up -d --force-recreate --no-deps --no-build app');
     expect(calls).not.toContain('exec -T app');
+  });
+
+  shellIt('keeps the serving containers untouched when the read-only v3 preflight fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'doupu-deploy-protocol-failure-'));
+    const scripts = join(root, 'deploy', 'scripts');
+    const bin = join(root, 'bin');
+    const deployLog = join(root, 'docker.log');
+    ensureDirs(scripts, bin);
+    const deployScript = join(scripts, 'deploy.sh');
+    copyFileSync('deploy/scripts/deploy.sh', deployScript);
+    chmodSync(deployScript, 0o755);
+    writeFileSync(join(root, '.env'), 'APP_IMAGE=ghcr.io/527520/doupu:v0.2.0\n');
+    const fakeDocker = join(bin, 'docker');
+    writeFileSync(fakeDocker, `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$DEPLOY_LOG"
+case "$*" in
+  *'run --rm --no-deps app node deploy/scripts/check-protocol-v3.cjs'*) exit 43 ;;
+  *) exit 0 ;;
+esac
+`);
+    chmodSync(fakeDocker, 0o755);
+
+    const result = spawnSync('bash', [deployScript], {
+      cwd: root,
+      env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, DEPLOY_LOG: deployLog },
+      encoding: 'utf8',
+    });
+    const calls = readFileSync(deployLog, 'utf8');
+    expect(result.status).toBe(43);
+    expect(result.stderr).toContain('协议发布前检查失败');
+    expect(calls).not.toContain('run --rm --no-deps app node db/migrate.cjs');
+    expect(calls).toContain('run --rm --no-deps app node deploy/scripts/check-protocol-v3.cjs');
+    expect(calls).not.toContain('stop caddy');
+    expect(calls).not.toContain('up -d --force-recreate --no-deps --no-build app');
+  });
+
+  shellIt('停流后的 v3 终检失败会恢复 Caddy，且不迁移、不替换应用', () => {
+    const root = mkdtempSync(join(tmpdir(), 'doupu-deploy-final-protocol-failure-'));
+    const scripts = join(root, 'deploy', 'scripts');
+    const bin = join(root, 'bin');
+    const deployLog = join(root, 'docker.log');
+    const protocolCount = join(root, 'protocol-count');
+    ensureDirs(scripts, bin);
+    const deployScript = join(scripts, 'deploy.sh');
+    copyFileSync('deploy/scripts/deploy.sh', deployScript);
+    chmodSync(deployScript, 0o755);
+    writeFileSync(join(root, '.env'), 'APP_IMAGE=ghcr.io/527520/doupu:v0.2.0\n');
+    const fakeDocker = join(bin, 'docker');
+    writeFileSync(fakeDocker, `#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$DEPLOY_LOG"
+case "$*" in
+  *'ps --status running --services'*) printf 'caddy\\n' ;;
+  *'run --rm --no-deps app node deploy/scripts/check-protocol-v3.cjs'*)
+    count=0
+    [ ! -f "$PROTOCOL_COUNT" ] || count=$(cat "$PROTOCOL_COUNT")
+    count=$((count+1))
+    printf '%s\\n' "$count" > "$PROTOCOL_COUNT"
+    [ "$count" -lt 2 ] || exit 43
+    ;;
+esac
+exit 0
+`);
+    chmodSync(fakeDocker, 0o755);
+
+    const result = spawnSync('bash', [deployScript], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${bin}:/usr/bin:/bin`,
+        DEPLOY_LOG: deployLog,
+        PROTOCOL_COUNT: protocolCount,
+      },
+      encoding: 'utf8',
+    });
+    const calls = readFileSync(deployLog, 'utf8');
+    expect(result.status).toBe(43);
+    expect(result.stderr).toContain('停流后的协议终检失败');
+    expect(result.stderr).toContain('已恢复 Caddy');
+    expect(calls.match(/check-protocol-v3\.cjs/g)).toHaveLength(2);
+    expect(calls).toContain('stop caddy');
+    expect(calls).toContain('up -d --no-deps caddy');
+    expect(calls).not.toContain('node db/migrate.cjs');
+    expect(calls).not.toContain('up -d --force-recreate --no-deps --no-build app');
   });
 
   it('deploys only a gated immutable GHCR app image and never rebuilds app source on the server', () => {
@@ -313,17 +584,23 @@ esac
     expect(ci).toContain('npm run test:coverage:stable');
     expect(ci).toContain('npm run test:performance:stable');
     expect(ci).toContain('npm run test:e2e:stable');
+    expect(ci).toContain('npm run test:protocol-preflight');
     expect(ci).toContain('cron: "17 3 * * 1"');
     expect(release).toContain('uses: ./.github/workflows/ci.yml');
     expect(release).toContain('verify-release.sh');
     expect(release).toContain('needs: quality');
     const composeBuildStep = ci.slice(
       ci.indexOf('- name: Build standalone and backup images'),
-      ci.indexOf('- name: Native Argon2 and PostgreSQL migration smoke'),
+      ci.indexOf('- name: Native Argon2 smoke'),
     );
     expect(composeBuildStep).toContain('ADMIN_EMAIL: ops@example.test');
     expect(composeBuildStep).toContain('docker build -t doupu-app:local .');
     expect(composeBuildStep).toContain('docker compose -f docker-compose.prod.yml build backup');
+    const protocolContract = read('tests/postgres/protocol-preflight-contract.cjs');
+    expect(protocolContract).toContain('deploy/scripts/check-protocol-v3.cjs');
+    expect(protocolContract).toContain('db/migrate.cjs');
+    expect(protocolContract).toContain('legacy-design');
+    expect(protocolContract).toContain('legacy-share');
     const verifyRelease = read('deploy/scripts/verify-release.sh');
     expect(verifyRelease).toContain('deploy/evidence/mobile/v${VERSION}.json');
     expect(verifyRelease).toContain('evidence.candidateCommit === candidateCommit');

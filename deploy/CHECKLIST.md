@@ -56,7 +56,7 @@
 - [ ] SSH 登录服务器，安装 Docker 与 docker compose 插件（OpenCloudOS：`sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin`，仓库见 docker-ce 官方源/腾讯云镜像；Ubuntu：`apt install docker.io docker-compose-v2`），将当前用户加入 docker 组。
 - [ ] 将仓库中的部署编排文件同步到 `/opt/doupu`，并 `chmod +x deploy/scripts/*.sh`；应用源码不会在服务器构建。
 - [ ] 复制 `.env.example` 为 `.env`，填写全部变量；`APP_IMAGE` 必须指向 release workflow 推送的稳定 GHCR tag 或 digest（禁止 `latest`）。
-- [ ] 执行 `bash deploy/scripts/deploy.sh`（拉取已门禁应用镜像 → 运行数据库迁移 → 启动 app/postgres/caddy/backup）。
+- [ ] 执行 `bash deploy/scripts/deploy.sh`（拉取已门禁应用镜像 → 在线只读预检 → 短暂停止 Caddy → 再次只读终检；全新空库直接放行，终检失败自动恢复原入口 → 运行数据库迁移 → 替换 app 并恢复 caddy/backup）。
 - [ ] 验证：`docker compose ps` 中 app/postgres 为 healthy、caddy 为 running；backup 在首次校验备份完成前可为 starting，成功后必须为 healthy；backup 若重试耗尽后为 exited(non-zero)，按容器日志修复备份或告警链路；`curl -I https://<域名>` 返回 200。
 
 ## 发版升级（上线后的日常更新）
