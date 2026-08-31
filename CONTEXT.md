@@ -88,6 +88,8 @@
 - 0.3.0 已上线 doupu.fun：镜像 ghcr.io/527520/doupu:v0.3.0，迁移 0003（design_shares）已在生产应用，app/backup/caddy/postgres 全部 healthy，首页/工作台/分享 404 兜底均验证通过。已知事项：腾讯云 SES 未创建备份告警模板（生产 .env 暂用占位 ID，告警降级为仅日志）；`5680367` 已把「缺告警模板」从启动硬校验改为优雅降级，随下个版本上线。建议在 SES 控制台创建告警模板（变量 {{message}}）后更新服务器 .env。
 - 0.3.1 发版：候选 `699a8f9`（前端体验全面重构 `e002dd0`/`3626fc7`、局域网验收与桌面溢出 `c073b8b`、裁剪画布首帧变形与 CI E2E 修复 `4d7ed57`、SES 告警降级 `5680367`）经真机验收（iPhone 16 Pro Safari / 小米 15 Pro Android Chrome）与六类素材算法并排验收，证据 attestation `e7f70cd`，tag `v0.3.1` 已推送。
 - 0.3.1 已上线 doupu.fun：镜像 ghcr.io/527520/doupu:v0.3.1，迁移 0004（users.username）已在生产应用，app/backup/caddy/postgres 全部 healthy；生产 E2E（CSP/RSC/生成 Worker/首页落图流程）冒烟通过，/about 展示 0.3.1。SES 备份告警模板仍未创建（告警保持仅日志；降级修复 `5680367` 已随本版上线），建议在 SES 控制台创建告警模板（变量 {{message}}）后更新服务器 .env 的 `SES_ALERT_TEMPLATE_ID`。
+- 0.4.0 发版：候选 `2d851fb`（色板目录 13 套与板型档位 `7828969`、工作台交互同步与图片导出修复 `249e0af`、版本与更新日志 `dc4e15a`、E2E 设备模拟断言收敛修复 `2d851fb`）经真机验收（iPhone 16 Pro Safari / 小米 15 Pro Android Chrome）与六类素材算法并排验收，证据 attestation `fc383d5`，tag `v0.4.0` 已推送。
+- 0.4.0 已上线 doupu.fun：镜像 ghcr.io/527520/doupu:v0.4.0，发布前按 ADR-0012 显式清理了 3 条 v1 测试设计（先导出备份 `/opt/doupu/legacy-v1-designs-20260831.csv`，再按墓碑规范软删并递增 revision）；切流前协议 v3 只读检查两次通过（0 活动设计、0 分享），无新增迁移，app/backup/caddy/postgres 全部 healthy；生产 E2E（CSP/RSC/生成 Worker）冒烟通过，/about 展示 0.4.0。SES 备份告警模板仍未创建（告警保持仅日志）。
 - 网络备注：本机 DNS 被劫持（github.com 解析到不可达 IP），HTTPS 推送失败；改用 SSH（`git push git@github.com:527520/doupu.git main`）推送成功。SSH 22 与 ssh.github.com:443 均可达。
 
 ## 代理负责的工程决策（写入 ADR，用户可反驳）
