@@ -105,6 +105,30 @@ async function expectNoDocumentOverflow(page: Page): Promise<void> {
 
 async function expectViewportSizedBacking(canvas: Locator, page: Page): Promise<void> {
   await expect(canvas).toBeVisible();
+  // webkit 的 ResizeObserver 回调可能晚于首帧绘制，后备缓冲会短暂停留在收缩前的
+  // 尺寸（本地 GPU 环境通常一帧收敛，CI 软件渲染更慢）；先轮询等缓冲与 CSS 尺寸
+  // 收敛再取包围盒，避免把中间帧误判为「整图分配」。
+  await expect.poll(async () => {
+    const g = await canvas.evaluate((element) => {
+      const target = element as HTMLCanvasElement;
+      const rect = target.getBoundingClientRect();
+      return {
+        cssWidth: rect.width,
+        cssHeight: rect.height,
+        backingWidth: target.width,
+        backingHeight: target.height,
+        dpr: window.devicePixelRatio,
+      };
+    });
+    if (g.cssWidth <= 0 || g.cssHeight <= 0) return Infinity;
+    // 绘制层把高 DPR 设备限制为 2，避免手机创建过大的后备缓冲区。
+    const renderDpr = Math.min(2, g.dpr);
+    return Math.max(
+      Math.abs(g.backingWidth - Math.floor(g.cssWidth * renderDpr)),
+      Math.abs(g.backingHeight - Math.floor(g.cssHeight * renderDpr)),
+    );
+  }, { timeout: 10_000, message: '画布后备缓冲未收敛到视窗尺寸' }).toBeLessThanOrEqual(4);
+
   const geometry = await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     const rect = target.getBoundingClientRect();
@@ -118,11 +142,6 @@ async function expectViewportSizedBacking(canvas: Locator, page: Page): Promise<
   });
   expect(geometry.cssWidth).toBeGreaterThan(0);
   expect(geometry.cssHeight).toBeGreaterThan(0);
-  // 绘制层把高 DPR 设备限制为 2，避免手机创建过大的后备缓冲区。
-  const renderDpr = Math.min(2, geometry.dpr);
-  // ResizeObserver 与绘制 effect 可能相差一帧，给浮点取整留 4px 余量。
-  expect(Math.abs(geometry.backingWidth - Math.floor(geometry.cssWidth * renderDpr))).toBeLessThanOrEqual(4);
-  expect(Math.abs(geometry.backingHeight - Math.floor(geometry.cssHeight * renderDpr))).toBeLessThanOrEqual(4);
   // 200×200 若按最低 20 CSS px/格分配会至少达到 4000×4000；这里必须明显小于整图。
   expect(geometry.backingWidth).toBeLessThan(4000 * geometry.dpr);
   expect(geometry.backingHeight).toBeLessThan(4000 * geometry.dpr);
@@ -273,6 +292,9 @@ async function exerciseMobileWorkspace(page: Page, testInfo: TestInfo): Promise<
 
 test('[设备模拟] iPhone 13 390×844 可绘制、跟拼标记/撤销并安全返回', async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== 'webkit');
+  // CI 的 webkit 跑在软件渲染上，200×200 图纸导入 + 编辑/跟拼双画布渲染
+  // 明显慢于本地 GPU 环境（本地约 7s，CI 可超过 110s），默认 120s 会在收尾时被顶爆。
+  test.setTimeout(240_000);
   const context = await browser.newContext({
     ...devices['iPhone 13'],
     viewport: { width: 390, height: 844 },
@@ -289,6 +311,7 @@ test('[设备模拟] iPhone 13 390×844 可绘制、跟拼标记/撤销并安全
 
 test('[设备模拟] Pixel 7 412×915 可绘制、跟拼标记/撤销并安全返回', async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
+  test.setTimeout(240_000);
   const context = await browser.newContext({
     ...devices['Pixel 7'],
     viewport: { width: 412, height: 915 },
