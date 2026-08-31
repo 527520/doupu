@@ -1,0 +1,8 @@
+{
+  "version": "0.4.0",
+  "candidateCommit": "dc4e15ab88e2b49477ac3e3f9dcd37709518239c",
+  "completedAt": "2026-08-31T13:17:56.770Z",
+  "tester": "wuqian",
+  "passed": true,
+  "fixtures": ["photo", "pixel-art", "skin-gradient", "edge-subject", "transparent-antialias", "real-heic"]
+}
