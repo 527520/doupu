@@ -1,6 +1,6 @@
 # 06 浏览器本地官方批量生产
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 03
 

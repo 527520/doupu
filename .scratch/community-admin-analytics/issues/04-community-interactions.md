@@ -1,6 +1,6 @@
 # 04 引用、点赞、评论与举报
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 03
 

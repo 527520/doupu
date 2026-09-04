@@ -1,6 +1,6 @@
 # 03 豆社作品、冻结修订与公开页面
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 01
 

@@ -1,6 +1,6 @@
 # 07 独立治理后台、人员与系统信息
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 02, 03, 04, 05, 06
 

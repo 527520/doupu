@@ -1,6 +1,6 @@
 # 05 标签与版本化治理规则
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 03
 

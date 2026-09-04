@@ -1,6 +1,6 @@
 # 02 同意式匿名分析与看板
 
-Status: ready-for-agent
+Status: ready-for-human
 
 Blocked by: 01
 
