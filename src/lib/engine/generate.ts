@@ -47,10 +47,14 @@ function internPatternCells(cells: PatternCell[]): PatternCell[] {
     }
     let variants = byCode.get(cell.code);
     if (!variants) {
-      variants = new Array<PatternCell | undefined>(4);
+      // transparent has two values; optional external has three observable
+      // JSON states (absent, false, true). Keep all six distinct so this
+      // transport optimization cannot rewrite the persisted protocol.
+      variants = new Array<PatternCell | undefined>(6);
       byCode.set(cell.code, variants);
     }
-    const variant = (cell.transparent ? 1 : 0) | (cell.external ? 2 : 0);
+    const externalVariant = cell.external === undefined ? 0 : cell.external ? 2 : 1;
+    const variant = (cell.transparent ? 3 : 0) + externalVariant;
     const canonical = variants[variant];
     if (canonical) cells[index] = canonical;
     else variants[variant] = cell;
