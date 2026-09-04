@@ -5,6 +5,9 @@ import { collectAllowedDevOrigins } from "./src/lib/config/devOrigins";
 const allowedDevOrigins = collectAllowedDevOrigins(process.env.DEV_LAN_ORIGIN, networkInterfaces());
 
 const nextConfig: NextConfig = {
+  experimental: {
+    authInterrupts: true,
+  },
   // Playwright intentionally opens the dev server through the IPv4 loopback
   // address so Chromium, Firefox and WebKit exercise the same origin.
   // 当前机器的局域网 IPv4 会自动加入；DEV_LAN_ORIGIN 保留给域名或隧道来源。

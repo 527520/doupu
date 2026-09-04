@@ -8,6 +8,7 @@ import { loadPdfCjkFont } from '@/lib/export/pdfFont';
 import { buildExportFilename, computePdfLayout, paginateLegendItems, resolveBoardPdfMetrics, type PdfPageMetrics } from '@/lib/export/pdfLayout';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
 import { DEFAULT_BOARD_SIZE } from '@/lib/boardProfiles';
+import { track } from '@/lib/analytics/client';
 
 export interface PdfExportButtonProps {
   name: string;
@@ -80,8 +81,10 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
       const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics, boardSize });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);
+      track({ name: 'design_exported', properties: { format: 'pdf' } });
     } catch {
       setError(t.failedError);
+      track({ name: 'export_failed', properties: { format: 'pdf', errorCode: 'PDF_EXPORT_FAILED' } });
     } finally {
       setBusy(false);
     }

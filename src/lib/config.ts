@@ -70,6 +70,8 @@ export interface SiteConfig extends PublicConfig {
     syncWriteRateLimit: number;
     /** 备份告警端点每 IP 每小时上限 */
     backupAlertRateLimit: number;
+    /** 匿名分析摄取每个短期 IP HMAC 键每小时上限 */
+    analyticsRateLimit: number;
     sessionTtlSeconds: number;
     maxBodyBytes: number;
   };
@@ -93,6 +95,7 @@ const DEFAULTS: SiteConfig = {
     tokenRateLimit: 60,
     syncWriteRateLimit: 600,
     backupAlertRateLimit: 60,
+    analyticsRateLimit: 300,
     sessionTtlSeconds: 30 * 24 * 60 * 60,
     maxBodyBytes: 64 * 1024,
   },
@@ -153,6 +156,7 @@ function compute(): SiteConfig {
       tokenRateLimit: readInt('RATE_TOKEN', DEFAULTS.security.tokenRateLimit, 1),
       syncWriteRateLimit: readInt('RATE_SYNC_WRITE', DEFAULTS.security.syncWriteRateLimit, 1),
       backupAlertRateLimit: readInt('RATE_BACKUP_ALERT', DEFAULTS.security.backupAlertRateLimit, 1),
+      analyticsRateLimit: readInt('RATE_ANALYTICS', DEFAULTS.security.analyticsRateLimit, 1),
       sessionTtlSeconds: readInt('SESSION_TTL_SECONDS', DEFAULTS.security.sessionTtlSeconds, 60),
       maxBodyBytes: readInt('MAX_BODY_BYTES', DEFAULTS.security.maxBodyBytes, 1024),
     },

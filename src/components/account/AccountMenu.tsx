@@ -8,6 +8,7 @@ import { passwordSchema, usernameSchema } from '@/lib/schemas';
 import Modal from '@/components/ui/Modal';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 import { LIMITS } from '@/lib/appInfo';
+import { track } from '@/lib/analytics/client';
 
 interface Props {
   api: DoupuApi;
@@ -215,6 +216,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     } catch {
       // 退出失败也刷新本地状态（幂等接口）
     }
+    track({ name: 'logout_succeeded', properties: {} });
     onAuthChanged();
   };
 

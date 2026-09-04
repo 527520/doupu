@@ -9,6 +9,7 @@ import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
 import { loginRedirectTarget } from './loginRedirect';
+import { track } from '@/lib/analytics/client';
 
 export default function LoginPage() {
   const t = zhCN.authPages;
@@ -37,6 +38,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
+        track({ name: 'login_succeeded', properties: {} });
         router.push(loginRedirectTarget());
         return;
       }

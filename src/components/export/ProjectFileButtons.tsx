@@ -8,6 +8,7 @@ import { LIMITS } from '@/lib/appInfo';
 import { conflictName, importProjectFile } from '@/lib/project/parse';
 import { projectFileName, serializeProject, type ProjectSource } from '@/lib/project/serialize';
 import type { ProjectFile } from '@/lib/types';
+import { track } from '@/lib/analytics/client';
 
 interface Props {
   /** 当前设计数据（serializeProject 的输入） */
@@ -34,6 +35,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    track({ name: 'design_exported', properties: { format: 'project' } });
   };
 
   const handleImport = async (file: File): Promise<void> => {

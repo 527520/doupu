@@ -10,6 +10,7 @@ import { zhCN } from '@/messages/zh-CN';
 import { registerSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
 import { LIMITS } from '@/lib/appInfo';
+import { track } from '@/lib/analytics/client';
 
 export default function RegisterPage() {
   const t = zhCN.authPages;
@@ -42,6 +43,7 @@ export default function RegisterPage() {
         body: JSON.stringify(parsed.data),
       });
       if (res.ok) {
+        track({ name: 'auth_registered', properties: {} });
         setDone(true);
         // 开发邮件模式：服务端把验证链接放在响应头里，直接展示给用户（正式环境为 null）
         setDevMailLink(res.headers.get(DEV_MAIL_LINK_HEADER));

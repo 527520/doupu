@@ -5,6 +5,8 @@
  */
 import {
   index,
+  boolean,
+  date,
   integer,
   jsonb,
   pgEnum,
@@ -19,6 +21,10 @@ import { sql } from 'drizzle-orm';
 export const userRoleEnum = pgEnum('user_role', ['user', 'moderator', 'admin']);
 export const accountStatusEnum = pgEnum('account_status', ['active', 'suspended', 'anonymized']);
 export const maintenanceStatusEnum = pgEnum('maintenance_status', ['running', 'succeeded', 'failed']);
+export const analyticsDeviceEnum = pgEnum('analytics_device', ['desktop', 'mobile', 'tablet', 'other']);
+export const analyticsBrowserEnum = pgEnum('analytics_browser', ['chrome', 'edge', 'firefox', 'safari', 'other']);
+export const analyticsOsEnum = pgEnum('analytics_os', ['android', 'ios', 'linux', 'macos', 'windows', 'other']);
+export const analyticsDeletionStatusEnum = pgEnum('analytics_deletion_status', ['pending', 'succeeded', 'failed']);
 
 export const users = pgTable(
   'users',
@@ -83,6 +89,117 @@ export const maintenanceRuns = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (table) => [index('maintenance_runs_task_started_idx').on(table.task, table.startedAt.desc())],
+);
+
+export const analyticsVisitors = pgTable(
+  'analytics_visitors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    currentSessionId: uuid('current_session_id').notNull().defaultRandom(),
+    sessionLastSeenAt: timestamp('session_last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    consentedAt: timestamp('consented_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('analytics_visitors_last_seen_idx').on(table.lastSeenAt)],
+);
+
+export const analyticsEvents = pgTable(
+  'analytics_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventId: uuid('event_id').notNull().unique(),
+    visitorId: uuid('visitor_id')
+      .notNull()
+      .references(() => analyticsVisitors.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    sessionId: uuid('session_id').notNull(),
+    name: text('name').notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    sequenceInBatch: integer('sequence_in_batch').notNull().default(0),
+    appVersion: text('app_version').notNull(),
+    actorType: text('actor_type').notNull(),
+    path: text('path').notNull(),
+    referrerDomain: text('referrer_domain'),
+    utmSource: text('utm_source'),
+    utmMedium: text('utm_medium'),
+    utmCampaign: text('utm_campaign'),
+    utmContent: text('utm_content'),
+    deviceType: analyticsDeviceEnum('device_type').notNull(),
+    browserFamily: analyticsBrowserEnum('browser_family').notNull(),
+    osFamily: analyticsOsEnum('os_family').notNull(),
+    properties: jsonb('properties').notNull().default(sql`'{}'::jsonb`),
+    isBot: boolean('is_bot').notNull().default(false),
+    isInternal: boolean('is_internal').notNull().default(false),
+  },
+  (table) => [
+    index('analytics_events_received_idx').on(table.receivedAt),
+    index('analytics_events_session_idx').on(
+      table.sessionId,
+      table.occurredAt,
+      table.receivedAt,
+      table.sequenceInBatch,
+    ),
+    index('analytics_events_name_time_idx').on(table.name, table.occurredAt),
+    index('analytics_events_visitor_time_idx').on(table.visitorId, table.occurredAt),
+  ],
+);
+
+export const analyticsIdentityLinks = pgTable(
+  'analytics_identity_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    visitorId: uuid('visitor_id')
+      .notNull()
+      .references(() => analyticsVisitors.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('analytics_identity_links_visitor_user_unique').on(table.visitorId, table.userId),
+    index('analytics_identity_links_user_idx').on(table.userId),
+  ],
+);
+
+export const analyticsDailyRollups = pgTable(
+  'analytics_daily_rollups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    day: date('day').notNull(),
+    eventName: text('event_name').notNull(),
+    dimensionName: text('dimension_name').notNull().default('all'),
+    dimensionValue: text('dimension_value').notNull().default('all'),
+    eventCount: integer('event_count').notNull().default(0),
+    uniqueVisitors: integer('unique_visitors').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('analytics_daily_rollups_unique').on(
+      table.day,
+      table.eventName,
+      table.dimensionName,
+      table.dimensionValue,
+    ),
+    index('analytics_daily_rollups_day_idx').on(table.day),
+  ],
+);
+
+export const analyticsDeletionRequests = pgTable(
+  'analytics_deletion_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    visitorTokenHash: text('visitor_token_hash'),
+    status: analyticsDeletionStatusEnum('status').notNull().default('pending'),
+    deletedEventCount: integer('deleted_event_count').notNull().default(0),
+    deletedLinkCount: integer('deleted_link_count').notNull().default(0),
+    errorCode: text('error_code'),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [index('analytics_deletion_requests_status_idx').on(table.status, table.requestedAt)],
 );
 
 export const sessions = pgTable(
@@ -197,6 +314,9 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 export type MaintenanceRun = typeof maintenanceRuns.$inferSelect;
+export type AnalyticsVisitor = typeof analyticsVisitors.$inferSelect;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type EmailToken = typeof emailTokens.$inferSelect;
 export type Design = typeof designs.$inferSelect;

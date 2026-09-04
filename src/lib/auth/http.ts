@@ -21,7 +21,7 @@ export async function readJson(request: Request, maxBytes: number = DEFAULT_MAX_
   if (Number.isFinite(declared) && declared > maxBytes) {
     return {
       ok: false,
-      response: apiError(new AppError('VALIDATION', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
+      response: apiError(new AppError('PAYLOAD_TOO_LARGE', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
     };
   }
 
@@ -42,7 +42,7 @@ export async function readJson(request: Request, maxBytes: number = DEFAULT_MAX_
         await reader.cancel();
         return {
           ok: false,
-          response: apiError(new AppError('VALIDATION', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
+          response: apiError(new AppError('PAYLOAD_TOO_LARGE', `请求体过大（上限 ${Math.floor(maxBytes / 1024)} KB）`)),
         };
       }
       chunks.push(value);

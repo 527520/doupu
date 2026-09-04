@@ -252,6 +252,87 @@ body {
   font-family: var(--font-sans);
 }
 
+.analytics-consent {
+  position: fixed;
+  z-index: 60;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  width: min(44rem, calc(100vw - 2rem));
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--color-lilac) 35%, transparent);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-2xl);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: var(--shadow-card);
+}
+.analytics-consent strong { color: var(--color-ink); }
+.analytics-consent p { margin-top: .3rem; max-width: 48rem; color: var(--color-ink-soft); font-size: .875rem; line-height: 1.55; }
+.analytics-consent .link-soft { display: inline-block; margin-top: .35rem; font-size: .8rem; }
+.analytics-consent-actions { display: flex; flex: 0 0 auto; gap: .5rem; }
+.analytics-consent .analytics-consent-error { color: var(--color-danger); }
+.analytics-settings > div { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+
+@media (max-width: 640px) {
+  .analytics-consent { bottom: 5.25rem; flex-direction: column; align-items: stretch; }
+  .analytics-consent-actions > * { flex: 1; }
+}
+
+/* 管理后台：审核校样台。纸张留白、编号和固定处置区形成独立于工作台的视觉语法。 */
+.admin-shell { min-height: 100svh; padding-left: 14rem; background: #f2efe9; }
+.admin-rail { position: fixed; inset: 0 auto 0 0; z-index: 40; display: flex; width: 14rem; flex-direction: column; border-right: 1px solid rgb(48 41 56 / 18%); background: var(--color-ink); color: white; }
+.admin-wordmark { display: flex; align-items: center; gap: .75rem; padding: 1.4rem 1.25rem; border-bottom: 1px solid rgb(255 255 255 / 14%); }
+.admin-wordmark span { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid rgb(255 255 255 / 48%); font-family: ui-monospace, monospace; font-size: .75rem; }
+.admin-wordmark strong { font-family: "Songti SC", "STSong", serif; letter-spacing: .08em; }
+.admin-rail nav { display: flex; flex: 1; flex-direction: column; padding: .9rem .65rem; overflow-y: auto; }
+.admin-rail nav a { display: flex; gap: .75rem; padding: .62rem .7rem; border-left: 2px solid transparent; color: rgb(255 255 255 / 76%); font-size: .84rem; }
+.admin-rail nav a:hover, .admin-rail nav a:focus-visible { border-left-color: var(--color-primary-soft); background: rgb(255 255 255 / 8%); color: white; }
+.admin-rail nav small { color: rgb(255 255 255 / 42%); font-family: ui-monospace, monospace; }
+.admin-back { margin: .8rem; padding: .65rem; border: 1px solid rgb(255 255 255 / 18%); text-align: center; font-size: .8rem; }
+.admin-stage { min-height: 100svh; }
+.admin-page { padding: clamp(1rem, 3vw, 2.5rem); }
+.admin-page-header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1.25rem; border-bottom: 2px solid var(--color-ink); }
+.admin-page-header span, .admin-panel header span { font-family: ui-monospace, monospace; color: var(--color-ink-soft); font-size: .7rem; letter-spacing: .08em; }
+.admin-page-header h1 { margin-top: .2rem; font-family: "Songti SC", "STSong", serif; font-size: clamp(1.65rem, 3vw, 2.4rem); }
+.admin-page-header p { color: var(--color-ink-soft); font-size: .78rem; }
+.admin-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 1.25rem; border: 1px solid rgb(48 41 56 / 18%); background: white; }
+.admin-metrics article { display: grid; grid-template-columns: 1fr auto; gap: .2rem; padding: 1.1rem; border-right: 1px solid rgb(48 41 56 / 14%); }
+.admin-metrics article:last-child { border-right: 0; }
+.admin-metrics small { grid-column: 1 / -1; font-family: ui-monospace, monospace; color: var(--color-ink-soft); font-size: .65rem; }
+.admin-metrics strong { font-family: ui-monospace, monospace; font-size: 1.75rem; }
+.admin-metrics span { align-self: end; color: var(--color-ink-soft); font-size: .75rem; }
+.admin-proof-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); gap: 1rem; margin-top: 1rem; }
+.admin-panel { border: 1px solid rgb(48 41 56 / 18%); background: white; }
+.admin-panel > header { display: flex; align-items: center; justify-content: space-between; padding: .8rem 1rem; border-bottom: 1px solid rgb(48 41 56 / 14%); }
+.admin-panel h2 { font-family: "Songti SC", "STSong", serif; font-size: 1rem; }
+.analytics-chart { padding: 1rem; color: var(--color-primary-deep); }
+.analytics-chart figcaption { margin-bottom: .5rem; color: var(--color-ink-soft); font-size: .75rem; }
+.analytics-chart svg { width: 100%; min-height: 12rem; overflow: visible; }
+.analytics-chart circle { fill: white; stroke: currentColor; stroke-width: 3; }
+.analytics-chart circle:focus { outline: none; fill: var(--color-primary-soft); stroke-width: 5; }
+.admin-panel table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.admin-panel th, .admin-panel td { padding: .65rem .8rem; border-bottom: 1px solid rgb(48 41 56 / 10%); text-align: left; }
+.admin-panel th { color: var(--color-ink-soft); font-weight: 500; }
+.admin-panel td:not(:first-child), .admin-panel th:not(:first-child) { text-align: right; font-family: ui-monospace, monospace; }
+.admin-empty { padding: 3rem 1rem; text-align: center; color: var(--color-ink-soft); font-size: .85rem; }
+.admin-footnote { margin-top: 1rem; color: var(--color-ink-soft); font-size: .75rem; }
+
+@media (max-width: 760px) {
+  .admin-shell { padding-left: 0; padding-bottom: 4.5rem; }
+  .admin-rail { inset: auto 0 0; width: auto; height: 4rem; flex-direction: row; }
+  .admin-wordmark, .admin-back { display: none; }
+  .admin-rail nav { flex-direction: row; padding: .35rem; overflow-x: auto; }
+  .admin-rail nav a { flex: 0 0 auto; flex-direction: column; align-items: center; gap: .1rem; padding: .35rem .65rem; border-left: 0; border-top: 2px solid transparent; font-size: .68rem; }
+  .admin-rail nav a:hover, .admin-rail nav a:focus-visible { border-top-color: var(--color-primary-soft); border-left-color: transparent; }
+  .admin-page-header { align-items: start; flex-direction: column; }
+  .admin-metrics { grid-template-columns: 1fr; }
+  .admin-metrics article { border-right: 0; border-bottom: 1px solid rgb(48 41 56 / 14%); }
+  .admin-proof-grid { grid-template-columns: 1fr; }
+}
+
 /* ============================================================
    工作室框架：桌面是常驻侧栏；移动端是独立顶栏与底部五入口。
    ============================================================ */

@@ -17,6 +17,7 @@ import { encodeQR } from 'qr';
 import Modal from '@/components/ui/Modal';
 import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
+import { track } from '@/lib/analytics/client';
 
 interface Props {
   designId: string;
@@ -74,6 +75,7 @@ export default function ShareButton({ designId, onBeforeShare, disabled, disable
       // 二维码在浏览器端生成：链接不必再发一次给任何服务端
       const svg = encodeQR(url, 'svg', { ecc: 'medium', border: 2 });
       setState({ kind: 'ready', url, svg });
+      track({ name: 'share_created', properties: {} });
     } catch {
       setState({ kind: 'failed', message: t.createFailed });
     }
@@ -95,6 +97,7 @@ export default function ShareButton({ designId, onBeforeShare, disabled, disable
     }
     setState({ kind: 'idle' });
     setOpen(false);
+    track({ name: 'share_revoked', properties: {} });
   }, [designId, t.stopFailed]);
 
   const copyLink = async (): Promise<void> => {

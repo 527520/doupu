@@ -98,6 +98,8 @@ import { createDoupuApi } from '@/lib/sync/api';
 import { enqueueDesignSync, withDesignStorageLock } from '@/lib/sync/queue';
 import type { SyncOutcome } from '@/lib/sync/clientAdapter';
 import { getPaletteColors, listPalettes } from '@/components/palettes/api';
+import { track } from '@/lib/analytics/client';
+import { colorBucket, widthBucket } from '@/lib/analytics/buckets';
 
 type Step = 'upload' | 'crop' | 'workspace';
 type Tab = 'preview' | 'edit' | 'stitch';
@@ -520,28 +522,46 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           genStartedAtRef.current = performance.now();
           setShowProgress(false);
           setErrorMsg(null);
+          track({
+            name: 'generation_started',
+            properties: {
+              widthBucket: widthBucket(generationDraft.params.targetWidth),
+              colorBucket: colorBucket(palette.length),
+              boardProfile: generationDraft.boardProfile,
+              dithering: generationDraft.params.dithering,
+            },
+          });
         },
         onProgress: () => {
           if (performance.now() - genStartedAtRef.current >= 300) setShowProgress(true);
         },
         onSuccess: () => {
+          track({
+            name: 'generation_succeeded',
+            properties: {
+              widthBucket: widthBucket(generationDraft.params.targetWidth),
+              colorBucket: colorBucket(palette.length),
+            },
+          });
           markDirty();
           // D-1：生成完成的可感知反馈（播报 + 三段编排 + 数字滚动）
           setDoneToken((token) => token + 1);
         },
         onFailure: (_error, stableDraft) => {
+          track({ name: 'generation_failed', properties: { errorCode: 'GENERATION_FAILED' } });
           if (stableDraft) restoreDraftControls(stableDraft);
         },
         onSettled: () => { setShowProgress(false); },
       });
     },
-    [t.generateFailed, markDirty, generateFn, startGeneration, restoreDraftControls],
+    [t.generateFailed, markDirty, generateFn, startGeneration, restoreDraftControls, generationDraft, palette.length],
   );
 
   /** 取消在途生成任务：作废令牌、终止 Worker，并回滚到生成前的稳定提交态。 */
   const handleCancelGenerate = useCallback((): void => {
     const cancelled = cancelGeneration();
     if (!cancelled) return;
+    track({ name: 'generation_cancelled', properties: {} });
     if (cancelled.stableDraft) restoreDraftControls(cancelled.stableDraft);
     setShowProgress(false);
     if (!cancelled.hadCommit) {
@@ -654,6 +674,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       // Keep one immutable cross-thread RGBA allocation for the entire
       // generation session; subsequent parameter changes send only params.
       cropped = prepareGenerationSource(cropped);
+      const ratio = rect.width / rect.height;
+      track({
+        name: 'crop_completed',
+        properties: { aspectBucket: Math.abs(ratio - 1) < 0.05 ? 'square' : ratio > 1 ? 'landscape' : 'portrait' },
+      });
       pendingGenerationSourceRef.current = cropped;
       setDecoded(null);
       encodedSourceRef.current = null;
@@ -1198,12 +1223,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       } else {
         setSaveState('dirty');
       }
+      track({ name: 'design_saved', properties: { source: authStatus.kind === 'user' ? 'cloud' : 'local' } });
       return true;
     } catch (error) {
       setSaveState(isQuotaError(error) ? 'quota' : 'error');
       return false;
     }
-  }, [buildProject, scheduleAutosave, syncCloud]);
+  }, [authStatus.kind, buildProject, scheduleAutosave, syncCloud]);
 
   /**
    * 分享前的准备（批次 K）：把当前设计**确实**保存并推到云端。

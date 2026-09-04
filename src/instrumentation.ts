@@ -23,6 +23,15 @@ export async function register(): Promise<void> {
         } catch (error) {
           console.error('[cleanup] rate_limits 清理失败（不阻塞启动）:', error);
         }
+        try {
+          const { runAnalyticsMaintenance } = await import('@/lib/analytics/maintenance');
+          const analytics = await runAnalyticsMaintenance(getDb(), new Date());
+          if (!analytics.skipped) {
+            console.log(`[cleanup] 分析维护聚合 ${analytics.daysRolledUp} 天，清理 ${analytics.rawEventsDeleted} 条原始事件`);
+          }
+        } catch (error) {
+          console.error('[cleanup] 分析维护失败（不阻塞应用）:', error);
+        }
       };
       void runCleanup();
       setInterval(() => void runCleanup(), 24 * 60 * 60 * 1000);

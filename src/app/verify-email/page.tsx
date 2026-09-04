@@ -7,6 +7,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
+import { track } from '@/lib/analytics/client';
 
 type State = 'loading' | 'success' | 'error';
 
@@ -27,6 +28,7 @@ function VerifyInner() {
   const [resendDone, setResendDone] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const verificationRef = useRef<{ token: string; result: Promise<boolean> } | null>(null);
+  const trackedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +49,13 @@ function VerifyInner() {
       };
     }
     void verificationRef.current.result.then((ok) => {
-      if (!cancelled) setState(ok ? 'success' : 'error');
+      if (!cancelled) {
+        setState(ok ? 'success' : 'error');
+        if (ok && !trackedRef.current) {
+          trackedRef.current = true;
+          track({ name: 'email_verified', properties: {} });
+        }
+      }
     });
     return () => {
       cancelled = true;

@@ -9,6 +9,7 @@ import { createPngArchiveBlob } from '@/lib/export/pngArchive';
 import { createPngExportPlan, largestFittingPngCellPx } from '@/lib/export/pngPlan';
 import type { Pattern } from '@/lib/types';
 import { usePublicConfig } from '@/components/config/usePublicConfig';
+import { track } from '@/lib/analytics/client';
 
 interface Props {
   pattern: Pattern;
@@ -100,6 +101,7 @@ export default function PngExportButton({
         boardSize,
       });
       if (!result.ok) {
+        track({ name: 'export_failed', properties: { format: 'png', errorCode: result.code } });
         if (result.code === 'EMPTY_PATTERN') setError(zhCN.export.pngEmptyError);
         else if (result.code === 'CANVAS_TOO_LARGE') setError(zhCN.export.pngTooLargeError(suggestedCellPx));
         else setError(zhCN.export.pngFailed);
@@ -127,8 +129,10 @@ export default function PngExportButton({
         window.setTimeout(() => URL.revokeObjectURL(url), OBJECT_URL_REVOKE_DELAY_MS);
       }
       setOpen(false);
+      track({ name: 'design_exported', properties: { format: 'png' } });
     } catch {
       setError(zhCN.export.pngFailed);
+      track({ name: 'export_failed', properties: { format: 'png', errorCode: 'PNG_EXPORT_FAILED' } });
     } finally {
       setBusy(false);
     }

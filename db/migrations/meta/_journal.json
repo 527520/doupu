@@ -43,6 +43,13 @@
       "when": 1788534913875,
       "tag": "0005_identity_governance",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788537353112,
+      "tag": "0006_consent_analytics",
+      "breakpoints": true
     }
   ]
 }

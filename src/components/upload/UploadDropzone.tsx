@@ -10,6 +10,8 @@ import Notice from '@/components/ui/Notice';
 import { validateImageFile, type ImageErrorCode } from '@/lib/image/validation';
 import type { ImageType } from '@/lib/image/sniff';
 import Icon from '@/components/ui/Icon';
+import { track } from '@/lib/analytics/client';
+import { fileSizeBucket } from '@/lib/analytics/buckets';
 
 export interface ValidImageFile {
   bytes: Uint8Array;
@@ -48,6 +50,12 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
         if (!result.ok) {
           setError(errorMessage(result.code));
           return;
+        }
+        if (result.type !== 'gif') {
+          track({
+            name: 'upload_selected',
+            properties: { mimeGroup: result.type, sizeBucket: fileSizeBucket(file.size) },
+          });
         }
         onValid({ bytes, name: file.name, type: result.type });
       } catch {

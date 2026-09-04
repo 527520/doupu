@@ -5,8 +5,14 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { setTestDb } from '@/lib/auth/db';
-import { rateLimits } from '@/../db/schema';
-import { users } from '@/../db/schema';
+import {
+  analyticsDailyRollups,
+  analyticsEvents,
+  analyticsIdentityLinks,
+  analyticsVisitors,
+  rateLimits,
+  users,
+} from '@/../db/schema';
 import { eq } from 'drizzle-orm';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
 import * as mailer from '@/lib/auth/mailer';
@@ -227,6 +233,25 @@ describe('认证全生命周期', () => {
     const login = await loginPost(post('/api/auth/login', { email: mail, password }));
     cookieJar.set(SESSION_COOKIE_NAME, setCookieFromResponse(login)!);
     const [beforeDelete] = await testDb.select().from(users).where(eq(users.email, mail));
+    const [visitor] = await testDb.insert(analyticsVisitors).values({ tokenHash: crypto.randomUUID() }).returning();
+    await testDb.insert(analyticsIdentityLinks).values({ visitorId: visitor.id, userId: beforeDelete.id });
+    await testDb.insert(analyticsEvents).values({
+      eventId: crypto.randomUUID(),
+      visitorId: visitor.id,
+      userId: beforeDelete.id,
+      sessionId: crypto.randomUUID(),
+      name: 'login_succeeded',
+      occurredAt: new Date(),
+      appVersion: 'test',
+      actorType: 'user',
+      path: '/login',
+      deviceType: 'desktop',
+      browserFamily: 'other',
+      osFamily: 'other',
+    });
+    await testDb.insert(analyticsDailyRollups).values({
+      day: '2026-09-05', eventName: 'login_succeeded', eventCount: 1, uniqueVisitors: 1,
+    });
 
     const wrong = await accountDelete(post('/api/auth/account', { password: 'wrong' }));
     expect(wrong.status).toBe(400);
@@ -243,6 +268,9 @@ describe('认证全生命周期', () => {
       role: 'user',
     });
     expect(account?.publicAuthorId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await testDb.select().from(analyticsEvents)).toEqual([]);
+    expect(await testDb.select().from(analyticsIdentityLinks)).toEqual([]);
+    expect(await testDb.select().from(analyticsDailyRollups)).toHaveLength(1);
     cookieJar.clear();
 
     const after = await loginPost(post('/api/auth/login', { email: mail, password }));

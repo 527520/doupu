@@ -2,6 +2,8 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
 import {
   adminAuditLogs,
+  analyticsEvents,
+  analyticsIdentityLinks,
   designShares,
   designs,
   emailTokens,
@@ -40,6 +42,10 @@ export async function anonymizeAccount(
 
     await tx.delete(sessions).where(eq(sessions.userId, account.id));
     await tx.delete(emailTokens).where(eq(emailTokens.userId, account.id));
+    // Account erasure removes user-linked raw analytics while preserving the
+    // already de-identified daily rollups.
+    await tx.delete(analyticsEvents).where(eq(analyticsEvents.userId, account.id));
+    await tx.delete(analyticsIdentityLinks).where(eq(analyticsIdentityLinks.userId, account.id));
     await tx.delete(designShares).where(eq(designShares.userId, account.id));
     await tx.delete(designs).where(eq(designs.userId, account.id));
     await tx.delete(palettes).where(eq(palettes.userId, account.id));

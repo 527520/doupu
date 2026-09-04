@@ -15,6 +15,7 @@ describe('production auth adapters', () => {
       SMTP_HOST: 'smtp.example.com',
       BACKUP_ALERT_TOKEN: 'a'.repeat(32),
       ADMIN_EMAIL: 'ops@example.com',
+      ANALYTICS_IP_HMAC_KEY: 'h'.repeat(32),
     })).toThrow(/SMTP_USER/);
   });
 
@@ -28,6 +29,7 @@ describe('production auth adapters', () => {
       SMTP_FROM: 'noreply@example.com',
       BACKUP_ALERT_TOKEN: 'a'.repeat(32),
       ADMIN_EMAIL: 'ops@example.com',
+      ANALYTICS_IP_HMAC_KEY: 'h'.repeat(32),
     })).toEqual({ mail: 'smtp' });
   });
 
@@ -42,6 +44,7 @@ describe('production auth adapters', () => {
       SES_RESET_TEMPLATE_ID: '102',
       BACKUP_ALERT_TOKEN: 'a'.repeat(32),
       ADMIN_EMAIL: 'ops@example.com',
+      ANALYTICS_IP_HMAC_KEY: 'h'.repeat(32),
     };
     // 缺告警模板：允许启动（告警走日志），而不是拒绝启动整个应用
     expect(validateProductionAuthAdapters(ses)).toEqual({ mail: 'ses' });

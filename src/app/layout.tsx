@@ -4,6 +4,8 @@ import './globals.css';
 import { zhCN } from '@/messages/zh-CN';
 import { APP_NAME } from '@/lib/appInfo';
 import ClientReadyMarker from '@/components/system/ClientReadyMarker';
+import { AnalyticsConsentBanner } from '@/components/analytics/AnalyticsConsent';
+import PageViewTracker from '@/components/analytics/PageViewTracker';
 
 const appUrl = () => process.env.APP_URL ?? 'http://localhost:3000';
 
@@ -62,7 +64,9 @@ export default async function RootLayout({
           {zhCN.nav.skipToMain}
         </a>
         <ClientReadyMarker />
+        <PageViewTracker />
         {children}
+        <AnalyticsConsentBanner />
       </body>
     </html>
   );

@@ -39,5 +39,8 @@ export function validateProductionAuthAdapters(env: Environment = process.env): 
   if ((env.BACKUP_ALERT_TOKEN?.length ?? 0) < 16) {
     throw new Error('BACKUP_ALERT_TOKEN must contain at least 16 characters');
   }
+  if (!env.ANALYTICS_IP_HMAC_KEY || env.ANALYTICS_IP_HMAC_KEY.length < 32) {
+    throw new Error('ANALYTICS_IP_HMAC_KEY must contain at least 32 characters in production');
+  }
   return { mail };
 }
