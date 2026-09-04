@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
 import {
@@ -19,7 +19,7 @@ import { resolvePublicDisplayName, ANONYMIZED_DISPLAY_NAME } from '@/lib/identit
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
 import type { ProjectFile } from '@/lib/types';
-import { moderateText, moderationRulesSchema, type ModerationRule } from './moderation';
+import { INITIAL_MODERATION_RULES, moderateText, moderationRulesSchema, type ModerationRule } from './moderation';
 import { parseCommunitySnapshot } from './snapshot';
 
 const commentBodySchema = z.string().trim().min(1).max(500);
@@ -54,7 +54,30 @@ async function activeRules(tx: AnyDatabase): Promise<ModerationRule[]> {
   const [row] = await tx.select({ rules: moderationRuleSetVersions.rules })
     .from(moderationRuleSetVersions).where(eq(moderationRuleSetVersions.active, true));
   const parsed = moderationRulesSchema.safeParse(row?.rules ?? []);
-  return parsed.success ? parsed.data : [];
+  return parsed.success ? parsed.data : [...INITIAL_MODERATION_RULES];
+}
+
+async function moderateCommentBody(
+  tx: AnyDatabase,
+  input: { userId: string; body: string; now: Date; excludeCommentId?: string },
+) {
+  const recentWhere = [
+    eq(communityComments.authorUserId, input.userId),
+    inArray(communityComments.status, ['published', 'pending_review']),
+    gte(communityComments.updatedAt, new Date(input.now.getTime() - 5 * 60 * 1000)),
+  ];
+  if (input.excludeCommentId) recentWhere.push(ne(communityComments.id, input.excludeCommentId));
+  const [rules, recent] = await Promise.all([
+    activeRules(tx),
+    tx.select({ body: communityComments.body }).from(communityComments)
+      .where(and(...recentWhere)).orderBy(desc(communityComments.updatedAt)).limit(6),
+  ]);
+  const moderation = moderateText(input.body, rules);
+  if (recent.length >= 5 || recent.some((row) => row.body.normalize('NFKC') === input.body.normalize('NFKC'))) {
+    moderation.needsReview = true;
+    if (!moderation.categories.includes('spam')) moderation.categories.push('spam');
+  }
+  return moderation;
 }
 
 export async function setCommunityLike(db: AnyDatabase, input: { actor: Actor; workId: string; liked: boolean }) {
@@ -95,6 +118,7 @@ export async function reuseCommunityWork(db: AnyDatabase, input: { actor: Actor;
     const designId = randomUUID();
     const project: ProjectFile = {
       format: 'doupu-project', version: 3,
+      communityOrigin: true,
       engineVersion: snapshot.engineVersion,
       boardProfile: snapshot.boardProfile,
       name: `${revision.title}（引用）`,
@@ -129,20 +153,10 @@ export async function createCommunityComment(db: AnyDatabase, input: {
   return db.transaction(async (tx) => {
     const work = await activeWork(tx, input.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
-    const [rules, identity, recent] = await Promise.all([
-      activeRules(tx),
+    const [identity, moderation] = await Promise.all([
       commentIdentity(tx, input.actor),
-      tx.select({ body: communityComments.body }).from(communityComments).where(and(
-        eq(communityComments.authorUserId, input.actor.userId),
-        inArray(communityComments.status, ['published', 'pending_review']),
-        gte(communityComments.createdAt, new Date(now.getTime() - 5 * 60 * 1000)),
-      )).orderBy(desc(communityComments.createdAt)).limit(6),
+      moderateCommentBody(tx, { userId: input.actor.userId, body: body.data, now }),
     ]);
-    const moderation = moderateText(body.data, rules);
-    if (recent.length >= 5 || recent.some((row) => row.body.normalize('NFKC') === body.data.normalize('NFKC'))) {
-      moderation.needsReview = true;
-      if (!moderation.categories.includes('spam')) moderation.categories.push('spam');
-    }
     const status = moderation.needsReview ? 'pending_review' : 'published';
     const [comment] = await tx.insert(communityComments).values({
       workId: work.id, authorUserId: input.actor.userId,
@@ -168,10 +182,17 @@ export async function editCommunityComment(db: AnyDatabase, input: {
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.authorUserId !== input.actor.userId || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
     if (comment.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '评论版本已变化');
-    if (now.getTime() - comment.createdAt.getTime() > 15 * 60 * 1000) throw new AppError('FORBIDDEN', '评论只能在发布后 15 分钟内编辑');
+    if (comment.status !== 'published') throw new AppError('FORBIDDEN', '评论只能在发布后编辑');
+    const publishedAt = comment.reviewedAt ?? comment.createdAt;
+    if (now.getTime() - publishedAt.getTime() > 15 * 60 * 1000) throw new AppError('FORBIDDEN', '评论只能在发布后 15 分钟内编辑');
     const work = await activeWork(tx, comment.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
-    const moderation = moderateText(body.data, await activeRules(tx));
+    const moderation = await moderateCommentBody(tx, {
+      userId: input.actor.userId,
+      body: body.data,
+      now,
+      excludeCommentId: comment.id,
+    });
     const status = moderation.needsReview ? 'pending_review' : 'published';
     const [updated] = await tx.update(communityComments).set({
       body: body.data, status, riskCategories: moderation.categories,
@@ -213,7 +234,8 @@ export async function listCommunityComments(db: AnyDatabase, workId: string, vie
     authorUserId: communityComments.authorUserId,
     frozenDisplayName: communityComments.frozenDisplayName, accountStatus: users.accountStatus,
     body: communityComments.body, version: communityComments.version,
-    createdAt: communityComments.createdAt, editedAt: communityComments.editedAt,
+    createdAt: communityComments.createdAt, reviewedAt: communityComments.reviewedAt,
+    editedAt: communityComments.editedAt,
   }).from(communityComments).leftJoin(users, eq(users.id, communityComments.authorUserId))
     .where(and(eq(communityComments.workId, workId), eq(communityComments.status, 'published')))
     .orderBy(communityComments.createdAt).limit(100);
@@ -222,7 +244,8 @@ export async function listCommunityComments(db: AnyDatabase, workId: string, vie
     author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
     body: row.body, version: row.version,
     createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null,
-    editable: row.authorUserId === viewerUserId && Date.now() - row.createdAt.getTime() <= 15 * 60 * 1000,
+    editable: row.authorUserId === viewerUserId
+      && Date.now() - (row.reviewedAt ?? row.createdAt).getTime() <= 15 * 60 * 1000,
   }));
 }
 
@@ -235,10 +258,10 @@ export async function reportCommunityTarget(db: AnyDatabase, input: {
     let targetVersion: number;
     if (input.targetType === 'work') {
       const work = await activeWork(tx, input.targetId);
-      const [revision] = await tx.select({ version: communityRevisions.version }).from(communityRevisions)
+      const [revision] = await tx.select({ revisionNumber: communityRevisions.revisionNumber }).from(communityRevisions)
         .where(eq(communityRevisions.id, work.currentPublishedRevisionId!));
       if (!revision) throw new AppError('NOT_FOUND', '作品不存在');
-      targetVersion = revision.version;
+      targetVersion = revision.revisionNumber;
     } else {
       const [comment] = await tx.select({ version: communityComments.version, status: communityComments.status })
         .from(communityComments).where(eq(communityComments.id, input.targetId));

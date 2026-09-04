@@ -12,6 +12,7 @@ import {
   designShares,
   designs,
   emailTokens,
+  idempotencyRecords,
   palettes,
   sessions,
   users,
@@ -81,9 +82,23 @@ export async function anonymizeAccount(
     }
     await tx.update(communityReports).set({ reporterUserId: null }).where(eq(communityReports.reporterUserId, account.id));
     await tx.update(communityReuses).set({ userId: null }).where(eq(communityReuses.userId, account.id));
+    await tx.delete(idempotencyRecords).where(eq(idempotencyRecords.actorUserId, account.id));
     await tx.delete(designShares).where(eq(designShares.userId, account.id));
     await tx.delete(designs).where(eq(designs.userId, account.id));
     await tx.delete(palettes).where(eq(palettes.userId, account.id));
+
+    // Audit facts remain append-only, but the retired account must no longer be
+    // recoverable from actor/target identifiers or account-state snapshots.
+    await tx.update(adminAuditLogs).set({ actorUserId: null })
+      .where(eq(adminAuditLogs.actorUserId, account.id));
+    await tx.update(adminAuditLogs).set({
+      targetId: 'anonymized',
+      beforeState: null,
+      afterState: null,
+    }).where(and(
+      eq(adminAuditLogs.targetType, 'user'),
+      eq(adminAuditLogs.targetId, account.id),
+    ));
 
     const [updated] = await tx.update(users).set({
       email: null,
@@ -101,15 +116,15 @@ export async function anonymizeAccount(
     }).where(eq(users.id, account.id)).returning();
 
     await tx.insert(adminAuditLogs).values({
-      actorUserId: account.id,
+      actorUserId: null,
       actorRole: account.role,
       action: 'account.anonymized',
       targetType: 'user',
-      targetId: account.id,
+      targetId: 'anonymized',
       reason: '用户确认注销账号',
       requestId: input.requestId,
-      beforeState: sanitizeAuditState(account),
-      afterState: sanitizeAuditState(updated),
+      beforeState: sanitizeAuditState({ role: account.role, accountStatus: account.accountStatus }),
+      afterState: sanitizeAuditState({ role: updated.role, accountStatus: updated.accountStatus }),
     });
   });
 }

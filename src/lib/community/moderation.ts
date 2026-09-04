@@ -9,7 +9,7 @@ export const moderationRuleSchema = z.object({
   risk: z.enum(['review']),
 }).strict();
 
-export const moderationRulesSchema = z.array(moderationRuleSchema).max(500).superRefine((rules, ctx) => {
+export const moderationRulesSchema = z.array(moderationRuleSchema).min(1).max(500).superRefine((rules, ctx) => {
   const seen = new Set<string>();
   rules.forEach((rule, index) => {
     const key = `${rule.category}:${rule.literal.toLocaleLowerCase('zh-CN')}`;
@@ -19,6 +19,17 @@ export const moderationRulesSchema = z.array(moderationRuleSchema).max(500).supe
 });
 
 export type ModerationRule = z.infer<typeof moderationRuleSchema>;
+
+export const INITIAL_MODERATION_RULES: readonly ModerationRule[] = [
+  { literal: '杀了你', category: 'harm', risk: 'review' },
+  { literal: '去死', category: 'harm', risk: 'review' },
+  { literal: '废物', category: 'harassment', risk: 'review' },
+  { literal: '滚出去', category: 'harassment', risk: 'review' },
+  { literal: '成人视频', category: 'sexual', risk: 'review' },
+  { literal: '色情交易', category: 'sexual', risk: 'review' },
+  { literal: '加微信', category: 'spam', risk: 'review' },
+  { literal: '代刷', category: 'spam', risk: 'review' },
+];
 
 export interface ModerationResult {
   needsReview: boolean;

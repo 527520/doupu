@@ -29,7 +29,7 @@ const eventSchemas = [
     source: z.enum(['local', 'cloud', 'community']),
   }).strict() }).strict(),
   z.object({ name: z.literal('design_exported'), properties: z.object({
-    format: z.enum(['png', 'pdf', 'project']),
+    format: z.enum(['png', 'pdf', 'project']), source: z.enum(['community', 'other']),
   }).strict() }).strict(),
   z.object({ name: z.literal('export_failed'), properties: z.object({
     format: z.enum(['png', 'pdf', 'project']), errorCode,

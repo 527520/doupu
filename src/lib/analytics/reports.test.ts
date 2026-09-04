@@ -79,4 +79,29 @@ describe('analytics reports', () => {
       steps: null,
     });
   });
+
+  it('counts only community-origin saves and exports in the reuse funnel', async () => {
+    const [visitor] = await db.insert(analyticsVisitors).values({ tokenHash: 'visitor-community' }).returning();
+    const base = {
+      visitorId: visitor.id, userId: null, receivedAt: new Date('2026-09-04T01:00:10Z'),
+      appVersion: 'test', actorType: 'user', path: '/community', deviceType: 'desktop' as const,
+      browserFamily: 'chrome' as const, osFamily: 'macos' as const, isBot: false, isInternal: false,
+    };
+    const events = (sessionId: string, source: 'cloud' | 'community') => [
+      { name: 'community_list_viewed', properties: {} },
+      { name: 'community_detail_viewed', properties: {} },
+      { name: 'community_reuse_succeeded', properties: {} },
+      { name: 'design_saved', properties: { source } },
+      { name: 'design_exported', properties: { format: 'png', source: source === 'community' ? 'community' : 'other' } },
+    ].map((event, index) => ({
+      ...base, ...event, sessionId, eventId: crypto.randomUUID(), sequenceInBatch: index,
+      occurredAt: new Date(`2026-09-04T01:00:0${index}Z`),
+    }));
+    await db.insert(analyticsEvents).values([
+      ...events(crypto.randomUUID(), 'cloud'),
+      ...events(crypto.randomUUID(), 'community'),
+    ]);
+    const funnel = await queryAnalyticsFunnel(db, { start: '2026-09-04', end: '2026-09-04' }, 'communityReuse', NOW);
+    expect(funnel.steps?.map((step) => step.sessions)).toEqual([2, 2, 2, 1, 1]);
+  });
 });

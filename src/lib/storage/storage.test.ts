@@ -285,6 +285,7 @@ describe('纯函数辅助', () => {
   it('parseStoredProject：合法 JSON 可解析，坏数据返回 null', () => {
     const project = makeProject('甲', '2026-08-14T10:00:00.000Z');
     expect(parseStoredProject(JSON.stringify(project))?.name).toBe('甲');
+    expect(parseStoredProject(JSON.stringify({ ...project, communityOrigin: true }))?.communityOrigin).toBe(true);
     expect(parseStoredProject('not json')).toBeNull();
     expect(parseStoredProject('{}')).toBeNull();
   });

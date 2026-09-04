@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAnalyticsContext } from './normalize';
+import { normalizeAnalyticsContext, normalizePath } from './normalize';
 
 describe('analytics privacy normalization', () => {
   it('drops query text, referrer paths, utm term and raw user agent', () => {
@@ -24,5 +24,11 @@ describe('analytics privacy normalization', () => {
     expect(JSON.stringify(value)).not.toContain('私人搜索');
     expect(JSON.stringify(value)).not.toContain('Mozilla');
     expect(JSON.stringify(value)).not.toContain('private');
+  });
+
+  it('replaces private share tokens with a stable route template', () => {
+    expect(normalizePath('/s/private-share-token?utm_source=mail')).toBe('/s/[token]');
+    expect(normalizePath('/s/private-share-token/')).toBe('/s/[token]');
+    expect(normalizePath('/community/public-work-id')).toBe('/community/public-work-id');
   });
 });

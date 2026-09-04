@@ -56,13 +56,17 @@ describe('analytics maintenance', () => {
     const first = await runAnalyticsMaintenance(db, NOW, { advisoryLock: false });
     expect(first).toMatchObject({
       skipped: false,
-      daysRolledUp: 1,
+      daysRolledUp: 2,
       rawEventsDeleted: 1,
       rollupsDeleted: 1,
       deletionRequestsProcessed: 1,
     });
     const allRollups = await db.select().from(analyticsDailyRollups);
     expect(allRollups.find((row) => row.day === '2026-09-03' && row.dimensionName === 'all')).toMatchObject({
+      eventCount: 1,
+      uniqueVisitors: 1,
+    });
+    expect(allRollups.find((row) => row.day === '2026-01-01' && row.dimensionName === 'all')).toMatchObject({
       eventCount: 1,
       uniqueVisitors: 1,
     });

@@ -258,6 +258,7 @@ export async function queryAnalyticsFunnel(
     occurredAt: analyticsEvents.occurredAt,
     receivedAt: analyticsEvents.receivedAt,
     sequenceInBatch: analyticsEvents.sequenceInBatch,
+    properties: analyticsEvents.properties,
   }).from(analyticsEvents)
     .where(and(...rawConditions({ ...query, eventName: undefined }, capability.start, capability.end)))
     .orderBy(
@@ -266,7 +267,12 @@ export async function queryAnalyticsFunnel(
       asc(analyticsEvents.receivedAt),
       asc(analyticsEvents.sequenceInBatch),
     );
-  return { capability, funnel, unavailableReason: null, steps: computeOrderedFunnel(rows, FUNNELS[funnel]) };
+  const eligibleRows = funnel === 'communityReuse'
+    ? rows.filter((row) => !['design_saved', 'design_exported'].includes(row.name)
+      || (typeof row.properties === 'object' && row.properties !== null
+        && (row.properties as Record<string, unknown>).source === 'community'))
+    : rows;
+  return { capability, funnel, unavailableReason: null, steps: computeOrderedFunnel(eligibleRows, FUNNELS[funnel]) };
 }
 
 export const funnelIdSchema = z.enum(['creation', 'communityReuse', 'publication']);

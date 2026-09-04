@@ -38,11 +38,23 @@ describe('official browser-local batch persistence', () => {
   });
 
   it('pauses without cancelling work and cancellation records unfinished items', async () => {
-    const batch = await createOfficialBatch(db, { actor: admin, itemCount: 3, defaultParams: {}, engineVersion: '2.0.0', reason: '启动暂停测试批次', requestId: 'start' });
+    const batch = await createOfficialBatch(db, { actor: admin, itemCount: 3, defaultParams: DEFAULT_GENERATION_PARAMS, engineVersion: '2.0.0', reason: '启动暂停测试批次', requestId: 'start' });
     const paused = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'pause', expectedVersion: 1, reason: '暂停派发新任务', requestId: 'pause' });
     expect(paused.status).toBe('paused');
     const cancelled = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'cancel', expectedVersion: paused.version, reason: '取消剩余任务', requestId: 'cancel' });
     expect(cancelled).toMatchObject({ status: 'cancelled', failureCount: 3 });
     expect((await db.select().from(officialBatches))[0].completedAt).not.toBeNull();
+  });
+
+  it('rejects arbitrary batch metadata before it can reach persistence', async () => {
+    await expect(createOfficialBatch(db, {
+      actor: admin,
+      itemCount: 1,
+      defaultParams: { ...DEFAULT_GENERATION_PARAMS, fileName: 'private-photo.png', cropSource: 'private-bytes' },
+      engineVersion: '2.0.0',
+      reason: '验证批次参数隐私边界',
+      requestId: 'private-params',
+    })).rejects.toMatchObject({ code: 'VALIDATION', field: 'defaultParams' });
+    expect(await db.select().from(officialBatches)).toHaveLength(0);
   });
 });

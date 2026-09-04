@@ -127,6 +127,8 @@ export interface PaletteSelection {
 export interface ProjectFile {
   format: 'doupu-project';
   version: 3;
+  /** Internal lineage marker for analytics; omitted from exported project files. */
+  communityOrigin?: true;
   /** Engine semantics used to produce the committed pattern. */
   engineVersion: string;
   /** Physical bead and pegboard specification used by this design. */

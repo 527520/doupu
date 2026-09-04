@@ -5,21 +5,25 @@ import { adminAuditLogs, communityRevisions, communityWorks, officialBatches } f
 import type { Actor } from '@/lib/auth/authorization';
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
+import { generationParamsSchema } from '@/lib/schemas';
 import { communityPreviewSchema, communitySnapshotSchema, COMMUNITY_LICENSE_VERSION, deriveCommunityPreview, snapshotColorCount, snapshotPaletteIdentity } from './snapshot';
 
 const reasonSchema = z.string().trim().min(3).max(500);
 const titleSchema = z.string().trim().min(1).max(80);
+export const officialBatchDefaultParamsSchema = generationParamsSchema;
 
 export async function createOfficialBatch(db: AnyDatabase, input: {
   actor: Actor; itemCount: number; defaultParams: unknown; engineVersion: string; reason: string; requestId: string; now?: Date;
 }) {
   if (!Number.isInteger(input.itemCount) || input.itemCount < 1 || input.itemCount > 50) throw new AppError('VALIDATION', '单批文件数需为 1–50');
   if (!input.engineVersion.trim() || input.engineVersion.length > 80) throw new AppError('VALIDATION', '引擎版本无效');
+  const defaultParams = officialBatchDefaultParamsSchema.safeParse(input.defaultParams);
+  if (!defaultParams.success) throw new AppError('VALIDATION', '批次默认参数无效', 'defaultParams');
   const reason = reasonSchema.parse(input.reason);
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [batch] = await tx.insert(officialBatches).values({
-      status: 'running', itemCount: input.itemCount, defaultParams: input.defaultParams as object,
+      status: 'running', itemCount: input.itemCount, defaultParams: defaultParams.data,
       engineVersion: input.engineVersion, adminUserId: input.actor.userId,
       startedAt: now, createdAt: now, updatedAt: now,
     }).returning();

@@ -22,6 +22,13 @@ function toProject(value: unknown): ProjectFile | null {
   return value && typeof value === 'object' ? (value as ProjectFile) : null;
 }
 
+function withCommunityOrigin(project: ProjectFile | null, fromCommunity: boolean): ProjectFile | null {
+  if (!project) return null;
+  if (fromCommunity) return { ...project, communityOrigin: true };
+  const { communityOrigin: _ignored, ...regularProject } = project;
+  return regularProject;
+}
+
 async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getVerifiedSessionUserId();
   if (!userId) return apiError(new AppError('UNAUTHORIZED', '未登录'));
@@ -29,7 +36,7 @@ async function get(_request: Request, { params }: { params: Promise<{ id: string
   if (!idSchema.safeParse(id).success) return apiError(new AppError('NOT_FOUND', '设计不存在'));
   const db = getDb();
   const rows = await db
-    .select({ id: designs.id, name: designs.name, project: designs.project, updatedAt: designs.updatedAt, revision: designs.revision })
+    .select({ id: designs.id, name: designs.name, project: designs.project, communitySourceWorkId: designs.communitySourceWorkId, updatedAt: designs.updatedAt, revision: designs.revision })
     .from(designs)
     .where(and(eq(designs.userId, userId), eq(designs.id, id), isNull(designs.deletedAt)));
   if (rows.length === 0) return apiError(new AppError('NOT_FOUND', '设计不存在'));
@@ -37,7 +44,7 @@ async function get(_request: Request, { params }: { params: Promise<{ id: string
   return okJson({
     id: row.id,
     name: row.name,
-    project: toProject(row.project),
+    project: withCommunityOrigin(toProject(row.project), row.communitySourceWorkId !== null),
     updatedAt: row.updatedAt.toISOString(),
     revision: row.revision,
   });
@@ -66,11 +73,12 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
     await tx.execute(sql`select id from users where id = ${userId} for update`);
     await tx.delete(designs).where(and(eq(designs.userId, userId), lt(designs.deletedAt, tombstoneCutoff())));
     const updatedAt = new Date();
-    const project: ProjectFile = { ...requestedProject, name, updatedAt: updatedAt.toISOString() };
-    const payloadBytes = measureJsonBytes(project);
+    const requestedWithMetadata: ProjectFile = { ...requestedProject, name, updatedAt: updatedAt.toISOString() };
     const existing = await tx.select().from(designs).where(and(eq(designs.userId, userId), eq(designs.id, id)));
     const owned = existing[0];
     if (owned) {
+      const project = withCommunityOrigin(requestedWithMetadata, owned.communitySourceWorkId !== null)!;
+      const payloadBytes = measureJsonBytes(project);
       if (owned.revision !== baseRevision) return apiError(new AppError('REVISION_CONFLICT', '云端版本已更新'));
       const usage = (await tx.select({ bytes: sum(designs.payloadBytes), active: count(sql`case when ${designs.deletedAt} is null then 1 end`) }).from(designs).where(eq(designs.userId, userId)))[0];
       if (owned.deletedAt && Number(usage.active) >= LIMITS.designsPerUser) return apiError(new AppError('CONFLICT', `设计数量已达上限（${LIMITS.designsPerUser} 个）`));
@@ -80,6 +88,8 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
       return okJson({ id, name, width: project.pattern.width, height: project.pattern.height, updatedAt: updatedAt.toISOString(), revision });
     }
     if (baseRevision !== 0) return apiError(new AppError('REVISION_CONFLICT', '云端版本已更新'));
+    const project = withCommunityOrigin(requestedWithMetadata, false)!;
+    const payloadBytes = measureJsonBytes(project);
     const occupied = await tx.select({ userId: designs.userId }).from(designs).where(eq(designs.id, id));
     if (occupied.length > 0) return apiError(new AppError('CONFLICT', '该设计 id 已被占用，请重新保存'));
     const usage = (await tx.select({ total: count(), active: count(sql`case when ${designs.deletedAt} is null then 1 end`), bytes: sum(designs.payloadBytes) }).from(designs).where(eq(designs.userId, userId)))[0];

@@ -17,9 +17,10 @@ interface Props {
   existingNames: string[];
   onImport: (project: ProjectFile) => void;
   disabled?: boolean;
+  analyticsSource?: 'community' | 'other';
 }
 
-export default function ProjectFileButtons({ source, existingNames, onImport, disabled }: Props) {
+export default function ProjectFileButtons({ source, existingNames, onImport, disabled, analyticsSource = 'other' }: Props) {
   const [errors, setErrors] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const t = zhCN.project;
@@ -35,7 +36,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
-    track({ name: 'design_exported', properties: { format: 'project' } });
+    track({ name: 'design_exported', properties: { format: 'project', source: analyticsSource } });
   };
 
   const handleImport = async (file: File): Promise<void> => {

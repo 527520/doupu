@@ -3,7 +3,7 @@
  * 本地库不设数量上限；写入失败（配额满 E39 / 隐私模式不可用）以类型化错误上抛，
  * 由 UI 层提示导出项目文件兜底。
  */
-import { importProjectFile } from '@/lib/project/parse';
+import { parseProjectFileValue } from '@/lib/schemas';
 import { conflictName } from '@/lib/project/parse';
 import { drawPattern } from '@/lib/render/draw';
 import { LIMITS } from '@/lib/appInfo';
@@ -340,8 +340,12 @@ export function nextDesignName(existingNames: readonly string[]): string {
 
 /** 解析存储的项目 JSON；失败返回 null。 */
 export function parseStoredProject(json: string): ProjectFile | null {
-  const result = importProjectFile(json);
-  return result.ok ? result.project : null;
+  try {
+    const result = parseProjectFileValue(JSON.parse(json));
+    return result.ok ? result.value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** 组装存储记录（thumbnail 渲染失败传 null 即可）；id 由调用方持有以保持跨保存稳定。 */

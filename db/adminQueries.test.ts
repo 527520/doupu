@@ -13,7 +13,7 @@ describe('admin query privacy and system evidence', () => {
     expect(user).not.toHaveProperty('passwordHash');
     const info = await getSystemInfo(db);
     expect(info.backup).toEqual({ status: 'not_integrated', label: '未接入' });
-    expect(info.migrationJournalLatest).toBe('0010_analytics_time_index');
+    expect(info.migrationJournalLatest).toBe('0011_initial_moderation_rules');
     expect(info.databaseMigration.id).not.toBeNull();
   });
 });

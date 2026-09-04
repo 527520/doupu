@@ -72,6 +72,11 @@ describe('serializeProject / importProjectFile round-trip', () => {
     expect(text).toContain('\n  "format": "doupu-project"');
   });
 
+  it('导出文件不包含仅供站内分析使用的社区来源标记', () => {
+    const text = serializeProject({ ...source, communityOrigin: true } as ProjectSource & { communityOrigin: true });
+    expect(text).not.toContain('communityOrigin');
+  });
+
   it('updatedAt 默认取当前时间', () => {
     const before = Date.now();
     const text = serializeProject(source);
@@ -146,6 +151,14 @@ describe('importProjectFile 坏文件矩阵（§5.3 / E38）', () => {
     withUnknownField.futureFormatFlag = true;
 
     expect(importProjectFile(JSON.stringify(withUnknownField)).ok).toBe(false);
+  });
+
+  it('外部项目文件不能伪造站内社区来源标记', () => {
+    const forged = JSON.parse(valid()) as Record<string, unknown>;
+    forged.communityOrigin = true;
+    const result = importProjectFile(JSON.stringify(forged));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContain('communityOrigin: 项目文件不允许包含站内来源标记');
   });
 
   it('未知 brand 拒绝', () => {

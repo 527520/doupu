@@ -131,6 +131,7 @@ export interface AnalyticsMaintenanceSummary {
   rollupsDeleted: number;
   visitorsDeleted: number;
   deletionRequestsProcessed: number;
+  cleanupCursor: string | null;
 }
 
 export async function runAnalyticsMaintenance(
@@ -152,6 +153,7 @@ export async function runAnalyticsMaintenance(
             rollupsDeleted: 0,
             visitorsDeleted: 0,
             deletionRequestsProcessed: 0,
+            cleanupCursor: null,
           };
         }
       }
@@ -163,13 +165,29 @@ export async function runAnalyticsMaintenance(
       const deletionRequestsProcessed = await processPendingDeletions(tx, now);
       const dayExpression = sql<string>`to_char(${analyticsEvents.occurredAt} at time zone 'Asia/Shanghai', 'YYYY-MM-DD')`;
       const days = await tx.select({ day: dayExpression }).from(analyticsEvents)
-        .where(and(gte(analyticsEvents.occurredAt, rawCutoff), lt(analyticsEvents.occurredAt, todayStart)))
+        .where(lt(analyticsEvents.occurredAt, todayStart))
         .groupBy(dayExpression)
         .orderBy(asc(dayExpression));
       let rollupRows = 0;
       for (const item of days) rollupRows += await rollupAnalyticsDay(tx, item.day, now);
 
-      const rawDeleted = await tx.delete(analyticsEvents).where(lt(analyticsEvents.occurredAt, rawCutoff)).returning();
+      // Delete complete Shanghai days in bounded batches only after every
+      // completed day in the backlog has been aggregated. Deleting whole days
+      // prevents a later retry from replacing a complete rollup with a partial
+      // one after only some rows from that day were removed.
+      const expiredDays = days
+        .map((item) => item.day)
+        .filter((item) => shanghaiDayBounds(item).end <= rawCutoff);
+      let rawEventsDeleted = 0;
+      for (const expiredDay of expiredDays.slice(0, 7)) {
+        const bounds = shanghaiDayBounds(expiredDay);
+        const deleted = await tx.delete(analyticsEvents).where(and(
+          gte(analyticsEvents.occurredAt, bounds.start),
+          lt(analyticsEvents.occurredAt, bounds.end),
+        )).returning();
+        rawEventsDeleted += deleted.length;
+      }
+      const cleanupCursor = expiredDays.length > 7 ? expiredDays[7] : null;
       const oldestRollupDay = toShanghaiDay(new Date(now.getTime() - (2 * 365 * DAY_MS)));
       const rollupsDeleted = await tx.delete(analyticsDailyRollups)
         .where(lt(analyticsDailyRollups.day, oldestRollupDay)).returning();
@@ -180,15 +198,17 @@ export async function runAnalyticsMaintenance(
         skipped: false,
         daysRolledUp: days.length,
         rollupRows,
-        rawEventsDeleted: rawDeleted.length,
+        rawEventsDeleted,
         rollupsDeleted: rollupsDeleted.length,
         visitorsDeleted: visitorsDeleted.length,
         deletionRequestsProcessed,
+        cleanupCursor,
       };
     });
     await db.update(maintenanceRuns).set({
       status: 'succeeded',
       summary: result,
+      cursor: result.cleanupCursor,
       completedAt: new Date(),
     }).where(eq(maintenanceRuns.id, run.id));
     return result;

@@ -219,6 +219,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, []);
   const [name, setName] = useState('');
   const [createdAt, setCreatedAt] = useState('');
+  const [communityOrigin, setCommunityOrigin] = useState(false);
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>(zhCN.workbench.decoding);
@@ -695,6 +696,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       setStep('workspace');
       rebindRestoredSourceRef.current = false;
       if (!rebindRestoredSource) {
+        setCommunityOrigin(false);
         clearDesignQuery(); // 普通上传生成新设计；恢复项目的原图重绑保留原 id。
       }
     },
@@ -945,6 +947,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return {
       format: PROJECT_FILE_FORMAT,
       version: PROJECT_FILE_VERSION,
+      ...(communityOrigin ? { communityOrigin: true as const } : {}),
       engineVersion: committed.engineVersion,
       boardProfile: committed.boardProfile,
       name: name.trim() || zhCN.project.unnamed,
@@ -954,7 +957,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       params: committed.params,
       pattern: committed.pattern,
     };
-  }, [generationSession, name, createdAt]);
+  }, [generationSession, name, createdAt, communityOrigin]);
   const buildProjectRef = useRef(buildProject);
   useEffect(() => {
     buildProjectRef.current = buildProject;
@@ -974,6 +977,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     };
     setName(project.name);
     setCreatedAt(project.createdAt);
+    setCommunityOrigin(project.communityOrigin === true);
     setDecoded(null);
     encodedSourceRef.current = null;
     activeImageDecoder.clear();
@@ -1223,13 +1227,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       } else {
         setSaveState('dirty');
       }
-      track({ name: 'design_saved', properties: { source: authStatus.kind === 'user' ? 'cloud' : 'local' } });
+      track({ name: 'design_saved', properties: {
+        source: communityOrigin ? 'community' : authStatus.kind === 'user' ? 'cloud' : 'local',
+      } });
       return true;
     } catch (error) {
       setSaveState(isQuotaError(error) ? 'quota' : 'error');
       return false;
     }
-  }, [authStatus.kind, buildProject, scheduleAutosave, syncCloud]);
+  }, [authStatus.kind, buildProject, communityOrigin, scheduleAutosave, syncCloud]);
 
   /**
    * 分享前的准备（批次 K）：把当前设计**确实**保存并推到云端。
@@ -1465,6 +1471,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       encodedSourceRef.current = null;
       activeImageDecoder.clear();
       setActiveDesignId(newDesignId());
+      setCommunityOrigin(false);
       setName(project.name);
       setCreatedAt(project.createdAt);
       const computed = computeStats(project.pattern.cells);
@@ -1503,6 +1510,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setActiveDesignId(newDesignId());
     setName('');
     setCreatedAt('');
+    setCommunityOrigin(false);
     setCustomPaletteId(null);
     uploadGenerationSource(null, initialGenerationDraft);
     clearDesignQuery();
@@ -1811,9 +1819,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
             {mobilePanel === 'export' && generationSession.committed && (
               <div className="mobile-export-stack">
-                <PngExportButton pattern={generationSession.committed.pattern} designName={name.trim() || zhCN.project.unnamed} boardSize={boardSpec.boardCols} disabled={generating} />
-                <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={generationSession.committed.pattern} stats={generationSession.committed.stats} boardSize={boardSpec.boardCols} cellMm={boardProfile === DEFAULT_BOARD_PROFILE_ID ? undefined : boardSpec.pdfCellMm} disabled={generating} />
-                <ProjectFileButtons source={{ name: name.trim() || zhCN.project.unnamed, createdAt: createdAt || new Date().toISOString(), engineVersion: generationSession.committed.engineVersion, boardProfile: generationSession.committed.boardProfile, paletteSelection: generationSession.committed.paletteSelection, params: generationSession.committed.params, pattern: generationSession.committed.pattern }} existingNames={savedNames} onImport={handleImport} disabled={generating} />
+                <PngExportButton pattern={generationSession.committed.pattern} designName={name.trim() || zhCN.project.unnamed} boardSize={boardSpec.boardCols} disabled={generating} analyticsSource={communityOrigin ? 'community' : 'other'} />
+                <PdfExportButton name={name.trim() || zhCN.project.unnamed} pattern={generationSession.committed.pattern} stats={generationSession.committed.stats} boardSize={boardSpec.boardCols} cellMm={boardProfile === DEFAULT_BOARD_PROFILE_ID ? undefined : boardSpec.pdfCellMm} disabled={generating} analyticsSource={communityOrigin ? 'community' : 'other'} />
+                <ProjectFileButtons source={{ name: name.trim() || zhCN.project.unnamed, createdAt: createdAt || new Date().toISOString(), engineVersion: generationSession.committed.engineVersion, boardProfile: generationSession.committed.boardProfile, paletteSelection: generationSession.committed.paletteSelection, params: generationSession.committed.params, pattern: generationSession.committed.pattern }} existingNames={savedNames} onImport={handleImport} disabled={generating} analyticsSource={communityOrigin ? 'community' : 'other'} />
                 <ShareButton
                   designId={designId}
                   onBeforeShare={prepareShare}
@@ -2095,6 +2103,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   designName={name.trim() || zhCN.project.unnamed}
                   boardSize={boardSpec.boardCols}
                   disabled={generating}
+                  analyticsSource={communityOrigin ? 'community' : 'other'}
                 />
                 <PdfExportButton
                   name={name.trim() || zhCN.project.unnamed}
@@ -2103,6 +2112,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   boardSize={boardSpec.boardCols}
                   cellMm={boardProfile === DEFAULT_BOARD_PROFILE_ID ? undefined : boardSpec.pdfCellMm}
                   disabled={generating}
+                  analyticsSource={communityOrigin ? 'community' : 'other'}
                 />
                 <ProjectFileButtons
                   source={{
@@ -2117,6 +2127,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   existingNames={savedNames}
                   onImport={handleImport}
                   disabled={generating}
+                  analyticsSource={communityOrigin ? 'community' : 'other'}
                 />
                 {/* 只读分享（K）：需要登录且已同步云端，否则链接打不开 */}
                 <ShareButton

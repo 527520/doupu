@@ -207,6 +207,7 @@ export const paletteSelectionSchema = z
 const projectFileObjectSchema = z.object({
   format: z.literal('doupu-project'),
   version: z.literal(3),
+  communityOrigin: z.literal(true).optional(),
   engineVersion: z.string().min(1).max(50),
   boardProfile: z.enum(BOARD_PROFILE_IDS),
   name: designNameSchema,
@@ -274,6 +275,11 @@ export function parseProjectFile(input: string): ProjectFileParseResult {
     json = JSON.parse(stripped);
   } catch {
     return { ok: false, errors: ['不是有效的 JSON 文件'] };
+  }
+  // communityOrigin is trusted lineage metadata added by the cloud API. A
+  // user-authored import must not be able to forge community funnel events.
+  if (json && typeof json === 'object' && !Array.isArray(json) && 'communityOrigin' in json) {
+    return { ok: false, errors: ['communityOrigin: 项目文件不允许包含站内来源标记'] };
   }
   return parseProjectFileValue(json);
 }

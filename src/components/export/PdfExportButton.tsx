@@ -17,6 +17,7 @@ export interface PdfExportButtonProps {
   boardSize?: number;
   cellMm?: number;
   disabled?: boolean;
+  analyticsSource?: 'community' | 'other';
 }
 
 /** 触发浏览器下载（导出为函数以便测试替换）。 */
@@ -32,7 +33,7 @@ export function triggerDownload(bytes: Uint8Array, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export default function PdfExportButton({ name, pattern, stats, boardSize = DEFAULT_BOARD_SIZE, cellMm, disabled }: PdfExportButtonProps) {
+export default function PdfExportButton({ name, pattern, stats, boardSize = DEFAULT_BOARD_SIZE, cellMm, disabled, analyticsSource = 'other' }: PdfExportButtonProps) {
   const t = zhCN.exportPdf;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,7 +82,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
       const bytes = await generatePatternPdf({ name, pattern, stats }, { fontBytes, metrics, boardSize });
       triggerDownload(bytes, buildExportFilename(name, pattern.width, pattern.height, 'pdf'));
       setOpen(false);
-      track({ name: 'design_exported', properties: { format: 'pdf' } });
+      track({ name: 'design_exported', properties: { format: 'pdf', source: analyticsSource } });
     } catch {
       setError(t.failedError);
       track({ name: 'export_failed', properties: { format: 'pdf', errorCode: 'PDF_EXPORT_FAILED' } });

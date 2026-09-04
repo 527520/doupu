@@ -2,18 +2,20 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestClient, type TestDatabase } from './testClient';
 import {
+  adminAuditLogs,
   communityComments,
   communityLikes,
   communityReports,
   communityReuses,
   communityWorks,
   designs,
+  idempotencyRecords,
   users,
 } from './schema';
 import type { Actor } from '@/lib/auth/authorization';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 import { COMMUNITY_LICENSE_VERSION } from '@/lib/community/snapshot';
-import { createCommunityWork, reviewCommunityRevision, submitCommunityRevision } from '@/lib/community/service';
+import { createCommunityRevision, createCommunityWork, reviewCommunityRevision, submitCommunityRevision } from '@/lib/community/service';
 import {
   createCommunityComment,
   createModerationRuleSet,
@@ -43,6 +45,7 @@ describe('community reuse, interaction and governance transactions', () => {
   let user: Actor;
   let moderator: Actor;
   let workId: string;
+  let designId: string;
 
   beforeEach(async () => {
     db = await createTestClient();
@@ -52,7 +55,7 @@ describe('community reuse, interaction and governance transactions', () => {
     ]).returning();
     user = { userId: author.id, role: 'user', accountStatus: 'active', emailVerified: true };
     moderator = { userId: reviewer.id, role: 'moderator', accountStatus: 'active', emailVerified: true };
-    const designId = crypto.randomUUID();
+    designId = crypto.randomUUID();
     await db.insert(designs).values({ id: designId, userId: author.id, name: 'private', project: project(), payloadBytes: 1 });
     const created = await createCommunityWork(db, { actor: user, designId, title: '公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
@@ -78,6 +81,7 @@ describe('community reuse, interaction and governance transactions', () => {
     expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].reuseCount).toBe(1);
     const [copy] = await db.select().from(designs).where(eq(designs.id, first.value.designId));
     expect(copy).toMatchObject({ userId: user.userId, communitySourceWorkId: workId });
+    expect((copy.project as ProjectFile).communityOrigin).toBe(true);
   });
 
   it('re-reviews risky edits, enforces edit window and maintains published count', async () => {
@@ -97,6 +101,49 @@ describe('community reuse, interaction and governance transactions', () => {
     expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].commentCount).toBe(0);
   });
 
+  it('starts the edit window when a pending comment is actually published', async () => {
+    const pending = await createCommunityComment(db, {
+      actor: user, workId, body: '请去死', now: new Date('2026-09-05T01:00:00Z'),
+    });
+    expect(pending.status).toBe('pending_review');
+    await expect(editCommunityComment(db, {
+      actor: user, commentId: pending.id, expectedVersion: pending.version,
+      body: '审核前不可编辑', now: new Date('2026-09-05T01:05:00Z'),
+    })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const published = await moderateCommunityComment(db, {
+      actor: moderator, commentId: pending.id, expectedVersion: pending.version,
+      decision: 'published', reason: '结合语境确认允许公开', requestId: 'publish-delayed',
+      now: new Date('2026-09-05T03:00:00Z'),
+    });
+    await expect(editCommunityComment(db, {
+      actor: user, commentId: pending.id, expectedVersion: published.version,
+      body: '发布后仍可编辑', now: new Date('2026-09-05T03:10:00Z'),
+    })).resolves.toMatchObject({ status: 'published' });
+  });
+
+  it('rejects an empty moderation rule-set version', async () => {
+    await expect(createModerationRuleSet(db, {
+      actor: { ...moderator, role: 'admin' }, rules: [], reason: '不允许关闭全部治理词表', requestId: 'empty-rules',
+    })).rejects.toBeDefined();
+  });
+
+  it('applies repeat-spam review rules again when a published comment is edited', async () => {
+    const earlier = await createCommunityComment(db, {
+      actor: user, workId, body: '重复推广内容', now: new Date('2026-09-05T01:00:00Z'),
+    });
+    const editable = await createCommunityComment(db, {
+      actor: user, workId, body: '起初是安全内容', now: new Date('2026-09-05T01:01:00Z'),
+    });
+    expect(earlier.status).toBe('published');
+    expect(editable.status).toBe('published');
+    const edited = await editCommunityComment(db, {
+      actor: user, commentId: editable.id, expectedVersion: editable.version,
+      body: '重复推广内容', now: new Date('2026-09-05T01:02:00Z'),
+    });
+    expect(edited).toMatchObject({ status: 'pending_review', riskCategories: ['spam'] });
+    expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].commentCount).toBe(1);
+  });
+
   it('deduplicates reports by current target version and enforces the case state machine', async () => {
     const report = await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'other' });
     await expect(reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'spam' }))
@@ -110,11 +157,35 @@ describe('community reuse, interaction and governance transactions', () => {
     expect(await db.select().from(communityComments)).toHaveLength(0);
   });
 
+  it('allows a new report after the work publishes a new immutable revision', async () => {
+    await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'other' });
+    const draft = await createCommunityRevision(db, {
+      actor: user, workId, designId, title: '公开作品第二版', licenseVersion: COMMUNITY_LICENSE_VERSION,
+    });
+    const pending = await submitCommunityRevision(db, { actor: user, revisionId: draft.id, expectedVersion: draft.version });
+    await reviewCommunityRevision(db, {
+      actor: moderator, revisionId: pending.id, expectedVersion: pending.version,
+      decision: 'published', reason: '第二版审核内容完整安全', requestId: 'publish-v2',
+    });
+    const second = await reportCommunityTarget(db, {
+      actor: user, targetType: 'work', targetId: workId, category: 'spam',
+    });
+    expect(second.targetVersion).toBe(2);
+    expect((await db.select().from(communityReports)).map((report) => report.targetVersion).sort()).toEqual([1, 2]);
+  });
+
   it('anonymizes the account without deleting public works or governance facts', async () => {
     await setCommunityLike(db, { actor: user, workId, liked: true });
     await createCommunityComment(db, { actor: user, workId, body: '注销前评论' });
     await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'other' });
-    await reuseCommunityWork(db, { actor: user, workId });
+    await executeIdempotently(db, {
+      actorUserId: user.userId, scope: `reuse:${workId}`, key: 'erase-reuse', request: { workId },
+    }, (tx) => reuseCommunityWork(tx, { actor: user, workId }));
+    await db.insert(adminAuditLogs).values({
+      actorUserId: user.userId, actorRole: 'user', action: 'account.private_fact',
+      targetType: 'user', targetId: user.userId, reason: '注销前去身份化样本', requestId: 'pre-erase',
+      beforeState: { accountStatus: 'active', publicAuthorId: 'must-not-remain' },
+    });
     await anonymizeAccount(db, { userId: user.userId, requestId: 'erase-account' });
     expect((await db.select().from(users).where(eq(users.id, user.userId)))[0]).toMatchObject({
       email: null, passwordHash: null, accountStatus: 'anonymized', role: 'user',
@@ -125,5 +196,13 @@ describe('community reuse, interaction and governance transactions', () => {
     expect((await db.select().from(communityComments))[0]).toMatchObject({ authorUserId: null, status: 'deleted', body: '' });
     expect((await db.select().from(communityReports))[0].reporterUserId).toBeNull();
     expect((await db.select().from(communityReuses))[0]).toMatchObject({ userId: null, designId: null });
+    expect(await db.select().from(idempotencyRecords)).toHaveLength(0);
+    const audits = await db.select().from(adminAuditLogs);
+    expect(audits.filter((audit) => audit.targetType === 'user')).toEqual([
+      expect.objectContaining({ actorUserId: null, targetId: 'anonymized', beforeState: null, afterState: null }),
+      expect.objectContaining({ actorUserId: null, targetId: 'anonymized' }),
+    ]);
+    expect(JSON.stringify(audits)).not.toContain(user.userId);
+    expect(JSON.stringify(audits)).not.toContain('must-not-remain');
   });
 });

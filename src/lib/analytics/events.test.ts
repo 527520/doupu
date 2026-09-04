@@ -26,5 +26,11 @@ describe('analytics event catalog', () => {
       name: 'generation_succeeded',
       properties: { widthBucket: '51-100', colorBucket: '25-48', privateText: 'no' },
     }] }).success).toBe(false);
+    expect(analyticsBatchSchema.safeParse({ events: [{
+      eventId: crypto.randomUUID(),
+      occurredAt: new Date().toISOString(),
+      name: 'design_exported',
+      properties: { format: 'png' },
+    }] }).success).toBe(false);
   });
 });

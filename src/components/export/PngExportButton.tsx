@@ -20,6 +20,7 @@ interface Props {
   cropToContent?: boolean;
   includeLegend?: boolean;
   disabled?: boolean;
+  analyticsSource?: 'community' | 'other';
 }
 
 const OBJECT_URL_REVOKE_DELAY_MS = 1_500;
@@ -32,6 +33,7 @@ export default function PngExportButton({
   cropToContent,
   includeLegend,
   disabled,
+  analyticsSource = 'other',
 }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,7 +131,7 @@ export default function PngExportButton({
         window.setTimeout(() => URL.revokeObjectURL(url), OBJECT_URL_REVOKE_DELAY_MS);
       }
       setOpen(false);
-      track({ name: 'design_exported', properties: { format: 'png' } });
+      track({ name: 'design_exported', properties: { format: 'png', source: analyticsSource } });
     } catch {
       setError(zhCN.export.pngFailed);
       track({ name: 'export_failed', properties: { format: 'png', errorCode: 'PNG_EXPORT_FAILED' } });
