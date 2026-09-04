@@ -53,6 +53,12 @@ export default async function globalSetup(): Promise<void> {
         // 回退库退回内存（不落盘）：每轮 E2E 全新库，且不与本地 dev 的 .pglite-dev 竞争
         PGLITE_DATA_DIR: '',
         DOUPU_E2E_SEED: '1',
+        // Three browser projects intentionally share one disposable PGlite
+        // process. Keep production defaults intact while preventing valid
+        // cross-browser logins from exhausting the shared IP bucket.
+        RATE_LOGIN: '1000',
+        RATE_REGISTER: '1000',
+        RATE_TOKEN: '1000',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,

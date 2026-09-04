@@ -253,12 +253,10 @@ body {
 }
 
 .analytics-consent {
-  position: fixed;
-  z-index: 60;
-  right: 1rem;
-  bottom: 1rem;
+  position: relative;
   display: flex;
   width: min(44rem, calc(100vw - 2rem));
+  margin: 1rem 1rem 1rem auto;
   align-items: flex-end;
   justify-content: space-between;
   gap: 1.25rem;
@@ -277,7 +275,7 @@ body {
 .analytics-settings > div { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 
 @media (max-width: 640px) {
-  .analytics-consent { bottom: 5.25rem; flex-direction: column; align-items: stretch; }
+  .analytics-consent { flex-direction: column; align-items: stretch; }
   .analytics-consent-actions > * { flex: 1; }
 }
 
@@ -325,6 +323,7 @@ body {
 .review-queue ul { max-height: calc(100svh - 12rem); overflow-y: auto; }
 .review-queue button { display: grid; width: 100%; grid-template-columns: 3.5rem 1fr; gap: .6rem; align-items: center; padding: .55rem; border-bottom: 1px solid rgb(48 41 56 / 10%); text-align: left; }
 .review-queue button[aria-current="true"] { border-left: 3px solid var(--color-primary); background: var(--color-primary-soft); }
+.review-queue button[aria-current="true"] small { color: var(--color-ink); }
 .review-queue canvas { width: 3.5rem; height: 3.5rem; }
 .review-queue strong, .review-queue small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .review-queue small { margin-top: .2rem; color: var(--color-ink-soft); font-size: .65rem; }
@@ -376,7 +375,7 @@ body {
 .batch-items li > div, .batch-items label { display: grid; gap: .25rem; }
 @media (max-width: 900px) { .batch-items li { grid-template-columns: 1fr; align-items: stretch; } }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .admin-shell { padding-left: 0; padding-bottom: 4.5rem; }
   .admin-rail { inset: auto 0 0; width: auto; height: 4rem; flex-direction: row; }
   .admin-wordmark, .admin-back { display: none; }

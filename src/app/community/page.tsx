@@ -30,7 +30,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
           <ul className="community-grid">{result.items.map((work, index) => (
             <li key={work.id} className="community-card">
               <Link href={`/community/${work.id}`} className="community-card-preview"><span className="community-proof-number">{String(index + 1).padStart(2, '0')}</span><CommunityPreviewCanvas preview={work.preview} label={`${work.title} 图纸预览`} /></Link>
-              <div className="community-color-band" aria-label={`${work.colorCount} 种用色`}>{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
+              <div className="community-color-band" role="img" aria-label={`${work.colorCount} 种用色`}>{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
               <div className="community-card-body"><div><h2><Link href={`/community/${work.id}`}>{work.title}</Link></h2><p>{work.author.displayName} · {work.width}×{work.height}</p></div>{work.featured && <span className="community-featured">精选</span>}</div>
               {work.tags.length > 0 && <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={`/community?tag=${tag.slug}`}>{tag.name}</Link>)}</div>}
               <footer><span>赞 {work.counts.likes}</span><span>评 {work.counts.comments}</span><span>引用 {work.counts.reuses}</span></footer>

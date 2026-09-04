@@ -238,7 +238,7 @@ test('移动工作台可切换编辑、用色与导出工具', async ({ page }, 
   await expect(page.getByRole('button', { name: '导出 PNG 图纸' })).toBeVisible();
 });
 
-for (const route of ['/', '/app', '/designs', '/palettes', '/account', '/help', '/about'] as const) {
+for (const route of ['/', '/app', '/designs', '/palettes', '/community', '/community/rules', '/privacy', '/account', '/help', '/about'] as const) {
   test(`${route} 无 axe 严重或关键问题`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(route);

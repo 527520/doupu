@@ -65,8 +65,8 @@ export default async function RootLayout({
         </a>
         <ClientReadyMarker />
         <PageViewTracker />
-        {children}
         <AnalyticsConsentBanner />
+        {children}
       </body>
     </html>
   );
