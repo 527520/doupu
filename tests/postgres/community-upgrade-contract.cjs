@@ -98,9 +98,52 @@ async function main() {
   );
 
   await migrate(db, { migrationsFolder: migrations });
-  const journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
+  let journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
   assert.equal(journal.rows[0].count, 10, 'idempotent replay changed migration journal');
-  process.stdout.write('postgres 0004-to-current community upgrade contract passed\n');
+
+  // The paired down SQL is intentionally legal only before new feature data
+  // exists. This fixture contains exclusively pre-0005 rows, so rehearse the
+  // complete reverse path and prove the Drizzle journal permits re-upgrade.
+  for (const tag of [
+    '0009_official_batch_links',
+    '0008_community_governance',
+    '0007_community_core',
+    '0006_consent_analytics',
+    '0005_identity_governance',
+  ]) {
+    await pool.query(readFileSync(path.join(migrations, 'down', `${tag}.down.sql`), 'utf8'));
+  }
+  const rolledBack = await pool.query(
+    `select
+       (select to_jsonb(u) from users u where id=$1) as user_row,
+       (select to_jsonb(d) from designs d where id=$2) as design_row,
+       (select to_jsonb(s) from design_shares s where id=$3) as share_row,
+       to_regclass('public.analytics_events')::text as analytics_events,
+       to_regclass('public.community_works')::text as community_works`,
+    [ids.user, ids.design, ids.share],
+  );
+  assert.deepEqual(rolledBack.rows[0].user_row, old.user_row);
+  assert.deepEqual(rolledBack.rows[0].design_row, old.design_row);
+  assert.deepEqual(rolledBack.rows[0].share_row, old.share_row);
+  assert.equal(rolledBack.rows[0].analytics_events, null);
+  assert.equal(rolledBack.rows[0].community_works, null);
+  journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
+  assert.equal(journal.rows[0].count, 5, 'down SQL did not restore the 0004 migration journal');
+
+  await migrate(db, { migrationsFolder: migrations });
+  journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
+  assert.equal(journal.rows[0].count, 10, 're-upgrade after down SQL did not restore all migrations');
+  const reupgraded = await pool.query(
+    `select
+       (select project from designs where id=$1) as project,
+       to_regclass('public.analytics_events')::text as analytics_events,
+       to_regclass('public.community_works')::text as community_works`,
+    [ids.design],
+  );
+  assert.deepEqual(reupgraded.rows[0].project, old.design_row.project);
+  assert.equal(reupgraded.rows[0].analytics_events, 'analytics_events');
+  assert.equal(reupgraded.rows[0].community_works, 'community_works');
+  process.stdout.write('postgres 0004 upgrade, empty-feature rollback, and re-upgrade contract passed\n');
 }
 
 main().catch((error) => {
