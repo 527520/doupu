@@ -20,7 +20,12 @@ import {
   submitCommunityRevision,
   withdrawCommunityWork,
 } from '@/lib/community/service';
-import { mergeCommunityTag, moderateCommunityWork } from '@/lib/community/adminService';
+import {
+  createCommunityTag,
+  mergeCommunityTag,
+  moderateCommunityWork,
+  updateCommunityTag,
+} from '@/lib/community/adminService';
 
 function project(name: string, hex = '#FF0000'): ProjectFile {
   return {
@@ -128,5 +133,55 @@ describe('community work and frozen revision state machine', () => {
     });
     expect(merged).toMatchObject({ active: false, mergedIntoTagId: target.id });
     expect(await db.select().from(communityRevisionTags)).toMatchObject([{ revisionId: created.revision.id, tagId: target.id }]);
+  });
+
+  it('applies featured, comment-lock, and tag lifecycle changes with version checks', async () => {
+    const created = await createCommunityWork(db, {
+      actor: user, designId, title: '精选与评论锁作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
+    });
+    const pending = await submitCommunityRevision(db, {
+      actor: user, revisionId: created.revision.id, expectedVersion: created.revision.version,
+    });
+    await reviewCommunityRevision(db, {
+      actor: moderator, revisionId: pending.id, expectedVersion: pending.version,
+      decision: 'published', reason: '审核通过用于状态操作', requestId: 'publish-actions',
+    });
+
+    let [work] = await db.select().from(communityWorks).where(eq(communityWorks.id, created.work.id));
+    work = await moderateCommunityWork(db, {
+      actor: moderator, workId: work.id, action: 'feature', expectedVersion: work.version,
+      reason: '人工选择本期精选', requestId: 'feature', now: new Date('2026-09-05T03:00:00Z'),
+    });
+    expect(work.featuredAt).toEqual(new Date('2026-09-05T03:00:00Z'));
+    work = await moderateCommunityWork(db, {
+      actor: moderator, workId: work.id, action: 'lock_comments', expectedVersion: work.version,
+      reason: '治理期间暂停评论', requestId: 'lock',
+    });
+    expect(work.commentsLocked).toBe(true);
+    work = await moderateCommunityWork(db, {
+      actor: moderator, workId: work.id, action: 'unlock_comments', expectedVersion: work.version,
+      reason: '治理复核已经完成', requestId: 'unlock',
+    });
+    expect(work.commentsLocked).toBe(false);
+    work = await moderateCommunityWork(db, {
+      actor: moderator, workId: work.id, action: 'unfeature', expectedVersion: work.version,
+      reason: '结束本期人工精选', requestId: 'unfeature',
+    });
+    expect(work.featuredAt).toBeNull();
+    await expect(moderateCommunityWork(db, {
+      actor: moderator, workId: work.id, action: 'unlock_comments', expectedVersion: work.version,
+      reason: '重复解锁应当拒绝', requestId: 'duplicate-unlock',
+    })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
+
+    const tag = await createCommunityTag(db, {
+      actor: moderator, name: '节日', slug: 'festival', sortOrder: 8,
+      reason: '新增正式节日标签', requestId: 'tag-create',
+    });
+    const updated = await updateCommunityTag(db, {
+      actor: moderator, tagId: tag.id, expectedVersion: tag.version,
+      name: '节庆', slug: 'celebration', sortOrder: 3, active: false,
+      reason: '调整正式标签信息', requestId: 'tag-update',
+    });
+    expect(updated).toMatchObject({ name: '节庆', slug: 'celebration', sortOrder: 3, active: false, version: 2 });
   });
 });

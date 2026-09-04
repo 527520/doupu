@@ -75,10 +75,11 @@ export default defineConfig({
         'src/lib/**/*.test.ts',
         'src/lib/**/*.performance.test.ts',
         'src/lib/palettes/data/**',
-        // 仅剩这一个排除项：db.ts 的 PGlite 回退分支只在 next dev / E2E 的
-        // instrumentation 里跑，测试进程走 setTestDb 注入，永远不会进那条路径。
+        // 这两个入口只在 next dev / E2E instrumentation 中运行：测试进程的
+        // 数据库走 setTestDb 注入，启动种子则由完整浏览器旅程验证。
         // 认证/会话/守卫/限流已纳入护栏（A-14），覆盖率数字因此覆盖安全核心。
         'src/lib/auth/db.ts',
+        'src/lib/auth/testSeed.ts',
       ],
       // Pure-library coverage guard: lines/statements/functions ≥90%, branches ≥75%.
       thresholds: {

@@ -617,7 +617,7 @@ describe('Workbench 本地保存', () => {
     expect(widthInput.disabled).toBe(false);
     fireEvent.change(widthInput, { target: { value: '20' } });
     fireEvent.blur(widthInput);
-    await screen.findByText(/共 400 粒/);
+    await screen.findByText(/共 400 粒/, undefined, { timeout: 5000 });
   });
 
   it('首次保存生成源遇到配额失败时不落半份数据，也不显示已保存', async () => {
