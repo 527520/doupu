@@ -1,5 +1,11 @@
+import { forbidden } from 'next/navigation';
 import GovernanceConsole from '@/components/admin/GovernanceConsole';
+import { authorize } from '@/lib/auth/authorization';
+import { getSessionActor } from '@/lib/auth/session';
+import { zhCN } from '@/messages/zh-CN';
 
-export default function AdminCommentsPage() {
-  return <main className="admin-page"><header className="admin-page-header"><span>02 / COMMENT PROOF</span><h1>评论治理</h1><p>高风险评论先进入待审；治理结论不自动触发封号。</p></header><GovernanceConsole mode="comments" /></main>;
+export default async function AdminCommentsPage() {
+  if (!authorize(await getSessionActor(), 'community:moderate')) forbidden();
+  const t = zhCN.communityAdmin.pages.comments;
+  return <main className="admin-page"><header className="admin-page-header"><span>{t.eyebrow}</span><h1>{t.title}</h1><p>{t.description}</p></header><GovernanceConsole mode="comments" /></main>;
 }

@@ -19,11 +19,11 @@ export default function AdminNav({ role }: { role: UserRole }) {
   const visible = modules.filter(([, , minimum]) => role === 'admin' || minimum === 'moderator');
   return (
     <aside className="admin-rail">
-      <Link href="/admin" className="admin-wordmark"><span>DP</span><strong>审核校样台</strong></Link>
-      <nav aria-label="管理模块">
+      <Link href="/admin" className="admin-wordmark"><span>{zhCN.communityAdmin.nav.wordmark}</span><strong>{zhCN.communityAdmin.adminTitle}</strong></Link>
+      <nav aria-label={zhCN.communityAdmin.nav.label}>
         {visible.map(([href, label], index) => <Link key={href} href={href}><small>{String(index + 1).padStart(2, '0')}</small>{label}</Link>)}
       </nav>
-      <Link href="/" className="admin-back">返回豆谱</Link>
+      <Link href="/" className="admin-back">{zhCN.communityAdmin.nav.back}</Link>
     </aside>
   );
 }

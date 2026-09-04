@@ -1,5 +1,11 @@
+import { forbidden } from 'next/navigation';
 import ReviewConsole from '@/components/admin/ReviewConsole';
+import { authorize } from '@/lib/auth/authorization';
+import { getSessionActor } from '@/lib/auth/session';
+import { zhCN } from '@/messages/zh-CN';
 
-export default function ReviewsPage() {
-  return <main id="main" className="admin-page"><header className="admin-page-header"><div><span>MODERATION / WORKS</span><h1>作品审核</h1></div><p>左侧队列 · 中部校样 · 右侧处置</p></header><ReviewConsole /></main>;
+export default async function ReviewsPage() {
+  if (!authorize(await getSessionActor(), 'community:moderate')) forbidden();
+  const t = zhCN.communityAdmin.pages.reviews;
+  return <main id="main" className="admin-page"><header className="admin-page-header"><div><span>{t.eyebrow}</span><h1>{t.title}</h1></div><p>{t.description}</p></header><ReviewConsole /></main>;
 }

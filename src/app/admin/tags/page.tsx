@@ -1,5 +1,11 @@
+import { forbidden } from 'next/navigation';
 import TagsManager from '@/components/admin/TagsManager';
+import { authorize } from '@/lib/auth/authorization';
+import { getSessionActor } from '@/lib/auth/session';
+import { zhCN } from '@/messages/zh-CN';
 
-export default function AdminTagsPage() {
-  return <main className="admin-page"><header className="admin-page-header"><span>04 / TAXONOMY</span><h1>正式标签</h1><p>创建、改名、排序、停用与合并均保留审计事实。</p></header><TagsManager /></main>;
+export default async function AdminTagsPage() {
+  if (!authorize(await getSessionActor(), 'community:moderate')) forbidden();
+  const t = zhCN.communityAdmin.pages.tags;
+  return <main className="admin-page"><header className="admin-page-header"><span>{t.eyebrow}</span><h1>{t.title}</h1><p>{t.description}</p></header><TagsManager /></main>;
 }

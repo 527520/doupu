@@ -60,7 +60,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       const result = await request(`/api/community/works/${workId}/reuse`, { method: 'POST', headers: { 'idempotency-key': crypto.randomUUID() } });
       setReuses(result.reuseCount);
       track({ name: 'community_reuse_succeeded', properties: {} });
-      setMessage(`私人副本已创建：${result.designId.slice(0, 8).toUpperCase()}。可前往“我的设计”继续编辑。`);
+      setMessage(t.reuseCreated(result.designId.slice(0, 8).toUpperCase()));
     } catch (error) { setMessage(error instanceof Error ? error.message : t.reuseFailed); }
   };
 
@@ -104,23 +104,23 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
 
   return (
     <section className="community-interactions" aria-labelledby="community-interaction-title">
-      <header><div><span className="studio-eyebrow">COMMUNITY ACTIONS</span><h2 id="community-interaction-title">引用与讨论</h2></div><p>{likes} 赞 · {reuses} 次引用</p></header>
+      <header><div><span className="studio-eyebrow">{t.eyebrow}</span><h2 id="community-interaction-title">{t.title}</h2></div><p>{t.counts(likes, reuses)}</p></header>
       <div className="community-action-row">
-        <button type="button" className="btn-secondary" onClick={() => void like(true)}>点赞</button>
-        <button type="button" className="btn-ghost" onClick={() => void like(false)}>取消赞</button>
-        <button type="button" className="btn-primary" onClick={() => void reuse()}>创建私人副本</button>
-        <button type="button" className="btn-ghost" onClick={() => void report()}>举报作品</button>
-        <Link href="/designs">我的设计</Link>
+        <button type="button" className="btn-secondary" onClick={() => void like(true)}>{t.like}</button>
+        <button type="button" className="btn-ghost" onClick={() => void like(false)}>{t.unlike}</button>
+        <button type="button" className="btn-primary" onClick={() => void reuse()}>{t.reuse}</button>
+        <button type="button" className="btn-ghost" onClick={() => void report()}>{t.reportWork}</button>
+        <Link href="/designs">{t.myDesigns}</Link>
       </div>
       {message && <p className="notice" role="status">{message}</p>}
       <div className="community-comment-form">
-        <label htmlFor="community-comment">发表评论</label>
+        <label htmlFor="community-comment">{t.comment}</label>
         <textarea id="community-comment" value={body} maxLength={500} disabled={commentsLocked}
           onChange={(event) => setBody(event.target.value)} placeholder={commentsLocked ? t.locked : t.commentPlaceholder} />
-        <div><small>{body.length}/500</small><button className="btn-primary" type="button" disabled={commentsLocked || body.trim().length === 0} onClick={() => void comment()}>发布评论</button></div>
+        <div><small>{body.length}/500</small><button className="btn-primary" type="button" disabled={commentsLocked || body.trim().length === 0} onClick={() => void comment()}>{t.publishComment}</button></div>
       </div>
       <ol className="community-comment-list">
-        {comments.map((item) => <li key={item.id}><header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>{editingId === item.id ? <div className="community-inline-edit"><textarea maxLength={500} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" onClick={() => void editComment(item)}>保存修改</button><button type="button" onClick={() => setEditingId(null)}>取消</button></div> : <p>{item.body}</p>}<div className="community-comment-actions">{item.editable && <><button type="button" onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>编辑</button><button type="button" onClick={() => void deleteComment(item)}>删除</button></>}<button type="button" onClick={() => void reportComment(item)}>举报</button></div></li>)}
+        {comments.map((item) => <li key={item.id}><header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>{editingId === item.id ? <div className="community-inline-edit"><textarea maxLength={500} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" onClick={() => void editComment(item)}>{t.saveEdit}</button><button type="button" onClick={() => setEditingId(null)}>{t.cancelEdit}</button></div> : <p>{item.body}</p>}<div className="community-comment-actions">{item.editable && <><button type="button" onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>{t.edit}</button><button type="button" onClick={() => void deleteComment(item)}>{t.delete}</button></>}<button type="button" onClick={() => void reportComment(item)}>{t.report}</button></div></li>)}
       </ol>
     </section>
   );

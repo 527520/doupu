@@ -10,5 +10,6 @@ export const metadata: Metadata = { title: zhCN.communityAdmin.submitTitle, robo
 export default async function CommunitySubmitPage() {
   const actor = await getSessionActor();
   if (!actor) redirect('/login?next=/community/submit');
-  return <main id="main" className="workspace-page"><SiteHeader title="提交豆社作品" currentPath="/community" subtitle="冻结当前云端设计，审核通过后公开" /><div className="workspace-content community-narrow"><CommunitySubmitForm /></div></main>;
+  const t = zhCN.communityAdmin.submission;
+  return <main id="main" className="workspace-page"><SiteHeader title={t.pageTitle} currentPath="/community" subtitle={t.pageSubtitle} /><div className="workspace-content community-narrow"><CommunitySubmitForm /></div></main>;
 }

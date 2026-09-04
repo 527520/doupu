@@ -26,6 +26,7 @@ async function savePreference(status: 'granted' | 'denied' | 'withdrawn'): Promi
 }
 
 export function AnalyticsConsentBanner() {
+  const t = zhCN.communityAdmin.analytics;
   const [preference, setPreference] = useState<AnalyticsConsent | 'loading' | null>('loading');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
@@ -54,16 +55,16 @@ export function AnalyticsConsentBanner() {
   };
 
   return (
-    <aside className="analytics-consent" aria-label="匿名使用数据偏好">
+    <aside className="analytics-consent" aria-label={t.bannerLabel}>
       <div>
-        <strong>是否允许匿名使用数据？</strong>
-        <p>同意后，我们只记录功能类别、设备类别和匿名会话，不记录原图、图纸正文、搜索词、完整 IP 或邮箱。拒绝不会影响使用。</p>
-        <Link href="/privacy" className="link-soft">查看隐私说明与随时撤回</Link>
-        {error && <p role="alert" className="analytics-consent-error">偏好保存失败，请稍后重试。</p>}
+        <strong>{t.bannerTitle}</strong>
+        <p>{t.bannerBody}</p>
+        <Link href="/privacy" className="link-soft">{t.learnMore}</Link>
+        {error && <p role="alert" className="analytics-consent-error">{t.saveFailed}</p>}
       </div>
       <div className="analytics-consent-actions">
-        <button type="button" className="btn-outline" disabled={saving} onClick={() => void choose('denied')}>拒绝</button>
-        <button type="button" className="btn-primary" disabled={saving} onClick={() => void choose('granted')}>同意匿名统计</button>
+        <button type="button" className="btn-outline" disabled={saving} onClick={() => void choose('denied')}>{t.reject}</button>
+        <button type="button" className="btn-primary" disabled={saving} onClick={() => void choose('granted')}>{t.grant}</button>
       </div>
     </aside>
   );
@@ -102,14 +103,14 @@ export function AnalyticsConsentSettings() {
 
   return (
     <section className="info-card analytics-settings" aria-labelledby="analytics-settings-title">
-      <h2 id="analytics-settings-title">匿名分析偏好</h2>
-      <p>{ready ? `当前状态：${preference === 'granted' ? t.granted : preference === 'denied' ? t.denied : t.unset}` : t.loading}</p>
+      <h2 id="analytics-settings-title">{t.settingsTitle}</h2>
+      <p>{ready ? t.currentStatus(preference === 'granted' ? t.granted : preference === 'denied' ? t.denied : t.unset) : t.loading}</p>
       <div>
-        <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={() => void choose('granted')}>同意</button>
+        <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={() => void choose('granted')}>{t.agree}</button>
         {preference === 'granted' ? (
-          <button type="button" className="btn-danger-outline btn-sm" disabled={saving} onClick={() => void choose('withdrawn')}>撤回并清除原始数据</button>
+          <button type="button" className="btn-danger-outline btn-sm" disabled={saving} onClick={() => void choose('withdrawn')}>{t.withdraw}</button>
         ) : (
-          <button type="button" className="btn-outline btn-sm" disabled={saving} onClick={() => void choose('denied')}>拒绝</button>
+          <button type="button" className="btn-outline btn-sm" disabled={saving} onClick={() => void choose('denied')}>{t.reject}</button>
         )}
       </div>
       {message && <p role="status">{message}</p>}

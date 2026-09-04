@@ -6,6 +6,11 @@ import { fillField } from './helpers';
 
 const BATCH_PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
+function dateOffset(days: number) {
+  const date = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  return date.toISOString().slice(0, 10);
+}
+
 async function login(page: Page, email: string, next = '/community') {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
   await fillField(page, '邮箱', email);
@@ -62,7 +67,23 @@ test('admin 可读取人员、规则、审计和系统证据', async ({ page }) 
   await expect(page.getByRole('heading', { name: '审计记录' })).toBeVisible();
   await page.goto('/admin/system');
   await expect(page.getByText('未接入').first()).toBeVisible();
-  await expect(page.getByText('0010_analytics_time_index')).toBeVisible();
+  await expect(page.getByText('0011_initial_moderation_rules')).toBeVisible();
+});
+
+test('分析后台在精确与长期聚合范围间明确切换能力', async ({ page }) => {
+  await login(page, 'e2e-admin@example.com', '/admin/analytics');
+  await page.goto(`/admin/analytics?start=${dateOffset(-10)}&end=${dateOffset(0)}&device=desktop&actor=user&dimension=device&funnel=communityReuse`);
+  await expect(page.getByRole('heading', { name: '匿名分析校样' })).toBeVisible();
+  await expect(page.getByText('当前为最近 90 天精确模式：提供范围 UV、组合筛选和漏斗。')).toBeVisible();
+  await expect(page.locator('select[name="device"]')).toHaveValue('desktop');
+  await expect(page.locator('select[name="actor"]')).toHaveValue('user');
+  await expect(page.locator('select[name="funnel"]')).toHaveValue('communityReuse');
+  await expect(page.getByRole('table')).toHaveCount(1);
+
+  await page.goto(`/admin/analytics?start=${dateOffset(-140)}&end=${dateOffset(0)}&device=desktop&dimension=device&funnel=communityReuse`);
+  await expect(page.getByText('当前为长期聚合模式：仅提供每日总量和单维分类趋势，不显示跨日 UV 或漏斗。')).toBeVisible();
+  await expect(page.getByText('长期范围不支持组合筛选，已自动忽略日期与事件名以外的筛选。')).toBeVisible();
+  await expect(page.getByText('仅最近 90 天原始事件支持同会话漏斗')).toBeVisible();
 });
 
 test('官方批次允许单项失败、保留成功草稿并只发布勾选项', async ({ page }, testInfo) => {
@@ -74,13 +95,17 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   ]);
   await expect(page.getByText('photo-gradient-64.png')).toBeVisible();
   await expect(page.getByText('broken.png')).toBeVisible();
+  const pendingItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
+  await page.locator('.batch-studio > details').getByLabel('目标宽度').fill('30');
+  await pendingItem.getByText('逐项参数覆盖').click();
+  await pendingItem.getByLabel('目标宽度').fill('24');
 
   await page.getByRole('button', { name: '开始生成' }).click();
   await expect(page.getByRole('status')).toContainText('生成完成，1 项失败', { timeout: 30_000 });
   const savedItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
   const failedItem = page.locator('.batch-items li', { hasText: 'broken.png' });
-  await expect(savedItem).toContainText('saved · 100%');
-  await expect(failedItem).toContainText('failed');
+  await expect(savedItem).toContainText('已保存 · 100%');
+  await expect(failedItem).toContainText('失败');
   await expect(failedItem.getByRole('button', { name: '重试' })).toBeEnabled();
 
   await savedItem.getByRole('checkbox').check();
@@ -88,6 +113,11 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await page.goto('/community');
   await expect(page.getByRole('heading', { name: '官方作品 01' })).toBeVisible();
+  const detail = await page.evaluate(async () => {
+    const list = await (await fetch('/api/community/works?q=' + encodeURIComponent('官方作品 01'))).json();
+    return (await fetch(`/api/community/works/${list.items[0].id}`)).json();
+  });
+  expect(detail.snapshot.params.targetWidth).toBe(24);
 });
 
 test('豆社与审核后台覆盖目标宽度且无严重可访问性问题', async ({ page }, testInfo) => {

@@ -56,16 +56,16 @@ export default function CommunitySubmitForm() {
 
   return (
     <form className="community-submit-form" onSubmit={(event) => void submit(event)}>
-      <label>私人设计 ID<input className="input-field" value={designId} onChange={(event) => setDesignId(event.target.value)} required /></label>
-      <label>公开作品标题<input className="input-field" value={title} maxLength={80} onChange={(event) => setTitle(event.target.value)} required /></label>
-      {tags.length > 0 && <fieldset><legend>正式标签（最多 10 个）</legend><div className="community-tag-picker">{tags.map((tag) => (
+      <label>{t.designId}<input className="input-field" value={designId} onChange={(event) => setDesignId(event.target.value)} required /></label>
+      <label>{t.title}<input className="input-field" value={title} maxLength={80} onChange={(event) => setTitle(event.target.value)} required /></label>
+      {tags.length > 0 && <fieldset><legend>{t.tags}</legend><div className="community-tag-picker">{tags.map((tag) => (
         <label key={tag.id}><input type="checkbox" checked={selected.includes(tag.id)} disabled={!selected.includes(tag.id) && selected.length >= 10} onChange={(event) => setSelected((current) => event.target.checked ? [...current, tag.id] : current.filter((id) => id !== tag.id))} />{tag.name}</label>
       ))}</div></fieldset>}
       <label className="community-license-check"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
-        <span>我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。<Link href="/community/copyright" className="link-soft">查看版权与申诉说明</Link></span>
+        <span>{t.license}<Link href="/community/copyright" className="link-soft">{t.copyright}</Link></span>
       </label>
       {error && <p role="alert" className="notice notice-danger">{error}</p>}
-      <div className="community-form-actions"><Link href="/designs" className="btn-outline">返回设计</Link><button className="btn-primary" disabled={busy || !accepted || !designId || !title.trim()}>{busy ? t.submitting : t.submit}</button></div>
+      <div className="community-form-actions"><Link href="/designs" className="btn-outline">{t.back}</Link><button className="btn-primary" disabled={busy || !accepted || !designId || !title.trim()}>{busy ? t.submitting : t.submit}</button></div>
     </form>
   );
 }

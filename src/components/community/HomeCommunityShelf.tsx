@@ -32,8 +32,8 @@ export default function HomeCommunityShelf() {
   if (!state || state.items.length === 0) return null;
   return (
     <section className="home-community">
-      <header><div><span className="studio-eyebrow">{state.featured ? t.featured : t.latest}</span><h2>{state.featured ? t.featuredProofs : t.latestProofs}</h2></div><Link href="/community" className="btn-outline btn-sm">打开豆社</Link></header>
-      <ul>{state.items.map((work) => <li key={work.id}><Link href={`/community/${work.id}`}><CommunityPreviewCanvas preview={work.preview} label={`${work.title} 预览`} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>
+      <header><div><span className="studio-eyebrow">{state.featured ? t.featured : t.latest}</span><h2>{state.featured ? t.featuredProofs : t.latestProofs}</h2></div><Link href="/community" className="btn-outline btn-sm">{t.open}</Link></header>
+      <ul>{state.items.map((work) => <li key={work.id}><Link href={`/community/${work.id}`}><CommunityPreviewCanvas preview={work.preview} label={t.preview(work.title)} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>
     </section>
   );
 }
