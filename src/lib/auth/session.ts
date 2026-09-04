@@ -10,6 +10,7 @@ import type { AnyDatabase } from '@/../db/client';
 import { getDb } from './db';
 import { generateToken, hashToken } from './tokens';
 import { readSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, sessionCookieOptions } from './cookies';
+import type { AccountStatus, Actor, UserRole } from './authorization';
 
 const TTL_MS = SESSION_TTL_SECONDS * 1000;
 const ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -49,7 +50,7 @@ export async function revokeOtherSessions(db: AnyDatabase, userId: string, keepT
  * 返回 userId 或 null；会话不存在/已过期/用户不存在均返回 null。
  * requireVerified：要求用户邮箱已验证（未验证会话的调用按未登录处理）。
  */
-export interface ResolvedSession {
+export interface ResolvedSession extends Actor {
   userId: string;
   token: string;
   renewedExpiresAt: Date | null;
@@ -69,6 +70,8 @@ export async function resolveSession(
       sessionId: sessions.id,
       userId: sessions.userId,
       verified: users.emailVerifiedAt,
+      role: users.role,
+      accountStatus: users.accountStatus,
       expiresAt: sessions.expiresAt,
       absoluteExpiresAt: sessions.absoluteExpiresAt,
     })
@@ -76,6 +79,7 @@ export async function resolveSession(
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, now), gt(sessions.absoluteExpiresAt, now)));
   if (rows.length === 0) return null;
+  if (rows[0].accountStatus !== 'active') return null;
   if (opts.requireVerified && !rows[0].verified) return null;
   let renewedExpiresAt: Date | null = null;
   // 半程阈值滚动续期：仅当剩余有效期不足 15 天时把过期时间前移 30 天
@@ -83,7 +87,14 @@ export async function resolveSession(
     renewedExpiresAt = new Date(Math.min(now.getTime() + TTL_MS, rows[0].absoluteExpiresAt.getTime()));
     await db.update(sessions).set({ expiresAt: renewedExpiresAt }).where(eq(sessions.id, rows[0].sessionId));
   }
-  return { userId: rows[0].userId, token, renewedExpiresAt };
+  return {
+    userId: rows[0].userId,
+    role: rows[0].role as UserRole,
+    accountStatus: rows[0].accountStatus as AccountStatus,
+    emailVerified: rows[0].verified !== null,
+    token,
+    renewedExpiresAt,
+  };
 }
 
 export async function resolveSessionUserId(
@@ -113,6 +124,22 @@ export async function getVerifiedSessionUserId(): Promise<string | null> {
   const result = await resolveSession(getDb(), buildHeader(token), now, { requireVerified: true });
   renewCookie(jar, result, now);
   return result?.userId ?? null;
+}
+
+/** Server-side DAL entry point for role-aware authorization. */
+export async function getSessionActor(opts: { requireVerified?: boolean } = {}): Promise<Actor | null> {
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE_NAME)?.value ?? null;
+  const now = new Date();
+  const result = await resolveSession(getDb(), buildHeader(token), now, opts);
+  renewCookie(jar, result, now);
+  if (!result) return null;
+  return {
+    userId: result.userId,
+    role: result.role,
+    accountStatus: result.accountStatus,
+    emailVerified: result.emailVerified,
+  };
 }
 
 function renewCookie(

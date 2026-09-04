@@ -1,6 +1,6 @@
 # 01 身份角色、账号状态与审计
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Outcome
 

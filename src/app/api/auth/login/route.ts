@@ -44,13 +44,19 @@ async function post(request: Request) {
   }
 
   const rows = await db
-    .select({ id: users.id, email: users.email, passwordHash: users.passwordHash, emailVerifiedAt: users.emailVerifiedAt })
+    .select({
+      id: users.id,
+      email: users.email,
+      passwordHash: users.passwordHash,
+      emailVerifiedAt: users.emailVerifiedAt,
+      accountStatus: users.accountStatus,
+    })
     .from(users)
     .where(eq(sql`lower(${users.email})`, email));
 
   // 用户不存在与密码错误使用同一文案（防枚举，spec E28/E31）；
   // 未知邮箱也执行一次假哈希校验，抹平「已注册 + 错密码」与「未注册」的 argon2 时序差。
-  if (rows.length === 0) {
+  if (rows.length === 0 || rows[0].passwordHash === null) {
     await verifyPassword(await dummyPasswordHash(), password);
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.invalidCredentials));
   }
@@ -59,6 +65,9 @@ async function post(request: Request) {
   }
 
   const user = rows[0];
+  if (user.accountStatus !== 'active') {
+    return apiError(new AppError('ACCOUNT_SUSPENDED', zhCN.auth.accountUnavailable));
+  }
   const session = await createSession(db, user.id);
   return okJson(
     { email: user.email, emailVerified: user.emailVerifiedAt !== null },

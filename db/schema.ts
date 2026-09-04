@@ -7,6 +7,7 @@ import {
   index,
   integer,
   jsonb,
+  pgEnum,
   pgTable,
   text,
   timestamp,
@@ -15,20 +16,73 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
+export const userRoleEnum = pgEnum('user_role', ['user', 'moderator', 'admin']);
+export const accountStatusEnum = pgEnum('account_status', ['active', 'suspended', 'anonymized']);
+export const maintenanceStatusEnum = pgEnum('maintenance_status', ['running', 'succeeded', 'failed']);
+
 export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     // 邮箱大小写不敏感由 lower(email) 唯一索引保证（PGlite 测试环境无 citext 扩展）
-    email: text('email').notNull(),
+    email: text('email'),
     // 可选展示名：不唯一、不能用于登录；已有账号保持 null。
     username: text('username'),
-    passwordHash: text('password_hash').notNull(),
+    passwordHash: text('password_hash'),
+    role: userRoleEnum('role').notNull().default('user'),
+    accountStatus: accountStatusEnum('account_status').notNull().default('active'),
+    governanceVersion: integer('governance_version').notNull().default(1),
+    publicAuthorId: uuid('public_author_id'),
+    accountStatusReason: text('account_status_reason'),
+    statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('users_email_lower_unique').on(sql`lower(${table.email})`)],
+  (table) => [
+    uniqueIndex('users_email_lower_unique').on(sql`lower(${table.email})`),
+    uniqueIndex('users_public_author_unique')
+      .on(table.publicAuthorId)
+      .where(sql`${table.publicAuthorId} is not null`),
+  ],
+);
+
+export const adminAuditLogs = pgTable(
+  'admin_audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    actorRole: userRoleEnum('actor_role').notNull(),
+    action: text('action').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    reason: text('reason').notNull(),
+    requestId: text('request_id').notNull(),
+    beforeState: jsonb('before_state'),
+    afterState: jsonb('after_state'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('admin_audit_logs_created_idx').on(table.createdAt.desc()),
+    index('admin_audit_logs_target_idx').on(table.targetType, table.targetId, table.createdAt.desc()),
+  ],
+);
+
+export const maintenanceRuns = pgTable(
+  'maintenance_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    task: text('task').notNull(),
+    status: maintenanceStatusEnum('status').notNull().default('running'),
+    cursor: text('cursor'),
+    summary: jsonb('summary'),
+    errorCode: text('error_code'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [index('maintenance_runs_task_started_idx').on(table.task, table.startedAt.desc())],
 );
 
 export const sessions = pgTable(
@@ -141,6 +195,8 @@ export const designShares = pgTable(
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
+export type MaintenanceRun = typeof maintenanceRuns.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type EmailToken = typeof emailTokens.$inferSelect;
 export type Design = typeof designs.$inferSelect;

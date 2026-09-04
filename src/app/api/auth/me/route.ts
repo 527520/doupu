@@ -13,7 +13,15 @@ async function get(_request: Request) {
     return apiError(new AppError('UNAUTHORIZED', zhCN.auth.loginRequired));
   }
   const rows = await getDb()
-    .select({ email: users.email, username: users.username, emailVerifiedAt: users.emailVerifiedAt, createdAt: users.createdAt })
+    .select({
+      email: users.email,
+      username: users.username,
+      emailVerifiedAt: users.emailVerifiedAt,
+      publicAuthorId: users.publicAuthorId,
+      role: users.role,
+      accountStatus: users.accountStatus,
+      createdAt: users.createdAt,
+    })
     .from(users)
     .where(eq(users.id, userId));
   if (rows.length === 0) {
@@ -26,6 +34,9 @@ async function get(_request: Request) {
   return okJson({
     email: user.email,
     username: user.username,
+    publicAuthorId: user.publicAuthorId,
+    role: user.role,
+    accountStatus: user.accountStatus,
     emailVerified: true,
     createdAt: user.createdAt.toISOString(),
   });

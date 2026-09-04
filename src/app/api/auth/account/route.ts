@@ -10,8 +10,9 @@ import { clearSessionCookie } from '@/lib/auth/cookies';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
+import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 
-/** 注销账号：需会话与密码；删除用户及其全部数据（级联），并清除会话 Cookie。 */
+/** 注销账号：需会话与密码；匿名化身份并删除私人数据，公开事实留存。 */
 async function deleteAccount(request: Request): Promise<NextResponse> {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
@@ -31,11 +32,14 @@ async function deleteAccount(request: Request): Promise<NextResponse> {
     .select({ id: users.id, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.id, userId));
-  if (rows.length === 0 || !(await verifyPassword(rows[0].passwordHash, parsed.data.password))) {
+  if (rows.length === 0 || rows[0].passwordHash === null || !(await verifyPassword(rows[0].passwordHash, parsed.data.password))) {
     return apiError(new AppError('VALIDATION', zhCN.auth.currentPasswordWrong, 'password'));
   }
 
-  await db.delete(users).where(eq(users.id, userId));
+  await anonymizeAccount(db, {
+    userId,
+    requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(),
+  });
   return new NextResponse(null, {
     status: 204,
     headers: { 'Set-Cookie': clearSessionCookie() },

@@ -34,7 +34,7 @@ async function post(request: Request) {
     .select({ id: users.id, passwordHash: users.passwordHash })
     .from(users)
     .where(eq(users.id, userId));
-  if (rows.length === 0 || !(await verifyPassword(rows[0].passwordHash, currentPassword))) {
+  if (rows.length === 0 || rows[0].passwordHash === null || !(await verifyPassword(rows[0].passwordHash, currentPassword))) {
     return apiError(new AppError('VALIDATION', zhCN.auth.currentPasswordWrong, 'currentPassword'));
   }
 

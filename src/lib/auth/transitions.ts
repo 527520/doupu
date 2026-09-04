@@ -23,7 +23,12 @@ export async function createUnverifiedUser(
   return db.transaction(async (tx) => {
     const [user] = await tx
       .insert(users)
-      .values({ email: input.email, username: input.username || null, passwordHash: input.passwordHash })
+      .values({
+        email: input.email,
+        username: input.username || null,
+        passwordHash: input.passwordHash,
+        publicAuthorId: crypto.randomUUID(),
+      })
       .returning();
     await hooks.afterUserCreated?.();
     await tx.insert(emailTokens).values({

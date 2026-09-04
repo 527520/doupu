@@ -486,6 +486,7 @@ export const zhCN = {
   auth: {
     emailTaken: '该邮箱已注册，请直接登录或找回密码。',
     invalidCredentials: '邮箱或密码错误。',
+    accountUnavailable: '该账号当前不可用。',
     loginRequired: '请先登录。',
     emailUnverified: '邮箱未验证，请查收验证邮件。',
     linkInvalid: '链接无效或已过期，请重新获取。',

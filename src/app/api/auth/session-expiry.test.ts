@@ -51,4 +51,21 @@ describe('session expiry', () => {
 
     await expect(resolveSession(db, `${SESSION_COOKIE_NAME}=${token}`, now)).resolves.toBeNull();
   });
+
+  it('rejects an existing session as soon as the account is suspended', async () => {
+    const [user] = await db.insert(users).values({
+      email: 'session-suspended@example.com',
+      passwordHash: 'hash',
+      accountStatus: 'suspended',
+    }).returning();
+    const token = 'suspended-token';
+    await db.insert(sessions).values({
+      userId: user.id,
+      tokenHash: hashToken(token),
+      expiresAt: new Date('2026-02-01T00:00:00.000Z'),
+      absoluteExpiresAt: new Date('2026-03-01T00:00:00.000Z'),
+    });
+
+    await expect(resolveSession(db, `${SESSION_COOKIE_NAME}=${token}`, now)).resolves.toBeNull();
+  });
 });

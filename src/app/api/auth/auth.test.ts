@@ -6,6 +6,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { setTestDb } from '@/lib/auth/db';
 import { rateLimits } from '@/../db/schema';
+import { users } from '@/../db/schema';
+import { eq } from 'drizzle-orm';
 import { clearMailbox, sentMails } from '@/lib/auth/mailer';
 import * as mailer from '@/lib/auth/mailer';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
@@ -204,7 +206,19 @@ describe('认证全生命周期', () => {
     expect((await meGet(new Request(`${ORIGIN}/api/auth/me`))).status).toBe(401);
   });
 
-  it('注销账号：密码校验 → 级联删除 → 无法再登录（E34）', async () => {
+  it('暂停账号使用统一不可用响应且不会创建新会话', async () => {
+    const mail = email();
+    await registerPost(post('/api/auth/register', { email: mail, password }));
+    await testDb.update(users).set({ accountStatus: 'suspended' }).where(eq(users.email, mail));
+
+    const response = await loginPost(post('/api/auth/login', { email: mail, password }));
+
+    expect(response.status).toBe(403);
+    expect((await errorBody(response)).error.code).toBe('ACCOUNT_SUSPENDED');
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('注销账号：密码校验 → 匿名化并删除私人数据 → 无法再登录（E34）', async () => {
     const mail = email();
     await registerPost(post('/api/auth/register', { email: mail, password }));
     const verifyToken = tokenFromMail(lastMail());
@@ -212,6 +226,7 @@ describe('认证全生命周期', () => {
 
     const login = await loginPost(post('/api/auth/login', { email: mail, password }));
     cookieJar.set(SESSION_COOKIE_NAME, setCookieFromResponse(login)!);
+    const [beforeDelete] = await testDb.select().from(users).where(eq(users.email, mail));
 
     const wrong = await accountDelete(post('/api/auth/account', { password: 'wrong' }));
     expect(wrong.status).toBe(400);
@@ -219,6 +234,15 @@ describe('认证全生命周期', () => {
     const del = await accountDelete(post('/api/auth/account', { password }));
     expect(del.status).toBe(204);
     expect(del.headers.get('set-cookie')).toContain('Max-Age=0');
+    const [account] = await testDb.select().from(users).where(eq(users.id, beforeDelete.id));
+    expect(account).toMatchObject({
+      email: null,
+      username: null,
+      passwordHash: null,
+      accountStatus: 'anonymized',
+      role: 'user',
+    });
+    expect(account?.publicAuthorId).toMatch(/^[0-9a-f-]{36}$/);
     cookieJar.clear();
 
     const after = await loginPost(post('/api/auth/login', { email: mail, password }));
