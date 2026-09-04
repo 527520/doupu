@@ -99,12 +99,13 @@ async function main() {
 
   await migrate(db, { migrationsFolder: migrations });
   let journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
-  assert.equal(journal.rows[0].count, 10, 'idempotent replay changed migration journal');
+  assert.equal(journal.rows[0].count, 11, 'idempotent replay changed migration journal');
 
   // The paired down SQL is intentionally legal only before new feature data
   // exists. This fixture contains exclusively pre-0005 rows, so rehearse the
   // complete reverse path and prove the Drizzle journal permits re-upgrade.
   for (const tag of [
+    '0010_analytics_time_index',
     '0009_official_batch_links',
     '0008_community_governance',
     '0007_community_core',
@@ -132,7 +133,7 @@ async function main() {
 
   await migrate(db, { migrationsFolder: migrations });
   journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
-  assert.equal(journal.rows[0].count, 10, 're-upgrade after down SQL did not restore all migrations');
+  assert.equal(journal.rows[0].count, 11, 're-upgrade after down SQL did not restore all migrations');
   const reupgraded = await pool.query(
     `select
        (select project from designs where id=$1) as project,

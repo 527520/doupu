@@ -62,7 +62,7 @@ test('admin 可读取人员、规则、审计和系统证据', async ({ page }) 
   await expect(page.getByRole('heading', { name: '审计记录' })).toBeVisible();
   await page.goto('/admin/system');
   await expect(page.getByText('未接入').first()).toBeVisible();
-  await expect(page.getByText('0009_official_batch_links')).toBeVisible();
+  await expect(page.getByText('0010_analytics_time_index')).toBeVisible();
 });
 
 test('官方批次允许单项失败、保留成功草稿并只发布勾选项', async ({ page }, testInfo) => {

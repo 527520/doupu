@@ -154,6 +154,7 @@ export const analyticsEvents = pgTable(
     isInternal: boolean('is_internal').notNull().default(false),
   },
   (table) => [
+    index('analytics_events_time_idx').on(table.occurredAt),
     index('analytics_events_received_idx').on(table.receivedAt),
     index('analytics_events_session_idx').on(
       table.sessionId,
