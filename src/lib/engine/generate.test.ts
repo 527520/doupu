@@ -62,6 +62,7 @@ describe('generatePattern 边界（E14–E19）', () => {
     const out = generatePattern(solidImage(200, 200, 1, 2, 3), params({ targetWidth: 200 }), MARD);
     expect(out.pattern.width).toBe(200);
     expect(out.pattern.height).toBe(200);
+    expect(out.pattern.cells[0]).toBe(out.pattern.cells.at(-1));
   });
 
   it('E15：K=2 时输出颜色数 ≤ 2；K 大于实际颜色数时不合并', () => {

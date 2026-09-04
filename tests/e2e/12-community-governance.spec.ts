@@ -1,6 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fillField } from './helpers';
+
+const BATCH_PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
 async function login(page: Page, email: string, next = '/community') {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
@@ -59,6 +63,31 @@ test('admin 可读取人员、规则、审计和系统证据', async ({ page }) 
   await page.goto('/admin/system');
   await expect(page.getByText('未接入').first()).toBeVisible();
   await expect(page.getByText('0009_official_batch_links')).toBeVisible();
+});
+
+test('官方批次允许单项失败、保留成功草稿并只发布勾选项', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await login(page, 'e2e-admin@example.com', '/admin/batches');
+  await page.locator('input[type="file"]').setInputFiles([
+    { name: 'photo-gradient-64.png', mimeType: 'image/png', buffer: readFileSync(BATCH_PHOTO) },
+    { name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('not-an-image') },
+  ]);
+  await expect(page.getByText('photo-gradient-64.png')).toBeVisible();
+  await expect(page.getByText('broken.png')).toBeVisible();
+
+  await page.getByRole('button', { name: '开始生成' }).click();
+  await expect(page.getByRole('status')).toContainText('生成完成，1 项失败', { timeout: 30_000 });
+  const savedItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
+  const failedItem = page.locator('.batch-items li', { hasText: 'broken.png' });
+  await expect(savedItem).toContainText('saved · 100%');
+  await expect(failedItem).toContainText('failed');
+  await expect(failedItem.getByRole('button', { name: '重试' })).toBeEnabled();
+
+  await savedItem.getByRole('checkbox').check();
+  await page.getByRole('button', { name: '发布已勾选草稿' }).click();
+  await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
+  await page.goto('/community');
+  await expect(page.getByRole('heading', { name: '官方作品 01' })).toBeVisible();
 });
 
 test('豆社与审核后台覆盖目标宽度且无严重可访问性问题', async ({ page }, testInfo) => {

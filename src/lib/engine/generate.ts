@@ -30,6 +30,35 @@ export type ProgressReporter = (percent: number) => void;
 export const MAX_PATTERN_ROWS = 200;
 
 /**
+ * Reuse immutable cell objects with identical values before crossing the
+ * Worker boundary. Structured clone preserves repeated references, reducing a
+ * 200x200 result from tens of thousands of cloned objects to at most the
+ * palette/status combinations. Editor operations replace array slots and
+ * never mutate cell objects, so sharing is safe.
+ */
+function internPatternCells(cells: PatternCell[]): PatternCell[] {
+  const byHex = new Map<string | null, Map<string | null, Array<PatternCell | undefined>>>();
+  for (let index = 0; index < cells.length; index++) {
+    const cell = cells[index];
+    let byCode = byHex.get(cell.hex);
+    if (!byCode) {
+      byCode = new Map();
+      byHex.set(cell.hex, byCode);
+    }
+    let variants = byCode.get(cell.code);
+    if (!variants) {
+      variants = new Array<PatternCell | undefined>(4);
+      byCode.set(cell.code, variants);
+    }
+    const variant = (cell.transparent ? 1 : 0) | (cell.external ? 2 : 0);
+    const canonical = variants[variant];
+    if (canonical) cells[index] = canonical;
+    else variants[variant] = cell;
+  }
+  return cells;
+}
+
+/**
  * 按原图比例推算图纸行数，并说明是否被上限钳制（A-05）。
  *
  * 竖长图会撞到 200 行上限：例如手机竖屏截图 1080×2400、宽度 100 格时，
@@ -118,6 +147,7 @@ export function generatePattern(
   assertGenerationActive(shouldCancel);
   // 8. 统计
   const stats = computeStats(cells);
+  internPatternCells(cells);
   onProgress?.(100);
   assertGenerationActive(shouldCancel);
 

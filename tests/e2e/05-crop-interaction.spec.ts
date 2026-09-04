@@ -127,8 +127,9 @@ test('边框手柄缩放：拖顶边中点只改高度、宽度不变', async ({
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 8 });
   await page.mouse.up();
 
-  // 顶边中点（选区上沿 x=80px 处）向下拖 15% 画布高 → 高度 100→70、宽度保持 160
-  await page.mouse.move(box.x + box.width * 0.25, box.y);
+  // 顶边中点（选区上沿 x=80px 处）向下拖约 15% 画布高 → 高度 100→70、宽度保持 160。
+  // 从画布内侧 2px 开始，避免 Firefox 将恰好落在元素上边界的坐标命中到父容器。
+  await page.mouse.move(box.x + box.width * 0.25, box.y + 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.15, { steps: 6 });
   await page.mouse.up();

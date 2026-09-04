@@ -48,7 +48,12 @@ export default function OfficialBatchStudio() {
   }, [t.restored]);
 
   const replaceItems = (next: Item[] | ((current: Item[]) => Item[])) => {
-    setItems((current) => { const value = typeof next === 'function' ? next(current) : next; itemsRef.current = value; return value; });
+    // Worker completions can settle in the same React batch. Update the mutable
+    // scheduling source synchronously so dispatch() never evaluates completion
+    // against a queued (stale) state updater.
+    const value = typeof next === 'function' ? next(itemsRef.current) : next;
+    itemsRef.current = value;
+    setItems(value);
   };
   const patchItem = (localId: string, change: Partial<Item>) => replaceItems((current) => current.map((item) => item.localId === localId ? { ...item, ...change } : item));
   const api = async (url: string, init: RequestInit) => {
