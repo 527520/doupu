@@ -17,6 +17,13 @@ const AUDIT_STATE_KEYS = new Set([
   'reportStatus',
   'ruleSetVersion',
   'mergedIntoTagId',
+  'status',
+  'version',
+  'ruleCount',
+  'active',
+  'sortOrder',
+  'decision',
+  'count',
 ]);
 
 type AuditScalar = string | number | boolean | null;

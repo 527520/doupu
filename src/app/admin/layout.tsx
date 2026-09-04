@@ -9,5 +9,5 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const actor = await getSessionActor();
   if (!actor) redirect('/login?next=/admin');
   if (!actor.emailVerified || actor.accountStatus !== 'active' || actor.role === 'user') forbidden();
-  return <div className="admin-shell"><AdminNav /><div className="admin-stage">{children}</div></div>;
+  return <div className="admin-shell"><AdminNav role={actor.role} /><div className="admin-stage">{children}</div></div>;
 }

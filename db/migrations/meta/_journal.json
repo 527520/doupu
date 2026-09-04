@@ -64,6 +64,13 @@
       "when": 1788543666201,
       "tag": "0008_community_governance",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788544484216,
+      "tag": "0009_official_batch_links",
+      "breakpoints": true
     }
   ]
 }

@@ -316,6 +316,7 @@ export const communityRevisions = pgTable(
     publicAuthorId: text('public_author_id').notNull(),
     frozenDisplayName: text('frozen_display_name').notNull(),
     sourceDesignId: uuid('source_design_id').references(() => designs.id, { onDelete: 'set null' }),
+    officialBatchId: uuid('official_batch_id'),
     licenseVersion: text('license_version').notNull(),
     licenseConfirmedAt: timestamp('license_confirmed_at', { withTimezone: true }).notNull(),
     engineVersion: text('engine_version').notNull(),
@@ -341,6 +342,7 @@ export const communityRevisions = pgTable(
     index('community_revisions_work_status_idx').on(table.workId, table.status, table.createdAt.desc()),
     index('community_revisions_review_queue_idx').on(table.status, table.submittedAt),
     index('community_revisions_public_search_idx').on(table.status, table.publishedAt.desc()),
+    index('community_revisions_official_batch_idx').on(table.officialBatchId, table.createdAt),
   ],
 );
 

@@ -10,16 +10,18 @@ export async function register(): Promise<void> {
       const { validateProductionAuthAdapters } = await import('@/lib/auth/runtimeConfig');
       validateProductionAuthAdapters();
       // 限流表定期清理（优化票 03）：每日删除 25 小时前的过期窗口（窗口小时对齐，>24h 必过期）
-      const { cleanupRateLimits, cleanupSyncTombstones } = await import('@/../db/client');
+      const { cleanupExpiredIdempotencyRecords, cleanupRateLimits, cleanupSyncTombstones } = await import('@/../db/client');
       const { getDb } = await import('@/lib/auth/db');
       const runCleanup = async (): Promise<void> => {
         try {
           const removed = await cleanupRateLimits(getDb(), new Date(Date.now() - 25 * 60 * 60 * 1000));
           if (removed > 0) console.log(`[cleanup] rate_limits 清理 ${removed} 行过期窗口`);
           const tombstones = await cleanupSyncTombstones(getDb(), new Date());
+          const idempotency = await cleanupExpiredIdempotencyRecords(getDb(), new Date());
           if (tombstones.designs + tombstones.palettes > 0) {
             console.log(`[cleanup] 同步墓碑清理 designs=${tombstones.designs} palettes=${tombstones.palettes}`);
           }
+          if (idempotency > 0) console.log(`[cleanup] 幂等记录清理 ${idempotency} 条`);
         } catch (error) {
           console.error('[cleanup] rate_limits 清理失败（不阻塞启动）:', error);
         }

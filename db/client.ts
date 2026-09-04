@@ -8,7 +8,7 @@ import { sql, lt } from 'drizzle-orm';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import { poolOptions } from '@/lib/config';
 import * as schema from './schema';
-import { designs, palettes, rateLimits } from './schema';
+import { designs, idempotencyRecords, palettes, rateLimits } from './schema';
 
 export type ProdDatabase = NodePgDatabase<typeof schema>;
 /** 生产/测试两种客户端共用的联合类型（PGlite 仅为 type-only 导入，不进打包链）。 */
@@ -75,4 +75,8 @@ export async function cleanupSyncTombstones(
     db.delete(palettes).where(lt(palettes.deletedAt, cutoff)).returning(),
   ]);
   return { designs: removedDesigns.length, palettes: removedPalettes.length };
+}
+
+export async function cleanupExpiredIdempotencyRecords(db: AnyDatabase, now: Date): Promise<number> {
+  return (await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now)).returning()).length;
 }

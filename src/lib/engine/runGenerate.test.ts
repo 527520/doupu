@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   disposeGenerateWorker,
+  createGenerateWorkerClient,
   prepareGenerationSource,
   runGenerate,
   type GenerateRequest,
@@ -136,6 +137,21 @@ describe('runGenerate 持久 Worker 协议', () => {
     await runGenerate(makeRequest(makeSrc(128))).promise;
     expect(workers).toHaveLength(1);
     expect(workers[0].posted.filter((message) => message.type === 'source')).toHaveLength(2);
+  });
+
+  it('多个实例各自拥有 Worker，任务不会互相取消', async () => {
+    const workers = stubWorker(() => undefined);
+    const left = createGenerateWorkerClient();
+    const right = createGenerateWorkerClient();
+    const leftTask = left.run(makeRequest());
+    const rightTask = right.run(makeRequest());
+    expect(workers).toHaveLength(2);
+    const leftMessage = workers[0].posted.find((message): message is Extract<WorkerRequest, { type: 'generate' }> => message.type === 'generate')!;
+    const rightMessage = workers[1].posted.find((message): message is Extract<WorkerRequest, { type: 'generate' }> => message.type === 'generate')!;
+    workers[0].emit({ type: 'done', taskId: leftMessage.taskId, output: cannedOutput });
+    workers[1].emit({ type: 'done', taskId: rightMessage.taskId, output: cannedOutput });
+    await expect(Promise.all([leftTask.promise, rightTask.promise])).resolves.toEqual([cannedOutput, cannedOutput]);
+    left.dispose(); right.dispose();
   });
 
   it('原子取消立即拒绝且不排队冗余 cancel 消息，持久 Worker 保留', async () => {
