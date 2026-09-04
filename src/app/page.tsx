@@ -6,6 +6,7 @@ import HomeUploadCard from '@/components/upload/HomeUploadCard';
 import HomeAuthNav from '@/components/layout/HomeAuthNav';
 import SiteHeader from '@/components/layout/SiteHeader';
 import Icon from '@/components/ui/Icon';
+import HomeCommunityShelf from '@/components/community/HomeCommunityShelf';
 
 export default function Home() {
   const { home, footer } = zhCN;
@@ -34,6 +35,8 @@ export default function Home() {
         </section>
 
         <div className="home-onboarding"><OnboardingGuide /></div>
+
+        <HomeCommunityShelf />
 
         <footer className="home-footer">
           <p>{home.openSourceNotice} · <a href={SOURCE_REPO_URL} target="_blank" rel="noreferrer">{footer.sourceCode}</a></p>

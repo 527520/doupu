@@ -378,6 +378,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               <button type="button" onClick={() => setDeleting(design)} className="btn-danger-outline btn-xs">
                 {t.delete}
               </button>
+              {me !== 'loading' && me.state === 'verified' && design.cloudPresent && (
+                <Link href={`/community/submit?designId=${design.id}`} className="btn-outline btn-xs">投稿豆社</Link>
+              )}
             </div>
           </li>
         ))}

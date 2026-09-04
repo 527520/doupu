@@ -50,6 +50,13 @@
       "when": 1788537353112,
       "tag": "0006_consent_analytics",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788542682699,
+      "tag": "0007_community_core",
+      "breakpoints": true
     }
   ]
 }

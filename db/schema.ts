@@ -25,6 +25,17 @@ export const analyticsDeviceEnum = pgEnum('analytics_device', ['desktop', 'mobil
 export const analyticsBrowserEnum = pgEnum('analytics_browser', ['chrome', 'edge', 'firefox', 'safari', 'other']);
 export const analyticsOsEnum = pgEnum('analytics_os', ['android', 'ios', 'linux', 'macos', 'windows', 'other']);
 export const analyticsDeletionStatusEnum = pgEnum('analytics_deletion_status', ['pending', 'succeeded', 'failed']);
+export const communityWorkStatusEnum = pgEnum('community_work_status', ['active', 'withdrawn', 'removed']);
+export const communityRevisionStatusEnum = pgEnum('community_revision_status', [
+  'draft',
+  'pending_review',
+  'published',
+  'rejected',
+  'withdrawn',
+  'superseded',
+]);
+export const communityAuthorTypeEnum = pgEnum('community_author_type', ['user', 'official']);
+export const officialBatchStatusEnum = pgEnum('official_batch_status', ['draft', 'running', 'paused', 'cancelled', 'completed']);
 
 export const users = pgTable(
   'users',
@@ -234,6 +245,33 @@ export const emailTokens = pgTable(
   (table) => [index('email_tokens_user_idx').on(table.userId)],
 );
 
+export const communityWorks = pgTable(
+  'community_works',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+    authorType: communityAuthorTypeEnum('author_type').notNull().default('user'),
+    lifecycleStatus: communityWorkStatusEnum('lifecycle_status').notNull().default('active'),
+    currentPublishedRevisionId: uuid('current_published_revision_id'),
+    version: integer('version').notNull().default(1),
+    likeCount: integer('like_count').notNull().default(0),
+    commentCount: integer('comment_count').notNull().default(0),
+    reuseCount: integer('reuse_count').notNull().default(0),
+    commentsLocked: boolean('comments_locked').notNull().default(false),
+    featuredAt: timestamp('featured_at', { withTimezone: true }),
+    featuredByUserId: uuid('featured_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    removedReason: text('removed_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('community_works_author_idx').on(table.authorUserId, table.createdAt.desc()),
+    index('community_works_public_idx').on(table.lifecycleStatus, table.featuredAt.desc(), table.createdAt.desc()),
+  ],
+);
+
 /** 设计文档：id 由客户端生成（spec §4.2 幂等 upsert），project 为项目文件 JSON。 */
 export const designs = pgTable(
   'designs',
@@ -246,12 +284,109 @@ export const designs = pgTable(
     project: jsonb('project'),
     revision: integer('revision').notNull().default(1),
     payloadBytes: integer('payload_bytes').notNull().default(0),
+    communitySourceWorkId: uuid('community_source_work_id')
+      .references(() => communityWorks.id, { onDelete: 'set null' }),
+    communitySourceRevisionId: uuid('community_source_revision_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
     index('designs_user_sync_idx').on(table.userId, table.deletedAt, table.updatedAt.desc()),
   ],
+);
+
+export const communityRevisions = pgTable(
+  'community_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'cascade' }),
+    revisionNumber: integer('revision_number').notNull(),
+    status: communityRevisionStatusEnum('status').notNull().default('draft'),
+    version: integer('version').notNull().default(1),
+    title: text('title').notNull(),
+    authorType: communityAuthorTypeEnum('author_type').notNull(),
+    publicAuthorId: text('public_author_id').notNull(),
+    frozenDisplayName: text('frozen_display_name').notNull(),
+    sourceDesignId: uuid('source_design_id').references(() => designs.id, { onDelete: 'set null' }),
+    licenseVersion: text('license_version').notNull(),
+    licenseConfirmedAt: timestamp('license_confirmed_at', { withTimezone: true }).notNull(),
+    engineVersion: text('engine_version').notNull(),
+    boardProfile: text('board_profile').notNull(),
+    paletteKind: text('palette_kind').notNull(),
+    paletteId: text('palette_id'),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    colorCount: integer('color_count').notNull(),
+    snapshot: jsonb('snapshot').notNull(),
+    preview: jsonb('preview').notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    reviewReason: text('review_reason'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('community_revisions_work_number_unique').on(table.workId, table.revisionNumber),
+    index('community_revisions_work_status_idx').on(table.workId, table.status, table.createdAt.desc()),
+    index('community_revisions_review_queue_idx').on(table.status, table.submittedAt),
+    index('community_revisions_public_search_idx').on(table.status, table.publishedAt.desc()),
+  ],
+);
+
+export const communityTags = pgTable(
+  'community_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+    mergedIntoTagId: uuid('merged_into_tag_id'),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('community_tags_name_unique').on(sql`lower(${table.name})`),
+    uniqueIndex('community_tags_slug_unique').on(table.slug),
+    index('community_tags_order_idx').on(table.active, table.sortOrder, table.name),
+  ],
+);
+
+export const communityRevisionTags = pgTable(
+  'community_revision_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    revisionId: uuid('revision_id').notNull().references(() => communityRevisions.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id').notNull().references(() => communityTags.id, { onDelete: 'restrict' }),
+  },
+  (table) => [
+    uniqueIndex('community_revision_tags_unique').on(table.revisionId, table.tagId),
+    index('community_revision_tags_tag_idx').on(table.tagId, table.revisionId),
+  ],
+);
+
+export const officialBatches = pgTable(
+  'official_batches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    status: officialBatchStatusEnum('status').notNull().default('draft'),
+    version: integer('version').notNull().default(1),
+    defaultParams: jsonb('default_params').notNull(),
+    engineVersion: text('engine_version').notNull(),
+    adminUserId: uuid('admin_user_id').references(() => users.id, { onDelete: 'set null' }),
+    itemCount: integer('item_count').notNull().default(0),
+    successCount: integer('success_count').notNull().default(0),
+    failureCount: integer('failure_count').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('official_batches_admin_created_idx').on(table.adminUserId, table.createdAt.desc())],
 );
 
 /** 自定义色板（云端同步，spec §F6）。 */
@@ -317,6 +452,10 @@ export type MaintenanceRun = typeof maintenanceRuns.$inferSelect;
 export type AnalyticsVisitor = typeof analyticsVisitors.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
+export type CommunityWork = typeof communityWorks.$inferSelect;
+export type CommunityRevision = typeof communityRevisions.$inferSelect;
+export type CommunityTag = typeof communityTags.$inferSelect;
+export type OfficialBatch = typeof officialBatches.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type EmailToken = typeof emailTokens.$inferSelect;
 export type Design = typeof designs.$inferSelect;

@@ -17,13 +17,16 @@ interface SiteHeaderProps {
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>, href: string) => void;
 }
 
-const primaryNavigation: Array<{ href: string; label: string; shortLabel: string; icon: IconName }> = [
+const desktopNavigation: Array<{ href: string; label: string; shortLabel: string; icon: IconName }> = [
   { href: '/', label: zhCN.workspace.start, shortLabel: zhCN.workspace.startShort, icon: 'home' },
   { href: '/app', label: zhCN.nav.workbench, shortLabel: zhCN.nav.workbench, icon: 'spark' },
   { href: '/designs', label: zhCN.nav.designs, shortLabel: zhCN.workspace.designsShort, icon: 'folder' },
   { href: '/palettes', label: zhCN.nav.palettes, shortLabel: zhCN.workspace.palettesShort, icon: 'palette' },
+  { href: '/community', label: '豆社', shortLabel: '豆社', icon: 'grid' },
   { href: '/account', label: zhCN.workspace.account, shortLabel: zhCN.workspace.accountShort, icon: 'user' },
 ];
+
+const mobileNavigation = desktopNavigation.filter((item) => item.href !== '/palettes');
 
 const secondaryNavigation: Array<{ href: string; label: string; icon: IconName }> = [
   { href: '/help', label: zhCN.workspace.helpAndGuide, icon: 'help' },
@@ -56,7 +59,7 @@ export default function SiteHeader({
         <Brand onClick={(event) => navigate(event, '/')} />
         <nav aria-label={zhCN.nav.mainNav} className="workspace-side-nav">
           <span className="workspace-nav-label">{zhCN.workspace.creationSpace}</span>
-          {primaryNavigation.slice(0, 4).map((item) => (
+          {desktopNavigation.slice(0, 5).map((item) => (
             <Link key={item.href} href={item.href} onClick={(event) => navigate(event, item.href)} aria-current={active(currentPath, item.href) ? 'page' : undefined} className="workspace-nav-item">
               <Icon name={item.icon} /><span>{item.label}</span>
             </Link>
@@ -99,7 +102,7 @@ export default function SiteHeader({
       </header>
 
       <nav aria-label={zhCN.nav.mainNav} className="workspace-mobile-nav" data-testid="workspace-mobile-nav">
-        {primaryNavigation.map((item) => (
+        {mobileNavigation.map((item) => (
           <Link key={item.href} href={item.href} onClick={(event) => navigate(event, item.href)} aria-current={active(currentPath, item.href) ? 'page' : undefined}>
             <Icon name={item.icon} size={20} /><span>{item.shortLabel}</span>
           </Link>
