@@ -4,6 +4,7 @@ import Link from 'next/link';
 import SiteHeader from '@/components/layout/SiteHeader';
 import PatternPreview from '@/components/preview/PatternPreview';
 import { CommunityDetailImpression } from '@/components/community/CommunityImpression';
+import CommunityInteractions from '@/components/community/CommunityInteractions';
 import { getDb } from '@/lib/auth/db';
 import { getPublicCommunityWork } from '@/lib/community/queries';
 import { getBoardProfile } from '@/lib/boardProfiles';
@@ -38,6 +39,7 @@ export default async function CommunityDetailPage({ params }: { params: Promise<
             <div className="community-counts"><span>{work.counts.likes} 赞</span><span>{work.counts.comments} 评论</span><span>{work.counts.reuses} 次引用</span></div>
           </aside>
         </div>
+        <CommunityInteractions workId={work.id} initialLikes={work.counts.likes} initialReuses={work.counts.reuses} commentsLocked={work.commentsLocked} />
       </div>
     </main>
   );

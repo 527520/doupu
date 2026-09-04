@@ -57,6 +57,13 @@
       "when": 1788542682699,
       "tag": "0007_community_core",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788543666201,
+      "tag": "0008_community_governance",
+      "breakpoints": true
     }
   ]
 }

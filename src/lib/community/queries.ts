@@ -151,11 +151,14 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
     ilike(communityRevisions.frozenDisplayName, `%${query.author}%`),
     ilike(communityRevisions.publicAuthorId, `%${query.author}%`),
   )!);
-  if (query.tag) conditions.push(sql`exists (
-    select 1 from ${communityRevisionTags} crt
-    inner join ${communityTags} ct on ct.id = crt.tag_id
-    where crt.revision_id = ${communityRevisions.id} and ct.slug = ${query.tag}
-  )`);
+  if (query.tag) {
+    const [requestedTag] = await db.select({ id: communityTags.id, mergedIntoTagId: communityTags.mergedIntoTagId })
+      .from(communityTags).where(eq(communityTags.slug, query.tag));
+    const resolvedTagId = requestedTag?.mergedIntoTagId ?? requestedTag?.id;
+    conditions.push(resolvedTagId
+      ? sql`exists (select 1 from ${communityRevisionTags} crt where crt.revision_id = ${communityRevisions.id} and crt.tag_id = ${resolvedTagId})`
+      : sql`false`);
+  }
   if (query.boardProfile) conditions.push(eq(communityRevisions.boardProfile, query.boardProfile));
   if (query.palette) conditions.push(eq(communityRevisions.paletteId, query.palette));
   if (query.from) conditions.push(gte(communityRevisions.publishedAt, new Date(`${query.from}T00:00:00+08:00`)));

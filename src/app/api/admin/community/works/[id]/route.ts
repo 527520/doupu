@@ -4,7 +4,7 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { moderateCommunityWork } from '@/lib/community/adminService';
-import { AppError } from '@/lib/errors';
+import { executeIdempotently } from '@/lib/idempotency';
 
 const schema = z.object({
   action: z.enum(['remove', 'restore', 'feature', 'unfeature', 'lock_comments', 'unlock_comments']),
@@ -16,15 +16,16 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:moderate');
-  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
-  if (!idempotencyKey || idempotencyKey.length > 100) throw new AppError('VALIDATION', '需要有效的 Idempotency-Key');
   const workId = z.string().uuid().parse((await params).id);
   const body = await readJson(request, 8 * 1024);
   if (!body.ok) return body.response;
   const input = schema.parse(body.data);
-  const work = await moderateCommunityWork(getDb(), {
-    actor, workId, requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(), ...input,
-  });
+  const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+  const result = await executeIdempotently(getDb(), {
+    actorUserId: actor.userId, scope: `admin.community.work:${workId}`,
+    key: request.headers.get('idempotency-key') ?? '', request: input,
+  }, (tx) => moderateCommunityWork(tx, { actor, workId, requestId, ...input }));
+  const work = result.value;
   return okJson({ workId: work.id, lifecycleStatus: work.lifecycleStatus, commentsLocked: work.commentsLocked, featured: Boolean(work.featuredAt), version: work.version });
 }
 

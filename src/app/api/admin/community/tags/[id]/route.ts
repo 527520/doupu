@@ -4,7 +4,7 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { updateCommunityTag } from '@/lib/community/adminService';
-import { AppError } from '@/lib/errors';
+import { executeIdempotently } from '@/lib/idempotency';
 
 const schema = z.object({
   expectedVersion: z.number().int().positive(),
@@ -19,16 +19,16 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:moderate');
-  const idempotencyKey = request.headers.get('idempotency-key')?.trim();
-  if (!idempotencyKey || idempotencyKey.length > 100) throw new AppError('VALIDATION', '需要有效的 Idempotency-Key');
   const tagId = z.string().uuid().parse((await params).id);
   const body = await readJson(request, 8 * 1024);
   if (!body.ok) return body.response;
   const input = schema.parse(body.data);
-  const tag = await updateCommunityTag(getDb(), {
-    actor, tagId, requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(), ...input,
-  });
-  return okJson(tag);
+  const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+  const result = await executeIdempotently(getDb(), {
+    actorUserId: actor.userId, scope: `admin.community.tag:${tagId}`,
+    key: request.headers.get('idempotency-key') ?? '', request: input,
+  }, (tx) => updateCommunityTag(tx, { actor, tagId, requestId, ...input }));
+  return okJson(result.value);
 }
 
 export const PATCH = withApiErrors(patch);

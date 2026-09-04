@@ -4,6 +4,11 @@ import {
   adminAuditLogs,
   analyticsEvents,
   analyticsIdentityLinks,
+  communityComments,
+  communityLikes,
+  communityReports,
+  communityReuses,
+  communityWorks,
   designShares,
   designs,
   emailTokens,
@@ -30,6 +35,7 @@ export async function anonymizeAccount(
     if (!account || account.accountStatus !== 'active') {
       throw new AppError('NOT_FOUND', '账号不存在');
     }
+    const now = input.now ?? new Date();
     if (account.role === 'admin') {
       const [row] = await tx.select({ value: count() }).from(users).where(and(
         eq(users.role, 'admin'),
@@ -46,11 +52,39 @@ export async function anonymizeAccount(
     // already de-identified daily rollups.
     await tx.delete(analyticsEvents).where(eq(analyticsEvents.userId, account.id));
     await tx.delete(analyticsIdentityLinks).where(eq(analyticsIdentityLinks.userId, account.id));
+    const likeCounts = await tx.select({ workId: communityLikes.workId, value: count() })
+      .from(communityLikes).where(eq(communityLikes.userId, account.id)).groupBy(communityLikes.workId);
+    const commentCounts = await tx.select({ workId: communityComments.workId, value: count() })
+      .from(communityComments).where(and(
+        eq(communityComments.authorUserId, account.id),
+        eq(communityComments.status, 'published'),
+      )).groupBy(communityComments.workId);
+    await tx.delete(communityLikes).where(eq(communityLikes.userId, account.id));
+    for (const row of likeCounts) {
+      await tx.update(communityWorks).set({
+        likeCount: sql`greatest(0, ${communityWorks.likeCount} - ${Number(row.value)})`,
+      }).where(eq(communityWorks.id, row.workId));
+    }
+    await tx.update(communityComments).set({
+      authorUserId: null,
+      status: 'deleted',
+      body: '',
+      riskCategories: [],
+      deletedAt: now,
+      updatedAt: now,
+      version: sql`${communityComments.version} + 1`,
+    }).where(eq(communityComments.authorUserId, account.id));
+    for (const row of commentCounts) {
+      await tx.update(communityWorks).set({
+        commentCount: sql`greatest(0, ${communityWorks.commentCount} - ${Number(row.value)})`,
+      }).where(eq(communityWorks.id, row.workId));
+    }
+    await tx.update(communityReports).set({ reporterUserId: null }).where(eq(communityReports.reporterUserId, account.id));
+    await tx.update(communityReuses).set({ userId: null }).where(eq(communityReuses.userId, account.id));
     await tx.delete(designShares).where(eq(designShares.userId, account.id));
     await tx.delete(designs).where(eq(designs.userId, account.id));
     await tx.delete(palettes).where(eq(palettes.userId, account.id));
 
-    const now = input.now ?? new Date();
     const [updated] = await tx.update(users).set({
       email: null,
       username: null,

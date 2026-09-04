@@ -339,6 +339,25 @@ body {
 .review-actions textarea { min-height: 9rem; resize: vertical; padding: .65rem; border: 1px solid var(--color-lilac); color: var(--color-ink); }
 .review-actions .notice { margin: 0 .8rem; }
 .review-actions > div { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .8rem; }
+.community-interactions { margin-top: 1.5rem; padding: clamp(1rem, 2vw, 1.5rem); border: 1px solid var(--color-lilac); border-radius: 1.25rem; background: var(--color-cream); }
+.community-interactions > header, .community-comment-form > div, .community-comment-list header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.community-interactions h2 { margin: .2rem 0 0; font-family: "Songti SC", "STSong", serif; }
+.community-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin: 1rem 0; }
+.community-comment-form { display: grid; gap: .5rem; margin-top: 1.25rem; }
+.community-comment-form textarea { min-height: 6rem; resize: vertical; border: 1px solid var(--color-lilac); border-radius: .8rem; padding: .75rem; background: white; color: var(--color-ink); }
+.community-comment-list { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.community-comment-list li { padding: 1rem; border-top: 1px solid var(--color-lilac); }
+.community-comment-list p, .governance-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.community-comment-list time { color: var(--color-ink-soft); font-size: .8rem; }
+.governance-body { padding: 1rem; border-radius: 1rem; background: var(--color-cream); }
+.governance-console .review-queue button { min-height: 4.5rem; }
+.admin-form-stack { display: grid; gap: .75rem; padding: 1rem; }
+.admin-form-stack label { display: grid; gap: .3rem; }
+.admin-form-stack input, .admin-form-stack select, .admin-form-stack textarea { padding: .65rem; border: 1px solid var(--color-lilac); background: white; color: var(--color-ink); }
+.admin-form-stack textarea { min-height: 7rem; resize: vertical; }
+.tag-create { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
+.table-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+@media (max-width: 760px) { .tag-create { grid-template-columns: 1fr; } }
 
 @media (max-width: 760px) {
   .admin-shell { padding-left: 0; padding-bottom: 4.5rem; }

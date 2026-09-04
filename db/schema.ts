@@ -36,6 +36,14 @@ export const communityRevisionStatusEnum = pgEnum('community_revision_status', [
 ]);
 export const communityAuthorTypeEnum = pgEnum('community_author_type', ['user', 'official']);
 export const officialBatchStatusEnum = pgEnum('official_batch_status', ['draft', 'running', 'paused', 'cancelled', 'completed']);
+export const communityCommentStatusEnum = pgEnum('community_comment_status', [
+  'pending_review',
+  'published',
+  'hidden',
+  'deleted',
+]);
+export const communityReportTargetEnum = pgEnum('community_report_target', ['work', 'comment']);
+export const communityReportStatusEnum = pgEnum('community_report_status', ['open', 'accepted', 'resolved', 'dismissed']);
 
 export const users = pgTable(
   'users',
@@ -389,6 +397,124 @@ export const officialBatches = pgTable(
   (table) => [index('official_batches_admin_created_idx').on(table.adminUserId, table.createdAt.desc())],
 );
 
+export const idempotencyRecords = pgTable(
+  'idempotency_records',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    scope: text('scope').notNull(),
+    key: text('key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    response: jsonb('response'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('idempotency_records_actor_scope_key_unique').on(table.actorUserId, table.scope, table.key),
+    index('idempotency_records_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+export const communityReuses = pgTable(
+  'community_reuses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'restrict' }),
+    revisionId: uuid('revision_id').notNull().references(() => communityRevisions.id, { onDelete: 'restrict' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    designId: uuid('design_id').references(() => designs.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('community_reuses_work_idx').on(table.workId, table.createdAt.desc()),
+    index('community_reuses_user_idx').on(table.userId, table.createdAt.desc()),
+  ],
+);
+
+export const communityLikes = pgTable(
+  'community_likes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('community_likes_work_user_unique').on(table.workId, table.userId),
+    index('community_likes_user_idx').on(table.userId),
+  ],
+);
+
+export const communityComments = pgTable(
+  'community_comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'cascade' }),
+    authorUserId: uuid('author_user_id').references(() => users.id, { onDelete: 'set null' }),
+    publicAuthorId: text('public_author_id').notNull(),
+    frozenDisplayName: text('frozen_display_name').notNull(),
+    status: communityCommentStatusEnum('status').notNull(),
+    version: integer('version').notNull().default(1),
+    body: text('body').notNull(),
+    riskCategories: jsonb('risk_categories').notNull().default(sql`'[]'::jsonb`),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    reviewReason: text('review_reason'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('community_comments_work_status_idx').on(table.workId, table.status, table.createdAt),
+    index('community_comments_review_queue_idx').on(table.status, table.createdAt),
+    index('community_comments_author_recent_idx').on(table.authorUserId, table.createdAt.desc()),
+  ],
+);
+
+export const communityReports = pgTable(
+  'community_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    targetType: communityReportTargetEnum('target_type').notNull(),
+    targetId: uuid('target_id').notNull(),
+    targetVersion: integer('target_version').notNull(),
+    reporterUserId: uuid('reporter_user_id').references(() => users.id, { onDelete: 'set null' }),
+    category: text('category').notNull(),
+    details: text('details'),
+    status: communityReportStatusEnum('status').notNull().default('open'),
+    version: integer('version').notNull().default(1),
+    handledByUserId: uuid('handled_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    handlingReason: text('handling_reason'),
+    handledAt: timestamp('handled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('community_reports_reporter_target_version_unique').on(
+      table.reporterUserId,
+      table.targetType,
+      table.targetId,
+      table.targetVersion,
+    ),
+    index('community_reports_status_created_idx').on(table.status, table.createdAt),
+  ],
+);
+
+export const moderationRuleSetVersions = pgTable(
+  'moderation_rule_set_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    version: integer('version').notNull().unique(),
+    rules: jsonb('rules').notNull(),
+    active: boolean('active').notNull().default(false),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('moderation_rule_set_single_active').on(table.active).where(sql`${table.active} = true`)],
+);
+
 /** 自定义色板（云端同步，spec §F6）。 */
 export const palettes = pgTable(
   'palettes',
@@ -456,6 +582,9 @@ export type CommunityWork = typeof communityWorks.$inferSelect;
 export type CommunityRevision = typeof communityRevisions.$inferSelect;
 export type CommunityTag = typeof communityTags.$inferSelect;
 export type OfficialBatch = typeof officialBatches.$inferSelect;
+export type CommunityComment = typeof communityComments.$inferSelect;
+export type CommunityReport = typeof communityReports.$inferSelect;
+export type ModerationRuleSetVersion = typeof moderationRuleSetVersions.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type EmailToken = typeof emailTokens.$inferSelect;
 export type Design = typeof designs.$inferSelect;

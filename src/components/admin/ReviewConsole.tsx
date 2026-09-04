@@ -39,7 +39,18 @@ export default function ReviewConsole() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : '队列加载失败'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/admin/community/revisions').then(async (response) => {
+      const body = await response.json();
+      if (!active) return;
+      if (!response.ok) { setError(body?.error?.message ?? '队列加载失败'); setLoading(false); return; }
+      setItems(body.items);
+      setSelectedId(body.items[0]?.revisionId ?? null);
+      setLoading(false);
+    }).catch(() => { if (active) { setError('队列加载失败'); setLoading(false); } });
+    return () => { active = false; };
+  }, []);
 
   const decide = async (decision: 'published' | 'rejected') => {
     if (!selected || reason.trim().length < 3) return;
