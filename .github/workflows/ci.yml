@@ -162,6 +162,7 @@ jobs:
           COS_REGION: ap-guangzhou
           BACKUP_ALERT_TOKEN: ci
           ADMIN_EMAIL: ops@example.test
+          ANALYTICS_IP_HMAC_KEY: ci-analytics-ip-hmac-key-32-characters
       - name: Native Argon2 smoke
         run: docker run --rm doupu-app:local node -e "require('argon2').hash('ci-password').then(()=>process.exit(0)).catch(()=>process.exit(1))"
       - name: Final-image strict-v3 preflight and PostgreSQL migration contract
@@ -179,6 +180,7 @@ jobs:
             -e APP_URL=https://example.test -e DATABASE_URL="$DATABASE_URL" \
             -e SMTP_HOST=mail.example.test -e SMTP_USER=ci -e SMTP_PASS=ci -e SMTP_FROM=ci@example.test \
             -e BACKUP_ALERT_TOKEN=ci-backup-alert-token-32-characters -e ADMIN_EMAIL=ops@example.test \
+            -e ANALYTICS_IP_HMAC_KEY=ci-analytics-ip-hmac-key-32-characters \
             doupu-app:local
           healthy=false
           for _ in $(seq 1 30); do
