@@ -3,6 +3,10 @@ import type { MetadataRoute } from 'next';
 import { communityRevisions, communityWorks } from '@/../db/schema';
 import { getDb } from '@/lib/auth/db';
 
+// Public works change at runtime and the production image is built without a
+// database connection. Metadata routes are static by default in Next.js 16.
+export const dynamic = 'force-dynamic';
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.APP_URL ?? 'http://localhost:3000';
   const routes = ['', '/app', '/palettes', '/community', '/community/rules', '/community/copyright', '/privacy', '/help', '/about'];
