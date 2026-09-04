@@ -206,10 +206,11 @@ export async function deleteCommunityComment(db: AnyDatabase, input: {
   });
 }
 
-export async function listCommunityComments(db: AnyDatabase, workId: string) {
+export async function listCommunityComments(db: AnyDatabase, workId: string, viewerUserId?: string) {
   await activeWork(db, workId);
   const rows = await db.select({
     id: communityComments.id, publicAuthorId: communityComments.publicAuthorId,
+    authorUserId: communityComments.authorUserId,
     frozenDisplayName: communityComments.frozenDisplayName, accountStatus: users.accountStatus,
     body: communityComments.body, version: communityComments.version,
     createdAt: communityComments.createdAt, editedAt: communityComments.editedAt,
@@ -221,6 +222,7 @@ export async function listCommunityComments(db: AnyDatabase, workId: string) {
     author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
     body: row.body, version: row.version,
     createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null,
+    editable: row.authorUserId === viewerUserId && Date.now() - row.createdAt.getTime() <= 15 * 60 * 1000,
   }));
 }
 

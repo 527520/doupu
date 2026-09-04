@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import SiteHeader from '@/components/layout/SiteHeader';
 import { AnalyticsConsentSettings } from '@/components/analytics/AnalyticsConsent';
+import { zhCN } from '@/messages/zh-CN';
 
-export const metadata: Metadata = { title: '隐私与匿名分析' };
+export const metadata: Metadata = { title: zhCN.communityAdmin.privacyTitle };
 
 export default function PrivacyPage() {
   return (

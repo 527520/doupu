@@ -6,6 +6,7 @@ import { ANALYTICS_CONSENT_COOKIE, type AnalyticsConsent } from '@/lib/analytics
 import { clearAnalyticsQueue } from '@/lib/analytics/client';
 import { track } from '@/lib/analytics/client';
 import { surfaceForPath } from './PageViewTracker';
+import { zhCN } from '@/messages/zh-CN';
 
 function readPreference(): AnalyticsConsent | null {
   const value = document.cookie.split(';').map((part) => part.trim())
@@ -69,6 +70,7 @@ export function AnalyticsConsentBanner() {
 }
 
 export function AnalyticsConsentSettings() {
+  const t = zhCN.communityAdmin.analytics;
   const [preference, setPreference] = useState<AnalyticsConsent | null>(null);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -90,9 +92,9 @@ export function AnalyticsConsentSettings() {
       if (status !== 'granted') clearAnalyticsQueue();
       const next = status === 'granted' ? 'granted' : 'denied';
       setPreference(next);
-      setMessage(status === 'withdrawn' ? '已撤回同意并清除该访客的原始事件和身份关联。' : '偏好已保存。');
+      setMessage(status === 'withdrawn' ? t.withdrawn : t.saved);
     } catch {
-      setMessage('偏好保存失败，请稍后重试。');
+      setMessage(t.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -101,7 +103,7 @@ export function AnalyticsConsentSettings() {
   return (
     <section className="info-card analytics-settings" aria-labelledby="analytics-settings-title">
       <h2 id="analytics-settings-title">匿名分析偏好</h2>
-      <p>{ready ? `当前状态：${preference === 'granted' ? '已同意' : preference === 'denied' ? '已拒绝' : '尚未选择'}` : '正在读取偏好…'}</p>
+      <p>{ready ? `当前状态：${preference === 'granted' ? t.granted : preference === 'denied' ? t.denied : t.unset}` : t.loading}</p>
       <div>
         <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={() => void choose('granted')}>同意</button>
         {preference === 'granted' ? (

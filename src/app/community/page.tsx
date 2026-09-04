@@ -5,8 +5,9 @@ import CommunityPreviewCanvas from '@/components/community/CommunityPreviewCanva
 import { CommunityListImpression } from '@/components/community/CommunityImpression';
 import { getDb } from '@/lib/auth/db';
 import { listPublicCommunityWorks, parseCommunityListUrl } from '@/lib/community/queries';
+import { zhCN } from '@/messages/zh-CN';
 
-export const metadata: Metadata = { title: '豆社作品校样册', description: '浏览豆友公开分享的冻结拼豆图纸，并创建自己的私人副本。' };
+export const metadata: Metadata = { title: zhCN.communityAdmin.communityTitle, description: zhCN.communityAdmin.communityDescription };
 
 export default async function CommunityPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;

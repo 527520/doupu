@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import { forbidden, redirect } from 'next/navigation';
 import { getSessionActor } from '@/lib/auth/session';
 import AdminNav from '@/components/admin/AdminNav';
+import { zhCN } from '@/messages/zh-CN';
 
-export const metadata: Metadata = { title: { default: '审核校样台', template: '%s - 审核校样台' }, robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: { default: zhCN.communityAdmin.adminTitle, template: zhCN.communityAdmin.adminTitleTemplate }, robots: { index: false, follow: false } };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const actor = await getSessionActor();

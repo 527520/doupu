@@ -4,12 +4,14 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { createCommunityComment, listCommunityComments } from '@/lib/community/interactions';
+import { getSessionActor } from '@/lib/auth/session';
 
 const schema = z.object({ body: z.string() }).strict();
 
 async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const workId = z.string().uuid().parse((await params).id);
-  return okJson({ items: await listCommunityComments(getDb(), workId) });
+  const actor = await getSessionActor();
+  return okJson({ items: await listCommunityComments(getDb(), workId, actor?.userId) });
 }
 
 async function post(request: Request, { params }: { params: Promise<{ id: string }> }) {

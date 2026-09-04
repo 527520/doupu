@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { COMMUNITY_LICENSE_VERSION } from '@/lib/community/snapshot';
 import { track } from '@/lib/analytics/client';
+import { zhCN } from '@/messages/zh-CN';
 
 interface Tag { id: string; name: string; }
 
 export default function CommunitySubmitForm() {
+  const t = zhCN.communityAdmin.submission;
   const router = useRouter();
   const [designId, setDesignId] = useState('');
   const [title, setTitle] = useState('');
@@ -36,17 +38,17 @@ export default function CommunitySubmitForm() {
         body: JSON.stringify({ designId, title, licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: selected }),
       });
       const createdBody = await created.json().catch(() => null);
-      if (!created.ok) throw new Error(createdBody?.error?.message ?? '创建投稿失败');
+      if (!created.ok) throw new Error(createdBody?.error?.message ?? t.createFailed);
       track({ name: 'community_submission_created', properties: {} });
       const submitted = await fetch(`/api/community/revisions/${createdBody.revisionId}/submit`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedVersion: createdBody.version }),
       });
       const submittedBody = await submitted.json().catch(() => null);
-      if (!submitted.ok) throw new Error(submittedBody?.error?.message ?? '提交审核失败，草稿已保留');
+      if (!submitted.ok) throw new Error(submittedBody?.error?.message ?? t.submitFailedDraftKept);
       track({ name: 'community_submission_submitted', properties: {} });
       router.push('/community/mine');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '提交失败');
+      setError(caught instanceof Error ? caught.message : t.failed);
     } finally {
       setBusy(false);
     }
@@ -63,7 +65,7 @@ export default function CommunitySubmitForm() {
         <span>我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。<Link href="/community/copyright" className="link-soft">查看版权与申诉说明</Link></span>
       </label>
       {error && <p role="alert" className="notice notice-danger">{error}</p>}
-      <div className="community-form-actions"><Link href="/designs" className="btn-outline">返回设计</Link><button className="btn-primary" disabled={busy || !accepted || !designId || !title.trim()}>{busy ? '提交中…' : '冻结快照并提交审核'}</button></div>
+      <div className="community-form-actions"><Link href="/designs" className="btn-outline">返回设计</Link><button className="btn-primary" disabled={busy || !accepted || !designId || !title.trim()}>{busy ? t.submitting : t.submit}</button></div>
     </form>
   );
 }

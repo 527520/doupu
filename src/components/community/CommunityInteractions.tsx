@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { track } from '@/lib/analytics/client';
+import { zhCN } from '@/messages/zh-CN';
 
 interface CommentItem {
   id: string;
@@ -11,16 +12,20 @@ interface CommentItem {
   version: number;
   createdAt: string;
   editedAt: string | null;
+  editable: boolean;
 }
 
 export default function CommunityInteractions({ workId, initialLikes, initialReuses, commentsLocked }: {
   workId: string; initialLikes: number; initialReuses: number; commentsLocked: boolean;
 }) {
+  const t = zhCN.communityAdmin.interaction;
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [body, setBody] = useState('');
   const [likes, setLikes] = useState(initialLikes);
   const [reuses, setReuses] = useState(initialReuses);
   const [message, setMessage] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingBody, setEditingBody] = useState('');
 
   const loadComments = async () => {
     const response = await fetch(`/api/community/works/${workId}/comments`);
@@ -38,7 +43,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
     setMessage(null);
     const response = await fetch(url, init);
     const result = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(result?.error?.message ?? '操作失败，请稍后重试');
+    if (!response.ok) throw new Error(result?.error?.message ?? t.actionFailed);
     return result;
   };
 
@@ -47,7 +52,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       const result = await request(`/api/community/works/${workId}/like`, { method: liked ? 'PUT' : 'DELETE' });
       setLikes(result.likeCount);
       track({ name: 'community_like_changed', properties: { action: liked ? 'added' : 'removed' } });
-    } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败'); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.genericFailed); }
   };
 
   const reuse = async () => {
@@ -56,7 +61,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       setReuses(result.reuseCount);
       track({ name: 'community_reuse_succeeded', properties: {} });
       setMessage(`私人副本已创建：${result.designId.slice(0, 8).toUpperCase()}。可前往“我的设计”继续编辑。`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : '引用失败'); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.reuseFailed); }
   };
 
   const comment = async () => {
@@ -66,9 +71,9 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       });
       track({ name: 'community_comment_created', properties: { moderationState: result.status } });
       setBody('');
-      setMessage(result.status === 'pending_review' ? '评论已提交，审核通过后公开。' : '评论已发布。');
+      setMessage(result.status === 'pending_review' ? t.pending : t.published);
       await loadComments();
-    } catch (error) { setMessage(error instanceof Error ? error.message : '评论失败'); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.commentFailed); }
   };
 
   const report = async () => {
@@ -76,8 +81,25 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       await request('/api/community/reports', { method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ targetType: 'work', targetId: workId, category: 'other' }) });
       track({ name: 'community_report_created', properties: { targetType: 'work', reasonCategory: 'other' } });
-      setMessage('举报已进入治理队列。');
-    } catch (error) { setMessage(error instanceof Error ? error.message : '举报失败'); }
+      setMessage(t.reported);
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.reportFailed); }
+  };
+
+  const editComment = async (item: CommentItem) => {
+    try {
+      const result = await request(`/api/community/comments/${item.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: editingBody, expectedVersion: item.version }) });
+      track({ name: 'community_comment_edited', properties: { moderationState: result.status } });
+      setEditingId(null); setEditingBody('');
+      setMessage(result.status === 'pending_review' ? t.editPending : t.updated); await loadComments();
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.editFailed); }
+  };
+  const deleteComment = async (item: CommentItem) => {
+    try { await request(`/api/community/comments/${item.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expectedVersion: item.version }) }); setMessage(t.deleted); await loadComments(); }
+    catch (error) { setMessage(error instanceof Error ? error.message : t.deleteFailed); }
+  };
+  const reportComment = async (item: CommentItem) => {
+    try { await request('/api/community/reports', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ targetType: 'comment', targetId: item.id, category: 'other' }) }); track({ name: 'community_report_created', properties: { targetType: 'comment', reasonCategory: 'other' } }); setMessage(t.commentReported); }
+    catch (error) { setMessage(error instanceof Error ? error.message : t.reportFailed); }
   };
 
   return (
@@ -94,11 +116,11 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       <div className="community-comment-form">
         <label htmlFor="community-comment">发表评论</label>
         <textarea id="community-comment" value={body} maxLength={500} disabled={commentsLocked}
-          onChange={(event) => setBody(event.target.value)} placeholder={commentsLocked ? '评论已锁定' : '最多 500 字；链接仅作为纯文本展示'} />
+          onChange={(event) => setBody(event.target.value)} placeholder={commentsLocked ? t.locked : t.commentPlaceholder} />
         <div><small>{body.length}/500</small><button className="btn-primary" type="button" disabled={commentsLocked || body.trim().length === 0} onClick={() => void comment()}>发布评论</button></div>
       </div>
       <ol className="community-comment-list">
-        {comments.map((item) => <li key={item.id}><header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header><p>{item.body}</p></li>)}
+        {comments.map((item) => <li key={item.id}><header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>{editingId === item.id ? <div className="community-inline-edit"><textarea maxLength={500} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" onClick={() => void editComment(item)}>保存修改</button><button type="button" onClick={() => setEditingId(null)}>取消</button></div> : <p>{item.body}</p>}<div className="community-comment-actions">{item.editable && <><button type="button" onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>编辑</button><button type="button" onClick={() => void deleteComment(item)}>删除</button></>}<button type="button" onClick={() => void reportComment(item)}>举报</button></div></li>)}
       </ol>
     </section>
   );

@@ -52,6 +52,7 @@ export default async function globalSetup(): Promise<void> {
         DATABASE_URL: '',
         // 回退库退回内存（不落盘）：每轮 E2E 全新库，且不与本地 dev 的 .pglite-dev 竞争
         PGLITE_DATA_DIR: '',
+        DOUPU_E2E_SEED: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,
@@ -74,7 +75,7 @@ export default async function globalSetup(): Promise<void> {
   }
 
   // 预热：逐个请求关键路由，触发 Turbopack 编译，避免测试期首次编译争用
-  const warmRoutes = ['/', '/app', '/register', '/login', '/verify-email', '/forgot-password', '/designs', '/palettes', '/help', '/about'];
+  const warmRoutes = ['/', '/app', '/register', '/login', '/verify-email', '/forgot-password', '/designs', '/palettes', '/community', '/admin/reviews', '/help', '/about'];
   for (const route of warmRoutes) {
     try {
       await fetch(`http://127.0.0.1:${E2E_PORT}${route}`, { method: 'GET' });

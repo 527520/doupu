@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { track } from '@/lib/analytics/client';
+import { zhCN } from '@/messages/zh-CN';
 
 export default function CommunityMineActions({ workId, version }: { workId: string; version: number }) {
   const router = useRouter();
@@ -19,5 +20,5 @@ export default function CommunityMineActions({ workId, version }: { workId: stri
       }
     } finally { setBusy(false); }
   };
-  return <button type="button" className="btn-danger-outline btn-xs" disabled={busy} onClick={() => void withdraw()}>{busy ? '撤回中…' : '撤回作品'}</button>;
+  return <button type="button" className="btn-danger-outline btn-xs" disabled={busy} onClick={() => void withdraw()}>{busy ? zhCN.communityAdmin.mine.withdrawing : zhCN.communityAdmin.mine.withdraw}</button>;
 }

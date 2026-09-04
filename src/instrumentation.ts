@@ -40,5 +40,10 @@ export async function register(): Promise<void> {
     }
     const { ensureFallbackDb } = await import('@/lib/auth/db');
     await ensureFallbackDb();
+    if (process.env.NODE_ENV !== 'production' && process.env.DOUPU_E2E_SEED === '1') {
+      const { seedE2eGovernance } = await import('@/lib/auth/testSeed');
+      const { getDb } = await import('@/lib/auth/db');
+      await seedE2eGovernance(getDb());
+    }
   }
 }

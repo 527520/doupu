@@ -5,6 +5,9 @@ describe('official batch browser limits', () => {
   it('enforces 50 files, 20 MiB each and 200 MiB total', () => {
     const image = (size: number) => ({ size, type: 'image/png' }) as File;
     expect(validateOfficialBatchFiles([image(1)])).toBeNull();
+    expect(validateOfficialBatchFiles([{ size: 1, type: '' }])).toBeNull();
+    expect(validateOfficialBatchFiles([{ size: 1, type: 'application/octet-stream' }])).toBeNull();
+    expect(validateOfficialBatchFiles([{ size: 1, type: 'text/plain' }])).toContain('图片');
     expect(validateOfficialBatchFiles(Array.from({ length: 51 }, () => image(1)))).toContain('1–50');
     expect(validateOfficialBatchFiles([image(21 * 1024 * 1024)])).toContain('20 MiB');
     expect(validateOfficialBatchFiles(Array.from({ length: 11 }, () => image(19 * 1024 * 1024)))).toContain('200 MiB');

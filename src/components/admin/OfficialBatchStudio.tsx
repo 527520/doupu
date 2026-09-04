@@ -9,6 +9,7 @@ import { sniffImageType } from '@/lib/image/sniff';
 import { createGenerateWorkerClient, type GenerateTask } from '@/lib/engine/runGenerate';
 import { officialBatchConcurrency, validateOfficialBatchFiles } from '@/lib/community/batchClient';
 import { track } from '@/lib/analytics/client';
+import { zhCN } from '@/messages/zh-CN';
 
 type ItemStatus = 'pending' | 'running' | 'saved' | 'failed' | 'cancelled';
 interface Item { localId: string; file: File | null; localName: string; title: string; cropInset: number; status: ItemStatus; progress: number; error: string | null; revisionId: string | null; selected: boolean }
@@ -19,10 +20,11 @@ function countBucket(count: number): '1' | '2-5' | '6-10' | '11-25' | '26-50' {
 }
 
 export default function OfficialBatchStudio() {
+  const t = zhCN.communityAdmin.batch;
   const [items, setItems] = useState<Item[]>([]);
   const itemsRef = useRef<Item[]>([]);
   const [batch, setBatch] = useState<BatchState | null>(null);
-  const [reason, setReason] = useState('官方内容批量生产');
+  const [reason, setReason] = useState<string>(t.defaultReason);
   const [message, setMessage] = useState<string | null>(null);
   const control = useRef({ paused: false, cancelled: false });
   const active = useRef(new Map<string, GenerateTask>());
@@ -40,10 +42,10 @@ export default function OfficialBatchStudio() {
         title: draft.title, cropInset: 0, status: 'saved', progress: 100, error: null, revisionId: draft.id, selected: false,
       }));
       itemsRef.current = restored; setItems(restored); setBatch({ id: latest.id, version: latest.version, status: latest.status });
-      setMessage('已恢复服务器中的成功草稿；本地原图任务不会在刷新后恢复。');
+      setMessage(t.restored);
     });
     return () => { mounted = false; activeTasks.forEach((task) => task.cancel()); };
-  }, []);
+  }, [t.restored]);
 
   const replaceItems = (next: Item[] | ((current: Item[]) => Item[])) => {
     setItems((current) => { const value = typeof next === 'function' ? next(current) : next; itemsRef.current = value; return value; });
@@ -51,7 +53,7 @@ export default function OfficialBatchStudio() {
   const patchItem = (localId: string, change: Partial<Item>) => replaceItems((current) => current.map((item) => item.localId === localId ? { ...item, ...change } : item));
   const api = async (url: string, init: RequestInit) => {
     const response = await fetch(url, init); const body = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(body?.error?.message ?? '批次操作失败'); return body;
+    if (!response.ok) throw new Error(body?.error?.message ?? t.actionFailed); return body;
   };
 
   const selectFiles = (files: FileList | null) => {
@@ -62,7 +64,7 @@ export default function OfficialBatchStudio() {
       title: `官方作品 ${String(index + 1).padStart(2, '0')}`, cropInset: 0,
       status: 'pending', progress: 0, error: null, revisionId: null, selected: false,
     }));
-    setBatch(null); replaceItems(next); setMessage('文件只保留在当前浏览器内存中；刷新后只能恢复已保存草稿。');
+    setBatch(null); replaceItems(next); setMessage(t.localOnly);
   };
 
   const processItem = async (item: Item, batchId: string) => {
@@ -71,7 +73,7 @@ export default function OfficialBatchStudio() {
     try {
       patchItem(item.localId, { status: 'running', progress: 2, error: null });
       const bytes = new Uint8Array(await item.file.arrayBuffer());
-      const type = sniffImageType(bytes); if (type === 'unknown') throw new Error('图片内容格式无法识别');
+      const type = sniffImageType(bytes); if (type === 'unknown') throw new Error(t.unknownImage);
       const loaded = await decoder.load(bytes, type); if (!loaded.ok) throw new Error(loaded.code);
       const naturalWidth = loaded.image.naturalWidth ?? loaded.image.width; const naturalHeight = loaded.image.naturalHeight ?? loaded.image.height;
       if (naturalWidth * naturalHeight > LIMITS.maxPixels) throw new Error('IMAGE_TOO_LARGE');
@@ -89,7 +91,7 @@ export default function OfficialBatchStudio() {
     } catch (error) {
       active.current.delete(item.localId);
       const cancelled = error instanceof Error && error.name === 'AbortError';
-      patchItem(item.localId, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? null : (error instanceof Error ? error.message : '生成失败') });
+      patchItem(item.localId, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? null : (error instanceof Error ? error.message : t.generationFailed) });
       if (!cancelled) track({ name: 'official_batch_item_failed', properties: { errorCode: 'BATCH_ITEM_FAILED' } });
     } finally {
       decoder.dispose(); generator.dispose();
@@ -110,7 +112,7 @@ export default function OfficialBatchStudio() {
     const current = itemsRef.current;
     if (!control.current.paused && !control.current.cancelled && current.every((item) => ['saved', 'failed'].includes(item.status))) {
       const failures = current.filter((item) => item.status === 'failed').length;
-      setMessage(failures ? `生成完成，${failures} 项失败，可逐项重试。` : '生成完成，请勾选草稿后批量发布。');
+      setMessage(failures ? `生成完成，${failures} 项失败，可逐项重试。` : t.finished);
     }
   };
 
@@ -121,7 +123,7 @@ export default function OfficialBatchStudio() {
       setBatch({ id: created.id, version: created.version, status: created.status });
       track({ name: 'official_batch_started', properties: { itemCountBucket: countBucket(items.length) } });
       await dispatch(created.id);
-    } catch (error) { setMessage(error instanceof Error ? error.message : '批次启动失败'); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.startFailed); }
   };
 
   const transition = async (action: 'pause' | 'resume' | 'cancel') => {
@@ -130,25 +132,29 @@ export default function OfficialBatchStudio() {
     try {
       const updated = await api(`/api/admin/batches/${batch.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ action, expectedVersion: batch.version, reason }) });
       setBatch({ id: updated.id, version: updated.version, status: updated.status });
-      if (action === 'resume') { control.current = { paused: false, cancelled: false }; replaceItems((current) => current.map((item) => item.status === 'cancelled' ? { ...item, status: 'pending' } : item)); await dispatch(batch.id); }
+      if (action === 'resume') { control.current = { paused: false, cancelled: false }; await dispatch(batch.id); }
       if (action === 'cancel') track({ name: 'official_batch_completed', properties: { result: 'cancelled', itemCountBucket: countBucket(items.length) } });
-    } catch (error) { setMessage(error instanceof Error ? error.message : '批次状态修改失败'); }
+    } catch (error) { setMessage(error instanceof Error ? error.message : t.transitionFailed); }
   };
 
   const retry = async (item: Item) => {
-    if (!batch || !item.file) return; patchItem(item.localId, { status: 'pending', error: null }); await processItem({ ...item, status: 'pending', error: null }, batch.id);
+    if (!batch || batch.status !== 'running' || !item.file) return;
+    patchItem(item.localId, { status: 'pending', error: null });
+    await processItem({ ...item, status: 'pending', error: null }, batch.id);
   };
   const cancelItem = (item: Item) => {
     const task = active.current.get(item.localId);
     if (task) task.cancel(); else if (item.status === 'pending') patchItem(item.localId, { status: 'cancelled' });
   };
   const publish = async () => {
-    if (!batch) return; const revisionIds = items.filter((item) => item.status === 'saved' && item.selected && item.revisionId).map((item) => item.revisionId!);
-    try { const result = await api(`/api/admin/batches/${batch.id}/publish`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ revisionIds, expectedVersion: batch.version, reason }) }); setBatch({ id: result.batch.id, version: result.batch.version, status: result.batch.status }); const failed = items.some((item) => item.status === 'failed'); track({ name: 'official_batch_completed', properties: { result: failed ? 'partial' : 'succeeded', itemCountBucket: countBucket(items.length) } }); setMessage(`已发布 ${revisionIds.length} 个官方作品。`); } catch (error) { setMessage(error instanceof Error ? error.message : '发布失败'); }
+    if (!batch || !['running', 'paused'].includes(batch.status)) return;
+    const revisionIds = items.filter((item) => item.status === 'saved' && item.selected && item.revisionId).map((item) => item.revisionId!);
+    if (revisionIds.length === 0) return;
+    try { const result = await api(`/api/admin/batches/${batch.id}/publish`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ revisionIds, expectedVersion: batch.version, reason }) }); setBatch({ id: result.batch.id, version: result.batch.version, status: result.batch.status }); const failed = items.some((item) => item.status === 'failed'); track({ name: 'official_batch_completed', properties: { result: failed ? 'partial' : 'succeeded', itemCountBucket: countBucket(items.length) } }); setMessage(`已发布 ${revisionIds.length} 个官方作品。`); } catch (error) { setMessage(error instanceof Error ? error.message : t.publishFailed); }
   };
 
-  return <section className="batch-studio"><header><div><span className="studio-eyebrow">LOCAL BATCH LAB</span><h2>浏览器本地批量生产</h2></div><label className="btn-secondary">选择图片<input className="sr-only" type="file" accept="image/*,.heic,.heif" multiple onChange={(event) => selectFiles(event.target.files)} /></label></header><p>最多 50 个文件、单个 20 MiB、合计 200 MiB。原图、文件名与裁剪源不会上传服务器。</p><label>审计理由<input value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></label>{message && <p className="notice" role="status">{message}</p>}
-    <div className="batch-toolbar"><button className="btn-primary" type="button" disabled={items.length === 0 || Boolean(batch)} onClick={() => void start()}>开始生成</button><button type="button" disabled={!batch || batch.status !== 'running'} onClick={() => void transition('pause')}>暂停派发</button><button type="button" disabled={!batch || batch.status !== 'paused'} onClick={() => void transition('resume')}>继续</button><button className="btn-danger-outline" type="button" disabled={!batch || !['running', 'paused'].includes(batch.status)} onClick={() => void transition('cancel')}>取消批次</button><button className="btn-primary" type="button" disabled={!batch || !items.some((item) => item.status === 'saved' && item.selected)} onClick={() => void publish()}>发布已勾选草稿</button></div>
-    <ol className="batch-items">{items.map((item, index) => <li key={item.localId}><div><strong>{String(index + 1).padStart(2, '0')} · {item.localName}</strong><small>{item.status} · {item.progress}% {item.error && `· ${item.error}`}</small></div><label>公开标题<input value={item.title} disabled={item.status !== 'pending'} onChange={(event) => patchItem(item.localId, { title: event.target.value })} /></label><label>四边裁剪<input type="number" min="0" max="40" value={item.cropInset} disabled={item.status !== 'pending'} onChange={(event) => patchItem(item.localId, { cropInset: Number(event.target.value) })} /><span>%</span></label><div className="table-actions">{item.status === 'saved' && <label><input type="checkbox" checked={item.selected} onChange={(event) => patchItem(item.localId, { selected: event.target.checked })} />发布</label>}{['pending', 'running'].includes(item.status) && <button type="button" onClick={() => cancelItem(item)}>取消此项</button>}{['failed', 'cancelled'].includes(item.status) && item.file && batch && ['running', 'paused'].includes(batch.status) && <button type="button" onClick={() => void retry(item)}>重试</button>}</div></li>)}</ol>
+  return <section className="batch-studio"><header><div><span className="studio-eyebrow">LOCAL BATCH LAB</span><h2>浏览器本地批量生产</h2></div><label className="btn-secondary">{t.selectFiles}<input className="sr-only" type="file" accept="image/*,.heic,.heif" multiple onChange={(event) => selectFiles(event.target.files)} /></label></header><p>最多 50 个文件、单个 20 MiB、合计 200 MiB。原图、文件名与裁剪源不会上传服务器。</p><label>审计理由<input value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></label>{message && <p className="notice" role="status">{message}</p>}
+    <div className="batch-toolbar"><button className="btn-primary" type="button" disabled={items.length === 0 || Boolean(batch)} onClick={() => void start()}>{t.start}</button><button type="button" disabled={!batch || batch.status !== 'running'} onClick={() => void transition('pause')}>{t.pause}</button><button type="button" disabled={!batch || batch.status !== 'paused'} onClick={() => void transition('resume')}>{t.resume}</button><button className="btn-danger-outline" type="button" disabled={!batch || !['running', 'paused'].includes(batch.status)} onClick={() => void transition('cancel')}>{t.cancel}</button><button className="btn-primary" type="button" disabled={!batch || !['running', 'paused'].includes(batch.status) || !items.some((item) => item.status === 'saved' && item.selected)} onClick={() => void publish()}>{t.publishSelected}</button></div>
+    <ol className="batch-items">{items.map((item, index) => <li key={item.localId}><div><strong>{String(index + 1).padStart(2, '0')} · {item.localName}</strong><small>{item.status} · {item.progress}% {item.error && `· ${item.error}`}</small></div><label>{t.publicTitle}<input value={item.title} disabled={item.status !== 'pending'} onChange={(event) => patchItem(item.localId, { title: event.target.value })} /></label><label>{t.crop}<input type="number" min="0" max="40" value={item.cropInset} disabled={item.status !== 'pending'} onChange={(event) => patchItem(item.localId, { cropInset: Number(event.target.value) })} /><span>%</span></label><div className="table-actions">{item.status === 'saved' && <label><input type="checkbox" checked={item.selected} disabled={!batch || !['running', 'paused'].includes(batch.status)} onChange={(event) => patchItem(item.localId, { selected: event.target.checked })} />{t.selectPublish}</label>}{['pending', 'running'].includes(item.status) && <button type="button" onClick={() => cancelItem(item)}>{t.cancelItem}</button>}{['failed', 'cancelled'].includes(item.status) && item.file && batch?.status === 'running' && <button type="button" onClick={() => void retry(item)}>{t.retry}</button>}</div></li>)}</ol>
   </section>;
 }

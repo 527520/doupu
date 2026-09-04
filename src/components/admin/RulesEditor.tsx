@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { zhCN } from '@/messages/zh-CN';
 
 interface Rule { literal: string; category: 'harm' | 'harassment' | 'sexual' | 'spam'; risk: 'review' }
 interface Version { id: string; version: number; rules: Rule[]; active: boolean; reason: string; createdAt: string }
 
 export default function RulesEditor() {
+  const t = zhCN.communityAdmin.rules;
   const [versions, setVersions] = useState<Version[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [literal, setLiteral] = useState('');
@@ -30,16 +32,16 @@ export default function RulesEditor() {
       'content-type': 'application/json', 'idempotency-key': crypto.randomUUID(),
     }, body: JSON.stringify({ rules, reason }) });
     const body = await response.json().catch(() => null);
-    setMessage(response.ok ? `规则版本 v${body.version} 已启用。` : body?.error?.message ?? '保存失败');
+    setMessage(response.ok ? `规则版本 v${body.version} 已启用。` : body?.error?.message ?? t.saveFailed);
     if (response.ok) { setRules([]); setReason(''); await load(); }
   };
   return <div className="admin-proof-grid">
     <section className="admin-panel"><header><h2>新规则版本</h2><span>仅字面词</span></header>
-      <div className="admin-form-stack"><label>字面词<input value={literal} maxLength={80} onChange={(event) => setLiteral(event.target.value)} /></label><label>伤害分类<select value={category} onChange={(event) => setCategory(event.target.value as Rule['category'])}><option value="harm">明确伤害</option><option value="harassment">骚扰</option><option value="sexual">色情</option><option value="spam">垃圾推广</option></select></label><button className="btn-secondary" type="button" disabled={!literal.trim()} onClick={() => { setRules((current) => [...current, { literal: literal.trim(), category, risk: 'review' }]); setLiteral(''); }}>加入版本</button>
+      <div className="admin-form-stack"><label>字面词<input value={literal} maxLength={80} onChange={(event) => setLiteral(event.target.value)} /></label><label>伤害分类<select value={category} onChange={(event) => setCategory(event.target.value as Rule['category'])}><option value="harm">{t.harm}</option><option value="harassment">{t.harassment}</option><option value="sexual">{t.sexual}</option><option value="spam">{t.spam}</option></select></label><button className="btn-secondary" type="button" disabled={!literal.trim()} onClick={() => { setRules((current) => [...current, { literal: literal.trim(), category, risk: 'review' }]); setLiteral(''); }}>加入版本</button>
         <ul>{rules.map((rule, index) => <li key={`${rule.category}:${rule.literal}`}><code>{rule.literal}</code> · {rule.category} <button type="button" onClick={() => setRules((current) => current.filter((_, item) => item !== index))}>移除</button></li>)}</ul>
         <label>启用理由<textarea value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></label><button className="btn-primary" type="button" disabled={reason.trim().length < 3} onClick={() => void publish()}>创建并启用不可变版本</button>{message && <p role="status" className="notice">{message}</p>}
       </div>
     </section>
-    <section className="admin-panel"><header><h2>版本历史</h2><span>{versions.length}</span></header><table><thead><tr><th>版本</th><th>规则数</th><th>状态</th><th>理由</th></tr></thead><tbody>{versions.map((version) => <tr key={version.id}><td>v{version.version}</td><td>{version.rules.length}</td><td>{version.active ? '当前' : '历史'}</td><td>{version.reason}</td></tr>)}</tbody></table></section>
+    <section className="admin-panel"><header><h2>版本历史</h2><span>{versions.length}</span></header><table><thead><tr><th>版本</th><th>规则数</th><th>状态</th><th>理由</th></tr></thead><tbody>{versions.map((version) => <tr key={version.id}><td>v{version.version}</td><td>{version.rules.length}</td><td>{version.active ? t.current : t.history}</td><td>{version.reason}</td></tr>)}</tbody></table></section>
   </div>;
 }

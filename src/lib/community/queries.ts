@@ -308,16 +308,14 @@ export async function listCommunityReviewQueue(db: AnyDatabase) {
     .limit(100);
   return rows.flatMap((row) => {
     const preview = communityPreviewSchema.safeParse(row.preview);
+    const { publicAuthorId, frozenDisplayName, authorType, ...safeRow } = row;
     return preview.success ? [{
-      ...row,
-      author: row.authorType === 'official'
+      ...safeRow,
+      author: authorType === 'official'
         ? { authorType: 'official' as const, publicAuthorId: 'doupu-official', displayName: '豆谱官方' }
-        : { authorType: 'user' as const, publicAuthorId: row.publicAuthorId, displayName: row.frozenDisplayName },
+        : { authorType: 'user' as const, publicAuthorId, displayName: frozenDisplayName },
       preview: preview.data,
       submittedAt: row.submittedAt?.toISOString() ?? null,
-      publicAuthorId: undefined,
-      frozenDisplayName: undefined,
-      authorType: undefined,
     }] : [];
   });
 }

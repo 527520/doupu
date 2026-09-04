@@ -8,6 +8,7 @@ import CommunityInteractions from '@/components/community/CommunityInteractions'
 import { getDb } from '@/lib/auth/db';
 import { getPublicCommunityWork } from '@/lib/community/queries';
 import { getBoardProfile } from '@/lib/boardProfiles';
+import { zhCN } from '@/messages/zh-CN';
 
 async function load(id: string) {
   if (!/^[0-9a-f-]{36}$/iu.test(id)) return null;
@@ -16,7 +17,7 @@ async function load(id: string) {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const work = await load((await params).id);
-  if (!work) return { title: '作品不存在', robots: { index: false, follow: false } };
+  if (!work) return { title: zhCN.communityAdmin.communityMissing, robots: { index: false, follow: false } };
   return { title: work.title, description: `${work.author.displayName} 的 ${work.width}×${work.height} 拼豆图纸`, openGraph: { title: work.title, description: `${work.author.displayName} 的豆社作品` } };
 }
 

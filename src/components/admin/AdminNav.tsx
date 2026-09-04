@@ -1,17 +1,18 @@
 import Link from 'next/link';
 import type { UserRole } from '@/lib/auth/authorization';
+import { zhCN } from '@/messages/zh-CN';
 
 const modules = [
-  ['/admin/reviews', '作品审核', 'moderator'],
-  ['/admin/comments', '评论治理', 'moderator'],
-  ['/admin/reports', '举报案件', 'moderator'],
-  ['/admin/tags', '正式标签', 'moderator'],
-  ['/admin/analytics', '匿名分析', 'admin'],
-  ['/admin/batches', '官方批次', 'admin'],
-  ['/admin/users', '人员管理', 'admin'],
-  ['/admin/rules', '审核规则', 'admin'],
-  ['/admin/audit', '审计记录', 'admin'],
-  ['/admin/system', '系统信息', 'admin'],
+  ['/admin/reviews', zhCN.communityAdmin.nav.reviews, 'moderator'],
+  ['/admin/comments', zhCN.communityAdmin.nav.comments, 'moderator'],
+  ['/admin/reports', zhCN.communityAdmin.nav.reports, 'moderator'],
+  ['/admin/tags', zhCN.communityAdmin.nav.tags, 'moderator'],
+  ['/admin/analytics', zhCN.communityAdmin.nav.analytics, 'admin'],
+  ['/admin/batches', zhCN.communityAdmin.nav.batches, 'admin'],
+  ['/admin/users', zhCN.communityAdmin.nav.users, 'admin'],
+  ['/admin/rules', zhCN.communityAdmin.nav.rules, 'admin'],
+  ['/admin/audit', zhCN.communityAdmin.nav.audit, 'admin'],
+  ['/admin/system', zhCN.communityAdmin.nav.system, 'admin'],
 ] as const;
 
 export default function AdminNav({ role }: { role: UserRole }) {

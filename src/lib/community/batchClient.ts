@@ -6,7 +6,9 @@ export function validateOfficialBatchFiles(files: readonly Pick<File, 'size' | '
   if (files.length < 1 || files.length > OFFICIAL_BATCH_LIMITS.maxFiles) return '单批请选择 1–50 个文件';
   let total = 0;
   for (const file of files) {
-    if (!file.type.startsWith('image/')) return '批次只接受图片文件';
+    // HEIC/HEIF and drag-and-drop files may have no useful MIME type. The
+    // authoritative content check uses magic bytes immediately before decode.
+    if (file.type && file.type !== 'application/octet-stream' && !file.type.startsWith('image/')) return '批次只接受图片文件';
     if (file.size > LIMITS.maxFileBytes) return '单个文件不能超过 20 MiB';
     total += file.size;
   }

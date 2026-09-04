@@ -3,8 +3,9 @@ import { redirect } from 'next/navigation';
 import SiteHeader from '@/components/layout/SiteHeader';
 import CommunitySubmitForm from '@/components/community/CommunitySubmitForm';
 import { getSessionActor } from '@/lib/auth/session';
+import { zhCN } from '@/messages/zh-CN';
 
-export const metadata: Metadata = { title: '提交豆社作品', robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: zhCN.communityAdmin.submitTitle, robots: { index: false, follow: false } };
 
 export default async function CommunitySubmitPage() {
   const actor = await getSessionActor();

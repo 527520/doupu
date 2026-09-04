@@ -22,7 +22,7 @@ const desktopNavigation: Array<{ href: string; label: string; shortLabel: string
   { href: '/app', label: zhCN.nav.workbench, shortLabel: zhCN.nav.workbench, icon: 'spark' },
   { href: '/designs', label: zhCN.nav.designs, shortLabel: zhCN.workspace.designsShort, icon: 'folder' },
   { href: '/palettes', label: zhCN.nav.palettes, shortLabel: zhCN.workspace.palettesShort, icon: 'palette' },
-  { href: '/community', label: '豆社', shortLabel: '豆社', icon: 'grid' },
+  { href: '/community', label: zhCN.communityAdmin.nav.community, shortLabel: zhCN.communityAdmin.nav.community, icon: 'grid' },
   { href: '/account', label: zhCN.workspace.account, shortLabel: zhCN.workspace.accountShort, icon: 'user' },
 ];
 

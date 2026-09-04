@@ -349,6 +349,10 @@ body {
 .community-comment-list li { padding: 1rem; border-top: 1px solid var(--color-lilac); }
 .community-comment-list p, .governance-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 .community-comment-list time { color: var(--color-ink-soft); font-size: .8rem; }
+.community-comment-actions { display: flex; gap: .7rem; }
+.community-comment-actions button { color: var(--color-primary); font-size: .8rem; }
+.community-inline-edit { display: grid; gap: .5rem; grid-template-columns: 1fr auto auto; }
+.community-inline-edit textarea { min-height: 5rem; grid-column: 1 / -1; padding: .6rem; border: 1px solid var(--color-lilac); }
 .governance-body { padding: 1rem; border-radius: 1rem; background: var(--color-cream); }
 .governance-console .review-queue button { min-height: 4.5rem; }
 .admin-form-stack { display: grid; gap: .75rem; padding: 1rem; }
