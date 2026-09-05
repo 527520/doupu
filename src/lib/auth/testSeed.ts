@@ -50,9 +50,6 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
   await reviewCommunityRevision(db, { actor: admin, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: 'E2E 启动期公开样本', requestId: 'e2e-seed-publish' });
   const replacement = await createCommunityRevision(db, { actor: user, workId: created.work.id, designId, expectedDesignRevision: 1, title: 'E2E 待审修改版', licenseVersion: COMMUNITY_LICENSE_VERSION });
   await submitCommunityRevision(db, { actor: user, revisionId: replacement.id, expectedVersion: replacement.version });
-  // 独立的待审视觉样本，不被治理旅程批准，便于持续检查真实审核处置界面。
-  const visualPending = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: '窗边的小花——待审视觉样本', licenseVersion: COMMUNITY_LICENSE_VERSION });
-  await submitCommunityRevision(db, { actor: user, revisionId: visualPending.revision.id, expectedVersion: visualPending.revision.version });
   await createModerationRuleSet(db, { actor: admin, expectedVersion: 1, rules: [{ literal: 'E2E风险词', category: 'spam', risk: 'review' }], reason: 'E2E 启动期规则', requestId: 'e2e-seed-rules' });
   await createCommunityComment(db, { actor: user, workId: created.work.id, body: '包含 E2E风险词 的评论' });
   for (const browser of ['chromium', 'firefox', 'webkit']) {

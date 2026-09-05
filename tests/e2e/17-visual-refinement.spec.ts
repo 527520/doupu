@@ -56,13 +56,26 @@ test('豆社、色板和登录页五宽度排版与无障碍',async({page},info)
   }
 });
 
-test('后台待审、批次和人员队列五宽度排版与无障碍',async({page},info)=>{
+test('后台待审、批次和人员队列五宽度排版与无障碍',async({page,browser,baseURL},info)=>{
+  // 由本用例通过真实投稿界面创建样本，不污染较早的审核队列清空契约。
+  const title=`窗边的小花——待审视觉样本 ${info.project.name}`;
+  const authorContext=await browser.newContext({baseURL});
+  try{
+    const author=await authorContext.newPage();
+    await author.goto('/login?next=/community/submit');await fillField(author,'邮箱','e2e-user@example.com');await fillField(author,'密码','E2e-pass-123!');
+    await author.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(author.url()).pathname).toBe('/community/submit');
+    await selectChoice(author,'选择云端设计','E2E 私人设计');
+    await author.getByLabel('公开作品标题').fill(title);
+    await author.getByRole('checkbox',{name:/我确认拥有发布权/}).check();
+    await author.getByRole('button',{name:'冻结快照并提交审核'}).click();
+    await expect.poll(()=>new URL(author.url()).pathname).toBe('/community/mine');
+  }finally{await authorContext.close();}
   await page.goto('/login?next=/admin/reviews');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/reviews');
   for(const route of ['/admin/reviews','/admin/batches','/admin/users']){
     await page.goto(route);await expect.poll(()=>new URL(page.url()).pathname).toBe(route);await waitHydrated(page);await expect(page.locator('.admin-page h1')).toBeVisible();await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
     if(route==='/admin/reviews'){
-      await page.locator('.review-queue button').filter({hasText:'窗边的小花——待审视觉样本'}).click();
+      await page.locator('.review-queue button').filter({hasText:title}).click();
       await expect(page.locator('.review-preview canvas').first()).toBeVisible();
     }
     for(const width of widths){
