@@ -268,6 +268,37 @@ function mockMobileViewport(): () => void {
 }
 
 describe('Workbench 全流程', () => {
+  it('色板库返回只在指定设计中提示应用，未确认不改图纸，应用后可一步撤销', async () => {
+    const value = 'builtin:pcd:mard-291-github@178dafbc9e77d3de556550dbd058270200129186';
+    window.history.replaceState(null, '', `/app?id=chosen&palette=${encodeURIComponent(value)}`);
+    const storage = new FakeStorage();
+    const original = savedProject('准确的目标设计', '2026-08-14T12:00:00Z');
+    storage.designs.set('chosen', record('chosen', original));
+    const view = render(<Workbench storage={storage} />);
+    try {
+      await screen.findByDisplayValue('准确的目标设计');
+      expect(selectPaletteSeries().value).toBe('builtin:MARD');
+      fireEvent.click(screen.getByRole('button', { name: '应用到这张图纸' }));
+      expect(selectPaletteSeries().value).toBe(value);
+      expect(new URLSearchParams(window.location.search).has('palette')).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
+      expect(selectPaletteSeries().value).toBe('builtin:MARD');
+      fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+      await waitFor(() => expect(JSON.parse(storage.designs.get('chosen')!.projectJson).pattern).toEqual(original.pattern));
+    } finally { view.unmount(); window.history.replaceState(null, '', '/app'); }
+  });
+
+  it('色板选择缺少明确目标 ID 时不应用到自动恢复的其他图纸', async () => {
+    window.history.replaceState(null, '', '/app?palette=builtin:MARD');
+    const storage = new FakeStorage();
+    storage.designs.set('last', record('last', savedProject('其他设计', '2026-08-14T12:00:00Z')));
+    const view = render(<Workbench storage={storage} />);
+    try {
+      await screen.findByDisplayValue('其他设计');
+      expect(screen.queryByRole('button', { name: '应用到这张图纸' })).toBeNull();
+    } finally { view.unmount(); window.history.replaceState(null, '', '/app'); }
+  });
+
   it('恢复图纸先继续制作，用户需要裁剪时才提示重新选择原图', async () => {
     const storage = new FakeStorage();
     await renderRestored(storage);
@@ -493,7 +524,9 @@ describe('Workbench 全流程', () => {
     expect(screen.queryByLabelText(zhCN.crop.ariaCropCanvas)).not.toBeInTheDocument();
     expect(screen.getByText(zhCN.workbench.previewTab)).toBeTruthy();
     expect(screen.getByText(zhCN.workbench.editTab)).toBeTruthy();
-    expect(screen.getByText(zhCN.export.pngExport)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '导出' }));
+    expect(screen.getByRole('button', { name: '下载 PNG' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '参数' }));
 
     // 参数面板接线：宽度输入 20 → blur 提交 → 300ms 防抖 → 重生成 20×20 = 400 粒
     const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
@@ -712,13 +745,14 @@ describe('Workbench 全流程', () => {
       fireEvent.change(selectUploadInput(), { target: { files: [makeFile()] } });
       await waitFor(() => expect(screen.queryByLabelText(zhCN.upload.inputLabel)).not.toBeInTheDocument());
       await screen.findByText(/共 10000 粒/);
+      fireEvent.click(screen.getByRole('button', { name: '导出' }));
       await waitFor(() => expect(screen.getByRole('button', { name: zhCN.share.button })).not.toBeDisabled());
-
+      fireEvent.click(screen.getByRole('button', { name: '参数' }));
       const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth });
       fireEvent.change(widthInput, { target: { value: '20' } });
       fireEvent.blur(widthInput);
       await screen.findByRole('button', { name: zhCN.workbench.cancel });
-
+      fireEvent.click(screen.getByRole('button', { name: '导出' }));
       const share = screen.getByRole('button', { name: zhCN.share.button });
       expect(share).toBeDisabled();
       expect(share).toHaveAttribute('title', zhCN.share.generationInProgress);
@@ -1186,7 +1220,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     // 没有生成源 → 参数锁定
     expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
     // 但导出可用（空图纸导出按钮会自行判空）
-    expect(screen.getByText(zhCN.export.pngExport)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '导出' }));
+    expect(screen.getByRole('button', { name: '下载 PNG' })).toBeVisible();
   });
 
   it('空白起稿可先选择 Mini 色板与 52×52 规格，并按一整板保存', async () => {

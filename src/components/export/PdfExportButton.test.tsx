@@ -95,7 +95,7 @@ describe('PdfExportButton', () => {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const header = String.fromCharCode(...bytes.subarray(0, 5));
     expect(header).toBe('%PDF-');
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock'), { timeout: 2500 });
     clickSpy.mockRestore();
   });
 

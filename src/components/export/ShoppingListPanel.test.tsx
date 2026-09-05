@@ -18,6 +18,22 @@ function setup() {
 }
 
 describe('ShoppingListPanel', () => {
+  it('材料模式直接显示全部色号，一次点击复制；失败给出可选中的完整文本', async () => {
+    vi.stubGlobal('navigator', {});
+    render(<ShoppingListPanel stats={stats} designName="小熊" width={50} height={40} expanded />);
+    expect(screen.getByText('A01')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.shopping.copy }));
+    expect((await screen.findByLabelText('手动复制材料清单') as HTMLTextAreaElement).value).toContain('A01 ×1200');
+    vi.unstubAllGlobals();
+  });
+
+  it('每包颗数无效时解释原因并禁止复制误导清单', () => {
+    render(<ShoppingListPanel stats={stats} designName="小熊" width={50} height={40} expanded />);
+    fireEvent.change(screen.getByLabelText(zhCN.shopping.beadsPerPack), { target: { value: '0' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('正整数');
+    expect(screen.getByRole('button', { name: zhCN.shopping.copy })).toBeDisabled();
+  });
+
   it('折叠时给出总量摘要，展开后列出逐色包数', () => {
     setup();
     expect(screen.getByText(zhCN.shopping.summary(2000, 2, 3, 1000))).toBeTruthy();

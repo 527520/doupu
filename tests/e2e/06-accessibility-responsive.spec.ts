@@ -233,7 +233,7 @@ test('移动工作台可切换编辑、用色与导出工具', async ({ page }, 
   const exportTools = page.getByRole('button', { name: '导出', exact: true });
   await exportTools.click();
   await expect(exportTools).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: '导出 PNG 图纸' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载 PNG' })).toBeVisible();
 });
 
 for (const route of ['/', '/app', '/designs', '/palettes', '/community', '/community/rules', '/privacy', '/account', '/help', '/about'] as const) {

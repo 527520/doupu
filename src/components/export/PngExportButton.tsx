@@ -1,7 +1,7 @@
 'use client';
 
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import { contentBounds, EXPORT_CELL_PX_CHOICES } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
@@ -38,6 +38,8 @@ export default function PngExportButton({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const pending = useRef(false);
+  const optionsId = useId();
   // 站点配置默认值（改环境变量即生效）；外部注入 props 优先
   const pubCfg = usePublicConfig();
   const defaultCellPx = cellPx ?? pubCfg.exportPng.cellPx;
@@ -79,6 +81,10 @@ export default function PngExportButton({
     [optCrop, optLegend, pattern],
   );
   const currentFits = currentPlan.kind === 'single' || currentPlan.kind === 'split';
+  const defaultPlan = useMemo(() => createPngExportPlan(pattern, {
+    cellPx: defaultCellPx, cropToContent: defaultCrop, includeLegend: defaultLegend,
+  }), [pattern, defaultCellPx, defaultCrop, defaultLegend]);
+  const defaultFits = defaultPlan.kind === 'single' || defaultPlan.kind === 'split';
 
   const t = zhCN.exportPng;
 
@@ -91,15 +97,16 @@ export default function PngExportButton({
     setOpen(true);
   };
 
-  const confirm = async (): Promise<void> => {
-    if (disabled || empty || busy) return;
+  const confirm = async (defaults = false): Promise<void> => {
+    if (disabled || empty || pending.current) return;
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
       const result = await exportPngBlob(pattern, designName, {
-        cellPx: optCellPx,
-        cropToContent: optCrop,
-        includeLegend: optLegend,
+        cellPx: defaults ? defaultCellPx : optCellPx,
+        cropToContent: defaults ? defaultCrop : optCrop,
+        includeLegend: defaults ? defaultLegend : optLegend,
         boardSize,
       });
       if (!result.ok) {
@@ -136,20 +143,25 @@ export default function PngExportButton({
       setError(zhCN.export.pngFailed);
       track({ name: 'export_failed', properties: { format: 'png', errorCode: 'PNG_EXPORT_FAILED' } });
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
 
   return (
     <div className="flex flex-col gap-1">
+      <div className="export-primary-actions"><button type="button" onClick={() => void confirm(true)} disabled={disabled || !defaultFits || busy} className="btn-primary btn-sm">{busy ? '正在导出…' : '下载 PNG'}</button>
       <button
         type="button"
         onClick={handleClick}
         disabled={disabled || empty || busy}
-        className="btn-primary btn-sm"
+        className="btn-outline btn-sm"
+        aria-expanded={open}
       >
-        {busy ? '…' : zhCN.export.pngExport}
-      </button>
+        PNG 选项
+      </button></div>
+      {defaultPlan.kind === 'split' && !open && <p className="text-xs text-ink-soft">{t.splitArchiveNotice}</p>}
+      {defaultPlan.kind === 'too-large' && !open && <p className="text-xs text-ink-soft">默认尺寸超出导出上限，请展开 PNG 选项调整。</p>}
       {error && (
         <p role="alert" className="text-xs text-danger">
           {error}
@@ -160,10 +172,11 @@ export default function PngExportButton({
         <section aria-label={t.dialogTitle} className="rounded-2xl border border-lilac/40 bg-white p-3 shadow-soft">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
           <div className="flex flex-col gap-2 text-sm">
-            <label htmlFor="png-cellpx" className="flex items-center justify-between gap-2 text-ink-soft">
+            <label htmlFor={optionsId} className="flex items-center justify-between gap-2 text-ink-soft">
               {t.cellSize}
               <select
-                id="png-cellpx"
+                id={optionsId}
+                disabled={busy}
                 value={optCellPx}
                 onChange={(e) => setOptCellPx(Number(e.target.value))}
                 className="input-compact"
@@ -186,11 +199,11 @@ export default function PngExportButton({
               </p>
             )}
             <label className="flex items-center gap-2 text-ink-soft">
-              <input type="checkbox" checked={optCrop} onChange={(e) => setOptCrop(e.target.checked)} />
+              <input type="checkbox" checked={optCrop} disabled={busy} onChange={(e) => setOptCrop(e.target.checked)} />
               {t.cropToContent}
             </label>
             <label className="flex items-center gap-2 text-ink-soft">
-              <input type="checkbox" checked={optLegend} onChange={(e) => setOptLegend(e.target.checked)} />
+              <input type="checkbox" checked={optLegend} disabled={busy} onChange={(e) => setOptLegend(e.target.checked)} />
               {t.includeLegend}
             </label>
           </div>

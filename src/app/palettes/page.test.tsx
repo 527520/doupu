@@ -36,9 +36,32 @@ const record = (id: string, name: string): PaletteRecord => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.history.replaceState(null, '', '/palettes');
 });
 
 describe('PalettesPage', () => {
+  it('从指定图纸打开色板库时携带该 ID 返回确认，不静默覆盖最近图纸', async () => {
+    const id = '00000000-0000-4000-a000-000000000001';
+    window.history.replaceState(null, '', `/palettes?designId=${id}`);
+    listPalettes.mockResolvedValue([]);
+    render(<PalettesPage />);
+    const links = await screen.findAllByRole('link', { name: '用于当前图纸' });
+    const url = new URL(links[0].getAttribute('href')!, 'http://localhost');
+    expect(url.pathname).toBe('/app');
+    expect(url.searchParams.get('id')).toBe(id);
+    expect(url.searchParams.get('palette')).toMatch(/^builtin:/);
+    expect(screen.getByText('返回原图纸')).toBeVisible();
+  });
+
+  it('保存失败在当前编辑弹窗内显示，并保留已输入的名称和颜色', async () => {
+    listPalettes.mockResolvedValue([]); savePalette.mockRejectedValueOnce(new Error('offline'));
+    render(<PalettesPage />); await screen.findByText(t.empty);
+    fireEvent.click(screen.getByRole('button', { name: t.newPalette }));
+    fireEvent.change(screen.getByLabelText(t.editor.name), { target: { value: '保留草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: t.editor.save }));
+    expect(await within(screen.getByRole('dialog')).findByText(t.saveFailed)).toBeVisible();
+    expect(screen.getByLabelText(t.editor.name)).toHaveValue('保留草稿');
+  });
   it('加载中提供明确的 live region 反馈', () => {
     listPalettes.mockReturnValue(new Promise(() => {}));
     render(<PalettesPage />);
@@ -164,6 +187,7 @@ describe('PalettesPage', () => {
     };
     await cancelDelete();
     expect(deletePalette).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('button', { name: t.delete })).toBeEnabled());
 
     deletePalette.mockResolvedValue(undefined);
     fireEvent.click(screen.getByRole('button', { name: t.delete }));
@@ -194,7 +218,7 @@ describe('PalettesPage', () => {
     expect(screen.queryByLabelText(t.editor.title)).toBeNull();
   });
 
-  it('会话中途失效：保存返回 UNAUTHORIZED → 关闭弹窗并跳登录', async () => {
+  it('会话中途失效：保存返回 UNAUTHORIZED 仍保留编辑内容，提供单独登录入口', async () => {
     listPalettes.mockResolvedValue([]);
     render(<PalettesPage />);
     await waitFor(() => expect(screen.getByText(t.empty)).toBeTruthy());
@@ -206,7 +230,9 @@ describe('PalettesPage', () => {
     savePalette.mockRejectedValueOnce(error);
     fireEvent.click(screen.getByRole('button', { name: t.editor.save }));
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/login?next=/palettes'));
-    expect(screen.queryByLabelText(t.editor.title)).toBeNull();
+    const login = await screen.findByRole('link', { name: '另开窗口登录后重试' });
+    expect(login).toHaveAttribute('target', '_blank');
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(t.editor.name)).toHaveValue('我的色板');
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 /** 色板管理页（spec §F6）：内置资料库只读展示 + 自定义色板 CRUD。 */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { zhCN } from '@/messages/zh-CN';
@@ -83,6 +83,12 @@ export default function PalettesPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorLoginRequired, setEditorLoginRequired] = useState(false);
+  const [targetDesignId, setTargetDesignId] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
 
   const filteredCatalogGroups = useMemo(() => {
@@ -122,12 +128,17 @@ export default function PalettesPage() {
   }, [t.loadFailed]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
+    const timer = window.setTimeout(() => {
+      const id = new URLSearchParams(window.location.search).get('designId') ?? '';
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) setTargetDesignId(id);
+      void load();
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
 
   const startCreate = (): void => {
     setPageError(null);
+    setEditorError(null); setEditorLoginRequired(false);
     // 未登录无法保存自定义色板：直接引导登录（登录后回跳本页），不开空弹窗
     if (loginRequired) {
       goLogin();
@@ -138,13 +149,15 @@ export default function PalettesPage() {
 
   const startEdit = (record: PaletteRecord): void => {
     setPageError(null);
+    setEditorError(null); setEditorLoginRequired(false);
     setEditing({ id: record.id, name: record.name, colors: record.colors, revision: record.revision });
   };
 
   const handleSave = async (name: string, colors: EditingState['colors']): Promise<void> => {
-    if (!editing) return;
+    if (!editing || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    setPageError(null);
+    setEditorError(null); setEditorLoginRequired(false);
     try {
       const saved = await savePalette(editing.id, name, colors, editing.revision);
       setRecords((prev) => {
@@ -154,19 +167,21 @@ export default function PalettesPage() {
       setEditing(null);
     } catch (error) {
       const code = error instanceof Error && 'code' in error ? error.code : null;
-      if (code === 'UNAUTHORIZED') goLogin(); // 会话中途失效：跳登录
+      if (code === 'UNAUTHORIZED') { setEditorError('登录已失效，当前编辑内容仍保留。'); setEditorLoginRequired(true); }
       else if (code === 'REVISION_CONFLICT') {
-        setPageError(t.revisionConflict);
-        setEditing(null);
-        await load();
-      } else if (code === 'CONFLICT') setPageError(t.limitReached);
-      else setPageError(t.saveFailed);
+        setEditorError(`${t.revisionConflict} 当前输入仍保留；请先复制需要保留的内容，再取消并刷新列表。`);
+      } else if (code === 'CONFLICT') setEditorError(t.limitReached);
+      else setEditorError(t.saveFailed);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const handleDelete = async (record: PaletteRecord): Promise<void> => {
+    if (deletingRef.current) return;
+    deletingRef.current = true; setDeleting(true);
+    try {
     const ok = await confirm({
       title: t.deleteConfirmTitle(record.name),
       message: t.deleteConfirm,
@@ -185,7 +200,10 @@ export default function PalettesPage() {
         setPageError(t.deleteFailed);
       }
     }
+    } finally { deletingRef.current = false; setDeleting(false); }
   };
+
+  const renderPaletteLink = (value: string) => targetDesignId ? <Link className="btn-outline btn-sm" href={`/app?${new URLSearchParams({ id: targetDesignId, palette: value })}`}>用于当前图纸</Link> : null;
 
   return (
     <main id="main" className="workspace-page flex flex-col gap-6">
@@ -205,8 +223,8 @@ export default function PalettesPage() {
       />
 
       <section className="palette-hero">
-        <div><span className="studio-eyebrow">{t.libraryKicker}</span><h2>{t.heroTitle}</h2><p>{t.heroHint}</p></div>
-        <div className="palette-fan" aria-hidden="true"><span /><span /><span /><span /><span /></div>
+        <div><h2>{t.heroTitle}</h2><p>{t.heroHint}</p><p>{targetDesignId ? '选择色板后返回原图纸确认应用，换色可撤销。' : '从工作台的“查看完整色板库”进入，可选择色板用于指定图纸。'}</p></div>
+        {targetDesignId && <Link href={`/app?id=${targetDesignId}`} className="btn-outline">返回原图纸</Link>}
       </section>
 
       {pageError && (
@@ -280,6 +298,10 @@ export default function PalettesPage() {
                               <dt>{t.specification}</dt>
                               <dd>{describeCompatibleSpecifications(palette)}</dd>
                             </div>
+                          </dl>
+                          <PaletteSwatches name={palette.label} colors={palette.colors} />
+                          {renderPaletteLink(`builtin:${palette.id}`)}
+                          <details className="palette-source-details"><summary>来源与收录说明</summary><dl className="palette-card-meta">
                             <div>
                               <dt>{t.sourceQuality}</dt>
                               <dd>
@@ -292,8 +314,7 @@ export default function PalettesPage() {
                               <dt>{t.exclusions}</dt>
                               <dd>{describeExclusions(palette.exclusions)}</dd>
                             </div>
-                          </dl>
-                          <PaletteSwatches name={palette.label} colors={palette.colors} />
+                          </dl></details>
                         </li>
                       );
                     })}
@@ -309,7 +330,7 @@ export default function PalettesPage() {
         <h2>{t.customTitle}</h2>
         {loading ? (
           <p role="status" className="text-sm text-ink-soft/80">{t.loading}</p>
-        ) : records.length === 0 ? (
+        ) : records.length === 0 && (pageError || loginRequired) ? <p className="palette-empty">{loginRequired ? '登录后查看自己的自定义色板。' : '暂时无法确认自定义色板，请重试。'}</p> : records.length === 0 ? (
           <p className="palette-empty">
             {t.empty}
           </p>
@@ -328,13 +349,14 @@ export default function PalettesPage() {
                     <button type="button" onClick={() => startEdit(record)} className="rounded-full px-1.5 py-1 text-primary-deep hover:bg-primary-soft">
                       {t.edit}
                     </button>
-                    <button type="button" onClick={() => void handleDelete(record)} className="btn-danger-quiet">
+                    <button type="button" disabled={deleting} onClick={() => void handleDelete(record)} className="btn-danger-quiet">
                       {t.delete}
                     </button>
                   </div>
                 </div>
                 {/* 自定义色板同样要能一眼看到颜色（E-1） */}
                 <PaletteSwatches name={record.name} colors={record.colors} />
+                {renderPaletteLink(`custom:${record.id}`)}
               </li>
             ))}
           </ul>
@@ -342,14 +364,17 @@ export default function PalettesPage() {
       </section>
 
       {editing && (
-        <Modal label={t.edit} onClose={() => setEditing(null)} panelClassName="w-full max-w-xl max-h-[85vh] overflow-auto">
+        <Modal label={t.edit} onClose={() => { if (!savingRef.current) setEditing(null); }} panelClassName="w-full max-w-xl max-h-[85vh] overflow-auto">
+          {editorError && <div role="alert" className="notice notice-danger">{editorError}{editorLoginRequired && <Link href="/login?next=/palettes" target="_blank" rel="noopener noreferrer" className="link-soft">另开窗口登录后重试</Link>}</div>}
+          <fieldset disabled={saving}>
           <PaletteEditor
             initialName={editing.name}
             initialColors={editing.colors}
             saving={saving}
             onSave={handleSave}
-            onCancel={() => setEditing(null)}
+            onCancel={() => { if (!savingRef.current) setEditing(null); }}
           />
+          </fieldset>
         </Modal>
       )}
       {confirmDialog}

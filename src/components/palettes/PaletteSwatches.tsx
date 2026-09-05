@@ -56,6 +56,8 @@ export default function PaletteSwatches({ name, colors }: Props) {
       {open && (
         <ul
           id={gridId}
+          tabIndex={0}
+          aria-label={`${name} 色号列表`}
           /* 限高 + 滚动：大色板铺开不应把整页拉长。 */
           className="palette-swatch-grid"
         >

@@ -35,10 +35,19 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     vi.unstubAllGlobals();
   });
 
+  it('常用 PNG 下载只需一次点击，特殊设置仍按需提供', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<PngExportButton pattern={makePattern(1, 1, [cell('#000000')])} designName="直接下载" />);
+    fireEvent.click(screen.getByRole('button', { name: '下载 PNG' }));
+    await waitFor(() => expect(clickSpy).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('region', { name: 'PNG 导出选项' })).toBeNull();
+    clickSpy.mockRestore();
+  });
+
   it('空图纸（全透明）→ 按钮禁用（E10）', () => {
     const p = makePattern(2, 2, [transparent, transparent, transparent, transparent]);
     render(<PngExportButton pattern={p} designName="设计" />);
-    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getAllByRole('button').every((button) => button.hasAttribute('disabled'))).toBe(true);
   });
 
   it('全外部图纸 → 按钮禁用（E24）', () => {
@@ -49,7 +58,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
       { hex: '#000000', code: 'A', transparent: false, external: true },
     ]);
     render(<PngExportButton pattern={p} designName="设计" />);
-    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getAllByRole('button').every((button) => button.hasAttribute('disabled'))).toBe(true);
   });
 
   it('点击导出先打开选项面板；确认后触发下载并释放 objectURL', async () => {
@@ -65,7 +74,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const p = makePattern(2, 1, [cell('#000000', 'A01'), cell('#FFFFFF', 'T01')]);
     render(<PngExportButton pattern={p} designName="我的设计" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     // 面板出现，尚未下载
     expect(screen.getByRole('region', { name: 'PNG 导出选项' })).toBeTruthy();
     expect(clickSpy).not.toHaveBeenCalled();
@@ -88,7 +97,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const p = makePattern(2, 1, [cell('#000000', 'A01'), cell('#FFFFFF', 'T01')]);
     render(<PngExportButton pattern={p} designName="设计" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     fireEvent.change(screen.getByLabelText('格子大小'), { target: { value: '48' } });
     fireEvent.click(screen.getByLabelText('裁掉图纸边缘空白'));
     fireEvent.click(screen.getByLabelText('包含图例与色号清单'));
@@ -102,7 +111,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const p = makePattern(1, 1, [cell('#000000')]);
     render(<PngExportButton pattern={p} designName="设计" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(screen.queryByRole('region', { name: 'PNG 导出选项' })).toBeNull();
     expect(clickSpy).not.toHaveBeenCalled();
@@ -119,13 +128,13 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const p = makePattern(1, 1, [cell('#000000')]);
     render(<PngExportButton pattern={p} designName="设计" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     fireEvent.click(screen.getByRole('button', { name: '导出' }));
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toBe('导出失败，请重试。');
     });
     // 等 busy 复位
-    await waitFor(() => expect(screen.getByRole('button', { name: '导出 PNG 图纸' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'PNG 选项' })).toBeEnabled());
     expect(clickSpy).not.toHaveBeenCalled();
     clickSpy.mockRestore();
   });
@@ -138,7 +147,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     };
     const p = makePattern(2, 2, [cell('#000000'), cell('#000000'), cell('#000000'), cell('#000000')]);
     render(<PngExportButton pattern={p} designName="a/b" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     fireEvent.click(screen.getByRole('button', { name: '导出' }));
     await waitFor(() => {
       expect(downloadName).toBe('豆谱-a-b-2x2.png');
@@ -168,7 +177,7 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
       }),
     };
     render(<PngExportButton pattern={p} designName="极限" />);
-    fireEvent.click(screen.getByRole('button', { name: '导出 PNG 图纸' }));
+    fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
     fireEvent.change(screen.getByLabelText('格子大小'), { target: { value: '24' } });
     fireEvent.click(screen.getByLabelText('包含图例与色号清单'));
 

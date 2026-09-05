@@ -348,6 +348,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [storageReady, setStorageReady] = useState(false);
   const [tab, setTab] = useState<Tab>('preview');
   const [mobilePanel, setMobilePanel] = useState<'params' | 'colors' | 'export'>('params');
+  const mobileToolSheetRef = useRef<HTMLElement>(null);
+  const [paletteIntent, setPaletteIntent] = useState<{ designId: string; value: string } | null>(null);
   const mobileLayout = useMobileLayout();
   /**
    * 跟拼进度（G-1）：按设计 id 存在本机 IndexedDB，与图纸尺寸绑定。
@@ -1535,6 +1537,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         setActiveDesignId(last.id);
         setSavedNames(records.map((r) => r.name));
         loadCommittedProject(project, localSource);
+        const requestedPalette = urlParams.get('palette');
+        if (requestedId && requestedPalette && requestedPalette.length <= 200) {
+          setPaletteIntent({ designId: requestedId, value: requestedPalette });
+        }
         const requestedMode = urlParams.get('mode');
         if (requestedId && (requestedMode === 'edit' || requestedMode === 'stitch')) setTab(requestedMode);
       } catch {
@@ -1651,6 +1657,24 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const sourceAdjustment = generationSession.status === 'restored-locked' && <div className="source-adjustment-note">
     <p>{t.sourceRequired}</p>{!cropRecoveryOpen && <button type="button" className="btn-outline" onClick={requestOriginal}>{t.reselectOriginal}</button>}
   </div>;
+  const paletteLibraryHref = `/palettes?designId=${encodeURIComponent(designId)}`;
+  const paletteLibraryLink = <Link href={paletteLibraryHref} className="link-soft text-sm" onClick={(event) => handleNavigationClick(event, paletteLibraryHref)}>查看完整色板库</Link>;
+  const intentOption = paletteIntent && paletteOptions.find((option) => option.value === paletteIntent.value
+    && (!option.value.startsWith('custom:') || cloudPalettes.some((item) => `custom:${item.id}` === option.value)));
+  const dismissPaletteIntent = () => {
+    setPaletteIntent(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('palette');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  };
+  const paletteIntentNotice = paletteIntent?.designId === designId && <section className="palette-intent" aria-label="色板库选择确认">
+    <p>{intentOption ? `把「${intentOption.brand} · ${intentOption.series}」应用到「${name}」？` : '所选色板暂不可用，请检查登录账号或稍后重试。'}</p>
+    <small>仅对这张图纸换色，必要时同步调整制作规格；保留格子位置和透明区域，可一步撤销。</small>
+    <div className="community-form-actions"><button type="button" className="btn-primary btn-sm" disabled={!intentOption || busy || generating || !generationSession.committed} onClick={() => {
+      if (!paletteIntent || paletteIntent.designId !== designId || !intentOption) return;
+      handlePaletteSelect(paletteIntent.value); dismissPaletteIntent();
+    }}>应用到这张图纸</button><button type="button" className="btn-outline btn-sm" onClick={dismissPaletteIntent}>取消选择</button></div>
+  </section>;
   const cropAction = <div className="preview-crop-action">
     <button type="button" className="btn-outline" disabled={busy || generating} aria-expanded={!decoded ? cropRecoveryOpen : undefined} onClick={(event) => {
       event.currentTarget.focus();
@@ -1897,14 +1921,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               ['colors', 'palette', t.mobileColors],
               ['export', 'download', t.mobileExport],
             ] as const).map(([panel, icon, label]) => (
-              <button key={panel} type="button" aria-pressed={mobilePanel === panel} onClick={() => setMobilePanel(panel)}><Icon name={icon} /><span>{label}</span></button>
+              <button key={panel} type="button" aria-pressed={mobilePanel === panel} onClick={() => {
+                setMobilePanel(panel);
+                requestAnimationFrame(() => mobileToolSheetRef.current?.scrollIntoView({ block: 'nearest' }));
+              }}><Icon name={icon} /><span>{label}</span></button>
             ))}
           </nav>
 
-          <section className="mobile-tool-sheet">
+          <section ref={mobileToolSheetRef} className="mobile-tool-sheet">
             <span className="mobile-sheet-handle" aria-hidden="true" />
             {mobilePanel === 'params' && (
               <>
+              {paletteIntentNotice}
               {sourceAdjustment}
               <GenerationParamsPanel
                 params={params}
@@ -1922,13 +1950,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 kitTier={kitTier}
                 onKitTierChange={handleKitTierChange}
               />
+              {paletteLibraryLink}
               </>
             )}
             {mobilePanel === 'colors' && (
               <div className="mobile-color-summary">
-                <h2>{t.statsTotal(total)} · {t.colorCount(stats.length)}</h2>
-                <ul>{stats.slice(0, 30).map((item) => <li key={item.hex}><span style={{ backgroundColor: item.hex }} /><code>{item.code}</code><strong>{item.count} {zhCN.export.countUnit}</strong></li>)}</ul>
-                {generationSession.committed && <ShoppingListPanel stats={stats} designName={name.trim() || zhCN.project.unnamed} width={pattern.width} height={pattern.height} />}
+                {generationSession.committed && <ShoppingListPanel expanded stats={stats} designName={name.trim() || zhCN.project.unnamed} width={pattern.width} height={pattern.height} />}
               </div>
             )}
             {mobilePanel === 'export' && generationSession.committed && (
@@ -2149,6 +2176,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 {hoverInfo}
               </p>
             )}
+            <p className="text-sm text-ink-soft">{t.statsTotal(total)} · {t.colorCount(stats.length)}</p>
             <p className="text-xs text-ink-soft/80">{t.editorHint}</p>
             {generationSession.regenerationUndo && !generating && (
               <button
@@ -2162,6 +2190,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           </section>
 
           <aside className="desktop-inspector-stack flex flex-col gap-4">
+            <nav className="desktop-tool-dock" aria-label={t.mobileTools}>
+              {(['params', 'colors', 'export'] as const).map((panel) => <button key={panel} type="button" aria-pressed={mobilePanel === panel} onClick={() => setMobilePanel(panel)}>{panel === 'params' ? t.mobileParams : panel === 'colors' ? t.mobileColors : t.mobileExport}</button>)}
+            </nav>
+            {mobilePanel === 'params' && <>
+            {paletteIntentNotice}
             {sourceAdjustment}
             {paletteLoadFailed && (
               <Notice kind="warning" compact>{t.paletteLoadFailed}</Notice>
@@ -2184,24 +2217,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               kitTier={kitTier}
               onKitTierChange={handleKitTierChange}
             />
+            {paletteLibraryLink}
+            </>}
 
-            <div className="card-surface p-3 text-sm">
-              <p className="font-semibold text-ink">
-                {t.statsTotal(total)} · {t.colorCount(stats.length)}
-              </p>
-              <ul tabIndex={0} aria-label={t.colorCount(stats.length)} className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto">
-                {stats.slice(0, 50).map((item) => (
-                  <li key={item.hex} className="flex items-center gap-2 text-xs text-ink-soft">
-                    <span className="inline-block h-3 w-3 rounded-sm border border-lilac/40" style={{ backgroundColor: item.hex }} />
-                    <span className="font-mono">{item.code}</span>
-                    <span className="ml-auto">{item.count} {zhCN.export.countUnit}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {generationSession.committed && (
+            {mobilePanel === 'colors' && generationSession.committed && (
               <ShoppingListPanel
+                expanded
                 stats={stats}
                 designName={name.trim() || zhCN.project.unnamed}
                 width={pattern.width}
@@ -2210,7 +2231,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             )}
 
             {generationSession.committed && (
-              <div className="card-surface flex flex-col gap-3 p-3">
+              <div hidden={mobilePanel !== 'export'}><div className="card-surface flex flex-col gap-3 p-3">
                 <PngExportButton
                   pattern={generationSession.committed.pattern}
                   designName={name.trim() || zhCN.project.unnamed}
@@ -2249,7 +2270,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   disabled={authStatus.kind !== 'user' || generating}
                   disabledReason={generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
                 />
-              </div>
+              </div></div>
             )}
           </aside>
         </div>

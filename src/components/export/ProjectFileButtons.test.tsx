@@ -36,7 +36,7 @@ async function importFile(file: File): Promise<void> {
 }
 
 describe('ProjectFileButtons', () => {
-  it('导出点击生成带正确文件名与内容的下载', () => {
+  it('导出点击生成带正确文件名与内容的下载', async () => {
     const createObjectURL = vi.fn(() => 'blob:fake');
     const revokeObjectURL = vi.fn();
     URL.createObjectURL = createObjectURL;
@@ -47,12 +47,22 @@ describe('ProjectFileButtons', () => {
     fireEvent.click(screen.getByText('导出项目文件'));
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+    expect(revokeObjectURL).not.toHaveBeenCalled();
     // 下载锚点无需挂载到 DOM；断言 click spy 实例上的 download 属性
     expect(clickSpy).toHaveBeenCalledTimes(1);
     const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
     expect(anchor.getAttribute('download')).toBe('豆谱-测试设计.json');
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake'), { timeout: 2500 });
     clickSpy.mockRestore();
+  });
+
+  it('项目导出失败不伪装成导入错误，保留图纸并提供重试', () => {
+    URL.createObjectURL = vi.fn(() => { throw new Error('unavailable'); });
+    render(<ProjectFileButtons source={source} existingNames={[]} onImport={() => {}} />);
+    fireEvent.click(screen.getByText('导出项目文件'));
+    expect(screen.getByRole('alert')).toHaveTextContent('项目文件导出失败');
+    expect(screen.queryByText('导入失败：')).toBeNull();
+    expect(screen.getByRole('button', { name: '导出项目文件' })).toBeEnabled();
   });
 
   it('导入合法项目文件触发 onImport', async () => {

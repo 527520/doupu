@@ -1,7 +1,7 @@
 'use client';
 
 /** PDF 导出按钮（spec §F7 PDF）：页数预览 + 确认后生成下载；空图纸给出错误提示。 */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { Pattern, PatternStatsItem } from '@/lib/types';
 import { loadPdfCjkFont } from '@/lib/export/pdfFont';
@@ -28,9 +28,10 @@ export function triggerDownload(bytes: Uint8Array, filename: string): void {
   anchor.href = url;
   anchor.download = filename;
   document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  try { anchor.click(); } finally {
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_500);
+  }
 }
 
 export default function PdfExportButton({ name, pattern, stats, boardSize = DEFAULT_BOARD_SIZE, cellMm, disabled, analyticsSource = 'other' }: PdfExportButtonProps) {
@@ -38,6 +39,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pending = useRef(false);
   // 版式参数来自站点公开配置（票 02）：服务端环境变量可覆盖，改配置即生效
   const pubCfg = usePublicConfig();
   const metrics = useMemo<PdfPageMetrics>(
@@ -69,6 +71,8 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
   };
 
   const confirm = async (): Promise<void> => {
+    if (pending.current || disabled || isEmpty) return;
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -87,6 +91,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
       setError(t.failedError);
       track({ name: 'export_failed', properties: { format: 'pdf', errorCode: 'PDF_EXPORT_FAILED' } });
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
@@ -117,6 +122,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
               : t.pageCount(layout.gridPages.length, legendPageCount)}
           </p>
           {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-ink-soft">{t.largeHint}</p>}
+          <p className="mt-2 text-xs text-ink-soft">每格 {metrics.cellMm} mm。打印时请选择“实际大小 / 100%”，不要选择“适合页面”；先试打一页，用尺子核对格子尺寸。</p>
           {error && (
             <p role="alert" className="mt-2 text-sm text-danger">
               {error}

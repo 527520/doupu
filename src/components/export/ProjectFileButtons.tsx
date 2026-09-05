@@ -22,10 +22,14 @@ interface Props {
 
 export default function ProjectFileButtons({ source, existingNames, onImport, disabled, analyticsSource = 'other' }: Props) {
   const [errors, setErrors] = useState<string[]>([]);
+  const [exportError, setExportError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const t = zhCN.project;
 
   const handleExport = (): void => {
+    if (disabled) return;
+    setExportError(false);
+    try {
     const text = serializeProject(source);
     const blob = new Blob([text], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -33,10 +37,15 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
     anchor.href = url;
     anchor.download = projectFileName(source.name);
     document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    try { anchor.click(); } finally {
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_500);
+    }
     track({ name: 'design_exported', properties: { format: 'project', source: analyticsSource } });
+    } catch {
+      setExportError(true);
+      track({ name: 'export_failed', properties: { format: 'project', errorCode: 'PROJECT_EXPORT_FAILED' } });
+    }
   };
 
   const handleImport = async (file: File): Promise<void> => {
@@ -95,6 +104,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
         onChange={onFileChange}
         className="sr-only"
       />
+      {exportError && <Notice kind="danger">项目文件导出失败，图纸仍保留，请重试。</Notice>}
       {errors.length > 0 && (
         <Notice kind="danger" as="div" className="flex-col gap-1">
           <p className="font-medium">{t.importFailed}</p>
