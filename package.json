@@ -11,8 +11,10 @@
         "url": "https://github.com/527520/doupu/issues"
     },
     "scripts": {
+        "predev": "node scripts/check-ui-fonts.cjs",
         "dev": "next dev",
-        "prebuild": "npm run build:protocol-preflight && node scripts/build-pdf-font-subset.mjs && node scripts/build-ui-font-subset.mjs",
+        "prebuild": "npm run build:protocol-preflight && node scripts/build-pdf-font-subset.mjs && node scripts/check-ui-fonts.cjs",
+        "fonts:check": "node scripts/check-ui-fonts.cjs",
         "build:protocol-preflight": "node scripts/build-protocol-preflight.mjs",
         "build": "next build",
         "start": "next start",
@@ -21,9 +23,9 @@
         "test": "vitest run --no-file-parallelism --maxWorkers=1 --project unit --project serial --project integration",
         "test:unit": "vitest run --project unit --project serial",
         "test:integration": "vitest run --project integration",
-    "test:postgres-contract": "node tests/postgres/revision-contract.cjs",
-    "test:postgres-upgrade": "node tests/postgres/community-upgrade-contract.cjs",
-    "test:postgres-governance": "vitest run --config tests/postgres/vitest.config.mts",
+        "test:postgres-contract": "node tests/postgres/revision-contract.cjs",
+        "test:postgres-upgrade": "node tests/postgres/community-upgrade-contract.cjs",
+        "test:postgres-governance": "vitest run --config tests/postgres/vitest.config.mts",
         "test:protocol-preflight": "node tests/postgres/protocol-preflight-contract.cjs",
         "test:coverage": "vitest run --no-file-parallelism --maxWorkers=1 --coverage --project unit --project serial --project integration",
         "test:coverage:stable": "node tests/ci/repeat.cjs 5 npm run test:coverage",
@@ -48,6 +50,7 @@
         "pg": "^8.23.0",
         "qr": "0.6.0",
         "react": "^19.2.8",
+        "react-aria-components": "1.21.1",
         "react-dom": "^19.2.8",
         "subset-font": "^2.6.0",
         "zod": "^4.4.3"

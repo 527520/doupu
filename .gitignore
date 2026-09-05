@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -82,7 +83,6 @@ next-env.d.ts
 
 # 构建期生成的 PDF 子集字体（由 npm run prebuild 产出，见 scripts/build-pdf-font-subset.mjs）
 /public/fonts/*.subset.otf
-# 界面字体：源字体与子集产物都不入库（源字体体积大且各自有授权条款，
-# 见 scripts/build-ui-font-subset.mjs 与 NOTICE.md）
+# 旧版私有可选字体目录；新版 assets/ui-fonts 和 public/fonts/ui 必须入库。
 /public/fonts/*.subset.ttf
 /assets/fonts/

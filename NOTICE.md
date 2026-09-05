@@ -47,13 +47,11 @@ PDF 导出嵌入 **Noto Sans CJK SC**（OFL-1.1，SIL Open Font License）：
   [subset-font](https://github.com/papandreou/subset-font)（HarfBuzz WASM，MIT），
   见 `scripts/build-pdf-font-subset.mjs`。
 
-界面自托管中文字体（可选）：
-- 源字体放在 `assets/fonts/`（不入库），由 `scripts/build-ui-font-subset.mjs` 在构建期
-  子集化为 `public/fonts/ui-sans-sc.subset.ttf`（仅界面文案用到的约 730 个字形，约 136 KB）。
-- 当前使用 **阿里巴巴普惠体 3.0 55 Regular**（Alibaba PuHuiTi，官方声明免费商用）。
-  该字体为现代黑体而非圆体；苹果与 Windows 用户仍优先使用系统自带的圆体
-  （Yuanti SC / 幼圆），自托管字体主要服务于无内置圆体中文的 Android。
-- 更换字体：把新的 ttf/otf 放进 `assets/fonts/` 并删除旧文件即可，同时更新本节声明。
+界面同源字体（随仓库交付，OFL-1.1）：
+- 正文使用 Noto Sans SC 2.004 可变字体的子集 **DouPu Text**；少量宣传标题使用寒蝉全圆体 3.000 的子集 **DouPu Round**。
+- 上游固定提交、源文件与许可证见 `assets/ui-fonts/README.md`；生成子集更改了字体内部名称，保留原作者版权/许可/归属信息，不使用上游保留名称作为修改版名称。
+- 分段 WOFF2、CSS、校验清单位于 `public/fonts/ui/`；扩展汉字按 `unicode-range` 加载，不上传用户文字。普通构建只离线校验，不下载或生成字体。
+- 重新生成使用 `scripts/build-ui-font-subset.mjs`、已有 subset-font/HarfBuzz 与仅资产制作所需的 FontTools 4.60.1（MIT，`scripts/rename-ui-font.py`）。FontTools 不是应用运行/构建依赖。
 
 ## 本项目许可
 

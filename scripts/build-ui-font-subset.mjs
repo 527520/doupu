@@ -1,74 +1,80 @@
-/**
- * 构建期生成界面中文字体子集（C-8）。
- *
- * 背景：Android 没有内置圆体/圆润中文字体，字体栈会一路回退到系统黑体，
- * 安卓用户看到的界面与 iOS/Windows 差别明显。自托管一份字体可以统一观感，
- * 但整份中文字体有 8 MB 级别，不能直接当 web font 发。
- *
- * 做法：只取「界面上真正会出现的字」——src/messages/zh-CN.ts 里的全部文案
- * （约 728 个字符）+ ASCII + 常用标点，子集后约 130 KB。
- * 用户输入的设计名若含子集外的字，浏览器会按字回退到系统字体（可接受：
- * 设计名主要出现在输入框里；把 GB2312 全字收进来会涨到 1.6 MB，不值）。
- *
- * 子集工具：subset-font（HarfBuzz WASM）。此前用 @pdf-lib/fontkit 的 createSubset，
- * 产物虽然能被 Chromium/WebKit 渲染，但 Firefox 的字体消毒器拒绝加载
- * （"hhea: misaligned table"），控制台报错直接拉红 350/390px 移动端门禁。
- *
- * 源字体放在 assets/fonts/（不入库、不对外提供），产物 public/fonts/ui-sans-sc.subset.ttf
- * 也不入库，由 npm run prebuild 生成。没有源字体时静默跳过——@font-face 会失效，
- * 字体栈自动回退，不影响构建与渲染。
- *
- * 换字体只需把新的 ttf/otf 放进 assets/fonts/ 并删掉旧的，无需改代码。
+/** Explicit offline regeneration; normal builds only check the committed assets.
+ * Requires fonttools==4.60.1 to rename OFL derivatives before subsetting.
+ * node scripts/build-ui-font-subset.mjs --python /path/to/python
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const sourceDir = join(root, 'assets', 'fonts');
-const target = join(root, 'public', 'fonts', 'ui-sans-sc.subset.ttf');
-
-if (!existsSync(sourceDir)) {
-  console.log('[ui-font] 未提供 assets/fonts 源字体，跳过界面字体子集');
-  process.exit(0);
-}
-const candidates = readdirSync(sourceDir).filter((name) => /\.(ttf|otf)$/i.test(name));
-if (candidates.length === 0) {
-  console.log('[ui-font] assets/fonts 下没有 ttf/otf，跳过界面字体子集');
-  process.exit(0);
-}
-if (candidates.length > 1) {
-  console.warn(`[ui-font] assets/fonts 下有多个字体（${candidates.join(', ')}），取第一个：${candidates[0]}`);
-}
-
-/** 界面字符集：文案里的中日韩字与全角标点 + ASCII 可打印区。 */
-function uiCharset() {
-  const messages = readFileSync(join(root, 'src', 'messages', 'zh-CN.ts'), 'utf8');
-  const charset = new Set();
-  for (const char of messages) {
-    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\u2010-\u203a]/.test(char)) charset.add(char);
-  }
-  for (let code = 0x20; code <= 0x7e; code++) charset.add(String.fromCharCode(code));
-  return charset;
-}
-
+const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
 const subsetFont = require('subset-font');
 const fontkit = require('@pdf-lib/fontkit');
-
-const sourcePath = join(sourceDir, candidates[0]);
-const sourceBytes = readFileSync(sourcePath);
-const chars = [...uiCharset()].join('');
-const bytes = await subsetFont(sourceBytes, chars, { targetFormat: 'sfnt' });
-if (!bytes || bytes.length === 0) throw new Error('[ui-font] 子集编码结果为空');
-
-// 产物自检：至少能被 fontkit 解析（完整浏览器兼容性由 E2E Firefox 门禁把关）。
-const probe = fontkit.create(Buffer.from(bytes));
-if (probe.numGlyphs < 1) throw new Error('[ui-font] 自检失败：产物无法被 fontkit 解析');
-
-writeFileSync(target, bytes);
-console.log(
-  `[ui-font] ${candidates[0]} → ${chars.length} 字形，${(bytes.length / 1024).toFixed(0)} KB`
-  + `（源 ${(sourceBytes.length / 1024 / 1024).toFixed(2)} MB）`,
-);
+const sha = (data) => createHash('sha256').update(data).digest('hex');
+const output = join(root, 'public/fonts/ui');
+const staging = mkdtempSync(join(tmpdir(), 'doupu-renamed-fonts-'));
+const pythonIndex = process.argv.indexOf('--python');
+const python = pythonIndex < 0 ? 'python3' : process.argv[pythonIndex + 1];
+const sources = [
+  { file: 'NotoSansSC-VF.ttf', sha256: 'd68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964', name: 'DouPu Text', stem: 'text', weight: '100 900', license: 'NotoSans-LICENSE.txt' },
+  { file: 'ChillRoundF.ttf', sha256: '7dae804b344f7bc1a1c8426b9515e9b54d7baac3e123263d0bae94d0a305a732', name: 'DouPu Round', stem: 'round', weight: '400', license: 'ChillRound-LICENSE.txt' },
+];
+function sourceText(directory) {
+  return readdirSync(directory, { withFileTypes: true }).map((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? sourceText(path) : /\.(ts|tsx)$/.test(entry.name) && !/\.test\./.test(entry.name) ? readFileSync(path, 'utf8') : '';
+  }).join('\n');
+}
+const ui = new Set([...sourceText(join(root, 'src'))].map((char) => char.codePointAt(0)));
+for (let code = 32; code <= 255; code++) ui.add(code);
+const ranges = (codes) => {
+  const result = [];
+  for (let i = 0; i < codes.length; i++) {
+    const start = codes[i];
+    let end = start;
+    while (codes[i + 1] === end + 1) end = codes[++i];
+    result.push(`U+${start.toString(16)}${end === start ? '' : `-${end.toString(16)}`}`);
+  }
+  return result.join(',');
+};
+mkdirSync(output, { recursive: true });
+const files = [];
+const css = ['/* Generated offline by scripts/build-ui-font-subset.mjs. OFL derivatives; see manifest.json. */'];
+for (const source of sources) {
+  const input = join(root, 'assets/ui-fonts', source.file);
+  if (sha(readFileSync(input)) !== source.sha256) throw new Error(`Unrecognized font source: ${source.file}`);
+  const renamed = join(staging, source.file);
+  const result = spawnSync(python, [join(root, 'scripts/rename-ui-font.py'), input, renamed, source.name], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || 'Font rename failed');
+  const bytes = readFileSync(renamed);
+  const all = [...new Set(fontkit.create(bytes).characterSet)].filter((code) => code >= 32 && code <= 0x10ffff).sort((a, b) => a - b);
+  const displayCopy = new Set([...'把喜欢，一颗颗拼出来。下一张，想拼什么？'].map((char) => char.codePointAt(0)));
+  const core = all.filter((code) => source.stem === 'text' ? ui.has(code) : code < 128 || displayCopy.has(code));
+  const extra = all.filter((code) => !ui.has(code));
+  const chunks = [{ key: 'core', codes: core }];
+  // Public titles/comments are not limited to application copy. Disjoint chunks
+  // download only when their characters occur in visible content.
+  if (source.stem === 'text') for (let i = 0; i < extra.length; i += 512) chunks.push({ key: `ext-${i / 512}`, codes: extra.slice(i, i + 512) });
+  for (const { key, codes } of chunks) {
+    const buffer = await subsetFont(bytes, String.fromCodePoint(...codes), {
+      targetFormat: 'woff2', preserveNameIds: [0, 7, 8, 9, 11, 13, 14, 16, 17],
+    });
+    const filename = `${source.stem}-${key}.woff2`;
+    const unicodeRange = ranges(codes);
+    writeFileSync(join(output, filename), buffer);
+    files.push({ file: filename, family: source.name, weight: source.weight, bytes: buffer.length, sha256: sha(buffer), unicodeRange });
+    css.push(`@font-face{font-family:"${source.name}";font-style:normal;font-weight:${source.weight};font-display:swap;src:url("/fonts/ui/${filename}?v=${sha(buffer).slice(0, 16)}") format("woff2");unicode-range:${unicodeRange};}`);
+  }
+  const license = readFileSync(join(root, 'assets/ui-fonts', source.license));
+  writeFileSync(join(output, source.license), license);
+  files.push({ file: source.license, bytes: license.length, sha256: sha(license) });
+}
+const cssBytes = Buffer.from(`${css.join('\n')}\n`);
+writeFileSync(join(output, 'fonts.css'), cssBytes);
+files.push({ file: 'fonts.css', bytes: cssBytes.length, sha256: sha(cssBytes) });
+writeFileSync(join(output, 'manifest.json'), JSON.stringify({ version: 1, sources, files }, null, 2) + '\n');
+console.log(`Generated ${files.length} assets; core ${files.filter((f) => /core/.test(f.file)).map((f) => `${f.file} ${(f.bytes / 1024).toFixed(0)} KiB`).join(', ')}. Staging: ${staging}`);
