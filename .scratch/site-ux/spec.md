@@ -1,6 +1,7 @@
 # 豆谱整站 UI 与任务交互优化
 
 Status: accepted
+Completion: complete
 Baseline: 7a345e1
 Date: 2026-09-05
 
@@ -44,3 +45,10 @@ Date: 2026-09-05
 
 UI 验证 350/390/768/1280/1440 px；键盘焦点、触摸、实际可见视口/软键盘、安全区、底栏遮挡、reduced-motion、axe。核心任务记录实际点击数（说明是否包含文件选择器），逐页列出保留按钮为用户解决的问题。最后双轴审查并复验，交付无已知未解决发现；不作绝对无缺陷保证。
 
+## 完成记录 — 2026-09-05
+
+阶段 01–08 全部完成。最终产品源代码为 `44f973d`，之后仅追加验收文档和截图。完整证据见 [verification.md](verification.md) 的 08O；逐页操作与实际点击数见 [task-controls.md](task-controls.md)，独立 Standards/Spec 审查和所有发现的闭环见 [review-followups.md](review-followups.md)。
+
+最终 lint/typecheck、185 文件 1460 项单元/组件/PGlite 测试与覆盖率、连续五轮性能、真实 PostgreSQL 16 合约与迁移演练、Docker 生产构建及本地生产模式验证全部通过；三浏览器完整 E2E 连续三轮，每轮 218 项通过、22 项原设计跳过、0 失败。新增最大 50 项批次确认短视口、裁剪和发布入口焦点的失败回归已修复并纳入完整门禁。两轴未解决发现均为 0。
+
+本地原子提交，无 push/deploy/生产访问，docs/marketing/ 未读取、修改或提交。法律审核、生产备份/迁移部署及真机验证仍是明确的上线前独立事项，不包含在本次完成声明中。

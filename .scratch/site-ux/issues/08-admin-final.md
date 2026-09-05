@@ -1,7 +1,7 @@
 # 08 后台任务化与最终验收
 
 Status: ready-for-agent
-Completion: in-progress
+Completion: complete
 Type: task
 
 ## 范围
@@ -27,3 +27,6 @@ Type: task
 - 08F 普通投稿/我的投稿未知响应已修，29 项单元与三浏览器实际提交后丢响应恢复通过。
 - 待实施：最终全量门禁、稳定三浏览器和双轴复审。Completion 保持 in-progress，不以阶段验证冒充最终交付。
 - 08G 最终双轴发现全部修正，两轴未解决均 0；详见 review-followups。全量覆盖率 185 文件通过；后台/恢复新增三浏览器与首页五宽度通过。Completion 仍等待最终稳定 E2E、性能与本地生产运行门禁。
+- 最终闭环（44f973d）：上述待实施项全部完成，详细过程及失败记录保留在 verification 08H–08O。裁剪长任务、inert 前入口焦点记录、50 项批次清单动态视口滚动及 WebKit 发布入口焦点均经先失败回归修正，未放宽性能、权限或隐私验收。
+- 最终门禁：lint/typecheck、185 文件 1460 项与覆盖率、五轮性能、真实 PostgreSQL 16.15 合约和升级/回滚演练、最终 Docker 生产构建/原生 Argon2/镜像预检/本地生产模式 4 项全部通过。三浏览器连续三轮完整 E2E 各 218 passed、22 原设计 skipped、0 failed；五宽度、短视口及最大 50 项清单截图已目视。Standards/Spec 未解决均 0。
+- 仅本地分阶段提交，未 push/deploy/访问生产，未触及 docs/marketing/。任务临时服务已关闭；法律、真机和生产上线前事项仍保持独立边界。之前 Comments 的进行中表述为阶段历史，不是当前状态。
