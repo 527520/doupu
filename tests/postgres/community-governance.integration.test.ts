@@ -30,6 +30,8 @@ import { createSession } from '@/lib/auth/session';
 import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
 import { PUT as saveDesign } from '@/app/api/designs/[id]/route';
 import { measureJsonBytes } from '@/lib/sync/revision';
+import { POST as createSubmission } from '@/app/api/community/works/route';
+import { POST as submitRevision } from '@/app/api/community/revisions/[id]/submit/route';
 
 let sessionToken = '';
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (name: string) => name === SESSION_COOKIE_NAME ? { value: sessionToken } : undefined }) }));
@@ -105,6 +107,32 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL 16 community and governance concurrency', () => {
+  it('replays concurrent submission creation and review submission without duplicate works', async () => {
+    const actor = await createUser();
+    sessionToken = (await createSession(db, actor.userId)).token;
+    const designId = randomUUID();
+    await db.insert(designs).values({ id: designId, userId: actor.userId, name: '并发投稿来源', payloadBytes: 1, project: {
+      format: 'doupu-project', version: 3, name: '并发投稿来源', engineVersion: snapshot.engineVersion,
+      boardProfile: snapshot.boardProfile, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      paletteSelection: snapshot.paletteSelection, params: snapshot.params, pattern,
+    } });
+    const request = (body: unknown) => new Request('http://localhost:3000/api/community/works', {
+      method: 'POST', headers: { origin: 'http://localhost:3000', 'content-type': 'application/json', 'idempotency-key': 'concurrent-submission' }, body: JSON.stringify(body),
+    });
+    const created = await Promise.all(Array.from({ length: 4 }, async () => {
+      const result = await createSubmission(request({ designId, expectedDesignRevision: 1, title: '并发投稿', licenseVersion: COMMUNITY_LICENSE_VERSION }));
+      expect(result.status).toBe(201); return result.json();
+    }));
+    for (const result of created) expect(result).toEqual(created[0]);
+    expect(await db.select().from(communityWorks).where(eq(communityWorks.authorUserId, actor.userId))).toHaveLength(1);
+    const submitted = await Promise.all(Array.from({ length: 4 }, async () => {
+      const result = await submitRevision(request({ expectedVersion: 1 }), { params: Promise.resolve({ id: created[0].revisionId }) });
+      expect(result.status).toBe(200); return result.json();
+    }));
+    for (const result of submitted) expect(result).toEqual(submitted[0]);
+    expect(submitted[0]).toMatchObject({ status: 'pending_review', version: 2 });
+  });
+
   it('orders official publication and removal as work before revision without a deadlock', async () => {
     const publisher = await createUser('admin');
     const moderator = await createUser('admin');

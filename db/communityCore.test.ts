@@ -60,6 +60,14 @@ describe('community work and frozen revision state machine', () => {
     tagId = tag.id;
   });
 
+  it('rejects an outdated source preview without freezing a different cloud revision', async () => {
+    await expect(createCommunityWork(db, {
+      actor: user, designId, title: '已预览的作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
+      expectedDesignRevision: 99,
+    })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
+    expect(await db.select().from(communityWorks)).toHaveLength(0);
+  });
+
   it('keeps the approved revision public while a replacement awaits review', async () => {
     const created = await createCommunityWork(db, {
       actor: user, designId, title: '红色小猫', licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: [tagId],

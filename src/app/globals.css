@@ -472,6 +472,21 @@ body {
 .community-mine-revisions canvas { width: 5rem; height: 4rem; }
 .community-mine-revisions p { margin-top: .2rem; color: var(--color-ink-soft); font-size: .75rem; }
 .community-mine-list footer { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .8rem; }
+.submission-preview, .community-mine-current { display: grid; grid-template-columns: minmax(100px, 180px) minmax(0, 1fr); gap: 1rem; align-items: center; }
+.submission-preview canvas, .community-mine-current canvas { width: 100%; height: auto; max-height: 180px; object-fit: contain; }
+.submission-preview p, .community-mine-current p { color: var(--color-ink-soft); font-size: .875rem; line-height: 1.7; margin-top: .35rem; overflow-wrap: anywhere; }
+.community-mine-current { margin-block: 1rem; }
+.community-mine-list > li > header { gap: .75rem; }
+.community-mine-list > li > header h2 { min-width: 0; overflow-wrap: anywhere; }
+.community-mine-list > li > header > span { flex-shrink: 0; }
+.community-mine-actions { display: grid; gap: .75rem; }
+.community-mine-history { margin-top: 1rem; border-top: 1px solid rgb(48 41 56 / 12%); padding-top: .5rem; }
+.community-mine-history summary { cursor: pointer; min-height: 44px; align-content: center; color: var(--color-ink-soft); font-size: .875rem; }
+.community-submit-form .input-field { font-size: 1rem; }
+@media (max-width: 500px) {
+  .submission-preview, .community-mine-current { grid-template-columns: 100px minmax(0, 1fr); gap: .75rem; }
+  .community-mine-actions .community-form-actions { justify-content: flex-start; }
+}
 .prose-policy { display: flex; flex-direction: column; gap: .65rem; padding-block: 1.5rem; line-height: 1.75; }
 .prose-policy h2 { margin-top: 1rem; font-family: "Songti SC", "STSong", serif; font-size: 1.35rem; }
 .prose-policy p { color: var(--color-ink-soft); }

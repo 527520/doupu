@@ -31,6 +31,7 @@ test('已验证用户引用独立副本并发布评论', async ({ page }, testIn
   await login(page, 'e2e-user@example.com');
   await page.goto('/community');
   await page.locator('.community-card a').first().click();
+  await expect(page).toHaveURL(/\/community\/[0-9a-f-]{36}/);
   const originalWorkUrl = page.url();
   await page.getByRole('button', { name: '用这张制作' }).click();
   await expect(page).toHaveURL(/\/app\?id=.+&mode=edit/);
@@ -40,6 +41,32 @@ test('已验证用户引用独立副本并发布评论', async ({ page }, testIn
   await page.getByLabel('发表评论').fill(`E2E ${testInfo.project.name} 普通评论`);
   await page.getByRole('button', { name: '发布评论' }).click();
   await expect(page.getByText(/评论已发布|审核通过后公开/)).toBeVisible();
+});
+
+test('投稿从可信云端预览确认，失败保留草稿并可撤回重提', async ({ page }, testInfo) => {
+  await login(page, 'e2e-user@example.com', '/community/submit');
+  await page.getByLabel('选择云端设计').selectOption({ label: 'E2E 私人设计' });
+  await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
+  const title = `E2E ${testInfo.project.name} 投稿恢复`;
+  await page.getByLabel('公开作品标题').fill(title);
+  await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
+  await page.getByRole('checkbox', { name: /我确认拥有发布权/ }).check();
+  let failures = 1;
+  await page.route('**/api/community/revisions/*/submit', async (route) => {
+    if (failures-- > 0) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: '模拟提交故障' } }) });
+    else await route.continue();
+  });
+  await page.getByRole('button', { name: '冻结快照并提交审核' }).click();
+  await expect(page.locator('.community-submit-form').getByRole('alert')).toContainText('草稿已保留');
+  await page.getByRole('button', { name: '重试提交审核' }).click();
+  await expect(page).toHaveURL(/\/community\/mine$/);
+  const item = page.locator('.community-mine-list > li').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+  await expect(item).toHaveCount(1);
+  await item.getByRole('button', { name: '撤回本次审核' }).click();
+  await page.getByRole('button', { name: '确认撤回' }).click();
+  await item.getByRole('link', { name: '修改并重新投稿' }).click();
+  await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
+  await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
 });
 
 test('评论删除独立于编辑窗口，待审评论只对本人显示', async ({ page }, testInfo) => {

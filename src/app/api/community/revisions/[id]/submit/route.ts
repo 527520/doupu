@@ -4,6 +4,8 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { submitCommunityRevision } from '@/lib/community/service';
+import { executeIdempotently } from '@/lib/idempotency';
+import type { AnyDatabase } from '@/../db/client';
 
 async function post(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
@@ -13,8 +15,16 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   const body = await readJson(request, 4 * 1024);
   if (!body.ok) return body.response;
   const { expectedVersion } = z.object({ expectedVersion: z.number().int().positive() }).strict().parse(body.data);
-  const revision = await submitCommunityRevision(getDb(), { actor, revisionId, expectedVersion });
-  return okJson({ revisionId: revision.id, status: revision.status, version: revision.version });
+  const submit = async (db: AnyDatabase) => {
+    const revision = await submitCommunityRevision(db, { actor, revisionId, expectedVersion });
+    return { revisionId: revision.id, status: revision.status, version: revision.version };
+  };
+  const key = request.headers.get('idempotency-key');
+  const result = key === null ? await submit(getDb()) : (await executeIdempotently(getDb(), {
+    actorUserId: actor.userId, scope: `community:submit:${revisionId}`, key,
+    request: { expectedVersion }, capability: 'community:interact',
+  }, submit)).value;
+  return okJson(result);
 }
 
 export const POST = withApiErrors(post);

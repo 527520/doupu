@@ -36,6 +36,7 @@ async function lockRevisionWork(tx: AnyDatabase, revisionId: string) {
 interface CreateRevisionInput {
   actor: Actor;
   designId: string;
+  expectedDesignRevision?: number;
   title: string;
   licenseVersion: string;
   tagIds?: string[];
@@ -78,12 +79,15 @@ async function revisionPayload(tx: AnyDatabase, input: CreateRevisionInput) {
   if (input.licenseVersion !== COMMUNITY_LICENSE_VERSION) {
     throw new AppError('VALIDATION', '请确认当前版本的豆社有限平台许可', 'licenseVersion');
   }
-  const [design] = await tx.select({ project: designs.project }).from(designs).where(and(
+  const [design] = await tx.select({ project: designs.project, revision: designs.revision }).from(designs).where(and(
     eq(designs.id, input.designId),
     eq(designs.userId, input.actor.userId),
     sql`${designs.deletedAt} is null`,
   ));
   if (!design) throw new AppError('NOT_FOUND', '私人设计不存在');
+  if (input.expectedDesignRevision !== undefined && input.expectedDesignRevision !== design.revision) {
+    throw new AppError('STATE_CONFLICT', '云端图纸已更新，请重新载入预览并确认许可');
+  }
   const snapshot = communitySnapshotFromProject(design.project);
   if (!snapshot) throw new AppError('VALIDATION', '设计图纸不符合豆社发布协议');
   const identity = await authorIdentity(tx, input.actor, input.now ?? new Date());

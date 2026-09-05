@@ -269,6 +269,8 @@ export async function listOwnCommunityWorks(db: AnyDatabase, userId: string) {
     workId: communityRevisions.workId,
     revisionNumber: communityRevisions.revisionNumber,
     title: communityRevisions.title,
+    sourceDesignId: communityRevisions.sourceDesignId,
+    frozenDisplayName: communityRevisions.frozenDisplayName,
     status: communityRevisions.status,
     version: communityRevisions.version,
     preview: communityRevisions.preview,
