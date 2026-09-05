@@ -8,6 +8,8 @@ import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { track } from '@/lib/analytics/client';
+import { authPageHref } from '@/lib/auth/returnTo';
+import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 type State = 'loading' | 'success' | 'error';
 
@@ -19,6 +21,8 @@ function tokenFromLocation(): string | null {
 
 function VerifyInner() {
   const t = zhCN.authPages;
+  const returnTo = useAuthReturnTo();
+  const resendInFlight = useRef(false);
   const token = tokenFromLocation();
   // Keep the server and first client render identical; the URL is unavailable
   // during SSR and is resolved by the effect after hydration.
@@ -70,7 +74,8 @@ function VerifyInner() {
 
   const resend = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (cooldown > 0 || resendPending) return;
+    if (cooldown > 0 || resendInFlight.current) return;
+    resendInFlight.current = true;
     setResendPending(true);
     try {
       await fetch('/api/auth/resend-verification', {
@@ -85,6 +90,7 @@ function VerifyInner() {
       setResendDone(true);
       setCooldown(60);
     } finally {
+      resendInFlight.current = false;
       setResendPending(false);
     }
   };
@@ -101,7 +107,7 @@ function VerifyInner() {
       {state === 'success' && (
         <>
           <Notice kind="success" className="mb-4">{t.verifySuccess}</Notice>
-          <Link href="/login" className="link-soft block text-center">
+          <Link href={authPageHref('login', returnTo)} className="link-soft block text-center">
             {t.goLogin}
           </Link>
         </>

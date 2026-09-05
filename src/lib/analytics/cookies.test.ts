@@ -5,6 +5,8 @@ import {
   clearAnalyticsCookie,
   serializeConsentCookie,
   serializeVisitorCookie,
+  serializePendingWithdrawalCookie,
+  readAnalyticsConsent,
 } from './cookies';
 
 describe('analytics cookies', () => {
@@ -21,5 +23,11 @@ describe('analytics cookies', () => {
     expect(visitor).toContain('HttpOnly');
     expect(visitor).toContain('Secure');
     expect(clearAnalyticsCookie(ANALYTICS_VISITOR_COOKIE)).toContain('Max-Age=0');
+  });
+
+  it('persists a withdrawal intent without accepting it as consent', () => {
+    const pending = serializePendingWithdrawalCookie();
+    expect(pending).toContain('withdrawn; Path=/; Secure; SameSite=Lax; Max-Age=15552000');
+    expect(readAnalyticsConsent(pending)).toBeNull();
   });
 });

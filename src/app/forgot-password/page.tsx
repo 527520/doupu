@@ -1,16 +1,20 @@
 'use client';
 
 /** 找回密码页（spec §F9 防枚举）：恒成功提示 + 60s 冷却。 */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
 import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
+import { authPageHref } from '@/lib/auth/returnTo';
+import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 export default function ForgotPasswordPage() {
   const t = zhCN.authPages;
+  const returnTo = useAuthReturnTo();
+  const requestPending = useRef(false);
   const [email, setEmail] = useState('');
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
@@ -31,7 +35,8 @@ export default function ForgotPasswordPage() {
       setError(t.emailInvalid);
       return;
     }
-    if (cooldown > 0 || pending) return;
+    if (cooldown > 0 || requestPending.current) return;
+    requestPending.current = true;
     setPending(true);
     try {
       // 恒成功语义（防枚举，spec E28/E33）：无论邮箱是否存在均返回 204
@@ -45,6 +50,7 @@ export default function ForgotPasswordPage() {
     } catch {
       // 网络失败同样按恒成功提示，避免泄露是否存在账号
     } finally {
+      requestPending.current = false;
       setPending(false);
     }
     setDone(true);
@@ -75,6 +81,7 @@ export default function ForgotPasswordPage() {
           <input
             type="email"
             autoComplete="email"
+            disabled={pending}
             className={field}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -89,7 +96,7 @@ export default function ForgotPasswordPage() {
           {cooldown > 0 ? t.cooldown(cooldown) : t.submit}
         </button>
         <div className="text-center text-sm">
-          <Link href="/login" className="link-soft">
+          <Link href={authPageHref('login', returnTo)} className="link-soft">
             {t.hasAccount}
           </Link>
         </div>

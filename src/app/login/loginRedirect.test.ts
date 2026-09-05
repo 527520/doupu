@@ -12,6 +12,11 @@ afterEach(() => {
 });
 
 describe('loginRedirectTarget（?next= 回跳与开放重定向防护）', () => {
+  it.each(['/\nevil.test', '/%2f%2fevil.test', '/%5cevil.test', '/' + 'a'.repeat(2200)])('拒绝控制字符、编码分隔符或过长路径 %s', (value) => {
+    setSearch(`/login?next=${encodeURIComponent(value)}`);
+    expect(loginRedirectTarget()).toBe('/designs');
+  });
+
   it('无 next 参数：默认跳我的设计', () => {
     setSearch('/login');
     expect(loginRedirectTarget()).toBe('/designs');

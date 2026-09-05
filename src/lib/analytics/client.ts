@@ -1,6 +1,7 @@
 'use client';
 
 import { ANALYTICS_CONSENT_COOKIE } from './cookies';
+import { normalizePath, normalizeReferrerDomain } from './normalize';
 import {
   analyticsClientEventSchema,
   type AnalyticsClientEvent,
@@ -40,6 +41,7 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
   const queue: QueuedEvent[] = [];
   let timer: number | null = null;
   let sending: Promise<void> | null = null;
+  let generation = 0;
 
   const cancelTimer = (): void => {
     if (timer !== null) options.cancelSchedule(timer);
@@ -62,6 +64,7 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
     const items = queue.splice(0, 10);
     if (items.length === 0) return;
     cancelTimer();
+    const sentGeneration = generation;
     sending = (async () => {
       let accepted = false;
       try {
@@ -69,7 +72,7 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
       } catch {
         accepted = false;
       }
-      if (!accepted && options.isConsented()) {
+      if (!accepted && sentGeneration === generation && options.isConsented()) {
         const retryable = items
           .filter((item) => item.attempts < 2)
           .map((item) => ({ ...item, attempts: item.attempts + 1 }));
@@ -87,12 +90,15 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
       const parsed = analyticsClientEventSchema.safeParse(event);
       if (!parsed.success) return;
       const context = options.context();
+      const referrerDomain = normalizeReferrerDomain(context.referrer);
       queue.push({
         envelope: {
           ...parsed.data,
           eventId: options.randomId(),
           occurredAt: options.now().toISOString(),
-          ...context,
+          path: normalizePath(context.path),
+          ...(referrerDomain ? { referrer: `https://${referrerDomain}` } : {}),
+          ...(context.utm ? { utm: context.utm } : {}),
         },
         attempts: 0,
       });
@@ -113,6 +119,7 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
       }
     },
     clear() {
+      generation++;
       queue.length = 0;
       cancelTimer();
     },

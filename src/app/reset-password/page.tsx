@@ -1,13 +1,15 @@
 'use client';
 
 /** 重置密码页（spec §F9、边界 E32）：令牌一次性，成功后提示旧会话失效。 */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
 import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { passwordSchema } from '@/lib/schemas';
+import { authPageHref } from '@/lib/auth/returnTo';
+import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 /** 直接读 window.location.search（dev 下 useSearchParams 可能因路由器未就绪而挂起）。 */
 function tokenFromLocation(): string | null {
@@ -17,6 +19,8 @@ function tokenFromLocation(): string | null {
 
 function ResetInner() {
   const t = zhCN.authPages;
+  const returnTo = useAuthReturnTo();
+  const requestPending = useRef(false);
   const token = tokenFromLocation();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -26,6 +30,7 @@ function ResetInner() {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (requestPending.current) return;
     setError(null);
     if (!token) {
       setError(zhCN.auth.linkInvalid);
@@ -39,6 +44,7 @@ function ResetInner() {
       setError(t.passwordMismatch);
       return;
     }
+    requestPending.current = true;
     setPending(true);
     try {
       const res = await fetch('/api/auth/reset-password', {
@@ -55,6 +61,7 @@ function ResetInner() {
     } catch {
       setError(t.networkError);
     } finally {
+      requestPending.current = false;
       setPending(false);
     }
   };
@@ -65,7 +72,7 @@ function ResetInner() {
     return (
       <AuthShell title={t.resetTitle}>
         <Notice kind="success" className="mb-4">{t.resetSuccess}</Notice>
-        <Link href="/login" className="link-soft block text-center">
+        <Link href={authPageHref('login', returnTo)} className="link-soft block text-center">
           {t.goLogin}
         </Link>
       </AuthShell>
@@ -81,6 +88,7 @@ function ResetInner() {
           <input
             type="password"
             autoComplete="new-password"
+            disabled={pending}
             className={field}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -92,6 +100,7 @@ function ResetInner() {
           <input
             type="password"
             autoComplete="new-password"
+            disabled={pending}
             className={field}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}

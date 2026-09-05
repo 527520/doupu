@@ -7,7 +7,7 @@ describe('analytics client queue', () => {
     const send = vi.fn(async (_events: unknown[]) => true);
     const client = createAnalyticsClient({
       isConsented: () => consented,
-      context: () => ({ path: '/app?secret=yes', referrer: '' }),
+      context: () => ({ path: '/app?secret=yes', referrer: 'https://ref.example/private?token=hidden' }),
       send,
       schedule: () => 1,
       cancelSchedule: () => undefined,
@@ -26,5 +26,23 @@ describe('analytics client queue', () => {
     await client.flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toHaveLength(10);
+    expect(JSON.stringify(send.mock.calls[0][0])).not.toMatch(/secret|private|hidden/u);
+    expect(send.mock.calls[0][0][0]).toMatchObject({ path: '/app', referrer: 'https://ref.example' });
+  });
+
+  it('does not retry a withdrawn batch after the user gives fresh consent', async () => {
+    let resolve!: (accepted: boolean) => void;
+    const send = vi.fn(() => new Promise<boolean>((done) => { resolve = done; }));
+    const client = createAnalyticsClient({
+      isConsented: () => true, context: () => ({}), send, schedule: () => 1,
+      cancelSchedule: () => undefined, now: () => new Date(), randomId: () => crypto.randomUUID(),
+    });
+    client.track({ name: 'design_saved', properties: { source: 'local' } });
+    const pending = client.flush();
+    client.clear();
+    resolve(false);
+    await pending;
+    await client.flush();
+    expect(send).toHaveBeenCalledOnce();
   });
 });

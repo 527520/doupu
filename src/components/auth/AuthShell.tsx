@@ -17,12 +17,11 @@ export default function AuthShell({ title, children }: { title: string; children
           <p>{t.storyBody}</p>
           <div><span><Icon name="lock" size={16} />{t.localProcessing}</span><span><Icon name="cloud" size={16} />{t.cloudProjects}</span></div>
         </div>
-        <div className="auth-story-swoop" aria-hidden="true"><span /><span /><span /></div>
       </section>
       <section className="auth-form-column">
         <div className="auth-mobile-brand"><Brand compact /></div>
         <div className="auth-form-card">
-          <header><span className="auth-form-icon"><Icon name="user" /></span><h1>{title}</h1><p>{t.formHint}</p></header>
+          <header><h1>{title}</h1><p>{t.formHint}</p></header>
           {children}
         </div>
         <Link href="/" className="auth-back-link"><Icon name="arrow" size={15} />{zhCN.nav.home}</Link>

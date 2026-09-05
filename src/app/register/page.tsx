@@ -1,7 +1,7 @@
 'use client';
 
 /** 注册页（spec §F9）：客户端 schema 校验 + 服务端字段级错误展示。 */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
 import Notice from '@/components/ui/Notice';
@@ -11,9 +11,13 @@ import { registerSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
 import { LIMITS } from '@/lib/appInfo';
 import { track } from '@/lib/analytics/client';
+import { authPageHref } from '@/lib/auth/returnTo';
+import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 export default function RegisterPage() {
   const t = zhCN.authPages;
+  const returnTo = useAuthReturnTo();
+  const requestPending = useRef(false);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -25,6 +29,7 @@ export default function RegisterPage() {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (requestPending.current) return;
     setError(null);
     const parsed = registerSchema.safeParse({ email, password, username });
     if (!parsed.success) {
@@ -35,6 +40,7 @@ export default function RegisterPage() {
       setError(t.passwordMismatch);
       return;
     }
+    requestPending.current = true;
     setPending(true);
     try {
       const res = await fetch('/api/auth/register', {
@@ -61,6 +67,7 @@ export default function RegisterPage() {
     } catch {
       setError(t.networkError);
     } finally {
+      requestPending.current = false;
       setPending(false);
     }
   };
@@ -79,7 +86,7 @@ export default function RegisterPage() {
             </a>
           </div>
         )}
-        <Link href="/login" className="link-soft block text-center">
+        <Link href={authPageHref('login', returnTo)} className="link-soft block text-center">
           {t.goLogin}
         </Link>
       </AuthShell>
@@ -95,6 +102,7 @@ export default function RegisterPage() {
           <input
             type="text"
             autoComplete="nickname"
+            disabled={pending}
             className={field}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -106,6 +114,7 @@ export default function RegisterPage() {
           <input
             type="email"
             autoComplete="email"
+            disabled={pending}
             className={field}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -117,6 +126,7 @@ export default function RegisterPage() {
           <input
             type="password"
             autoComplete="new-password"
+            disabled={pending}
             className={field}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -128,6 +138,7 @@ export default function RegisterPage() {
           <input
             type="password"
             autoComplete="new-password"
+            disabled={pending}
             className={field}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -138,7 +149,7 @@ export default function RegisterPage() {
           {pending ? '…' : t.registerSubmit}
         </button>
         <div className="text-center text-sm">
-          <Link href="/login" className="link-soft">
+          <Link href={authPageHref('login', returnTo)} className="link-soft">
             {t.hasAccount}
           </Link>
         </div>

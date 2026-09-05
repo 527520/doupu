@@ -527,7 +527,7 @@ export const zhCN = {
   authPages: {
     storyKicker: '属于你的手作工作室',
     storyTitle: '灵感留在手边，图纸随时接着做。',
-    storyBody: '不登录也能在本机完成创作。登录只负责同步图纸与色板，原始照片不会离开浏览器。',
+    storyBody: '不登录也能在本机完成创作。登录后可同步图纸与色板、参与豆社，原始照片仍留在浏览器中。',
     localProcessing: '本机处理原图',
     cloudProjects: '按需同步项目',
     formHint: '安全地回到你的创作空间。',
@@ -808,7 +808,7 @@ export const zhCN = {
   account: {
     menuLabel: '账号',
     profileTitle: '展示资料',
-    profileHint: '这里的资料只用于界面展示，不会改变登录方式。',
+    profileHint: '用户名用于界面和新投稿署名，不影响邮箱登录；既有作品保留投稿时的署名。',
     securityTitle: '登录与安全',
     securityHint: '修改密码，或结束当前设备上的登录状态。',
     dangerTitle: '危险操作',
@@ -820,7 +820,7 @@ export const zhCN = {
     localModeHint: '设计保存在浏览器中，换设备前请导出项目文件备份。',
     cloudModeHint: '设计、自定义色板与展示名会同步；原始照片始终不会上传。',
     privacyTitle: '隐私边界',
-    privacyBody: '图片解码、裁剪与图纸生成全部在当前浏览器完成。服务器只接收账号资料及你主动保存的图纸与自定义色板。',
+    privacyBody: '图片解码、裁剪与生成在当前浏览器完成。图纸、色板与豆社互动按你的操作保存；匿名统计仅在明确同意后采集。',
     originalPrivate: '原图留在本机',
     projectSync: '同步资料与创作数据',
     verified: '已验证',
@@ -842,7 +842,7 @@ export const zhCN = {
     changeFailed: '修改失败，请重试。',
     deleteAccount: '注销账号',
     deleteAccountTitle: '注销账号',
-    deleteAccountHint: '注销将删除你的账号、全部云端设计与自定义色板，且不可恢复。请输入密码确认：',
+    deleteAccountHint: '注销不可恢复：删除登录凭据、私人设计、色板、分享与点赞，评论转为已删除；公开作品和引用事实保留，署名改为“已注销用户”，必要审计及举报去身份化保留。本机文件不会自动删除。请输入密码确认：',
     passwordLabel: '密码',
     deleteConfirm: '确认注销',
     deleteSuccess: '账号已注销。',
@@ -1158,7 +1158,7 @@ export const zhCN = {
     feedbackLink: 'GitHub Issues 反馈',
     privacyTitle: '隐私政策',
     privacyBody:
-      '我们只收集你主动提供的信息：注册邮箱、可选展示名，以及你主动保存的设计图纸与自定义色板。上传的照片仅在本地浏览器中处理，不会上传到服务器；云端不保存原图。你可以随时导出项目文件备份，或注销账号以永久删除全部云端数据。',
+      '原图只在浏览器中处理，不上传服务器。账号信息、主动同步的图纸与色板、投稿及互动按对应功能保存；匿名分析需明确同意，可随时撤回。注销会删除凭据和私人数据，保留匿名化的公开作品、引用事实及必要治理记录，不会删除设备上的本地文件。',
     // 备案（D31）：海外服务器无需 ICP；迁回国内时在此加回 icp 字段并在页脚渲染
   },
 } as const;

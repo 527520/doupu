@@ -76,7 +76,7 @@ export default async function SharedDesignPage({ params }: { params: Promise<{ t
 
         <footer className="share-studio-cta">
           <div><Icon name="spark" size={20} /><p>{t.cta}</p></div>
-          <Link href="/app" className="btn-primary">
+          <Link href="/app?new=1" className="btn-primary">
             {t.makeYourOwn}<Icon name="arrow" size={15} />
           </Link>
         </footer>

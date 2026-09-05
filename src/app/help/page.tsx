@@ -26,7 +26,7 @@ export default function HelpPage() {
         </div>
         <section className="faq-section">
           <span className="studio-eyebrow">{t.faqKicker}</span><h2>{t.faqTitle}</h2>
-          <dl>{t.faqs.map((faq) => <div key={faq.q}><dt>{faq.q}</dt><dd>{faq.a}</dd></div>)}</dl>
+          <div className="faq-list">{t.faqs.map((faq) => <details key={faq.q}><summary>{faq.q}</summary><p>{faq.a}</p></details>)}</div>
         </section>
       </div>
     </main>

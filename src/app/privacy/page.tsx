@@ -18,13 +18,13 @@ export default function PrivacyPage() {
             <p>{t.heroBody}</p>
           </div>
         </section>
+        <AnalyticsConsentSettings />
         <div className="info-card-grid">
           <section className="info-card"><h2>{t.collectedTitle}</h2><p>{t.collectedBody}</p></section>
           <section className="info-card"><h2>{t.excludedTitle}</h2><p>{t.excludedBody}</p></section>
           <section className="info-card"><h2>{t.retentionTitle}</h2><p>{t.retentionBody}</p></section>
           <section className="info-card"><h2>{t.withdrawalTitle}</h2><p>{t.withdrawalBody}</p></section>
         </div>
-        <AnalyticsConsentSettings />
       </div>
     </main>
   );

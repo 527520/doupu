@@ -1,6 +1,6 @@
 # 07 账号、认证与公共页面
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 ## 范围
@@ -15,5 +15,4 @@ Type: task
 
 ## Comments
 
-- 待实施；行为测试先行，阶段完成后记录验证及提交。
-
+- 已完成；66 项单元/PGlite、静态检查及 60 场景五宽本地 Chromium 通过。三浏览器与整站最终门禁在阶段 08。

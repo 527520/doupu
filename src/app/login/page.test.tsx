@@ -22,6 +22,7 @@ describe('login 页', () => {
   beforeEach(() => {
     fetchMock.mockReset();
     push.mockReset();
+    window.history.replaceState(null, '', '/login');
   });
 
   it('渲染登录表单', () => {
@@ -29,6 +30,29 @@ describe('login 页', () => {
     expect(screen.getByRole('heading', { name: zhCN.authPages.loginTitle })).toBeTruthy();
     expect(screen.getByLabelText('邮箱')).toBeTruthy();
     expect(screen.getByLabelText('密码')).toBeTruthy();
+  });
+
+  it('转注册和找回密码保留安全的原操作路径，不自动执行原操作', async () => {
+    const next = '/community/submit?designId=00000000-0000-4000-a000-000000000001';
+    window.history.replaceState(null, '', `/login?next=${encodeURIComponent(next)}`);
+    render(<LoginPage />);
+    const register = screen.getByRole('link', { name: zhCN.authPages.noAccount });
+    await waitFor(() => expect(new URL(register.getAttribute('href')!, 'http://local').searchParams.get('next')).toBe(next));
+    const forgot = screen.getByRole('link', { name: zhCN.authPages.forgotTitle });
+    expect(new URL(forgot.getAttribute('href')!, 'http://local').searchParams.get('next')).toBe(next);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('登录请求中禁止重复提交，失败保留已输入的邮箱', async () => {
+    let reject!: (error: Error) => void;
+    fetchMock.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
+    render(<LoginPage />); fill('a@b.com', '12345678');
+    const form = screen.getByRole('button', { name: '登录' }).closest('form')!;
+    fireEvent.submit(form); fireEvent.submit(form);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    reject(new Error('offline'));
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('邮箱')).toHaveValue('a@b.com');
   });
 
   it('非法邮箱本地拦截，不发起请求', async () => {

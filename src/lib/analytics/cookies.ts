@@ -11,6 +11,12 @@ export function serializeConsentCookie(value: AnalyticsConsent): string {
   return `${ANALYTICS_CONSENT_COOKIE}=${value}; ${BASE}; Max-Age=${ANALYTICS_COOKIE_MAX_AGE_SECONDS}`;
 }
 
+// A withdrawal intent is NOT valid server consent or confirmed server erasure.
+// Keep it across reloads so a failed deletion can be retried without collecting.
+export function serializePendingWithdrawalCookie(): string {
+  return `${ANALYTICS_CONSENT_COOKIE}=withdrawn; ${BASE}; Max-Age=${ANALYTICS_COOKIE_MAX_AGE_SECONDS}`;
+}
+
 export function serializeVisitorCookie(token: string): string {
   return `${ANALYTICS_VISITOR_COOKIE}=${token}; ${BASE}; HttpOnly; Max-Age=${ANALYTICS_COOKIE_MAX_AGE_SECONDS}`;
 }

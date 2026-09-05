@@ -1,7 +1,7 @@
 'use client';
 
 /** 登录页（spec §F9）：统一错误文案、pending 禁用、成功后跳转。 */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
@@ -10,10 +10,14 @@ import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
 import { loginRedirectTarget } from './loginRedirect';
 import { track } from '@/lib/analytics/client';
+import { authPageHref } from '@/lib/auth/returnTo';
+import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 export default function LoginPage() {
   const t = zhCN.authPages;
   const router = useRouter();
+  const next = useAuthReturnTo();
+  const requestPending = useRef(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +25,7 @@ export default function LoginPage() {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (requestPending.current) return;
     setError(null);
     if (!emailSchema.safeParse(email).success) {
       setError(t.emailInvalid);
@@ -30,6 +35,7 @@ export default function LoginPage() {
       setError(t.required);
       return;
     }
+    requestPending.current = true;
     setPending(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -54,6 +60,7 @@ export default function LoginPage() {
     } catch {
       setError(t.networkError);
     } finally {
+      requestPending.current = false;
       setPending(false);
     }
   };
@@ -69,6 +76,7 @@ export default function LoginPage() {
           <input
             type="email"
             autoComplete="email"
+            disabled={pending}
             className={field}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -80,6 +88,7 @@ export default function LoginPage() {
           <input
             type="password"
             autoComplete="current-password"
+            disabled={pending}
             className={field}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -90,10 +99,10 @@ export default function LoginPage() {
           {pending ? '…' : t.loginSubmit}
         </button>
         <div className="flex justify-between text-sm">
-          <Link href="/register" className="link-soft">
+          <Link href={authPageHref('register', next)} className="link-soft">
             {t.noAccount}
           </Link>
-          <Link href="/forgot-password" className="link-soft">
+          <Link href={authPageHref('forgot-password', next)} className="link-soft">
             {t.forgotTitle}
           </Link>
         </div>

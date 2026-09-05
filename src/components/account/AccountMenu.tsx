@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
-import { passwordSchema, usernameSchema } from '@/lib/schemas';
+import { emailSchema, passwordSchema, usernameSchema } from '@/lib/schemas';
 import Modal from '@/components/ui/Modal';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 import { LIMITS } from '@/lib/appInfo';
@@ -20,10 +20,12 @@ export function ChangePasswordDialog({
   api,
   onClose,
   onSuccess,
+  onBusyChange,
 }: {
   api: DoupuApi;
   onClose: () => void;
   onSuccess: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const t = zhCN.account;
   const [current, setCurrent] = useState('');
@@ -31,9 +33,12 @@ export function ChangePasswordDialog({
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
 
   const submit = async (): Promise<void> => {
+    if (pending.current) return;
     setError(null);
+    if (!current) { setError(zhCN.authPages.required); return; }
     const parsed = passwordSchema.safeParse(next);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? t.genericError);
@@ -43,13 +48,14 @@ export function ChangePasswordDialog({
       setError(zhCN.authPages.passwordMismatch);
       return;
     }
-    setBusy(true);
+    pending.current = true; onBusyChange?.(true); setBusy(true);
     try {
       await api.changePassword(current, next);
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.changeFailed);
     } finally {
+      pending.current = false; onBusyChange?.(false);
       setBusy(false);
     }
   };
@@ -66,6 +72,8 @@ export function ChangePasswordDialog({
       <input
         type="password"
         aria-label={t.currentPassword}
+        autoComplete="current-password"
+        disabled={busy}
         value={current}
         onChange={(e) => setCurrent(e.target.value)}
         placeholder={t.currentPassword}
@@ -74,6 +82,8 @@ export function ChangePasswordDialog({
       <input
         type="password"
         aria-label={t.newPassword}
+        autoComplete="new-password"
+        disabled={busy}
         value={next}
         onChange={(e) => setNext(e.target.value)}
         placeholder={t.newPassword}
@@ -82,6 +92,8 @@ export function ChangePasswordDialog({
       <input
         type="password"
         aria-label={t.confirmPassword}
+        autoComplete="new-password"
+        disabled={busy}
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}
         placeholder={t.confirmPassword}
@@ -108,25 +120,30 @@ export function DeleteAccountDialog({
   api,
   onClose,
   onSuccess,
+  onBusyChange,
 }: {
   api: DoupuApi;
   onClose: () => void;
   onSuccess: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const t = zhCN.account;
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
 
   const submit = async (): Promise<void> => {
+    if (pending.current || !password) return;
     setError(null);
-    setBusy(true);
+    pending.current = true; onBusyChange?.(true); setBusy(true);
     try {
       await api.deleteAccount(password);
       onSuccess();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.genericError);
     } finally {
+      pending.current = false; onBusyChange?.(false);
       setBusy(false);
     }
   };
@@ -144,6 +161,8 @@ export function DeleteAccountDialog({
       <input
         type="password"
         aria-label={t.passwordLabel}
+        autoComplete="current-password"
+        disabled={busy}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t.passwordLabel}
@@ -158,7 +177,7 @@ export function DeleteAccountDialog({
         <button type="button" onClick={onClose} disabled={busy} className="btn-outline btn-sm">
           {zhCN.designs.cancel}
         </button>
-        <button type="submit" disabled={busy} className="rounded-full bg-danger px-3 py-1 text-sm text-white transition-colors hover:bg-danger disabled:bg-lilac-soft disabled:text-ink-soft/60">
+        <button type="submit" disabled={busy || !password} className="btn-danger-outline">
           {t.deleteConfirm}
         </button>
       </div>
@@ -178,6 +197,12 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   const [resendError, setResendError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const cooldownTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const operations = useRef({ profile: false, resend: false, logout: false });
+  const dialogBusy = useRef(false);
+  const [resendBusy, setResendBusy] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -194,7 +219,10 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
   };
 
   const resend = async (): Promise<void> => {
+    if (operations.current.resend || cooldown > 0) return;
     setResendError(null);
+    if (!emailSchema.safeParse(resendEmail).success) { setResendError(zhCN.authPages.emailInvalid); return; }
+    operations.current.resend = true; setResendBusy(true);
     try {
       await api.resendVerification(resendEmail);
       setResendSent(true);
@@ -207,26 +235,29 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       }, 1000);
     } catch (e) {
       setResendError(e instanceof Error ? e.message : t.genericError);
-    }
+    } finally { operations.current.resend = false; setResendBusy(false); }
   };
 
   const logout = async (): Promise<void> => {
+    if (operations.current.logout) return;
+    operations.current.logout = true; setLogoutBusy(true); setActionError(null);
     try {
       await api.logout();
+      track({ name: 'logout_succeeded', properties: {} });
+      onAuthChanged();
     } catch {
-      // 退出失败也刷新本地状态（幂等接口）
-    }
-    track({ name: 'logout_succeeded', properties: {} });
-    onAuthChanged();
+      setActionError('退出登录失败，请检查网络后重试。');
+    } finally { operations.current.logout = false; setLogoutBusy(false); }
   };
 
   const saveProfile = async (): Promise<void> => {
+    if (operations.current.profile) return;
     const parsed = usernameSchema.safeParse(username);
     if (!parsed.success) {
       setProfileMessage(parsed.error.issues[0]?.message ?? t.genericError);
       return;
     }
-    setProfileBusy(true);
+    operations.current.profile = true; setProfileBusy(true);
     setProfileMessage(null);
     try {
       await api.updateProfile(parsed.data);
@@ -236,6 +267,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     } catch (error) {
       setProfileMessage(error instanceof Error ? error.message : t.genericError);
     } finally {
+      operations.current.profile = false;
       setProfileBusy(false);
     }
   };
@@ -265,7 +297,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
         <section className="account-form-section">
           <div className="account-section-heading"><div><h2>{t.unverified}</h2><p>{t.unverifiedHint}</p></div></div>
           <input type="email" aria-label={t.resendEmailLabel} value={resendEmail} onChange={(e) => setResendEmail(e.target.value)} placeholder={t.resendEmailLabel} className="input-field" />
-          <button type="button" onClick={() => void resend()} disabled={cooldown > 0} className="btn-outline">
+          <button type="button" onClick={() => void resend()} disabled={cooldown > 0 || resendBusy} className="btn-outline">
             {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
           </button>
         </section>
@@ -279,7 +311,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             <div className="account-section-heading"><div><h2>{t.profileTitle}</h2><p>{t.profileHint}</p></div></div>
             <label htmlFor="account-username">{t.username}</label>
             <div className="account-field-row">
-              <input id="account-username" className="input-field" value={username} onChange={(event) => setUsername(event.target.value)} maxLength={LIMITS.usernameLength} placeholder={t.username} />
+              <input id="account-username" className="input-field" value={username} disabled={profileBusy} onChange={(event) => setUsername(event.target.value)} maxLength={LIMITS.usernameLength} placeholder={t.username} />
               <button type="button" onClick={() => void saveProfile()} disabled={profileBusy} className="btn-primary">{t.saveUsername}</button>
             </div>
             {profileMessage && <span role="status" className="text-xs text-ink-soft">{profileMessage}</span>}
@@ -288,7 +320,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
             <div className="account-section-heading"><div><h2>{t.securityTitle}</h2><p>{t.securityHint}</p></div></div>
             <div className="account-button-row">
               <button type="button" onClick={() => setShowPassword(true)} className="btn-outline">{t.changePassword}</button>
-              <button type="button" onClick={() => void logout()} className="btn-outline">{t.logout}</button>
+              <button type="button" onClick={() => void logout()} disabled={logoutBusy} className="btn-outline">{t.logout}</button>
             </div>
           </section>
           <section className="account-danger-section">
@@ -297,21 +329,25 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
           </section>
         </>
       )}
-      {me.state === 'unverified' && <button type="button" onClick={() => void logout()} className="btn-outline">{t.logout}</button>}
+      {me.state === 'unverified' && <button type="button" onClick={() => void logout()} disabled={logoutBusy} className="btn-outline">{t.logout}</button>}
+      {actionError && <p role="alert" className="notice notice-danger">{actionError}</p>}
+      {actionMessage && <p role="status" className="notice notice-success">{actionMessage}</p>}
 
       {showPassword && (
-        <Modal label={t.changePasswordTitle} onClose={() => setShowPassword(false)} panelClassName="max-w-sm">
+        <Modal label={t.changePasswordTitle} onClose={() => { if (!dialogBusy.current) setShowPassword(false); }} panelClassName="max-w-sm">
           <ChangePasswordDialog
             api={api}
             onClose={() => setShowPassword(false)}
-            onSuccess={() => setShowPassword(false)}
+            onBusyChange={(value) => { dialogBusy.current = value; }}
+            onSuccess={() => { setShowPassword(false); setActionMessage(t.changeSuccess); }}
           />
         </Modal>
       )}
       {showDelete && (
-        <Modal label={t.deleteAccountTitle} onClose={() => setShowDelete(false)} panelClassName="max-w-sm border-danger/40">
+        <Modal label={t.deleteAccountTitle} onClose={() => { if (!dialogBusy.current) setShowDelete(false); }} panelClassName="max-w-sm border-danger/40">
           <DeleteAccountDialog
             api={api}
+            onBusyChange={(value) => { dialogBusy.current = value; }}
             onClose={() => setShowDelete(false)}
             onSuccess={() => {
               setShowDelete(false);

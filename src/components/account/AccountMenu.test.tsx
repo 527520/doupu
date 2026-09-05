@@ -61,6 +61,36 @@ class FakeAuthApi implements DoupuApi {
 }
 
 describe('AccountMenu', () => {
+  it('退出失败明确提示，不触发退出成功或误切游客；可以重试', async () => {
+    const api = new FakeAuthApi();
+    const logout = vi.spyOn(api, 'logout').mockRejectedValueOnce(new Error('网络不可用'));
+    const changed = vi.fn();
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', username: null, createdAt: '2026-08-15T00:00:00Z' }} onAuthChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('退出登录失败');
+    expect(changed).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }));
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+    expect(logout).toHaveBeenCalledTimes(2);
+  });
+
+  it('注销进行中不能通过 Esc 关闭且重复提交只调用一次，保留公开作品边界可见', async () => {
+    const api = new FakeAuthApi();
+    let resolve!: () => void;
+    const deletion = vi.spyOn(api, 'deleteAccount').mockReturnValue(new Promise<void>((done) => { resolve = done; }));
+    const changed = vi.fn();
+    render(<AccountMenu api={api} me={{ state: 'verified', email: 'u@e.com', username: null, createdAt: '2026-08-15T00:00:00Z' }} onAuthChanged={changed} />);
+    fireEvent.click(screen.getByRole('button', { name: '注销账号' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('公开作品和引用事实保留');
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'password' } });
+    const form = screen.getByRole('button', { name: '确认注销' }).closest('form')!;
+    fireEvent.submit(form); fireEvent.submit(form);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(deletion).toHaveBeenCalledTimes(1);
+    await act(async () => resolve());
+    expect(changed).toHaveBeenCalledOnce();
+  });
   it('游客态：显示登录/注册入口', () => {
     render(<AccountMenu api={new FakeAuthApi()} me={{ state: 'guest' }} onAuthChanged={() => {}} />);
     expect(screen.getByRole('link', { name: '登录' })).toBeTruthy();

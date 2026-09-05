@@ -28,16 +28,16 @@ export default function SharedPatternView({ pattern, stats, boardProfile, palett
     : t.customPalette(palette.colors.length);
   return (
     <>
-      <dl className="shared-pattern-meta" role="group" aria-label={t.materialDetails}>
+      <section aria-label={t.materialDetails}><dl className="shared-pattern-meta">
         <div><dt>{t.boardProfile}</dt><dd>{board.displayName}</dd></div>
         <div><dt>{t.palette}</dt><dd>{paletteLabel}</dd></div>
-      </dl>
+      </dl></section>
       <div className="shared-pattern-layout">
         <section className="shared-pattern-canvas"><PatternPreview pattern={pattern} boardSize={board.boardCols} /></section>
         <aside className="shared-color-list">
           <header><span>{t.colorsTitle}</span><strong>{t.colorCount(stats.length)}</strong></header>
           <ColorBand colors={stats.map((item) => item.hex)} max={20} label={t.bandAria(stats.length)} />
-          <ul>
+          <ul tabIndex={0} aria-label={t.colorsTitle}>
             {stats.map((item) => (
               <li key={item.hex}>
                 <span

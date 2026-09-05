@@ -25,7 +25,7 @@ describe('SharedPatternView', () => {
       />,
     );
 
-    const details = screen.getByRole('group', { name: zhCN.share.materialDetails });
+    const details = screen.getByRole('region', { name: zhCN.share.materialDetails });
     expect(details).toHaveTextContent('2.6mm / 52×52');
     expect(details).toHaveTextContent('优肯 Artkal M 221 色');
   });
