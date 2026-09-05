@@ -56,7 +56,12 @@ export default function ActionOverflow({ actions, label = zhCN.nav.more }: Props
         hidden={!open}
         className={`workspace-overflow-panel${open ? ' is-open' : ''}`}
         onClickCapture={(event) => {
-          if ((event.target as Element).closest('a, button')) setOpen(false);
+          if ((event.target as Element).closest('a, button')) {
+            setOpen(false);
+            // A dialog opened by this action should restore focus to the
+            // visible trigger, not to an item in the now-hidden panel.
+            triggerRef.current?.focus();
+          }
         }}
       >
         {actions}

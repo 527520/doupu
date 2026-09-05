@@ -1,6 +1,6 @@
 # 02 设计管理与恢复
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 ## 范围
@@ -15,5 +15,4 @@ Type: task
 
 ## Comments
 
-- 待实施；行为测试先行，阶段完成后记录验证及提交。
-
+- 2026-09-05：卡片直达准确设计/跟拼；读取、下载、损坏记录失败闭环；管理菜单、弹窗恢复焦点与重复提交保护。定向 94 测试、五宽度和 axe 已通过，见 ../verification.md。

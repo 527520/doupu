@@ -25,5 +25,24 @@ try {
   await expect(page).toHaveURL(/\/app\?id=.+&mode=edit/);
   await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
   console.log(JSON.stringify({ resumeClicks: 1, exactDesignEdit: true }));
+  await page.goto('/designs');
+  const card = page.getByRole('button', { name: /继续制作：/ }).first();
+  await expect(card).toBeEnabled();
+  for (const width of [350, 390, 768, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const axe = await new AxeBuilder({ page }).analyze();
+    expect(axe.violations.filter((item) => item.impact === 'critical' || item.impact === 'serious')).toEqual([]);
+    await page.screenshot({ path: resolve(`.scratch/site-ux/designs-${width}.png`), fullPage: true });
+    console.log(JSON.stringify({ route: '/designs', width, noOverflow: true, seriousAxe: 0 }));
+  }
+  await page.getByRole('button', { name: /管理：/ }).first().click();
+  await page.getByRole('button', { name: '重命名', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByRole('button', { name: /管理：/ }).first()).toBeFocused();
+  await card.click();
+  await expect(page).toHaveURL(/\/app\?id=.+&mode=edit/);
+  await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
+  console.log(JSON.stringify({ designCardClicks: 1, exactDesignEdit: true, modalFocusRestored: true }));
   await context.close();
 } finally { await browser.close(); }

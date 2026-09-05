@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DesignsView from './DesignsView';
 import { ApiError, type CloudDesignFull } from '@/lib/sync/clientAdapter';
 import { enqueueBackgroundSync, hasPendingSync } from '@/lib/sync/queue';
-import type { StitchProgress } from '@/lib/progress/stitchProgress';
+import { createStitchProgress, type StitchProgress } from '@/lib/progress/stitchProgress';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 import type { DesignRecord, StorageAdapter } from '@/lib/storage';
 import type { ProjectFile } from '@/lib/types';
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-}));
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock('next/navigation', () => ({ useRouter: () => navigation }));
 
 // 时间戳一律相对真实时钟（避免系统时钟与固定 fixture 日期不一致导致 LWW 反转）
 const NOW = Date.now();
@@ -153,10 +153,125 @@ function localRecord(id: string, project: ProjectFile, revision = 0, syncState: 
 }
 
 describe('DesignsView', () => {
+  beforeEach(() => navigation.push.mockClear());
+  it.each(['edit', 'stitch'] as const)('整张设计卡片一次点击，在本地确认图纸和进度后进入 %s', async (mode) => {
+    const project = makeProject('继续这张', iso(-1000));
+    const storage = new FakeStorage([localRecord('resume-1', project)]);
+    if (mode === 'stitch') {
+      const progress = createStitchProgress(30, 20); progress.done[0] = 1;
+      storage.progress.set('resume-1', progress);
+    }
+    render(<DesignsView storageOverride={storage} apiOverride={new FakeApi()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '继续制作：继续这张' }));
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith(`/app?id=resume-1&mode=${mode}`));
+  });
+
+  it('打开时本地读取失败不会下载覆盖或跳入空白工作台', async () => {
+    const project = makeProject('保留原件', iso(-1000));
+    const storage = new FakeStorage([localRecord('keep', project)]);
+    const api = new FakeApi();
+    render(<DesignsView storageOverride={storage} apiOverride={api} />);
+    const open = await screen.findByRole('button', { name: '继续制作：保留原件' });
+    const pull = vi.spyOn(api, 'getDesign');
+    vi.spyOn(storage, 'getAll').mockRejectedValue(new Error('storage unavailable'));
+    fireEvent.click(open);
+    expect(await screen.findByText('暂时无法打开这张设计，原有数据未改动。请重试。')).toBeVisible();
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(pull).not.toHaveBeenCalled();
+    expect(storage.records.has('keep')).toBe(true);
+  });
+
+  it('损坏的本地记录不会被静默替换或作为有效图纸打开', async () => {
+    const storage = new FakeStorage([{ id: 'broken', name: '损坏记录', thumbnail: null, projectJson: '{}', updatedAt: iso(-1000) }]);
+    render(<DesignsView storageOverride={storage} apiOverride={new FakeApi()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '继续制作：损坏记录' }));
+    expect(await screen.findByText('暂时无法打开这张设计，原有数据未改动。请重试。')).toBeVisible();
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(storage.records.get('broken')?.projectJson).toBe('{}');
+  });
+
+  it('列表读取失败不显示没有设计，并可重试恢复', async () => {
+    const storage = new FakeStorage([localRecord('retry', makeProject('真实记录', iso(-1000)))]);
+    vi.spyOn(storage, 'getAll').mockRejectedValueOnce(new Error('read failed'));
+    render(<DesignsView storageOverride={storage} apiOverride={new FakeApi()} />);
+    expect(await screen.findByText('加载失败，请重试。')).toBeVisible();
+    expect(screen.queryByText('还没有设计')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('真实记录')).toBeVisible();
+  });
+
   it('首次加载时显示 live region，且不提前显示空态', () => {
     render(<DesignsView storageOverride={new FakeStorage()} apiOverride={new FakeApi()} />);
     expect(screen.getByRole('status')).toHaveTextContent('正在加载设计…');
     expect(screen.queryByText('还没有设计')).toBeNull();
+  });
+
+  it('云端图纸确认下载成功前不跳转；失败后可再次打开且不重复导航', async () => {
+    const project = makeProject('云端原件', iso(-1000));
+    const api = new FakeApi([{ id: 'cloud-only', name: project.name, project, updatedAt: project.updatedAt }]);
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400000) };
+    api.listDesignsPage = async () => { throw new Error('initial sync failed'); };
+    const storage = new FakeStorage();
+    render(<DesignsView storageOverride={storage} apiOverride={api} />);
+    const open = await screen.findByRole('button', { name: '继续制作：云端原件' });
+    vi.spyOn(api, 'getDesign').mockRejectedValueOnce(new Error('download failed'));
+    fireEvent.click(open);
+    expect(await screen.findByText('暂时无法打开这张设计，原有数据未改动。请重试。')).toBeVisible();
+    expect(navigation.push).not.toHaveBeenCalled();
+    expect(storage.records.size).toBe(0);
+    fireEvent.click(open);
+    fireEvent.click(open);
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/app?id=cloud-only&mode=edit'));
+    expect(navigation.push).toHaveBeenCalledTimes(1);
+    expect(storage.records.get('cloud-only')?.projectJson).toContain('云端原件');
+  });
+
+  it('读取跟拼进度失败时不误跳编辑，重试后保留原有进度', async () => {
+    const project = makeProject('已有进度', iso(-1000));
+    const storage = new FakeStorage([localRecord('progress', project)]);
+    const progress = createStitchProgress(30, 20); progress.done[10] = 1;
+    storage.progress.set('progress', progress);
+    vi.spyOn(storage, 'getStitchProgress').mockRejectedValueOnce(new Error('read progress failed'));
+    render(<DesignsView storageOverride={storage} apiOverride={new FakeApi()} />);
+    const open = await screen.findByRole('button', { name: '继续制作：已有进度' });
+    fireEvent.click(open);
+    expect(await screen.findByText('暂时无法打开这张设计，原有数据未改动。请重试。')).toBeVisible();
+    expect(navigation.push).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    await waitFor(() => expect(navigation.push).toHaveBeenCalledWith('/app?id=progress&mode=stitch'));
+    expect(storage.progress.get('progress')?.done[10]).toBe(1);
+  });
+
+  it('管理菜单按需展示操作，关闭弹窗后键盘回到可见入口', async () => {
+    const user = userEvent.setup();
+    render(<DesignsView storageOverride={new FakeStorage([localRecord('focus', makeProject('焦点图纸', iso(-1000)))])} apiOverride={new FakeApi()} />);
+    const manage = await screen.findByRole('button', { name: '管理：焦点图纸' });
+    expect(screen.queryByRole('button', { name: '重命名' })).not.toBeInTheDocument();
+    await user.click(manage);
+    await user.click(screen.getByRole('button', { name: '重命名' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(manage).toHaveFocus();
+  });
+
+  it('删除请求失败在弹窗中可见，保留原件与再次确认，连续点击只发一次', async () => {
+    const project = makeProject('删除保护', iso(-1000));
+    const api = new FakeApi([{ id: 'safe-delete', name: project.name, project, updatedAt: project.updatedAt }]);
+    api.meState = { state: 'verified', email: 'a@b.com', username: null, createdAt: iso(-86400000) };
+    const storage = new FakeStorage();
+    render(<DesignsView storageOverride={storage} apiOverride={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: '管理：删除保护' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const remove = vi.spyOn(api, 'deleteDesign').mockRejectedValueOnce(new Error('offline'));
+    const confirm = screen.getByRole('button', { name: '删除' });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(await screen.findByRole('alert')).toHaveTextContent('加载失败，请重试。');
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(storage.records.has('safe-delete')).toBe(true);
+    expect(api.cloud.has('safe-delete')).toBe(true);
+    expect(screen.getByRole('dialog')).toBeVisible();
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(storage.records.has('safe-delete')).toBe(false));
   });
 
   it('游客态：显示登录引导与本机设计（仅本机角标）', async () => {
@@ -226,6 +341,7 @@ describe('DesignsView', () => {
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
     await screen.findByText('旧名');
+    fireEvent.click(screen.getByRole('button', { name: '管理：旧名' }));
     fireEvent.click(screen.getByRole('button', { name: '重命名' }));
     const input = screen.getByLabelText('设计名称');
     fireEvent.change(input, { target: { value: '新名' } });
@@ -243,6 +359,7 @@ describe('DesignsView', () => {
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
     await screen.findByText('待删');
+    fireEvent.click(screen.getByRole('button', { name: '管理：待删' }));
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     expect(screen.getByText(/确定删除/)).toBeTruthy();
     // Modal 会将背景 inert；此时可访问树里只剩弹窗内的确认按钮。
@@ -262,6 +379,7 @@ describe('DesignsView', () => {
     render(<DesignsView storageOverride={storage} apiOverride={api} />);
 
     await screen.findByText('竞态设计');
+    fireEvent.click(screen.getByRole('button', { name: '管理：竞态设计' }));
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
 

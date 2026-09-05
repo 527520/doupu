@@ -135,7 +135,8 @@ test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打
     revision: 1,
     syncState: 'synced',
   });
-  await pageA.getByRole('button', { name: '删除' }).first().click();
+  await pageA.getByRole('button', { name: '管理：待删除设计' }).click();
+  await pageA.getByRole('button', { name: '删除', exact: true }).click();
   await pageA.getByRole('dialog').getByRole('button', { name: '删除' }).click();
   await expect.poll(async () => await localSyncSnapshot(pageA)).toMatchObject({ records: [], tombstones: [] });
   await expect(pageA.getByText('待删除设计')).toHaveCount(0, { timeout: 15_000 });

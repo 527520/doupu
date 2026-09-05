@@ -15,6 +15,9 @@ import ColorBand from '@/components/palettes/ColorBand';
 import { LIMITS } from '@/lib/appInfo';
 import SiteHeader from '@/components/layout/SiteHeader';
 import Modal from '@/components/ui/Modal';
+import ActionOverflow from '@/components/layout/ActionOverflow';
+import { isProgressCompatible, summarizeProgress } from '@/lib/progress/stitchProgress';
+import type { ProjectFile } from '@/lib/types';
 import { fillDeleteHint, formatDateTime } from './format';
 
 export interface DisplayDesign {
@@ -107,6 +110,10 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
   const [renaming, setRenaming] = useState<DisplayDesign | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleting, setDeleting] = useState<DisplayDesign | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const openingRef = useRef(false);
+  const [mutating, setMutating] = useState(false);
+  const mutationRef = useRef(false);
   /** 未删除的设计数：达上限时先提示，避免用户新建后在保存阶段才撞墙（D-4）。 */
   const activeDesignCount = designs.length;
 
@@ -127,7 +134,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
 
       const [meInfo, localRecords] = await Promise.all([
         api.me().catch((): MeInfo => ({ state: 'guest' })),
-        st ? st.getAll().catch(() => [] as DesignRecord[]) : ([] as DesignRecord[]),
+        st ? st.getAll() : Promise.reject(new Error('local storage unavailable')),
       ]);
       if (cancelled.value) return;
       setMe(meInfo);
@@ -171,43 +178,70 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
     };
   }, [load]);
 
-  const ensureLocal = async (id: string): Promise<boolean> => {
-    const st = storage;
-    if (!st || !syncClient) return true; // 无本地存储时无法打开（页面会给出提示）
-    const local = await st.getAll().catch(() => [] as DesignRecord[]);
-    if (local.some((r) => r.id === id)) return true;
+  const ensureLocal = async (id: string): Promise<ProjectFile | null> => {
     try {
-      await withDesignStorageLock(() => syncClient.pullDesign(id));
-      return true;
+      if (!storage || !syncClient) throw new Error('local storage unavailable');
+      return await withDesignStorageLock(async () => {
+        let record = (await storage.getAll()).find((item) => item.id === id);
+        if (!record) {
+          await syncClient.pullDesign(id);
+          record = (await storage.getAll()).find((item) => item.id === id);
+        }
+        const project = record && parseStoredProject(record.projectJson);
+        if (!project) throw new Error('design missing or unreadable');
+        return project;
+      });
     } catch {
-      setError(t.loadFailed);
-      return false;
+      setError(t.openFailed);
+      return null;
     }
   };
 
   const handleOpen = async (design: DisplayDesign): Promise<void> => {
-    const ok = await ensureLocal(design.id);
-    if (!ok) return;
-    router.push(`/app?id=${design.id}`);
+    if (openingRef.current || mutationRef.current) return;
+    openingRef.current = true;
+    setOpening(design.id);
+    setError(null);
+    try {
+      const project = await ensureLocal(design.id);
+      if (!project || !storage) throw new Error('design unavailable');
+      const progress = await storage.getStitchProgress(design.id);
+      const continued = isProgressCompatible(progress, project.pattern)
+        && summarizeProgress(progress, project.pattern.cells).doneCount > 0;
+      router.push(`/app?id=${encodeURIComponent(design.id)}&mode=${continued ? 'stitch' : 'edit'}`);
+      // Keep the card pending until navigation unmounts it; repeated taps must
+      // not start another download or navigation while the route is loading.
+    } catch {
+      openingRef.current = false;
+      setOpening(null);
+      setError(t.openFailed);
+    }
   };
 
   const handleRename = async (): Promise<void> => {
-    if (!renaming) return;
+    if (!renaming || mutationRef.current) return;
     const name = renameValue.trim();
     if (name.length === 0 || name.length > 100) return;
-    const ok = await ensureLocal(renaming.id);
-    if (!ok || !syncClient) return;
+    mutationRef.current = true;
+    setMutating(true);
     try {
+      const ok = await ensureLocal(renaming.id);
+      if (!ok || !syncClient) return;
       await withDesignStorageLock(() => syncClient.renameLocal(renaming.id, name, new Date().toISOString()));
       setRenaming(null);
       await load();
     } catch {
       setError(t.loadFailed);
+    } finally {
+      mutationRef.current = false;
+      setMutating(false);
     }
   };
 
   const handleDelete = async (): Promise<void> => {
-    if (!deleting) return;
+    if (!deleting || mutationRef.current) return;
+    mutationRef.current = true;
+    setMutating(true);
     const st = storage;
     const client = syncClient ?? (st ? createSyncClient(st, api) : null);
     const nowIso = new Date().toISOString();
@@ -244,6 +278,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       await load();
     } catch {
       setError(t.loadFailed);
+    } finally {
+      mutationRef.current = false;
+      setMutating(false);
     }
   };
 
@@ -271,30 +308,29 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         }
       />
 
-      <section className="designs-hero">
-        <div><span className="studio-eyebrow">{t.collectionKicker}</span><h2>{t.collectionTitle}</h2><p>{t.collectionHint}</p></div>
-        <Link href="/app?new=1" className="btn-primary">{t.createFromHero}</Link>
-      </section>
+      <div className="designs-intro"><h2>{t.title}</h2><p>{t.collectionHint}</p></div>
 
       {/* 设计数已达上限时先说清楚，而不是等用户新建后在保存阶段才失败（D-4）。 */}
       {activeDesignCount >= LIMITS.designsPerUser && (
         <Notice kind="warning">{t.limitError}</Notice>
       )}
 
-      {(me === 'loading' || syncing) && designs.length === 0 && (
+      {!error && (me === 'loading' || syncing) && designs.length === 0 && (
         <Notice kind="info">{t.loading}</Notice>
       )}
 
       {me !== 'loading' && me.state === 'guest' && (
         <Notice kind="info">
+          <span>
           {t.guestBanner}{' '}
-          <Link href="/login" className="link-soft font-medium">
+          <Link href="/login?next=%2Fdesigns" className="link-soft whitespace-nowrap font-medium">
             {t.goLogin}
           </Link>
           {' · '}
-          <Link href="/register" className="link-soft font-medium">
+          <Link href="/register?next=%2Fdesigns" className="link-soft whitespace-nowrap font-medium">
             {t.goRegister}
           </Link>
+          </span>
         </Notice>
       )}
 
@@ -311,7 +347,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         </Notice>
       )}
 
-      {error && (
+      {error && !renaming && !deleting && (
         <Notice kind="danger">
           <span>{error}</span>
           <button type="button" onClick={() => void load()} className="btn-danger-outline btn-xs">
@@ -330,7 +366,10 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       <ul className="designs-grid">
         {designs.map((design) => (
           <li key={design.id} className="design-card">
-            <div className="design-card-canvas">
+            <button type="button" className="design-card-open" aria-label={t.resumeLabel(design.name)}
+              disabled={opening !== null || mutating || syncing} aria-busy={opening === design.id}
+              onClick={() => void handleOpen(design)}>
+            <span className="design-card-canvas">
               {design.thumbnail ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -341,17 +380,18 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                   className="max-h-full max-w-full object-contain"
                 />
               ) : (
-                <span className="text-xs text-ink-soft">{t.size(design.width, design.height)}</span>
+                <span className="text-xs text-ink-soft">{design.width > 0 ? t.size(design.width, design.height) : t.unreadable}</span>
               )}
-            </div>
-            <p className="design-card-title" title={design.name}>
+            </span>
+            <strong className="design-card-title" title={design.name}>
               {design.name}
-            </p>
-            <p className="text-xs text-ink-soft">{t.size(design.width, design.height)}</p>
+            </strong>
+            <span className="text-sm text-ink-soft">{design.width > 0 ? t.size(design.width, design.height) : t.unreadable}</span>
+            <span className="design-card-resume">{opening === design.id ? t.opening : t.resume} →</span>
+            </button>
             {design.colors.length > 0 && (
               <ColorBand colors={design.colors} max={12} label={t.colorBandAria(design.name, design.colors.length)} />
             )}
-            <p className="text-xs text-ink-soft/80">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
             <div className="flex flex-wrap items-center gap-1 text-xs">
               <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">
                 {design.localPresent ? t.localSaved : t.localMissing}
@@ -362,12 +402,13 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               {design.status === 'conflict' && <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">{t.conflict}</span>}
             </div>
             <div className="design-card-actions">
-              <button type="button" onClick={() => void handleOpen(design)} className="btn-outline btn-icon">
-                {t.open}
-              </button>
+              <p className="text-xs text-ink-soft">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
+              <ActionOverflow label={t.manageLabel(design.name)} actions={<>
               <button
                 type="button"
+                disabled={opening !== null || mutating || syncing}
                 onClick={() => {
+                  setError(null);
                   setRenaming(design);
                   setRenameValue(design.name);
                 }}
@@ -375,19 +416,20 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               >
                 {t.rename}
               </button>
-              <button type="button" onClick={() => setDeleting(design)} className="btn-danger-outline btn-xs">
+              <button type="button" disabled={opening !== null || mutating || syncing} onClick={() => { setError(null); setDeleting(design); }} className="btn-danger-outline btn-xs">
                 {t.delete}
               </button>
               {me !== 'loading' && me.state === 'verified' && design.cloudPresent && (
                 <Link href={`/community/submit?designId=${design.id}`} className="btn-outline btn-xs">投稿豆社</Link>
               )}
+              </>} />
             </div>
           </li>
         ))}
       </ul>
 
       {renaming && (
-        <Modal label={t.renameTitle} onClose={() => setRenaming(null)} panelClassName="max-w-sm">
+        <Modal label={t.renameTitle} onClose={() => { if (!mutationRef.current) setRenaming(null); }} panelClassName="max-w-sm">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -395,6 +437,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
             }}
           >
             <h3 className="mb-2 text-sm font-medium text-ink">{t.renameTitle}</h3>
+            {error && <Notice kind="danger">{error}</Notice>}
             <input
               aria-label={t.renameLabel}
               value={renameValue}
@@ -403,12 +446,12 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               className="input-field"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <button type="button" onClick={() => setRenaming(null)} className="btn-outline btn-sm">
+              <button type="button" disabled={mutating} onClick={() => setRenaming(null)} className="btn-outline btn-sm">
                 {t.cancel}
               </button>
               <button
                 type="submit"
-                disabled={renameValue.trim().length === 0}
+                disabled={mutating || renameValue.trim().length === 0}
                 className="btn-primary btn-sm"
               >
                 {t.save}
@@ -419,14 +462,15 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       )}
 
       {deleting && (
-        <Modal label={t.deleteTitle} onClose={() => setDeleting(null)} panelClassName="max-w-sm border-danger/40">
+        <Modal label={t.deleteTitle} onClose={() => { if (!mutationRef.current) setDeleting(null); }} panelClassName="max-w-sm border-danger/40">
           <h3 className="mb-2 text-sm font-medium text-danger">{t.deleteTitle}</h3>
+          {error && <Notice kind="danger">{error}</Notice>}
           <p className="mb-3 text-sm text-ink-soft">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setDeleting(null)} className="btn-outline btn-sm">
+            <button type="button" disabled={mutating} onClick={() => setDeleting(null)} className="btn-outline btn-sm">
               {t.cancel}
             </button>
-            <button type="button" onClick={() => void handleDelete()} className="btn-danger btn-sm">
+            <button type="button" disabled={mutating} onClick={() => void handleDelete()} className="btn-danger btn-sm">
               {t.delete}
             </button>
           </div>
