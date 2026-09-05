@@ -1,6 +1,7 @@
 # 06 导出、材料与色板
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

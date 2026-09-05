@@ -1132,7 +1132,13 @@ export const zhCN = {
       actionFailed: '操作失败，请稍后重试', genericFailed: '操作失败', reuseFailed: '引用失败', reuseCreated: (id: string) => `私人副本已创建：${id}。可前往“我的设计”继续编辑。`, pending: '评论已提交，审核通过后公开。', published: '评论已发布。', commentFailed: '评论失败', reported: '举报已进入治理队列。', reportFailed: '举报失败', editPending: '修改已进入审核。', updated: '评论已更新。', editFailed: '修改失败', deleted: '评论已删除。', deleteFailed: '删除失败', commentReported: '评论举报已进入治理队列。', locked: '评论已锁定', commentPlaceholder: '最多 500 字；链接仅作为纯文本展示', eyebrow: 'COMMUNITY ACTIONS', title: '引用与讨论', counts: (likes: number, reuses: number) => `${likes} 赞 · ${reuses} 次引用`, like: '点赞', unlike: '取消赞', reuse: '用这张制作', reportWork: '举报作品', myDesigns: '我的设计', comment: '发表评论', publishComment: '发布评论', saveEdit: '保存修改', cancelEdit: '取消', edit: '编辑', delete: '删除', report: '举报' },
     mine: { withdrawing: '撤回中…', withdraw: '撤回作品' },
     submission: { createFailed: '创建投稿失败', submitFailedDraftKept: '提交审核失败，草稿已保留', failed: '提交失败', submitting: '提交中…', submit: '冻结快照并提交审核', pageTitle: '提交豆社作品', pageSubtitle: '冻结当前云端设计，审核通过后公开', designId: '私人设计 ID', title: '公开作品标题', tags: '正式标签（最多 10 个）', license: '我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。', copyright: '查看版权与申诉说明', back: '返回设计' },
-    home: { featured: '人工精选', latest: '豆社新作', featuredProofs: '本期作品校样', latestProofs: '最近公开作品', open: '打开豆社', preview: (title: string) => `${title} 预览` },
+    home: { featured: '人工精选', latest: '豆社新作', featuredProofs: '本期作品校样', latestProofs: '最近公开作品', open: '打开豆社', preview: (title: string) => `${title} 预览`, loading: '正在读取豆社作品…', loadFailed: '暂时无法读取豆社作品，请重试。', empty: '还没有已公开作品。' },
+    consentRecovery: {
+      stopped: '已停止采集，但服务器尚未确认清除原始数据。请重试；完成前不能重新同意。',
+      stoppedTitle: '匿名分析已停止', retry: '重试清除原始数据', pending: '已停止采集，等待清除确认',
+      unsupported: '当前浏览器无法安全协调多个标签页，匿名分析保持关闭，不影响制作。',
+      initializationFailed: '已记录你的选择，但匿名分析初始化未确认，当前页面不会采集。可重试同意或撤回。',
+    },
   },
   about: {
     title: '关于豆谱',

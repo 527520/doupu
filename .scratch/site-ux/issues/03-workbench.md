@@ -1,6 +1,7 @@
 # 03 画布优先工作台
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

@@ -3,17 +3,19 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsConsentBanner, AnalyticsConsentSettings } from './AnalyticsConsent';
 
-const { track, clearAnalyticsQueue } = vi.hoisted(() => ({
+const { track, clearAnalyticsQueue, setAnalyticsInitialized } = vi.hoisted(() => ({
   track: vi.fn(),
   clearAnalyticsQueue: vi.fn(),
+  setAnalyticsInitialized: vi.fn(),
 }));
-vi.mock('@/lib/analytics/client', () => ({ track, clearAnalyticsQueue }));
+vi.mock('@/lib/analytics/client', () => ({ track, clearAnalyticsQueue, setAnalyticsInitialized }));
 
 describe('analytics consent banner', () => {
   beforeEach(() => {
     document.cookie = 'doupu_analytics_consent=; Max-Age=0; Path=/';
     track.mockReset();
     clearAnalyticsQueue.mockReset();
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request: async (_name: string, run: () => unknown) => run() } });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status: 'granted' }), { status: 200 })));
   });
 
@@ -61,11 +63,34 @@ describe('analytics consent banner', () => {
     await screen.findByRole('button', { name: '同意匿名统计' });
     await waitFor(() => expect(screen.getByRole('button', { name: '同意' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: '同意' }));
-    fireEvent.click(screen.getByRole('button', { name: '同意匿名统计' }));
+    fireEvent.click(screen.getByRole('button', { name: '同意' }));
     expect(fetch).toHaveBeenCalledOnce();
     finish(new Response('{}', { status: 200 }));
     await waitFor(() => expect(screen.queryByLabelText('匿名使用数据偏好')).not.toBeInTheDocument());
     expect(screen.getByText('当前状态：已同意')).toBeInTheDocument();
-    expect(track).toHaveBeenCalledOnce();
+    await waitFor(() => expect(track).toHaveBeenCalledOnce());
+  });
+
+  it('never replaces a later withdrawal preference with an earlier grant response', async () => {
+    let finish!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    render(<AnalyticsConsentSettings />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '同意' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '同意' }));
+    document.cookie = 'doupu_analytics_consent=withdrawn; Path=/';
+    finish(new Response('{}', { status: 200 }));
+    await screen.findByRole('button', { name: '重试清除原始数据' });
+    expect(document.cookie).toContain('doupu_analytics_consent=withdrawn');
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('does not grant analytics when cross-tab serialization is unavailable', async () => {
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
+    render(<AnalyticsConsentSettings />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '同意' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '同意' }));
+    await screen.findByRole('alert');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(document.cookie).not.toContain('doupu_analytics_consent=granted');
   });
 });

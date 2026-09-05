@@ -1,6 +1,7 @@
 # 01 首页与全站导航
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

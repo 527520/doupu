@@ -4,6 +4,7 @@ import {
   analyticsDailyRollups,
   analyticsDeletionRequests,
   analyticsEvents,
+  analyticsIdentityLinks,
   analyticsVisitors,
   maintenanceRuns,
 } from '@/../db/schema';
@@ -16,6 +17,23 @@ describe('analytics maintenance', () => {
 
   beforeEach(async () => {
     db = await createTestClient();
+  });
+
+  it('reclaims day-old unassociated initialization rows without deleting visitors with events or identity links', async () => {
+    const old = new Date(NOW.getTime() - 2 * 86_400_000);
+    const rows = await db.insert(analyticsVisitors).values([
+      { tokenHash: 'orphan', lastSeenAt: old }, { tokenHash: 'recent', lastSeenAt: NOW },
+      { tokenHash: 'linked', lastSeenAt: old }, { tokenHash: 'events', lastSeenAt: old },
+    ]).returning();
+    await db.insert(analyticsIdentityLinks).values({ visitorId: rows[2].id, userId: null });
+    await db.insert(analyticsEvents).values({
+      eventId: crypto.randomUUID(), visitorId: rows[3].id, sessionId: rows[3].currentSessionId,
+      name: 'page_viewed', occurredAt: old, appVersion: 'test', actorType: 'anonymous', path: '/',
+      deviceType: 'desktop', browserFamily: 'safari', osFamily: 'macos', properties: {},
+    });
+    const result = await runAnalyticsMaintenance(db, NOW, { advisoryLock: false });
+    expect(result.visitorsDeleted).toBe(1);
+    expect((await db.select().from(analyticsVisitors)).map((row) => row.tokenHash).sort()).toEqual(['events', 'linked', 'recent']);
   });
 
   it('rolls up completed Shanghai days, is reentrant, and enforces retention', async () => {

@@ -25,7 +25,7 @@ export default function RecentDesigns({ storage }: { storage?: Pick<StorageAdapt
       const recent = await Promise.all(records.map(async (record): Promise<RecentDesign | null> => {
         const project = parseStoredProject(record.projectJson);
         if (!project) return null;
-        const progress = await adapter.getStitchProgress(record.id).catch(() => null);
+        const progress = await adapter.getStitchProgress(record.id);
         const summary = isProgressCompatible(progress, project.pattern) ? summarizeProgress(progress, project.pattern.cells) : null;
         return {
           id: record.id, name: record.name, thumbnail: record.thumbnail, width: project.pattern.width, height: project.pattern.height,

@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
 import { takePendingUpload } from '@/lib/upload/pendingUpload';
 import Notice from '@/components/ui/Notice';
+import Modal from '@/components/ui/Modal';
 import Icon from '@/components/ui/Icon';
 import ShoppingListPanel from '@/components/export/ShoppingListPanel';
 import StitchView from '@/components/stitch/StitchView';
@@ -933,6 +934,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * 没有生成源，因此参数面板保持锁定（改参数需要原图），但可以修补、换色板、导出。
    */
   const startBlank = useCallback((width: number, height: number): void => {
+    if (rebindRestoredSourceRef.current) return;
     clearOriginalSource();
     const blank = createBlankPattern(width, height);
     restoreGeneration({
@@ -1712,15 +1714,6 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => window.removeEventListener('popstate', handlePopState);
   }, [drainStitchWrites, mobileLayout]);
 
-  useEffect(() => {
-    if (!mobileWorkspaceOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [mobileWorkspaceOpen]);
-
   const previousTabRef = useRef<Tab>(tab);
   useEffect(() => {
     if (previousTabRef.current === 'stitch' && tab !== 'stitch') {
@@ -1834,7 +1827,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
             想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。
           */}
-          <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
+          {!pattern && <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
             <p className="font-medium text-ink">{t.blankTitle}</p>
             <p className="text-xs text-ink-soft">{t.blankHint}</p>
             <div className="blank-start-controls">
@@ -1873,7 +1866,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 </button>
               ))}
             </div>
-          </section>
+          </section>}
         </>
       )}
 
@@ -1975,12 +1968,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           </div>
 
           {mobileWorkspaceOpen && (
-            <section
-              data-testid="mobile-immersive-workspace"
-              className="mobile-immersive-workspace"
-              role="dialog"
-              aria-modal="true"
-              aria-label={tab === 'edit' ? t.editTab : zhCN.stitch.tab}
+            <Modal
+              testId="mobile-immersive-workspace"
+              panelClassName="mobile-immersive-workspace"
+              label={tab === 'edit' ? t.editTab : zhCN.stitch.tab}
+              onClose={exitMobileWorkspace}
             >
               <header className="mobile-immersive-header">
                 <button type="button" className="mobile-immersive-back" onClick={exitMobileWorkspace}>
@@ -2052,7 +2044,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   </div>
                 )}
               </div>
-            </section>
+            </Modal>
           )}
         </div>
         ) : (

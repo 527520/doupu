@@ -3,14 +3,15 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ANALYTICS_CONSENT_COOKIE, serializeConsentCookie, serializePendingWithdrawalCookie, type AnalyticsConsent } from '@/lib/analytics/cookies';
-import { clearAnalyticsQueue, track } from '@/lib/analytics/client';
+import { clearAnalyticsQueue, track, setAnalyticsInitialized } from '@/lib/analytics/client';
 import { surfaceForPath } from './PageViewTracker';
 import { zhCN } from '@/messages/zh-CN';
 
 type Preference = AnalyticsConsent | 'withdrawn' | null;
 const preferenceEvent = 'doupu:analytics-preference';
 let requestPending = false;
-const stoppedMessage = '已停止采集，但服务器尚未确认清除原始数据。请重试；完成前不能重新同意。';
+const recovery = zhCN.communityAdmin.consentRecovery;
+const stoppedMessage = recovery.stopped;
 
 function readPreference(): Preference {
   const value = document.cookie.split(';').map((part) => part.trim())
@@ -25,29 +26,48 @@ function notify(message: string | null = null, error = false) {
 
 async function choose(status: AnalyticsConsent | 'withdrawn'): Promise<void> {
   if (requestPending || (status === 'granted' && readPreference() === 'withdrawn')) return;
+  if (status === 'granted' && !navigator.locks?.request) {
+    setAnalyticsInitialized(false);
+    notify(recovery.unsupported, true);
+    return;
+  }
   requestPending = true;
+  setAnalyticsInitialized(false);
   if (status !== 'granted') {
     document.cookie = serializePendingWithdrawalCookie();
     clearAnalyticsQueue();
+  } else {
+    // 只在明确同意（或恢复仍有效的同意）时记录意图；初始化成功前不采集。
+    document.cookie = serializeConsentCookie('granted');
   }
   notify();
   let message: string | null = null;
   let error = false;
   try {
-    const response = await fetch('/api/analytics/consent', {
-      method: 'PUT', credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    if (!response.ok) throw new Error('CONSENT_UPDATE_FAILED');
-    document.cookie = serializeConsentCookie(status === 'granted' ? 'granted' : 'denied');
-    if (status === 'granted') {
-      track({ name: 'page_viewed', properties: { surface: surfaceForPath(window.location.pathname) } });
-    }
-    message = status === 'withdrawn' ? zhCN.communityAdmin.analytics.withdrawn : zhCN.communityAdmin.analytics.saved;
+    const save = async () => {
+      if (status === 'granted' && readPreference() !== 'granted') return;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 15_000);
+      try {
+        const response = await fetch('/api/analytics/consent', {
+          method: 'PUT', credentials: 'same-origin', signal: controller.signal,
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status }),
+        });
+        if (!response.ok) throw new Error('CONSENT_UPDATE_FAILED');
+        if (status === 'granted') {
+          if (readPreference() !== 'granted') return;
+          setAnalyticsInitialized(true);
+          track({ name: 'page_viewed', properties: { surface: surfaceForPath(window.location.pathname) } });
+        } else document.cookie = serializeConsentCookie('denied');
+        message = status === 'withdrawn' ? zhCN.communityAdmin.analytics.withdrawn : zhCN.communityAdmin.analytics.saved;
+      } finally { window.clearTimeout(timer); }
+    };
+    // 锁覆盖响应 Cookie 落地：后来的撤回会删除前面 grant 返回的访客。
+    if (navigator.locks?.request) await navigator.locks.request('doupu:analytics-consent', save);
+    else await save(); // 无锁环境只允许拒绝/撤回，采集始终关闭。
   } catch {
     error = true;
-    message = status === 'granted' ? zhCN.communityAdmin.analytics.saveFailed : stoppedMessage;
+    message = status === 'granted' ? recovery.initializationFailed : stoppedMessage;
   } finally {
     requestPending = false;
     notify(message, error);
@@ -85,18 +105,22 @@ function usePreference() {
 export function AnalyticsConsentBanner() {
   const t = zhCN.communityAdmin.analytics;
   const { preference, ready, saving, message, error } = usePreference();
+  useEffect(() => {
+    const timer = window.setTimeout(() => { if (readPreference() === 'granted') void choose('granted'); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   if (!ready || preference === 'granted' || preference === 'denied') return null;
   const pending = preference === 'withdrawn';
   return (
     <aside className="analytics-consent" aria-label={t.bannerLabel}>
       <div>
-        <strong>{pending ? '匿名分析已停止' : t.bannerTitle}</strong>
+        <strong>{pending ? recovery.stoppedTitle : t.bannerTitle}</strong>
         <p>{pending ? stoppedMessage : t.bannerBody}</p>
         <Link href="/privacy" className="link-soft">{t.learnMore}</Link>
         {error && <p role="alert" className="analytics-consent-error">{message}</p>}
       </div>
       <div className="analytics-consent-actions">
-        {pending ? <button type="button" className="btn-outline" disabled={saving} onClick={() => void choose('withdrawn')}>重试清除原始数据</button> : <>
+        {pending ? <button type="button" className="btn-outline" disabled={saving} onClick={() => void choose('withdrawn')}>{recovery.retry}</button> : <>
           <button type="button" className="btn-outline" disabled={saving} onClick={() => void choose('denied')}>{t.reject}</button>
           <button type="button" className="btn-primary" disabled={saving} onClick={() => void choose('granted')}>{t.grant}</button>
         </>}
@@ -112,12 +136,12 @@ export function AnalyticsConsentSettings() {
   return (
     <section className="info-card analytics-settings" aria-labelledby="analytics-settings-title">
       <h2 id="analytics-settings-title">{t.settingsTitle}</h2>
-      <p>{ready ? t.currentStatus(preference === 'granted' ? t.granted : pending ? '已停止采集，等待清除确认' : preference === 'denied' ? t.denied : t.unset) : t.loading}</p>
+      <p>{ready ? t.currentStatus(preference === 'granted' ? t.granted : pending ? recovery.pending : preference === 'denied' ? t.denied : t.unset) : t.loading}</p>
       {pending && !message && <p>{stoppedMessage}</p>}
       <div>
-        <button type="button" className="btn-primary" disabled={!ready || saving || pending || preference === 'granted'} onClick={() => void choose('granted')}>{t.agree}</button>
+        <button type="button" className="btn-primary" disabled={!ready || saving || pending || (preference === 'granted' && !error)} onClick={() => void choose('granted')}>{t.agree}</button>
         {preference === 'granted' || pending ? (
-          <button type="button" className="btn-danger-outline" disabled={!ready || saving} onClick={() => void choose('withdrawn')}>{pending ? '重试清除原始数据' : t.withdraw}</button>
+          <button type="button" className="btn-danger-outline" disabled={!ready || saving} onClick={() => void choose('withdrawn')}>{pending ? recovery.retry : t.withdraw}</button>
         ) : (
           <button type="button" className="btn-outline" disabled={!ready || saving || preference === 'denied'} onClick={() => void choose('denied')}>{t.reject}</button>
         )}

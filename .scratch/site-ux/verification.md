@@ -70,3 +70,13 @@
 - 手机恢复可见页标题；公共说明与表单正文增大，隐私设置靠前，FAQ 按需展开，真实只读分享规格/用色可读，主入口明确新建。移除认证和说明页的装饰色块，不改变分享轮换/权限/法律实义。
 - RED→GREEN：15 文件 66 项单元/PGlite 通过；lint/typecheck/diff --check 通过。capture-secondary.mjs 共 12 类页面 × 5 宽度 = 60 场景无横向溢出、axe serious/critical 为 0；另验证 350/390 短视口确认框焦点、分享无邮箱、撤回失败→刷新→重试→HttpOnly 访客 Cookie 清除。关键截图已目视。
 - 首次扫描发现按钮 disabled→enabled 的 opacity 动画暂时降低对比度，以及分享 dl 的 group role 覆盖了定义列表语义；均修复后完整重跑。证据仅为本地 Chromium 与模拟短视口，不声称真机软键盘、真实邮件或生产验证。
+
+## 01–07 复审修正 — 2026-09-05
+
+- 首页进度读取失败不再猜成无进度；豆社区块有真实加载、失败重试、空态；重绑原图时禁止空白起稿覆盖已恢复设计。
+- 编码点段回跳在 URL 规范化后再次校验，避免归一化产生双斜杠跨源路径；新增同目录纯逻辑回归。
+- 分析同意/撤回通过同源 Web Locks 串行化到响应处理完成，grant 响应不再写回可读偏好；同意初始化成功前不采集，无协调能力的浏览器保持关闭。撤回先写停采标记，不等待网络。grant 丢响应留下的无事件/无身份关联空哈希一天后维护清除，不将随机空行误称为采集事件。
+- check-consent-tabs.mjs：Chromium、Firefox、WebKit 本地 HTTPS 两页阻塞 grant→撤回→释放旧 grant 全部通过，最终停止采集并删除访客 Cookie。HTTPS 是为保留 Secure Cookie 契约；未放宽生产 Cookie 属性。
+- 手机沉浸编辑/跟拼复用已有 Portal Modal，背景 inert、初始焦点、Tab 循环、Escape 与滚动恢复统一。Safari 系统键盘设置会跳过按钮，改为显式遍历可见可操作控件；折叠、禁用和负 tabindex 控件不参与循环。
+- 工作台/Modal 81 项回归通过；其他恢复相关 26 项及维护/回跳 9 项通过。check-mobile-direct-focus.mjs 在三浏览器直接恢复跟拼、35 次 Tab/Shift+Tab、Escape 与背景/滚动恢复全部通过，axe serious/critical 为 0；新增稳定 E2E 用例留待最终全量门禁。
+- docs/agents/issue-tracker.md 分离 canonical triage Status 和 Completion，已完成票据不再使用不存在的 done 标签。此次是复审修正证据，不表示阶段08或最终全量验收完成。

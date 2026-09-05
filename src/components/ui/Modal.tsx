@@ -15,9 +15,10 @@ interface ModalProps {
   /** 面板额外样式（宽度/边框色等）。 */
   panelClassName?: string;
   panelStyle?: CSSProperties;
+  testId?: string;
 }
 
-export default function Modal({ label, onClose, children, panelClassName = '', panelStyle }: ModalProps) {
+export default function Modal({ label, onClose, children, panelClassName = '', panelStyle, testId }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [portalRoot] = useState<HTMLDivElement | null>(() => {
     if (typeof document === 'undefined') return null;
@@ -70,7 +71,7 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
         onClose();
         return;
       }
-      if (event.key !== 'Tab') return;
+      if (event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       const panel = panelRef.current;
       if (!panel) return;
       const controls = focusableElements(panel);
@@ -79,15 +80,13 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
         panel.focus();
         return;
       }
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      // Safari 的系统键盘设置可能跳过按钮。显式循环所有可操作控件，
+      // 不能依赖浏览器的首尾判定，否则 Shift+Tab 会离开沉浸层。
+      event.preventDefault();
+      const index = controls.findIndex((element) => element === document.activeElement);
+      const next = index < 0 ? (event.shiftKey ? controls.length - 1 : 0)
+        : (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
+      controls[next].focus();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -114,6 +113,7 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
     >
       <div
         ref={panelRef}
+        data-testid={testId}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -133,5 +133,15 @@ function focusableElements(panel: HTMLElement): HTMLElement[] {
     panel.querySelectorAll<HTMLElement>(
       'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
     ),
-  ).filter((element) => element.getAttribute('aria-hidden') !== 'true' && !element.hidden);
+  ).filter((element) => {
+    if (element.tabIndex < 0 || element.matches(':disabled, input[type="hidden"]')) return false;
+    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+      if (node.hidden || node.hasAttribute('inert') || node.getAttribute('aria-hidden') === 'true') return false;
+      if (node instanceof HTMLDetailsElement && !node.open && !node.querySelector('summary')?.contains(element)) return false;
+      const style = window.getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      if (node === panel) break;
+    }
+    return true;
+  });
 }

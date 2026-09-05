@@ -8,6 +8,19 @@ import Modal from './Modal';
 afterEach(() => cleanup());
 
 describe('Modal', () => {
+  it('焦点循环跳过收起区域、负 tabindex 和隐藏控件', async () => {
+    render(<Modal label="带折叠操作" onClose={() => {}}>
+      <button>第一个可见操作</button><button>最后一个可见操作</button>
+      <a href="#skip" tabIndex={-1}>跳过链接</a>
+      <div style={{ display: 'none' }}><button>收起区域操作</button></div>
+      <details><summary tabIndex={-1}>隐藏的更多设置</summary><button>折叠项内操作</button></details>
+      <input type="hidden" />
+    </Modal>);
+    await userEvent.tab({ shift: true });
+    expect(screen.getByRole('button', { name: '最后一个可见操作' })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole('button', { name: '第一个可见操作' })).toHaveFocus();
+  });
   it('裁剪上方的确认弹窗独占 Escape，不连带关闭底层裁剪', async () => {
     const closeCrop = vi.fn();
     const closeConfirm = vi.fn();

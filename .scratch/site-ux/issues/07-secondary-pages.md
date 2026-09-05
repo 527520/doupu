@@ -1,6 +1,7 @@
 # 07 账号、认证与公共页面
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

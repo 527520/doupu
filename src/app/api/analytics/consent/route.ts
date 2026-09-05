@@ -27,8 +27,9 @@ async function put(request: Request): Promise<NextResponse> {
   const response = NextResponse.json({ status: parsed.data.status === 'granted' ? 'granted' : 'denied' });
   if (parsed.data.status === 'granted') {
     const token = await grantAnalyticsConsent(getDb(), existingToken);
-    response.headers.append('Set-Cookie', serializeConsentCookie('granted'));
+    // 浏览器持有最新同意意图；较早完成的 grant 响应不能覆盖较晚的撤回。
     response.headers.append('Set-Cookie', serializeVisitorCookie(token));
+    response.headers.set('Cache-Control', 'private, no-store');
     return response;
   }
 

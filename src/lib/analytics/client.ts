@@ -126,8 +126,13 @@ export function createAnalyticsClient(options: AnalyticsClientOptions): Analytic
   };
 }
 
+let analyticsInitialized = false;
+
+export function setAnalyticsInitialized(value: boolean): void { analyticsInitialized = value; }
+
 function hasBrowserConsent(): boolean {
   return typeof document !== 'undefined'
+    && typeof navigator !== 'undefined' && Boolean(navigator.locks?.request) && analyticsInitialized
     && document.cookie.split(';').some((part) => part.trim() === `${ANALYTICS_CONSENT_COOKIE}=granted`);
 }
 

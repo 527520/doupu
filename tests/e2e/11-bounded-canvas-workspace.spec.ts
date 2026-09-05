@@ -350,3 +350,25 @@ test('29×29、58×58、100×63 在桌面 944/1280/1440px 保持有界且不撑�
     await expectNoDocumentOverflow(page);
   }
 });
+
+test('手机直接恢复跟拼时焦点留在沉浸层，Escape 恢复页面', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await enterWorkbenchWithProject(page, testInfo, 29, 29);
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByText('本地：已保存', { exact: true }).first()).toBeVisible();
+  await page.goto('/designs');
+  await page.locator('.design-card').first().getByRole('button', { name: /继续制作/ }).click();
+  await expect(page).toHaveURL(/\/app\?id=/);
+  const direct = new URL(page.url()); direct.searchParams.set('mode', 'stitch');
+  await page.goto(direct.toString());
+  const workspace = page.getByTestId('mobile-immersive-workspace');
+  await expect(workspace.getByRole('button', { name: /返回预览/ })).toBeFocused();
+  expect(await page.locator('.workspace-content').evaluate((node) => Boolean(node.closest('[inert]')))).toBe(true);
+  for (let index = 0; index < 35; index++) {
+    await page.keyboard.press(index % 2 ? 'Shift+Tab' : 'Tab');
+    expect(await workspace.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press('Escape'); await expect(workspace).toHaveCount(0);
+  expect(await page.locator('.workspace-content').evaluate((node) => Boolean(node.closest('[inert]')))).toBe(false);
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
+});

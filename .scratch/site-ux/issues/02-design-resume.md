@@ -1,6 +1,7 @@
 # 02 设计管理与恢复
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

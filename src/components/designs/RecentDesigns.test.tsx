@@ -15,10 +15,14 @@ it('最近设计来自本机记录，继续跟拼使用该设计的真实进度'
     pattern: { width: 2, height: 1, cells: [{ hex: '#FC3D46', code: 'F02', transparent: false }, { hex: '#FC3D46', code: 'F02', transparent: false }] },
   };
   const progress = createStitchProgress(2, 1); progress.done[0] = 1;
+  const getProgress = vi.fn().mockRejectedValueOnce(new Error('temporarily unavailable')).mockResolvedValue(progress);
   render(<RecentDesigns storage={{
     getAll: async () => [{ id: 'cherry', name: project.name, projectJson: JSON.stringify(project), thumbnail: null, updatedAt: project.updatedAt }],
-    getStitchProgress: async () => progress,
+    getStitchProgress: getProgress,
   }} />);
+  const retry = await screen.findByRole('button', { name: '重试' });
+  expect(screen.queryByRole('link', { name: /继续制作.*我的樱桃/ })).not.toBeInTheDocument();
+  await userEvent.setup().click(retry);
   expect(await screen.findByRole('link', { name: /继续跟拼.*我的樱桃/ })).toHaveAttribute('href', '/app?id=cherry&mode=stitch');
   expect(screen.getByText('已拼 50%')).toBeVisible();
   expect(screen.queryByText('郁金香与蝴蝶结')).not.toBeInTheDocument();

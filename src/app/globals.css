@@ -1542,6 +1542,8 @@ body {
   overscroll-behavior: none;
 }
 
+.mobile-immersive-workspace { width: 100%; max-width: 100vw; border: 0; border-radius: 0; padding-inline: 0; }
+
 .mobile-workspace-header,
 .mobile-immersive-header {
   display: grid;

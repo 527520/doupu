@@ -1,6 +1,7 @@
 # 05 投稿与我的投稿
 
-Status: done
+Status: ready-for-agent
+Completion: complete
 Type: task
 
 ## 范围

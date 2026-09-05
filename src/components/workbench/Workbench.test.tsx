@@ -327,6 +327,19 @@ describe('Workbench 全流程', () => {
     } finally { restoreViewport(); }
   });
 
+  it('为已有设计重选原图时不提供空白起稿，取消保持原图纸', async () => {
+    const storage = new FakeStorage();
+    await renderRestored(storage);
+    const original = JSON.parse(storage.designs.get('id-last')!.projectJson).pattern;
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.reselectOriginal }));
+    await screen.findByLabelText(zhCN.upload.inputLabel);
+    expect(screen.queryByRole('region', { name: zhCN.workbench.blankTitle })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.cancelSelectOriginal }));
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => expect(JSON.parse(storage.designs.get('id-last')!.projectJson).pattern).toEqual(original));
+    expect(storage.designs.size).toBe(1);
+  });
+
   it('指定设计不在本机时给出明确返回入口，不误开其他记录', async () => {
     window.history.replaceState(null, '', '/app?id=missing');
     const storage = new FakeStorage();
@@ -1462,6 +1475,28 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 });
 
 describe('Workbench 移动沉浸工作区', () => {
+  it('跟拼进入后自动聚焦并隔离背景，退出恢复背景和页面滚动', async () => {
+    const restoreViewport = mockMobileViewport();
+    window.history.replaceState(null, '', '/app');
+    const previousOverflow = document.body.style.overflow;
+    try {
+      const storage = new FakeStorage();
+      await renderRestored(storage);
+      const trigger = await screen.findByRole('tab', { name: zhCN.stitch.tab });
+      trigger.focus(); fireEvent.click(trigger);
+      const workspace = await screen.findByTestId('mobile-immersive-workspace');
+      const back = within(workspace).getByRole('button', { name: /返回预览/ });
+      expect(workspace.contains(document.activeElement)).toBe(true);
+      expect(trigger.closest('[inert]')).not.toBeNull();
+      back.focus(); fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+      expect(workspace.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).not.toBe(back);
+      fireEvent.click(back);
+      await waitFor(() => expect(screen.queryByTestId('mobile-immersive-workspace')).toBeNull());
+      expect(trigger.closest('[inert]')).toBeNull();
+      expect(document.body.style.overflow).toBe(previousOverflow);
+    } finally { restoreViewport(); cleanup(); }
+  });
   it('进入编辑时压入同路由界面状态，顶部返回只退出到普通预览', async () => {
     const restoreViewport = mockMobileViewport();
     window.history.replaceState(null, '', '/app');

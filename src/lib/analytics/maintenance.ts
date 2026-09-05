@@ -7,6 +7,8 @@ import {
   gte,
   isNotNull,
   lt,
+  notExists,
+  or,
   sql,
 } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
@@ -202,7 +204,14 @@ export async function runAnalyticsMaintenance(
       const rollupsDeleted = await tx.delete(analyticsDailyRollups)
         .where(lt(analyticsDailyRollups.day, oldestRollupDay)).returning();
       const visitorsDeleted = await tx.delete(analyticsVisitors)
-        .where(lt(analyticsVisitors.lastSeenAt, new Date(now.getTime() - 180 * DAY_MS)))
+        .where(or(
+          lt(analyticsVisitors.lastSeenAt, new Date(now.getTime() - 180 * DAY_MS)),
+          and(
+            lt(analyticsVisitors.lastSeenAt, new Date(now.getTime() - DAY_MS)),
+            notExists(tx.select({ id: analyticsEvents.id }).from(analyticsEvents).where(eq(analyticsEvents.visitorId, analyticsVisitors.id))),
+            notExists(tx.select({ id: analyticsIdentityLinks.id }).from(analyticsIdentityLinks).where(eq(analyticsIdentityLinks.visitorId, analyticsVisitors.id))),
+          ),
+        ))
         .returning();
       return {
         skipped: false,

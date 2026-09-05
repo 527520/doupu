@@ -32,7 +32,8 @@ describe('analytics consent API', () => {
     const granted = await consentPut(consentRequest('granted'));
     expect(granted.status).toBe(200);
     const setCookie = granted.headers.get('set-cookie') ?? '';
-    expect(setCookie).toContain(`${ANALYTICS_CONSENT_COOKIE}=granted`);
+    // 服务器的旧 grant 响应不能覆盖浏览器后来写入的撤回意图。
+    expect(setCookie).not.toContain(`${ANALYTICS_CONSENT_COOKIE}=granted`);
     const visitorToken = new RegExp(`${ANALYTICS_VISITOR_COOKIE}=([A-Za-z0-9_-]{43})`).exec(setCookie)?.[1];
     expect(visitorToken).toBeTruthy();
     expect(await db.select().from(analyticsVisitors)).toHaveLength(1);
