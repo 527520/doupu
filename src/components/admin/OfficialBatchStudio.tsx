@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
-import { officialBatchConcurrency } from '@/lib/community/batchClient';
+import { batchGenerationFailureMessage, officialBatchConcurrency } from '@/lib/community/batchClient';
+import { ApiError } from '@/lib/sync/clientAdapter';
 import { createImageDecoder, type DecodedImage } from '@/lib/image/decode';
 import { sniffImageType } from '@/lib/image/sniff';
 import { LIMITS } from '@/lib/appInfo';
@@ -13,7 +14,7 @@ import CropDialog from '@/components/crop/CropDialog';
 import Modal from '@/components/ui/Modal';
 import CommunityPreviewCanvas from '@/components/community/CommunityPreviewCanvas';
 import PatternPreview from '@/components/preview/PatternPreview';
-import { BatchSession, type BatchItem, type StoredBatch } from './batchSession';
+import { BatchSession, isStoredBatch, type BatchItem, type StoredBatch } from './batchSession';
 import { generateBatchItem } from './batchGeneration';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminInspection } from './useAdminInspection';
@@ -47,10 +48,10 @@ function BatchCropEditor({ item, session, onClose }: { item: BatchItem; session:
         if (!item.file) throw new Error(t.noOriginal);
         const bytes = new Uint8Array(await item.file.arrayBuffer()); if (!alive) return;
         const type = sniffImageType(bytes); if (type === 'unknown') throw new Error(t.unknownImage);
-        const loaded = await decoder.load(bytes, type); if (!alive) return; if (!loaded.ok) throw new Error(loaded.code);
-        if ((loaded.image.naturalWidth ?? loaded.image.width) * (loaded.image.naturalHeight ?? loaded.image.height) > LIMITS.maxPixels) throw new Error('IMAGE_TOO_LARGE');
+        const loaded = await decoder.load(bytes, type); if (!alive) return; if (!loaded.ok) throw new Error(zhCN.errors[loaded.code]);
+        if ((loaded.image.naturalWidth ?? loaded.image.width) * (loaded.image.naturalHeight ?? loaded.image.height) > LIMITS.maxPixels) throw new Error(zhCN.errors.TOO_MANY_PIXELS);
         setImage(loaded.image);
-      } catch (caught) { if (alive) setError(caught instanceof Error ? caught.message : t.generationFailed); }
+      } catch (caught) { if (alive) setError(batchGenerationFailureMessage(caught)); }
       finally { decoder.dispose(); }
     })();
     return () => { alive = false; decoder.dispose(); };
@@ -69,7 +70,7 @@ function DraftInspection({ item, onClose }: { item: BatchItem; onClose: () => vo
 export default function OfficialBatchStudio() {
   const [session] = useState(() => new BatchSession({ generate: generateBatchItem, concurrency: officialBatchConcurrency(typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency, typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number }).deviceMemory) }));
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-  const history = useAdminCollection<StoredBatch>('/api/admin/batches');
+  const history = useAdminCollection<StoredBatch>('/api/admin/batches', isStoredBatch);
   const cleanup = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cropId, setCropId] = useState<string | null>(null);
   const [inspectionId, setInspectionId] = useState<string | null>(null);
@@ -105,11 +106,12 @@ export default function OfficialBatchStudio() {
     setRefreshError(null); const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch('/api/admin/batches', { cache: 'no-store', signal: controller.signal }); const body = await response.json();
-      if (!response.ok || !Array.isArray(body.items)) throw new Error(c.refreshFailed);
-      const current = body.items.find((entry: StoredBatch) => entry.id === batch.id); if (!current) throw new Error(t.batchNotFound);
+      if (!response.ok) throw new ApiError(response.status, 'UNKNOWN', body?.error?.message || c.refreshFailed);
+      if (!Array.isArray(body?.items) || !body.items.every(isStoredBatch)) throw new Error();
+      const current = body.items.find((entry: StoredBatch) => entry.id === batch.id); if (!current) { setRefreshError(t.batchNotFound); return; }
       if (session.locked || session.processing) return;
       session.refreshState(current); setConfirmPublish(false); setConfirmed(false); await history.reload();
-    } catch (error) { setRefreshError(error instanceof Error ? error.message : c.refreshFailed); }
+    } catch (error) { setRefreshError(controller.signal.aborted ? c.readTimeout : error instanceof ApiError ? error.message : c.refreshFailed); }
     finally { window.clearTimeout(timeout); }
   };
   return <section className="batch-studio">

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { analyticsDailyRollups, analyticsEvents, analyticsVisitors } from '@/../db/schema';
-import { rollupAnalyticsDay } from './maintenance';
+import { ALL_EVENTS_ROLLUP_NAME, rollupAnalyticsDay } from './maintenance';
 import {
   queryAnalyticsDimensions,
   queryAnalyticsFunnel,
@@ -90,6 +90,8 @@ describe('analytics reports', () => {
       unavailableReason: '仅最近 90 天原始事件支持同会话漏斗',
       steps: null,
     });
+    await expect(queryAnalyticsSummary(db, { start: '2024-09-05', end: '2024-09-05' }, NOW)).resolves.toMatchObject({ capability: { mode: 'aggregate' }, totals: { events: 0 } });
+    await expect(queryAnalyticsSummary(db, { start: '2024-09-04', end: '2024-09-05' }, NOW)).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
   it('counts only community-origin saves and exports in the reuse funnel', async () => {
@@ -115,5 +117,40 @@ describe('analytics reports', () => {
     ]);
     const funnel = await queryAnalyticsFunnel(db, { start: '2026-09-04', end: '2026-09-04' }, 'communityReuse', NOW);
     expect(funnel.steps?.map((step) => step.sessions)).toEqual([2, 2, 2, 1, 1]);
+  });
+
+  it('joins historical rollups with only the live Shanghai day and retains per-day categories', async () => {
+    await db.insert(analyticsDailyRollups).values([
+      { day: '2026-05-01', eventName: ALL_EVENTS_ROLLUP_NAME, eventCount: 10, uniqueVisitors: 7 },
+      { day: '2026-05-01', eventName: ALL_EVENTS_ROLLUP_NAME, dimensionName: 'device', dimensionValue: 'mobile', eventCount: 10, uniqueVisitors: 7 },
+      // A stale accidental partial-day rollup must not be counted as well as live events.
+      { day: '2026-09-05', eventName: ALL_EVENTS_ROLLUP_NAME, eventCount: 99, uniqueVisitors: 99 },
+      { day: '2026-09-05', eventName: ALL_EVENTS_ROLLUP_NAME, dimensionName: 'device', dimensionValue: 'mobile', eventCount: 99, uniqueVisitors: 99 },
+    ]);
+    const [visitor] = await db.insert(analyticsVisitors).values({ tokenHash: 'live-day' }).returning();
+    const base = { visitorId: visitor.id, sessionId: crypto.randomUUID(), receivedAt: NOW, appVersion: 'test', actorType: 'anonymous', path: '/', deviceType: 'mobile' as const, browserFamily: 'safari' as const, osFamily: 'ios' as const, properties: {}, isBot: false, isInternal: false };
+    await db.insert(analyticsEvents).values([
+      { ...base, eventId: crypto.randomUUID(), name: 'page_viewed', occurredAt: new Date('2026-09-04T16:00:00Z') },
+      { ...base, eventId: crypto.randomUUID(), name: 'upload_selected', occurredAt: NOW },
+      { ...base, eventId: crypto.randomUUID(), name: 'page_viewed', occurredAt: NOW, isBot: true },
+      { ...base, eventId: crypto.randomUUID(), name: 'page_viewed', occurredAt: NOW, isInternal: true },
+      { ...base, eventId: crypto.randomUUID(), name: 'page_viewed', occurredAt: new Date('2026-09-04T15:59:59Z') },
+    ]);
+    const query = { start: '2026-05-01', end: '2026-09-05' };
+    await expect(queryAnalyticsSummary(db, query, NOW)).resolves.toMatchObject({ totals: { events: 12, uniqueVisitors: null, sessions: null } });
+    await expect(queryAnalyticsTrend(db, query, NOW)).resolves.toMatchObject({ partialDay: '2026-09-05', points: [
+      { day: '2026-05-01', events: 10, uniqueVisitors: 7 }, { day: '2026-09-05', events: 2, uniqueVisitors: 1 },
+    ] });
+    await expect(queryAnalyticsDimensions(db, query, 'device', NOW)).resolves.toMatchObject({
+      values: [{ value: 'mobile', events: 12, uniqueVisitors: null, dailyUniqueVisitorsSum: 8 }],
+      points: [{ day: '2026-05-01', value: 'mobile', events: 10, uniqueVisitors: 7 }, { day: '2026-09-05', value: 'mobile', events: 2, uniqueVisitors: 1 }],
+    });
+    await expect(queryAnalyticsDimensions(db, { ...query, eventName: 'upload_selected' }, 'device', NOW)).resolves.toMatchObject({
+      points: [{ day: '2026-09-05', value: 'mobile', events: 1, uniqueVisitors: 1 }],
+    });
+    await expect(queryAnalyticsDimensions(db, query, 'event', NOW)).resolves.toMatchObject({
+      points: [{ day: '2026-09-05', value: 'page_viewed', events: 1, uniqueVisitors: 1 }, { day: '2026-09-05', value: 'upload_selected', events: 1, uniqueVisitors: 1 }],
+    });
+    await expect(queryAnalyticsTrend(db, { ...query, end: '2026-05-01' }, NOW)).resolves.toMatchObject({ partialDay: null, points: [{ day: '2026-05-01', events: 10 }] });
   });
 });

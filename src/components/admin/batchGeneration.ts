@@ -20,11 +20,11 @@ export function generateBatchItem(input: { file: File; crop: BatchCrop | null; p
     try {
       const bytes = new Uint8Array(await input.file.arrayBuffer()); check();
       const type = sniffImageType(bytes); if (type === 'unknown') throw new Error(zhCN.communityAdmin.batch.unknownImage);
-      const loaded = await decoder.load(bytes, type); check(); if (!loaded.ok) throw new Error(loaded.code);
+      const loaded = await decoder.load(bytes, type); check(); if (!loaded.ok) throw new Error(zhCN.errors[loaded.code]);
       const width = loaded.image.naturalWidth ?? loaded.image.width; const height = loaded.image.naturalHeight ?? loaded.image.height;
-      if (width * height > LIMITS.maxPixels) throw new Error('IMAGE_TOO_LARGE');
+      if (width * height > LIMITS.maxPixels) throw new Error(zhCN.errors.TOO_MANY_PIXELS);
       const region = await decoder.region(input.crop ?? { x: 0, y: 0, width, height }, LIMITS.generationSourceDimension);
-      check(); if (!region.ok) throw new Error(region.code); decoder.clear(); releaseDecoder();
+      check(); if (!region.ok) throw new Error(zhCN.errors[region.code]); decoder.clear(); releaseDecoder();
       task = generator.run({ src: region.image, params: input.params, palette: [...getBuiltinPalette('MARD').engineColors] }, progress);
       const output = await task.promise; check();
       return { version: 1, engineVersion: ENGINE_VERSION, boardProfile: '5mm-29', paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 }, params: { ...input.params, backgroundPrototype: input.params.backgroundPrototype ?? null }, pattern: output.pattern };

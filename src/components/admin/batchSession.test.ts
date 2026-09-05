@@ -1,16 +1,60 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BatchSession, type BatchGeneration, type StoredBatch } from './batchSession';
+import { BatchSession, isStoredBatch, type BatchGeneration, type StoredBatch } from './batchSession';
 import type { CommunitySnapshotV1 } from '@/lib/community/snapshot';
+import { zhCN } from '@/messages/zh-CN';
 
 const snapshot = { version: 1, engineVersion: 'test', boardProfile: '5mm-29', paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 }, params: { targetWidth: 20, targetColorCount: 2, mode: 'dominant', brightness: 0, contrast: 0, dithering: false, backgroundRemoval: false, bgTolerance: 8, backgroundPrototype: null }, pattern: { width: 1, height: 1, cells: [{ hex: '#FFFFFF', code: 'A1', transparent: false }] } } as CommunitySnapshotV1;
 const file = (name = 'private.png') => ({ name, size: 100, type: 'image/png' }) as File;
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const row = (status = 'running', version = 1) => ({ id: 'batch-1', status, version });
-const saved = { revisionId: 'revision-1', workId: 'work-1', status: 'draft' };
+const batchId = '00000000-0000-4000-8000-000000000001';
+const row = (status = 'running', version = 1) => ({ id: batchId, status, version });
+const saved = { batchId, revisionId: '00000000-0000-4000-8000-000000000002', workId: '00000000-0000-4000-8000-000000000003', status: 'draft' };
+const preview = { version: 1 as const, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] };
 const flush = async () => { for (let n = 0; n < 15; n++) await new Promise((resolve) => setTimeout(resolve, 0)); };
 const generation = (): BatchGeneration => ({ promise: Promise.resolve(structuredClone(snapshot)), cancel: vi.fn() });
 
 describe('local official batch session', () => {
+  it.each([{ drafts: undefined }, { createdAt: 'invalid' }, { defaultParams: {} }, { successCount: 51 }, { drafts: [{ id: 'x' }] }])('rejects damaged stored batches without dropping a local file: %j', (invalid) => {
+    const batch = { ...row('completed'), createdAt: '2026-09-01', successCount: 0, failureCount: 0, itemCount: 1, drafts: [], ...invalid };
+    expect(isStoredBatch(batch)).toBe(false);
+    const session = new BatchSession({ generate: generation, concurrency: 1 }); session.selectFiles([file()]);
+    session.restore(batch as unknown as StoredBatch);
+    expect(session.getSnapshot().items[0].file).not.toBeNull(); expect(session.getSnapshot().batch).toBeNull(); expect(session.getSnapshot().error).toBe(zhCN.communityAdmin.queueLoadFailed); session.dispose();
+  });
+  it.each([{ ...row(), id: '' }, row('paused'), row('running', 0)])('keeps malformed creation unknown: %j', async (invalid) => {
+    const generate = vi.fn(generation); const fetcher = vi.fn().mockResolvedValue(response(invalid));
+    const session = new BatchSession({ fetcher, generate, concurrency: 1 }); session.selectFiles([file()]); await session.start();
+    expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().batch).toBeNull(); expect(generate).not.toHaveBeenCalled(); session.dispose();
+  });
+
+  it.each([{ ...saved, revisionId: 'x' }, { ...saved, workId: '' }, { ...saved, status: 'published' }, { ...saved, batchId: crypto.randomUUID() }])('retains bytes and the frozen save on inconsistent confirmation: %j', async (invalid) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response(invalid)).mockResolvedValueOnce(response(saved)).mockResolvedValueOnce(response(row('completed', 2)));
+    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 1 }); session.selectFiles([file()]); await session.start(); await flush();
+    const item = session.getSnapshot().items[0]; expect(item.status).toBe('save_unknown'); expect(item.file).not.toBeNull();
+    await session.retryItem(item.localId); await flush();
+    expect(fetcher.mock.calls[2][1].body).toBe(fetcher.mock.calls[1][1].body); expect(fetcher.mock.calls[2][1].headers).toEqual(fetcher.mock.calls[1][1].headers);
+    expect(session.getSnapshot().items[0].status).toBe('saved'); expect(generate).toHaveBeenCalledTimes(1); session.dispose();
+  });
+
+  it.each([{ ...row('paused', 2), id: crypto.randomUUID() }, row('paused', 1), row('running', 2)])('does not accept a different batch/state/version for a transition: %j', async (invalid) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(invalid)).mockResolvedValueOnce(response(row('paused', 2)));
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
+    session.restore({ ...row(), createdAt: '2026-09-01', successCount: 0, failureCount: 0, itemCount: 1, drafts: [] } as StoredBatch);
+    await session.pause(); expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().batch).toMatchObject(row());
+    await session.retryCommand(); expect(session.getSnapshot().batch).toMatchObject(row('paused', 2));
+    expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body); expect(fetcher.mock.calls[1][1].headers).toEqual(fetcher.mock.calls[0][1].headers); session.dispose();
+  });
+
+  it.each([undefined, [], [crypto.randomUUID()], [saved.revisionId, saved.revisionId]].map((ids) => ({ ids })))('does not report publication for missing or mismatched revision confirmations: %j', async ({ ids }) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: ids })).mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: [saved.revisionId] }));
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
+    session.restore({ ...row('completed', 4), createdAt: '2026-09-01', successCount: 1, failureCount: 0, itemCount: 1, drafts: [{ id: saved.revisionId, workId: saved.workId, title: '草稿', status: 'draft', preview }] } as StoredBatch);
+    session.updateItem(session.getSnapshot().items[0].localId, { selected: true }); await session.publish();
+    expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().items[0]).toMatchObject({ status: 'saved', selected: true });
+    await session.retryCommand(); expect(session.getSnapshot().items[0]).toMatchObject({ status: 'published', selected: false });
+    expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body); session.dispose();
+  });
+
   it('bounds concurrency and never dispatches the same pending item twice', async () => {
     const finishes: Array<(snapshot: CommunitySnapshotV1) => void> = [];
     const generate = vi.fn(() => ({ promise: new Promise<CommunitySnapshotV1>((done) => { finishes.push(done); }), cancel: vi.fn() }));
@@ -22,7 +66,7 @@ describe('local official batch session', () => {
   });
 
   it('freezes publishing selection through an uncertain reply, and releases it only after identical replay', async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(response({}, 503)).mockResolvedValueOnce(response({ batch: row('completed', 5) }));
+    const fetcher = vi.fn().mockResolvedValueOnce(response({}, 503)).mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: [saved.revisionId] }));
     const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
     session.restore({ ...row('completed', 4), createdAt: '2026-09-01', successCount: 1, failureCount: 0, itemCount: 1, drafts: [{ id: saved.revisionId, workId: saved.workId, title: '真实草稿', status: 'draft', preview: { version: 1, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] } }] } as StoredBatch);
     const item = session.getSnapshot().items[0]; expect(item.selected).toBe(false);
@@ -154,6 +198,7 @@ describe('local official batch session', () => {
     const session = new BatchSession({ fetcher, generate, concurrency: 1 });
     session.selectFiles([file(), file('second.png')]); await session.start(); await flush();
     expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['failed', 'saved']);
+    expect(session.getSnapshot().items[0].error).toBe(zhCN.communityAdmin.batch.generationFailed);
     expect(session.getSnapshot().notice).toContain('1');
     await session.retryItem(session.getSnapshot().items[0].localId); await flush();
     expect(generate).toHaveBeenCalledTimes(3);

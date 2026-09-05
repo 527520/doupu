@@ -15,7 +15,7 @@ import type { AnyDatabase } from '@/../db/client';
 import { analyticsDailyRollups, analyticsEvents } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { computeOrderedFunnel, FUNNELS, type FunnelId } from './funnel';
-import { analyticsRangeCapability } from './time';
+import { analyticsRangeCapability, oldestAnalyticsRollupDay, shanghaiDayBounds, toShanghaiDay } from './time';
 import { ALL_EVENTS_ROLLUP_NAME } from './maintenance';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
@@ -110,9 +110,7 @@ function assertSupportedRange(query: AnalyticsQuery, now: Date) {
   } catch {
     throw new AppError('VALIDATION', '分析日期范围无效');
   }
-  const oldest = new Date(now);
-  oldest.setUTCFullYear(oldest.getUTCFullYear() - 2);
-  if (capability.start < oldest || capability.end > new Date(now.getTime() + 36 * 60 * 60 * 1000)) {
+  if (query.start < oldestAnalyticsRollupDay(now) || capability.end > new Date(now.getTime() + 36 * 60 * 60 * 1000)) {
     throw new AppError('VALIDATION', '分析日期范围仅支持最近两年');
   }
   return capability;
@@ -124,10 +122,11 @@ function hasCombinationFilter(query: AnalyticsQuery): boolean {
   ));
 }
 
-function aggregateConditions(query: AnalyticsQuery): SQL[] {
+function aggregateConditions(query: AnalyticsQuery, now: Date): SQL[] {
   const conditions: SQL[] = [
     gte(analyticsDailyRollups.day, query.start),
     sql`${analyticsDailyRollups.day} <= ${query.end}`,
+    lt(analyticsDailyRollups.day, toShanghaiDay(now)),
   ];
   if (query.eventName) conditions.push(eq(analyticsDailyRollups.eventName, query.eventName));
   return conditions;
@@ -144,14 +143,29 @@ function aggregateMeasures(singleEvent: boolean) {
   };
 }
 
-async function aggregateDailyTotals(db: AnyDatabase, query: AnalyticsQuery) {
+function partialDay(query: AnalyticsQuery, now: Date): string | null {
+  const today = toShanghaiDay(now);
+  return query.start <= today && query.end >= today ? today : null;
+}
+
+async function aggregateDailyTotals(db: AnyDatabase, query: AnalyticsQuery, now: Date) {
+  // Completed-day, deidentified rollups survive withdrawal. Never replace them
+  // with retained raw events; only today's not-yet-aggregated data is joined.
   const rows = await db.select({ day: analyticsDailyRollups.day, ...aggregateMeasures(Boolean(query.eventName)) })
     .from(analyticsDailyRollups).where(and(
-      ...aggregateConditions(query), eq(analyticsDailyRollups.dimensionName, 'all'), eq(analyticsDailyRollups.dimensionValue, 'all'),
+      ...aggregateConditions(query, now), eq(analyticsDailyRollups.dimensionName, 'all'), eq(analyticsDailyRollups.dimensionValue, 'all'),
     )).groupBy(analyticsDailyRollups.day).orderBy(asc(analyticsDailyRollups.day));
-  return rows.map((row) => ({
+  const points = rows.map((row) => ({
     day: row.day, events: Number(row.events ?? 0), uniqueVisitors: row.uniqueVisitors === null ? null : Number(row.uniqueVisitors),
   }));
+  const today = partialDay(query, now);
+  if (today) {
+    const { start, end } = shanghaiDayBounds(today);
+    const [live] = await db.select({ events: count(), uniqueVisitors: countDistinct(analyticsEvents.visitorId) })
+      .from(analyticsEvents).where(and(...rawConditions(query, start, end)));
+    if (live.events > 0) points.push({ day: today, ...live });
+  }
+  return points;
 }
 
 export async function queryAnalyticsSummary(db: AnyDatabase, query: AnalyticsQuery, now = new Date()) {
@@ -167,7 +181,7 @@ export async function queryAnalyticsSummary(db: AnyDatabase, query: AnalyticsQue
   if (hasCombinationFilter(query)) {
     throw new AppError('VALIDATION', '超过 90 天的范围只支持总量与单维趋势');
   }
-  const days = await aggregateDailyTotals(db, query);
+  const days = await aggregateDailyTotals(db, query, now);
   return {
     capability,
     totals: { events: days.reduce((total, day) => total + day.events, 0), uniqueVisitors: null, sessions: null },
@@ -193,7 +207,8 @@ export async function queryAnalyticsTrend(db: AnyDatabase, query: AnalyticsQuery
   }
   return {
     capability,
-    points: await aggregateDailyTotals(db, query),
+    points: await aggregateDailyTotals(db, query, now),
+    partialDay: partialDay(query, now),
   };
 }
 
@@ -225,13 +240,22 @@ export async function queryAnalyticsDimensions(
     ...aggregateMeasures(Boolean(query.eventName) || dimension === 'event'),
   }).from(analyticsDailyRollups)
     .where(and(
-      ...aggregateConditions(query),
+      ...aggregateConditions(query, now),
       eq(analyticsDailyRollups.dimensionName, rollupDimensionNames[dimension]),
     ))
     .groupBy(analyticsDailyRollups.day, analyticsDailyRollups.dimensionValue)
-    .orderBy(asc(analyticsDailyRollups.dimensionValue));
+    .orderBy(asc(analyticsDailyRollups.day), asc(analyticsDailyRollups.dimensionValue));
+  const points = rows.map((row) => ({ ...row, events: Number(row.events ?? 0), uniqueVisitors: row.uniqueVisitors === null ? null : Number(row.uniqueVisitors) }));
+  const today = partialDay(query, now);
+  if (today) {
+    const column = rawDimensions[dimension];
+    const { start, end } = shanghaiDayBounds(today);
+    const live = await db.select({ value: column, events: count(), uniqueVisitors: countDistinct(analyticsEvents.visitorId) })
+      .from(analyticsEvents).where(and(...rawConditions(query, start, end))).groupBy(column).orderBy(asc(column));
+    points.push(...live.map((row) => ({ ...row, day: today, value: row.value ?? '(none)' })));
+  }
   const values = new Map<string, { value: string; events: number; uniqueVisitors: null; dailyUniqueVisitorsSum: number | null }>();
-  for (const row of rows) {
+  for (const row of points) {
     const total = values.get(row.value) ?? { value: row.value, events: 0, uniqueVisitors: null, dailyUniqueVisitorsSum: 0 };
     total.events += Number(row.events ?? 0);
     total.dailyUniqueVisitorsSum = total.dailyUniqueVisitorsSum === null || row.uniqueVisitors === null
@@ -241,7 +265,9 @@ export async function queryAnalyticsDimensions(
   return {
     capability,
     dimension,
-    values: [...values.values()],
+    values: [...values.values()].sort((a, b) => a.value.localeCompare(b.value)),
+    points,
+    partialDay: today,
   };
 }
 

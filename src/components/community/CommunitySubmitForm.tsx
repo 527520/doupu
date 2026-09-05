@@ -10,9 +10,11 @@ import CommunityPreviewCanvas from './CommunityPreviewCanvas';
 import { isDefiniteCommunityRejection, postCommunityCommand } from './communityCommand';
 import { track } from '@/lib/analytics/client';
 import { zhCN } from '@/messages/zh-CN';
+import { z } from 'zod';
 
 interface Tag { id: string; name: string; }
 const t = zhCN.communityAdmin.submission;
+const uuid = z.uuid();
 interface Attempt {
   key: string;
   submitKey: string;
@@ -22,8 +24,9 @@ interface Attempt {
 
 async function post(url: string, key: string, payload: object, submitted?: { revisionId: string; version: number }) {
   const body = await postCommunityCommand(url, key, payload);
-  if (typeof body.revisionId !== 'string' || !body.revisionId || typeof body.version !== 'number' || !Number.isInteger(body.version) || body.version < 1
-    || (submitted ? body.revisionId !== submitted.revisionId || body.version !== submitted.version + 1 || body.status !== 'pending_review' : body.status !== 'draft')) {
+  if (typeof body.revisionId !== 'string' || !uuid.safeParse(body.revisionId).success || typeof body.version !== 'number' || !Number.isInteger(body.version) || body.version < 1
+    || (url === '/api/community/works' && !uuid.safeParse(body.workId).success)
+    || (submitted ? body.revisionId !== submitted.revisionId || body.version !== submitted.version + 1 || body.status !== 'pending_review' : body.status !== 'draft' || body.version !== 1)) {
     throw new Error(zhCN.communityAdmin.submission.unknownResult);
   }
   return { revisionId: body.revisionId, version: body.version };
@@ -58,10 +61,10 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
     try {
       const value = await createDoupuApi().getDesign(id);
       if (!mounted.current || generation.current !== seq) return;
-      if (!value || value.deleted || !communitySnapshotFromProject(value.project)) throw new Error(t.sourceInvalid);
+      if (!value || value.deleted || !communitySnapshotFromProject(value.project)) throw new ApiError(400, 'VALIDATION', t.sourceInvalid);
       setSource(value); setTitle(value.name.slice(0, 80));
     } catch (caught) {
-      if (mounted.current && generation.current === seq) setError(caught instanceof Error ? caught.message : t.previewFailed);
+      if (mounted.current && generation.current === seq) setError(caught instanceof ApiError ? caught.message : t.previewFailed);
     } finally {
       if (mounted.current && generation.current === seq) setLoading(false);
     }

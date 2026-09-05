@@ -15,8 +15,8 @@ export async function postCommunityCommand(url: string, key: string, payload: ob
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error(zhCN.communityAdmin.mineActions.unknown);
     return body;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(zhCN.communityAdmin.mineActions.unknown);
-    throw error;
+    if (error instanceof ApiError && !controller.signal.aborted) throw error;
+    throw new Error(zhCN.communityAdmin.mineActions.unknown);
   } finally { clearTimeout(timeout); }
 }
 

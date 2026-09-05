@@ -37,6 +37,17 @@ describe('analytics consent banner', () => {
     }));
   });
 
+  it('keeps a failed grant visible on ordinary pages and can retry without collecting before confirmation', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(<AnalyticsConsentBanner />);
+    fireEvent.click(await screen.findByRole('button', { name: '同意匿名统计' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前页面不会采集');
+    expect(track).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '同意匿名统计' }));
+    await waitFor(() => expect(screen.queryByLabelText('匿名使用数据偏好')).not.toBeInTheDocument());
+    expect(track).toHaveBeenCalledOnce();
+  });
+
   it('stops immediately on withdrawal, persists the intent on failure, and allows only deletion retry', async () => {
     document.cookie = 'doupu_analytics_consent=granted; Path=/';
     let finish!: (response: Response) => void;

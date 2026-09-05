@@ -20,7 +20,7 @@ import {
   analyticsVisitors,
   maintenanceRuns,
 } from '@/../db/schema';
-import { shanghaiDayBounds, toShanghaiDay } from './time';
+import { oldestAnalyticsRollupDay, shanghaiDayBounds, toShanghaiDay } from './time';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANALYTICS_MAINTENANCE_LOCK = 8_130_605_911;
@@ -200,7 +200,7 @@ export async function runAnalyticsMaintenance(
         rawEventsDeleted += deleted.length;
       }
       const cleanupCursor = expiredDays.length > 7 ? expiredDays[7] : null;
-      const oldestRollupDay = toShanghaiDay(new Date(now.getTime() - (2 * 365 * DAY_MS)));
+      const oldestRollupDay = oldestAnalyticsRollupDay(now);
       const rollupsDeleted = await tx.delete(analyticsDailyRollups)
         .where(lt(analyticsDailyRollups.day, oldestRollupDay)).returning();
       const visitorsDeleted = await tx.delete(analyticsVisitors)

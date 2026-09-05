@@ -599,6 +599,7 @@ body {
 .prose-policy p { color: var(--color-ink-soft); }
 .home-community { grid-column: 1 / -1; }
 .home-community > header { display: flex; align-items: end; justify-content: space-between; margin-bottom: .8rem; }
+.home-community > .home-community-latest { margin-top: 1.5rem; }
 .home-community h2 { font-family: "Songti SC", "STSong", serif; font-size: 25px; }
 .home-community ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }
 .home-community li { min-width: 0; overflow: hidden; border: 1px solid #e7e2df; border-radius: 14px; background: white; }

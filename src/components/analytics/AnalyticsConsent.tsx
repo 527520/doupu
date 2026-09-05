@@ -109,7 +109,7 @@ export function AnalyticsConsentBanner() {
     const timer = window.setTimeout(() => { if (readPreference() === 'granted') void choose('granted'); }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-  if (!ready || preference === 'granted' || preference === 'denied') return null;
+  if (!ready || (preference === 'granted' && !error) || preference === 'denied') return null;
   const pending = preference === 'withdrawn';
   return (
     <aside className="analytics-consent" aria-label={t.bannerLabel}>

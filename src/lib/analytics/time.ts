@@ -2,6 +2,11 @@ const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
+/** Same inclusive Shanghai day boundary as rollup retention, including leap years. */
+export function oldestAnalyticsRollupDay(now: Date): string {
+  return toShanghaiDay(new Date(now.getTime() - 730 * DAY_MS));
+}
+
 function parseDay(day: string): number {
   if (!DAY_PATTERN.test(day)) throw new Error('INVALID_ANALYTICS_DAY');
   const timestamp = Date.parse(`${day}T00:00:00.000Z`);

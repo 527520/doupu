@@ -7,5 +7,5 @@ import { zhCN } from '@/messages/zh-CN';
 export default async function AdminCommentsPage() {
   if (!authorize(await getSessionActor(), 'community:moderate')) forbidden();
   const t = zhCN.communityAdmin.pages.comments;
-  return <main className="admin-page"><header className="admin-page-header"><span>{t.eyebrow}</span><h1>{t.title}</h1><p>{t.description}</p></header><GovernanceConsole mode="comments" /></main>;
+  return <main id="main" className="admin-page"><header className="admin-page-header"><span>{t.eyebrow}</span><h1>{t.title}</h1><p>{t.description}</p></header><GovernanceConsole mode="comments" /></main>;
 }

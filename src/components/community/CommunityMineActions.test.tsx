@@ -23,7 +23,7 @@ it('整件作品撤回明确说明公开版与待审版都会隐藏，失败保�
   view(); fireEvent.click(screen.getByRole('button', { name: '撤回整件作品' }));
   expect(screen.getByRole('dialog')).toHaveTextContent('隐藏公开作品，并终止本次待审或草稿');
   fireEvent.click(screen.getByRole('button', { name: '确认撤回' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('网络暂时不可用');
+  expect(await screen.findByRole('alert')).toHaveTextContent('尚未确认服务器结果');
   fireEvent.click(screen.getByRole('button', { name: '重试确认本次操作' }));
   await waitFor(() => expect(state.refresh).toHaveBeenCalled());
   expect(state.fetch.mock.calls[0][1].body).toEqual(state.fetch.mock.calls[1][1].body);

@@ -1118,6 +1118,7 @@ export const zhCN = {
     },
     actions: { hide: '隐藏', publish: '公开', dismiss: '驳回', resolve: '结案', accept: '受理', approve: '批准发布' },
     batch: {
+      filesLimit: '单批请选择 1–50 个文件', imageFilesOnly: '批次只接受图片文件', fileSizeLimit: '单个文件不能超过 20 MiB', totalSizeLimit: '批次文件总大小不能超过 200 MiB',
       working: '正在处理…',
       workflow: '选择本地图片 → 调整标题与可选裁剪 → 生成并逐项保存 → 核对草稿后发布。生成和保存不是公开发布。',
       history: '恢复已保存批次（最近 50 批）', noHistory: '暂无已保存批次。', empty: '选择图片开始，或从历史中打开已保存草稿。',
@@ -1175,6 +1176,7 @@ export const zhCN = {
     },
     analytics: { withdrawn: '已撤回同意并清除该访客的原始事件和身份关联。', saved: '偏好已保存。', saveFailed: '偏好保存失败，请稍后重试。', granted: '已同意', denied: '已拒绝', unset: '尚未选择', loading: '正在读取偏好…', bannerLabel: '匿名使用数据偏好', bannerTitle: '是否允许匿名使用数据？', bannerBody: '同意后，我们只记录功能类别、设备类别和匿名会话，不记录原图、图纸正文、搜索词、完整 IP 或邮箱。拒绝不会影响使用。', learnMore: '查看隐私说明与随时撤回', reject: '拒绝', grant: '同意匿名统计', settingsTitle: '匿名分析偏好', currentStatus: (status: string) => `当前状态：${status}`, agree: '同意', withdraw: '撤回并清除原始数据' },
     analyticsDashboard: {
+      dailyDimension: '逐日分类趋势', rollupFreshness: '已完成日期以最近日维护的去标识聚合为准；维护状态可在系统信息核查。', partialDay: (day: string) => `${day} 为尚未结束的上海日期，使用当天已接收事件，数值仍会变化。`,
       invalidQuery: '部分查询参数无效或已超出保留范围，已恢复有效默认值。请核对下方日期与筛选后重新查询。', advanced: '更多筛选：设备、来源与 UTM', advancedHint: '这些组合筛选只在最近 90 天精确范围生效；长期范围会明确忽略。', reset: '重置查询', eventExample: '例如 page_viewed',
       legacyDailyUvUnavailable: '部分历史数据未保存当日跨事件去重人数，相应 UV 暂不可用；事件总量仍可查看。',
       eyebrow: 'ANALYTICS', title: '匿名分析校样', description: 'Asia/Shanghai · 精确范围最多 90 天 · 长期范围自动使用日聚合',

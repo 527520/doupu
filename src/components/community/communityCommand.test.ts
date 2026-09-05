@@ -1,8 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/sync/clientAdapter';
 import { isDefiniteCommunityRejection, postCommunityCommand } from './communityCommand';
+import { zhCN } from '@/messages/zh-CN';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+it('explains a browser network failure without exposing its internal English message', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+  await expect(postCommunityCommand('/command', 'key', {})).rejects.toThrow(zhCN.communityAdmin.mineActions.unknown);
+});
 it('15 秒后终止挂起请求，作为未知结果而非确定拒绝', async () => {
   vi.useFakeTimers();
   const request = vi.fn((_url: string, init: RequestInit) => new Promise((_, reject) => init.signal!.addEventListener('abort', () => reject(new Error('aborted')))));

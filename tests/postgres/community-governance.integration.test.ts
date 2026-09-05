@@ -36,6 +36,30 @@ import { PUT as saveDesign } from '@/app/api/designs/[id]/route';
 import { measureJsonBytes } from '@/lib/sync/revision';
 import { POST as createSubmission } from '@/app/api/community/works/route';
 import { POST as submitRevision } from '@/app/api/community/revisions/[id]/submit/route';
+import { queryAnalyticsDimensions, queryAnalyticsSummary, queryAnalyticsTrend } from '@/lib/analytics/reports';
+
+it('serves long-range retained days plus the live Shanghai day without duplicate or cross-day UV', async () => {
+  const rollback = new Error('local analytics fixture rollback');
+  try {
+    await db.transaction(async (tx) => {
+      const now = new Date('2026-09-05T04:00:00Z'); const eventName = `pg-report-${randomUUID()}`;
+      const [visitor] = await tx.insert(schema.analyticsVisitors).values({ tokenHash: randomUUID() }).returning();
+      await tx.insert(schema.analyticsDailyRollups).values([
+        { day: '2026-05-01', eventName, eventCount: 10, uniqueVisitors: 7 },
+        { day: '2026-05-01', eventName, dimensionName: 'device', dimensionValue: 'mobile', eventCount: 10, uniqueVisitors: 7 },
+        { day: '2026-09-05', eventName, eventCount: 99, uniqueVisitors: 99 },
+      ]);
+      await tx.insert(schema.analyticsEvents).values([0, 1].map((n) => ({ visitorId: visitor.id, eventId: randomUUID(), sessionId: randomUUID(), name: eventName, sequenceInBatch: n,
+        receivedAt: now, occurredAt: new Date('2026-09-04T16:00:00Z'), appVersion: 'pg-contract', actorType: 'anonymous', deviceType: 'mobile' as const, browserFamily: 'safari' as const, osFamily: 'ios' as const, path: '/', properties: {}, isBot: false, isInternal: false })));
+      const query = { start: '2026-05-01', end: '2026-09-05', eventName };
+      expect((await queryAnalyticsSummary(tx, query, now)).totals).toEqual({ events: 12, uniqueVisitors: null, sessions: null });
+      expect((await queryAnalyticsTrend(tx, query, now)).points).toEqual([{ day: '2026-05-01', events: 10, uniqueVisitors: 7 }, { day: '2026-09-05', events: 2, uniqueVisitors: 1 }]);
+      expect(await queryAnalyticsDimensions(tx, query, 'device', now)).toMatchObject({ points: [{ day: '2026-05-01', value: 'mobile', events: 10, uniqueVisitors: 7 }, { day: '2026-09-05', value: 'mobile', events: 2, uniqueVisitors: 1 }] });
+      expect((await queryAnalyticsSummary(tx, { start: '2024-09-05', end: '2024-09-05', eventName }, now)).totals.events).toBe(0);
+      throw rollback;
+    });
+  } catch (error) { if (error !== rollback) throw error; }
+});
 
 let sessionToken = '';
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (name: string) => name === SESSION_COOKIE_NAME ? { value: sessionToken } : undefined }) }));

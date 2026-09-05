@@ -28,6 +28,22 @@ async function fixtureWork(page: Page, title: string) {
   return draft.workId as string;
 }
 
+test('每个后台任务页的键盘跳转都定位到主内容', async ({ page, browserName }) => {
+  await login(page, '/admin/comments');
+  for (const section of ['comments', 'reports', 'tags', 'rules', 'users', 'batches']) {
+    await page.goto(`/admin/${section}`);
+    await expect(page.locator('main#main')).toHaveCount(1);
+    // macOS WebKit follows Safari's form-only Tab preference; Option+Tab
+    // traverses links (Playwright's own page-focus.spec.ts tests this behavior).
+    await page.keyboard.press(browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
+    const skip = page.locator('a[href="#main"]');
+    await expect(skip).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/admin/${section}#main$`));
+    await expect(page.locator('main#main')).toBeInViewport();
+  }
+});
+
 test('标签创建丢响应同键恢复，改名停用及具名合并可完成', async ({ page }, info) => {
   await login(page, '/admin/tags');
   const suffix = `${info.project.name}-${randomUUID().slice(0, 6)}`;

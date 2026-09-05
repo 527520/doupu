@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { generateBatchItem } from './batchGeneration';
+import { zhCN } from '@/messages/zh-CN';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), region: vi.fn(), clear: vi.fn(), decodeDispose: vi.fn(), run: vi.fn(), generateDispose: vi.fn(), sniff: vi.fn() }));
 vi.mock('@/lib/image/decode', () => ({ createImageDecoder: () => ({ load: mocks.load, region: mocks.region, clear: mocks.clear, dispose: mocks.decodeDispose }) }));
@@ -43,4 +44,13 @@ it.each(['unknown', 'oversize', 'region-error'])('cleans up a rejected %s image'
   if (failure === 'region-error') mocks.region.mockResolvedValue({ ok: false, code: 'DECODE_FAILED' });
   await expect(generateBatchItem({ file: source(), crop: null, params: DEFAULT_GENERATION_PARAMS }, vi.fn()).promise).rejects.toBeInstanceOf(Error);
   expect(mocks.decodeDispose).toHaveBeenCalled(); expect(mocks.generateDispose).toHaveBeenCalled(); expect(mocks.run).not.toHaveBeenCalled();
+});
+
+it.each(['DECODE_FAILED', 'HEIC_UNSUPPORTED'] as const)('translates decoder error %s before it reaches the batch UI', async (code) => {
+  mocks.load.mockResolvedValue({ ok: false, code });
+  await expect(generateBatchItem({ file: source(), crop: null, params: DEFAULT_GENERATION_PARAMS }, vi.fn()).promise).rejects.toThrow(zhCN.errors[code]);
+});
+it('explains the pixel limit in the same language as the workbench', async () => {
+  mocks.load.mockResolvedValue({ ok: true, image: { ...image, naturalWidth: 10000, naturalHeight: 10000 } });
+  await expect(generateBatchItem({ file: source(), crop: null, params: DEFAULT_GENERATION_PARAMS }, vi.fn()).promise).rejects.toThrow(zhCN.errors.TOO_MANY_PIXELS);
 });

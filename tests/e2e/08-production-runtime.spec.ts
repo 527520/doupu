@@ -2,8 +2,12 @@ import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
+import AxeBuilder from '@axe-core/playwright';
+import { localHttps } from './localHttps';
+import { toShanghaiDay } from '../../src/lib/analytics/time';
 
 const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
+
 
 test('an aging administrator can render read-only pages and renew the database and browser together', async ({ page, context }) => {
   const token = process.env.E2E_ADMIN_SESSION_TOKEN;
@@ -102,4 +106,42 @@ test('standalone routes enforce PostgreSQL CAS and single-use token transactions
   });
   const consumptions = await Promise.all([consume(), consume()]);
   expect(consumptions.map((response) => response.status()).sort()).toEqual([200, 400]);
+});
+
+test('long-range production analytics includes live consented data and accessible daily categories', async ({ browser, baseURL }) => {
+  const token = process.env.E2E_ADMIN_SESSION_TOKEN;
+  if (!token) throw new Error('Local administrator fixture required');
+  const proxy = await localHttps(baseURL!);
+  const guest = await browser.newContext({ baseURL: proxy.origin, ignoreHTTPSErrors: true,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' });
+  const admin = await browser.newContext({ baseURL: proxy.origin, ignoreHTTPSErrors: true });
+  try {
+    const visitor = await guest.newPage(); await visitor.goto('/privacy');
+    await visitor.getByRole('button', { name: '同意匿名统计', exact: true }).click();
+    await expect.poll(async () => (await guest.cookies()).some((cookie) => cookie.name === 'doupu_visitor')).toBe(true);
+    const accepted = await visitor.evaluate(async () => {
+      const response = await fetch('/api/analytics/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ events: [{ name: 'page_viewed', properties: { surface: 'home' }, path: '/', eventId: crypto.randomUUID(), occurredAt: new Date().toISOString() }] }) });
+      return (await response.json()).accepted;
+    });
+    expect(accepted).toBeGreaterThan(0);
+    await admin.addCookies([{ name: 'doupu_session', value: token, url: proxy.origin, httpOnly: true, secure: true, sameSite: 'Lax' }, { name: 'doupu_analytics_consent', value: 'denied', url: proxy.origin, secure: true, sameSite: 'Lax' }]);
+    const page = await admin.newPage(); const now = new Date();
+    const end = toShanghaiDay(now); const start = toShanghaiDay(new Date(now.getTime() - 180 * 86400000));
+    await page.goto(`/admin/analytics?start=${start}&end=${end}&eventName=page_viewed&dimension=device`);
+    await expect(page.getByText(/为尚未结束的上海日期/)).toBeVisible();
+    const daily = page.getByRole('region', { name: '逐日分类趋势' });
+    await daily.getByRole('combobox', { name: '分类值' }).selectOption('desktop');
+    await expect(daily.getByRole('table')).toContainText(end);
+    await daily.locator('circle').first().focus(); await expect(daily.locator('circle').first()).toBeFocused();
+    await expect(page.locator('.admin-metrics article').nth(1)).toContainText('—');
+    for (const width of [350, 390, 768, 1280, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      expect((await new AxeBuilder({ page }).analyze()).violations.filter((entry) => ['serious', 'critical'].includes(entry.impact ?? ''))).toEqual([]);
+      if ([350, 1440].includes(width)) await page.screenshot({ path: resolve(`.scratch/site-ux/analytics-live-${width}.png`), fullPage: true });
+    }
+    // Consent cleanup is real; no assertion relies on retaining this visitor.
+    const deletion = await visitor.evaluate(async () => (await fetch('/api/analytics/consent', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'withdrawn' }) })).status);
+    expect(deletion).toBe(200);
+  } finally { await guest.close(); await admin.close(); await proxy.close(); }
 });

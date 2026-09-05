@@ -1,5 +1,5 @@
 import { analyticsDimensionSchema, analyticsQuerySchema, funnelIdSchema, type AnalyticsQuery } from './reports';
-import { analyticsRangeCapability, toShanghaiDay } from './time';
+import { analyticsRangeCapability, oldestAnalyticsRollupDay, toShanghaiDay } from './time';
 
 export type DashboardSearchParams = Record<string, string | string[] | undefined>;
 export const DASHBOARD_COMBINATION_FILTERS = ['device', 'browser', 'os', 'actor', 'path', 'referrer', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent'] as const;
@@ -17,8 +17,7 @@ export function resolveDashboardQuery(params: DashboardSearchParams, now: Date) 
   let requested = candidate.success ? candidate.data : fallback;
   try {
     const capability = analyticsRangeCapability(requested.start, requested.end, now);
-    const oldest = new Date(now); oldest.setUTCFullYear(oldest.getUTCFullYear() - 2);
-    if (capability.start < oldest || capability.end > new Date(now.getTime() + 36 * 3600000)) { requested = fallback; invalid = true; }
+    if (requested.start < oldestAnalyticsRollupDay(now) || capability.end > new Date(now.getTime() + 36 * 3600000)) { requested = fallback; invalid = true; }
   } catch { requested = fallback; invalid = true; }
   const mode = analyticsRangeCapability(requested.start, requested.end, now).mode;
   const filtersIgnored = mode === 'aggregate' && DASHBOARD_COMBINATION_FILTERS.some((key) => requested[key] !== undefined);

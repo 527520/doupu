@@ -1,10 +1,11 @@
 import { ENGINE_VERSION } from '@/lib/appInfo';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 import { generationParamsSchema } from '@/lib/schemas';
-import { validateOfficialBatchFiles } from '@/lib/community/batchClient';
-import { deriveCommunityPreview, type CommunityPreviewV1, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
+import { batchGenerationFailureMessage, validateOfficialBatchFiles } from '@/lib/community/batchClient';
+import { communityPreviewSchema, deriveCommunityPreview, type CommunityPreviewV1, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
 import { track } from '@/lib/analytics/client';
 import { zhCN } from '@/messages/zh-CN';
+import { z } from 'zod';
 
 export interface BatchCrop { x: number; y: number; width: number; height: number }
 export interface BatchGeneration { promise: Promise<CommunitySnapshotV1>; cancel: () => void }
@@ -32,8 +33,23 @@ interface Dependencies {
   concurrency: 1 | 2; fetcher?: (url: string, init: RequestInit) => Promise<Response>;
 }
 const t = zhCN.communityAdmin.batch;
-const isBatch = (value: unknown): value is BatchRow => Boolean(value && typeof value === 'object' && 'id' in value && typeof value.id === 'string' && 'version' in value && Number.isInteger(value.version) && 'status' in value && ['running', 'paused', 'completed', 'cancelled'].includes(String(value.status)));
+const uuid = z.uuid();
+const isUuid = (value: unknown): value is string => uuid.safeParse(value).success;
+const isBatch = (value: unknown): value is BatchRow => Boolean(value && typeof value === 'object'
+  && 'id' in value && isUuid(value.id) && 'version' in value && typeof value.version === 'number' && Number.isSafeInteger(value.version) && value.version > 0
+  && 'status' in value && ['running', 'paused', 'completed', 'cancelled'].includes(String(value.status))
+  && (!('failureCount' in value) || typeof value.failureCount === 'number' && Number.isSafeInteger(value.failureCount) && value.failureCount >= 0));
 const countBucket = (n: number) => n === 1 ? '1' : n <= 5 ? '2-5' : n <= 10 ? '6-10' : n <= 25 ? '11-25' : '26-50';
+const storedBatchSchema = z.object({
+  id: uuid, version: z.number().int().positive(), status: z.enum(['running', 'paused', 'completed', 'cancelled']),
+  createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  itemCount: z.number().int().min(1).max(50), successCount: z.number().int().min(0).max(50), failureCount: z.number().int().min(0).max(50),
+  defaultParams: generationParamsSchema.optional(),
+  drafts: z.array(z.object({ id: uuid, workId: uuid, title: z.string().min(1).max(80),
+    status: z.enum(['draft', 'pending_review', 'published', 'rejected', 'withdrawn', 'superseded']), preview: communityPreviewSchema })).max(50),
+}).refine((batch) => batch.successCount <= batch.itemCount && batch.failureCount <= batch.itemCount
+  && batch.drafts.length <= batch.itemCount && new Set(batch.drafts.map((draft) => draft.id)).size === batch.drafts.length);
+export const isStoredBatch = (value: unknown): value is StoredBatch => storedBatchSchema.safeParse(value).success;
 
 /** One in-memory file set. Scheduling and immutable write attempts outlive React renders,
  * but never this page. Server state is recovered only through explicitly chosen history. */
@@ -110,7 +126,7 @@ export class BatchSession {
       this.emit({ error: t.invalidConfiguration }); return;
     }
     await this.command('create', '/api/admin/batches', 'POST', { itemCount: this.state.items.length, defaultParams: this.state.defaults, engineVersion: ENGINE_VERSION, reason: this.state.reason }, (body) => {
-      if (!isBatch(body)) throw new Error();
+      if (!isBatch(body) || body.version !== 1 || body.status !== 'running') throw new Error();
       this.emit({ batch: body, mode: 'running', notice: null });
       track({ name: 'official_batch_started', properties: { itemCountBucket: countBucket(this.state.items.length) } });
     });
@@ -142,7 +158,7 @@ export class BatchSession {
     } catch (error) {
       if (!this.disposed) {
         const cancelled = error instanceof Error && error.name === 'AbortError';
-        this.patch(item.localId, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? null : error instanceof Error ? error.message : t.generationFailed });
+        this.patch(item.localId, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? null : batchGenerationFailureMessage(error) });
         if (!cancelled) track({ name: 'official_batch_item_failed', properties: { errorCode: 'BATCH_ITEM_FAILED' } });
       }
     } finally { this.active.delete(item.localId); this.emit({}); this.pump(); }
@@ -150,8 +166,8 @@ export class BatchSession {
   private async save(id: string, attempt: Attempt) {
     this.patch(id, { status: 'saving', error: null });
     const result = await this.request(attempt); if (this.disposed) return;
-    const body = result.ok ? result.body as { revisionId?: unknown; workId?: unknown } | null : null;
-    if (result.ok && typeof body?.revisionId === 'string' && typeof body.workId === 'string') {
+    const body = result.ok ? result.body as { batchId?: unknown; revisionId?: unknown; workId?: unknown; status?: unknown } | null : null;
+    if (result.ok && body?.batchId === this.state.batch?.id && body?.status === 'draft' && isUuid(body?.revisionId) && isUuid(body?.workId)) {
       this.saves.delete(id); this.patch(id, { status: 'saved', file: null, revisionId: body.revisionId, workId: body.workId, selected: false, error: null });
       track({ name: 'official_batch_item_succeeded', properties: {} });
     } else {
@@ -171,7 +187,8 @@ export class BatchSession {
   private async transition(action: 'pause' | 'resume' | 'cancel' | 'finish') {
     const batch = this.state.batch; if (!batch) return;
     await this.command(action, `/api/admin/batches/${batch.id}`, 'PATCH', { action, expectedVersion: batch.version, reason: this.state.reason }, (body) => {
-      if (!isBatch(body)) throw new Error();
+      const nextStatus = action === 'resume' ? 'running' : action === 'pause' ? 'paused' : action === 'finish' ? 'completed' : 'cancelled';
+      if (!isBatch(body) || body.id !== batch.id || body.version !== batch.version + 1 || body.status !== nextStatus) throw new Error();
       this.emit({ batch: body, mode: action === 'resume' ? 'running' : action === 'cancel' ? 'cancelled' : 'paused' });
       if (action === 'finish' || action === 'cancel') {
         const failures = body.failureCount ?? this.state.items.filter((item) => ['failed', 'cancelled'].includes(item.status)).length;
@@ -221,16 +238,22 @@ export class BatchSession {
     if (!revisionIds.length) return;
     const batch = this.state.batch;
     await this.command('publish', `/api/admin/batches/${batch.id}/publish`, 'POST', { revisionIds, expectedVersion: batch.version, reason: this.state.reason }, (body) => {
-      const result = body as { batch?: unknown } | null; if (!isBatch(result?.batch)) throw new Error();
+      const result = body as { batch?: unknown; publishedRevisionIds?: unknown } | null;
+      const published = result?.publishedRevisionIds;
+      if (!isBatch(result?.batch) || result.batch.id !== batch.id || result.batch.version !== batch.version + 1 || result.batch.status !== batch.status
+        || !Array.isArray(published) || published.length !== revisionIds.length
+        || new Set(published).size !== revisionIds.length || !revisionIds.every((id) => published.includes(id))) throw new Error();
       this.emit({ batch: result.batch, items: this.state.items.map((item) => item.revisionId && revisionIds.includes(item.revisionId) ? { ...item, status: 'published', selected: false } : item), notice: t.published(revisionIds.length) });
     });
   }
   restore(batch: StoredBatch) {
+    if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.queueLoadFailed }); return; }
     if (!this.replaceable) return;
     const parsedDefaults = generationParamsSchema.safeParse(batch.defaultParams);
     this.emit({ batch, defaults: parsedDefaults.success ? parsedDefaults.data : { ...DEFAULT_GENERATION_PARAMS }, mode: 'paused', error: null, conflict: false, notice: t.restored, items: batch.drafts.map((draft, index) => ({ localId: `restored:${draft.id}`, file: null, localName: t.restoredDraft(index + 1), title: draft.title, crop: null, paramsOverride: {}, status: draft.status === 'draft' ? 'saved' : draft.status === 'published' ? 'published' : 'unavailable', progress: 100, error: null, revisionId: draft.id, workId: draft.workId, selected: false, preview: draft.preview })) });
   }
   refreshState(batch: StoredBatch) {
+    if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.command.refreshFailed }); return; }
     if (this.locked || this.processing || batch.id !== this.state.batch?.id || batch.version < this.state.batch.version) return;
     this.emit({ batch, mode: 'paused', conflict: false, error: null, notice: t.refreshed, items: this.state.items.map((item) => {
       const draft = batch.drafts.find((entry) => entry.id === item.revisionId);

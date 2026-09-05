@@ -3,6 +3,13 @@ import { resolveDashboardQuery } from './dashboardQuery';
 
 const now = new Date('2026-09-05T04:00:00Z');
 describe('analytics dashboard query recovery', () => {
+  it.each(['2026-09-05T04:00:00Z', '2025-03-01T15:59:59Z'])('accepts the whole oldest retained Shanghai day at %s', (timestamp) => {
+    const current = new Date(timestamp);
+    const oldest = new Date(current.getTime() - 730 * 86400000 + 8 * 3600000).toISOString().slice(0, 10);
+    expect(resolveDashboardQuery({ start: oldest, end: oldest }, current)).toMatchObject({ invalid: false, query: { start: oldest, end: oldest } });
+    const expired = new Date(Date.parse(oldest) - 86400000).toISOString().slice(0, 10);
+    expect(resolveDashboardQuery({ start: expired, end: oldest }, current).invalid).toBe(true);
+  });
   it('marks invalid, expired and duplicate query values instead of silently presenting a different report', () => {
     for (const input of [{ start: 'invalid' }, { start: '2020-01-01' }, { start: '2026-09-06', end: '2026-09-01' }, { device: ['desktop', 'mobile'] }]) {
       const resolved = resolveDashboardQuery(input, now);
