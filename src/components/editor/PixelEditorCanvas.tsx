@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 /* eslint-disable react-hooks/refs -- pointer/camera state must stay synchronous during gestures. */
 
@@ -849,11 +850,8 @@ export default function PixelEditorCanvas({
         <form onSubmit={onReplaceSubmit} className="editor-more-drawer flex flex-wrap items-center gap-2 rounded-xl border border-lilac/40 p-2 text-sm">
           <label htmlFor="editor-replace-from" className="text-ink-soft">{t.replaceFrom}</label>
           <input id="editor-replace-from" value={replaceFrom} onChange={(event) => setReplaceFrom(event.target.value)} className="w-24 input-compact" />
-          <label htmlFor="editor-replace-to" className="text-ink-soft">{t.replaceTo}</label>
-          <select id="editor-replace-to" value={replaceTo} onChange={(event) => setReplaceTo(event.target.value)} className="input-compact">
-            {availablePalette.map((color, index) => <option key={color.hex} value={String(index)}>{color.code ?? color.hex}</option>)}
-            <option value="transparent">{t.excludeColor}</option>
-          </select>
+          <ResponsiveSelect label={t.replaceTo} id="editor-replace-to" value={replaceTo} onValueChange={setReplaceTo}
+            options={[...availablePalette.map((color,index)=>({value:String(index),label:color.code??color.hex,colors:[color.hex]})),{value:'transparent',label:t.excludeColor}]} />
           <button type="submit" className="rounded-lg border border-primary/60 bg-primary-soft px-2 py-1 text-primary-deep">{t.replaceConfirm}</button>
         </form>
       )}

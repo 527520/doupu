@@ -4,6 +4,14 @@
  * 错误码文案（errors）与 src/lib 的错误分类一一对应。
  */
 export const zhCN = {
+  selection: {
+    latest: '最新', featured: '精选', popular: '互动',
+    placeholder: '请选择',
+    search: '搜索选项',
+    empty: '没有匹配的选项',
+    close: '关闭选择',
+    required: '请选择一项',
+  },
   app: {
     name: '豆谱',
     tagline: '上传照片，生成拼豆图纸',
@@ -88,6 +96,7 @@ export const zhCN = {
     stitchPercent: (percent: number) => `已拼 ${percent}%`,
     newPattern: '新图纸',
     question: '把喜欢，一颗颗拼出来。',
+    questionLead: '把喜欢，', questionEnd: '一颗颗拼出来。', chooseImage: '选择图片，开始制作',
     startHint: '选一张喜欢的图片，让第一张图纸自动成形。',
     fromImage: '从一张图片开始',
     fromImageHint: '选图即生成整图预览，之后仍可按需裁剪。',

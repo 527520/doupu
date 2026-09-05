@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GENERATION_PARAMS } from '../../src/lib/types';
-import { fillField } from './helpers';
+import { fillField, selectChoice } from './helpers';
 
 async function login(page: Page, next: string, email = 'e2e-admin@example.com') {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
@@ -69,7 +69,7 @@ test('标签创建丢响应同键恢复，改名停用及具名合并可完成',
   await page.locator('.admin-object-list button').filter({ hasText: name }).click();
   await page.getByLabel('名称', { exact: true }).fill(`新${name}`);
   await page.getByLabel('操作理由').fill('更新名称并暂时停用');
-  await page.getByRole('checkbox', { name: '启用', exact: true }).uncheck();
+  await page.getByRole('switch', { name: '启用', exact: true }).uncheck();
   await page.getByRole('button', { name: '保存修改' }).click();
   await expect(page.locator('.admin-object-list button').filter({ hasText: `新${name}` })).toContainText('停用');
   const target = await post(page, '/api/admin/community/tags', { name: `归档 ${suffix}`, slug: `target-${suffix}`, reason: '归并重复分类', expectedVersion: 0 });
@@ -77,7 +77,8 @@ test('标签创建丢响应同键恢复，改名停用及具名合并可完成',
   await page.locator('.admin-object-list button').filter({ hasText: `新${name}` }).click();
   await page.getByLabel('操作理由').fill('核对后合并到具名目标');
   await page.getByText('合并重复标签', { exact: true }).click();
-  await page.getByLabel('合并到标签').selectOption(target.id);
+  expect(target.id).toBeTruthy();
+  await selectChoice(page,'合并到标签',`归档 ${suffix}`);
   await expect(page.getByRole('button', { name: '确认合并标签' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /我确认将/ }).check();
   await page.getByRole('button', { name: '确认合并标签' }).click();
@@ -106,7 +107,7 @@ test('人员二次确认、暂停撤销会话、恢复与角色调整可完成',
     await page.getByRole('button', { name: '恢复账号' }).click(); await expect(entry).toContainText('正常');
     for (const role of ['moderator', 'user']) {
       await entry.click(); await page.getByLabel('操作理由').fill('核对角色调整与会话撤销'); await page.getByLabel('目标 userId 二次确认').fill(userId);
-      await page.getByLabel('调整为角色').selectOption(role); await page.getByRole('button', { name: '确认调整角色' }).click();
+      await selectChoice(page,'调整为角色',role==='moderator'?'审核员':'用户'); await page.getByRole('button', { name: '确认调整角色' }).click();
       await expect(entry).toContainText(role === 'moderator' ? '审核员' : '用户');
     }
   } finally { await targetContext.close(); }

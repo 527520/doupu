@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 /**
  * 工作台（T12）：选图→整图首版→可选裁剪 + 生成管线 + 编辑器/预览 + 导出 + 本地保存。
@@ -1841,20 +1842,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 onSelect={handlePaletteSelect}
                 className="blank-palette-picker"
               />
-              <label className="flex min-w-0 flex-col gap-1 text-xs text-ink-soft" htmlFor="blank-board-profile">
-                <span>{zhCN.params.boardProfile}</span>
-                <select
+                <ResponsiveSelect label={zhCN.params.boardProfile}
                   id="blank-board-profile"
                   value={boardProfile}
                   disabled={busy || generating}
-                  onChange={(event) => handleBoardProfileSelect(event.target.value)}
-                  className="min-w-0 input-compact py-1.5"
-                >
-                  {boardProfileOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
+                  onValueChange={handleBoardProfileSelect} options={boardProfileOptions}
+                />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {BLANK_PRESETS.map((boards) => (

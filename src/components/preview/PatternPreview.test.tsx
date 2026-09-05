@@ -49,10 +49,10 @@ describe('PatternPreview', () => {
 
   it('开关切换改变复选框状态', () => {
     render(<PatternPreview pattern={pattern} defaultCellPx={10} />);
-    const grid = screen.getByText('网格线').querySelector('input')!;
-    expect(grid.checked).toBe(true);
+    const grid = screen.getByRole('switch', { name: '网格线' });
+    expect(grid).toBeChecked();
     fireEvent.click(grid);
-    expect(grid.checked).toBe(false);
+    expect(grid).not.toBeChecked();
   });
 
   it('透明格悬停信息 cell 为透明格', () => {

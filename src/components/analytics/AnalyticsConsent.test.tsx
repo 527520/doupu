@@ -36,6 +36,18 @@ describe('analytics consent banner', () => {
       name: 'page_viewed', properties: { surface: 'community' },
     }));
   });
+  it('页面插槽改变后仍保留同意初始化失败与重试入口', async()=>{
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('offline'));
+    const slot=document.createElement('div');document.body.append(slot);
+    const view=render(<AnalyticsConsentBanner />);
+    fireEvent.click(await screen.findByRole('button',{name:'同意匿名统计'}));
+    await screen.findByRole('alert');
+    view.rerender(<AnalyticsConsentBanner target={slot} />);
+    expect(screen.getByRole('alert')).toBeVisible();
+    expect(screen.getByRole('button',{name:'同意匿名统计'})).toBeEnabled();
+    expect(track).not.toHaveBeenCalled();
+    view.unmount();slot.remove();
+  });
 
   it('keeps a failed grant visible on ordinary pages and can retry without collecting before confirmation', async () => {
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));

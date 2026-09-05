@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
@@ -66,7 +67,7 @@ export default function UsersManager({ currentUserId }: { currentUserId: string 
           <p className="notice notice-warning">{t.impact}</p>
           <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
           <label>{t.confirmation}<input value={confirmation} disabled={command.locked} autoComplete="off" spellCheck={false} onChange={(event) => setConfirmation(event.target.value)} /></label>
-          <label>{t.nextRole}<select value={role} disabled={command.locked} onChange={(event) => setRole(event.target.value as UserRole)}>{USER_ROLES.map((value) => <option key={value} value={value}>{states.role[value]}</option>)}</select></label>
+          <ResponsiveSelect label={t.nextRole} value={role} disabled={command.locked} onValueChange={value=>setRole(value as UserRole)} options={USER_ROLES.map(value=>({value,label:states.role[value]}))} />
           {role === 'admin' && selected.role !== 'admin' && <p className="notice notice-warning">{t.adminWarning}</p>}
           <button type="button" className="btn-primary" disabled={!ready || role === selected.role} onClick={() => void update({ role })}>{t.changeRole}</button>
           <button type="button" className="btn-danger-outline" disabled={!ready} onClick={() => void update({ accountStatus: selected.accountStatus === 'suspended' ? 'active' : 'suspended' })}>{selected.accountStatus === 'suspended' ? t.restore : t.suspend}</button>

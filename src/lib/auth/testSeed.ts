@@ -23,12 +23,26 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
   const admin: Actor = { userId: adminRow.id, role: 'admin', accountStatus: 'active', emailVerified: true };
   const user: Actor = { userId: userRow.id, role: 'user', accountStatus: 'active', emailVerified: true };
   const designId = crypto.randomUUID();
+  // A reproducible, genuinely stitchable multicolour flower (not a two-cell
+  // placeholder): exercises previews, colour bands, reuse and long colour lists.
+  const seedColors = ['#FAF8F4','#292633','#B93E62','#DE7991','#497367','#81A18A','#E7B85C'].map((hex,index)=>({hex,code:`V${index}`}));
+  const seedCells = Array.from({length:29*29},(_,index)=>{
+    const x=index%29, y=Math.floor(index/29);
+    let color=0;
+    if(x>=13&&x<=15&&y>=12&&y<=25) color=4;
+    if(((x-10)**2/24+(y-20)**2/8<1)||((x-18)**2/24+(y-22)**2/8<1)) color=x<14?4:5;
+    const petals=[[14,6],[8,10],[20,10],[10,16],[18,16]];
+    if(petals.some(([px,py])=>(x-px)**2+(y-py)**2<20)) color=x<14?2:3;
+    if((x-14)**2+(y-11)**2<=13) color=6;
+    if((x===12||x===16)&&y===10)color=1;
+    return {...seedColors[color],transparent:false};
+  });
   const project: ProjectFile = {
     format: 'doupu-project', version: 3, engineVersion: 'e2e', boardProfile: '5mm-29', name: 'E2E 私人设计',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    paletteSelection: { palette: { kind: 'custom', colors: [{ hex: '#C2385A', code: 'R' }] }, kitTier: 0 },
-    params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 20, targetColorCount: 2 },
-    pattern: { width: 2, height: 1, cells: [{ hex: '#C2385A', code: 'R', transparent: false }, { hex: '#C2385A', code: 'R', transparent: false }] },
+    paletteSelection: { palette: { kind: 'custom', colors: seedColors }, kitTier: 0 },
+    params: { ...DEFAULT_GENERATION_PARAMS, targetWidth: 29, targetColorCount: seedColors.length },
+    pattern: { width: 29, height: 29, cells: seedCells },
   };
   await db.insert(designs).values({ id: designId, userId: user.userId, name: project.name, project, payloadBytes: JSON.stringify(project).length });
   const created = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: 'E2E 已公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });

@@ -130,7 +130,8 @@ test('long-range production analytics includes live consented data and accessibl
     await page.goto(`/admin/analytics?start=${start}&end=${end}&eventName=page_viewed&dimension=device`);
     await expect(page.getByText(/为尚未结束的上海日期/)).toBeVisible();
     const daily = page.getByRole('region', { name: '逐日分类趋势' });
-    await daily.getByRole('combobox', { name: '分类值' }).selectOption('desktop');
+    await daily.getByRole('button',{name:/分类值/}).click();
+    await page.getByRole('option',{name:'desktop',exact:true}).click();
     await expect(daily.getByRole('table')).toContainText(end);
     await daily.locator('circle').first().focus(); await expect(daily.locator('circle').first()).toBeFocused();
     await expect(page.locator('.admin-metrics article').nth(1)).toContainText('—');

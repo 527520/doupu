@@ -5,6 +5,19 @@
  */
 import '@testing-library/jest-dom/vitest';
 
+// Browser platform APIs used by accessible overlays, absent from jsdom.
+if (typeof window !== 'undefined') {
+  if (!window.matchMedia) window.matchMedia = (query) => ({
+    matches: /max-width: 767px/.test(query) && window.innerWidth < 768,
+    media: query, onchange: null,
+    addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; },
+  });
+  if (typeof ResizeObserver === 'undefined') globalThis.ResizeObserver = class {
+    observe() {} unobserve() {} disconnect() {}
+  };
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+}
+
 const noop = (): void => undefined;
 
 type AnyObject = Record<string | symbol, unknown>;

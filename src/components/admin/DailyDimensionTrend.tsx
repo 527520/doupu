@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import AnalyticsTrendChart from './AnalyticsTrendChart';
@@ -9,7 +10,7 @@ export default function DailyDimensionTrend({ points }: { points: Array<{ day: s
   const [selection, setSelection] = useState('');
   const selected = values.includes(selection) ? selection : values[0];
   return <section aria-label={t.dailyDimension}><h3>{t.dailyDimension}</h3>
-    {values.length > 0 && <label>{t.value}<select value={selected} onChange={(event) => setSelection(event.target.value)}>{values.map((value) => <option key={value}>{value}</option>)}</select></label>}
+    {values.length > 0 && <ResponsiveSelect label={t.value} value={selected} onValueChange={setSelection} options={values.map(value=>({value,label:value}))} />}
     <AnalyticsTrendChart points={points.filter((point) => point.value === selected)} />
   </section>;
 }

@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import { uploadFile } from './helpers';
+import { uploadFile, selectChoice } from './helpers';
 
 const PHOTO = resolve(process.cwd(), 'tests/fixtures/static-2x2.png');
 const at = '2026-08-17T00:00:00.000Z';
@@ -147,8 +147,8 @@ test('200×1 PNG has cross-browser decodable golden pixels and 500-color PDF pag
   });
 
   await page.getByRole('button', { name: 'PNG 选项', exact: true }).click();
-  await page.getByRole('combobox', { name: '格子大小' }).selectOption('8');
-  await page.getByRole('checkbox', { name: '包含图例与色号清单' }).check();
+  await selectChoice(page,'格子大小','8px');
+  await page.getByRole('switch', { name: '包含图例与色号清单' }).check();
   const [legendPngDownload] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('region', { name: 'PNG 导出选项' }).getByRole('button', { name: '导出', exact: true }).click(),
@@ -203,7 +203,7 @@ test('合并超限时 ZIP 恰好包含两张可解码且不透明的 PNG', async
   value.name = 'ZIP极限';
   await importProject(page, value);
   await page.getByRole('button', { name: 'PNG 选项', exact: true }).click();
-  await page.getByRole('checkbox', { name: '包含图例与色号清单' }).check();
+  await page.getByRole('switch', { name: '包含图例与色号清单' }).check();
   await expect(page.getByRole('status').filter({ hasText: '打包为两张 PNG' })).toBeVisible();
 
   const [download] = await Promise.all([

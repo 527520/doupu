@@ -7,6 +7,7 @@ import type { Pattern, PatternCell } from '@/lib/types';
 import { CANVAS_UI } from '@/lib/appInfo';
 import { drawPattern } from '@/lib/render/draw';
 import { BOARD_SIZE, clampZoom, fitCellSize, pointToCell } from '@/lib/render/layout';
+import Switch from '@/components/ui/Switch';
 
 export interface CellHoverInfo {
   row: number;
@@ -31,12 +32,7 @@ function PreviewToggle({
   onChange: (value: boolean) => void;
   label: string;
 }) {
-  return (
-    <label className="flex items-center gap-1 text-xs text-ink-soft">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      {label}
-    </label>
-  );
+  return <Switch label={label} checked={checked} onChange={onChange} />;
 }
 
 export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover }: Props) {

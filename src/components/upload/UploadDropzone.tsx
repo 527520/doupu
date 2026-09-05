@@ -23,9 +23,10 @@ export interface UploadDropzoneProps {
   /** 校验通过（未解码）时回调。 */
   onValid: (file: ValidImageFile) => void;
   disabled?: boolean;
+  prominent?: boolean;
 }
 
-export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProps) {
+export function UploadDropzone({ onValid, disabled = false, prominent = false }: UploadDropzoneProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
@@ -123,14 +124,14 @@ export function UploadDropzone({ onValid, disabled = false }: UploadDropzoneProp
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        className={`upload-dropzone${dragging ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}
+        className={`upload-dropzone${prominent ? ' upload-dropzone-primary' : ''}${dragging ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}
       >
         {reading ? (
           <p>{upload.reading}</p>
         ) : (
           <>
             <span className="upload-dropzone-icon"><Icon name="upload" size={24} /></span>
-            <p><strong>{dragging ? upload.dragActive : upload.hint}</strong><small>{upload.formatHint}</small></p>
+            <p><strong>{dragging ? upload.dragActive : prominent ? zhCN.home.chooseImage : upload.hint}</strong><small>{upload.formatHint}</small></p>
           </>
         )}
       </div>

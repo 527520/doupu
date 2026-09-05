@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -57,7 +58,7 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
       <header><h2>{t.queue}</h2><span>{t.page(cursors.length)}</span></header>
       <form className="admin-form-stack" onSubmit={(event) => { event.preventDefault(); if (!command.locked) { select(null); setFilter({ q: q.trim(), status }); setCursors(['']); if (q.trim() === filter.q && status === filter.status && cursors.length === 1) void queue.reload(); } }}>
         <label>{t.search}<input value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} /></label>
-        <label>{t.status}<select value={status} disabled={command.locked} onChange={(event) => setStatus(event.target.value)}><option value="all">{t.all}</option>{(['active', 'withdrawn', 'removed'] as const).map((value) => <option key={value} value={value}>{states.work[value]}</option>)}</select></label>
+        <ResponsiveSelect label={t.status} value={status} disabled={command.locked} onValueChange={setStatus} options={[{value:'all',label:t.all},...(['active','withdrawn','removed'] as const).map(value=>({value,label:states.work[value]}))]} />
         <button type="submit" className="btn-outline" disabled={command.locked || queue.loading}>{t.query}</button>
       </form>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>

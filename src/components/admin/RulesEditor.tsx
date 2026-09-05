@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
@@ -64,7 +65,7 @@ export default function RulesEditor() {
         {stale && <div className="notice notice-warning"><p>{c.stale}</p><button type="button" className="btn-outline" disabled={command.locked} onClick={start}>{t.restart}</button></div>}
         <p className="notice">{t.replaceHelp}</p>
         <label>{t.literal}<input value={literal} maxLength={80} disabled={!editable} onChange={(event) => setLiteral(event.target.value)} /></label>
-        <label>{t.category}<select value={category} disabled={!editable} onChange={(event) => setCategory(event.target.value as ModerationCategory)}>{MODERATION_CATEGORIES.map((value) => <option key={value} value={value}>{t[value]}</option>)}</select></label>
+        <ResponsiveSelect label={t.category} value={category} disabled={!editable} onValueChange={value=>setCategory(value as ModerationCategory)} options={MODERATION_CATEGORIES.map(value=>({value,label:t[value]}))} />
         {duplicate && <p className="admin-help">{t.duplicate}</p>}
         <button type="button" className="btn-outline" disabled={!editable || !literal.trim() || duplicate || draft.rules.length >= 500} onClick={() => {
           setDraft({ ...draft, rules: [...draft.rules, { literal: literal.trim(), category, risk: 'review' }] }); setLiteral(''); setConfirmed(false);

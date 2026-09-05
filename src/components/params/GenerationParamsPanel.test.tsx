@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import GenerationParamsPanel from './GenerationParamsPanel';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
+import userEvent from '@testing-library/user-event';
 
 const builtinOptions = [
   {
@@ -52,9 +53,9 @@ describe('GenerationParamsPanel', () => {
     setup();
     expect(widthSlider()).toBeTruthy();
     expect(colorsSlider()).toBeTruthy();
-    expect(screen.queryByRole('checkbox', { name: '抖动' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: '抖动' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('高级选项'));
-    expect(screen.getByRole('checkbox', { name: '抖动' })).toBeVisible();
+    expect(screen.getByRole('switch', { name: '抖动' })).toBeVisible();
     expect(screen.getByLabelText('色板品牌')).toBeTruthy();
     expect(screen.getByLabelText('色板系列')).toBeTruthy();
   });
@@ -95,15 +96,16 @@ describe('GenerationParamsPanel', () => {
     vi.useRealTimers();
   });
 
-  it('切换品牌触发 onPaletteSelect', () => {
+  it('切换品牌触发 onPaletteSelect', async () => {
     const { onPalette } = setup();
-    const select = screen.getByLabelText('色板品牌');
-    fireEvent.change(select, { target: { value: 'COCO' } });
+    const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:/色板品牌/}));
+    await user.click(screen.getByRole('option',{name:'COCO'}));
     expect(onPalette).toHaveBeenCalledTimes(1);
     expect(onPalette).toHaveBeenCalledWith('builtin:coco-classic');
   });
 
-  it('按品牌分组色板，并切换独立制作规格', () => {
+  it('按品牌分组色板，并切换独立制作规格', async () => {
     const onBoardProfileSelect = vi.fn();
     render(
       <GenerationParamsPanel
@@ -122,19 +124,25 @@ describe('GenerationParamsPanel', () => {
       />,
     );
 
-    expect([...screen.getByLabelText<HTMLSelectElement>('色板品牌').options].map((option) => option.textContent)).toEqual([
+    const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:/色板品牌/}));
+    expect(screen.getAllByRole('option').map(option=>option.querySelector('[slot=label]')?.textContent)).toEqual([
       'MARD',
       'COCO',
     ]);
-    expect([...screen.getByLabelText<HTMLSelectElement>('色板系列').options].map((option) => option.textContent)).toEqual([
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button',{name:/色板系列/}));
+    expect(screen.getAllByRole('option').map(option=>option.querySelector('[slot=label]')?.textContent)).toEqual([
       '豆谱经典 291 色',
       '291 色公开资料版',
     ]);
-    fireEvent.change(screen.getByLabelText('制作规格'), { target: { value: '2.6mm-50' } });
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button',{name:/制作规格/}));
+    await user.click(screen.getByRole('option',{name:'2.6mm / 50×50'}));
     expect(onBoardProfileSelect).toHaveBeenCalledWith('2.6mm-50');
   });
 
-  it('全部颜色和套装档位随当前可生成色数变化', () => {
+  it('全部颜色和套装档位随当前可生成色数变化', async () => {
     render(
       <GenerationParamsPanel
         params={DEFAULT_GENERATION_PARAMS}
@@ -149,8 +157,8 @@ describe('GenerationParamsPanel', () => {
       />,
     );
 
-    const kit = screen.getByLabelText('手里的套装') as HTMLSelectElement;
-    expect([...kit.options].map((option) => option.textContent)).toEqual([
+    await userEvent.setup().click(screen.getByRole('button',{name:/手里的套装/}));
+    expect(screen.getAllByRole('option').map(option=>option.querySelector('[slot=label]')?.textContent)).toEqual([
       '全部可生成颜色（70 色）',
       '24 色套装',
       '48 色套装',
@@ -159,9 +167,9 @@ describe('GenerationParamsPanel', () => {
 
   it('高级面板默认收起，展开后显示取样模式与背景去除', () => {
     setup();
-    expect(screen.queryByLabelText('取样模式')).toBeNull();
+    expect(screen.queryByRole('group',{name:'取样模式'})).toBeNull();
     fireEvent.click(screen.getByText('高级选项'));
-    expect(screen.getByLabelText('取样模式')).toBeTruthy();
+    expect(screen.getByRole('group',{name:'取样模式'})).toBeTruthy();
     expect(screen.getByText('背景去除')).toBeTruthy();
     // 容差仅当背景去除开启时出现
     expect(screen.queryByLabelText(/背景容差/)).toBeNull();

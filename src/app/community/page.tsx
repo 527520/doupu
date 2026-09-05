@@ -6,7 +6,7 @@ import { CommunityListImpression } from '@/components/community/CommunityImpress
 import { getDb } from '@/lib/auth/db';
 import { listPublicCommunityWorks, parseCommunityListUrl, type CommunityListQuery } from '@/lib/community/queries';
 import { zhCN } from '@/messages/zh-CN';
-import { BOARD_PROFILE_IDS, getBoardProfile } from '@/lib/boardProfiles';
+import CommunityFilters from '@/components/community/CommunityFilters';
 import { AppError } from '@/lib/errors';
 
 export const metadata: Metadata = { title: zhCN.communityAdmin.communityTitle, description: zhCN.communityAdmin.communityDescription };
@@ -34,23 +34,11 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   if (result.nextCursor) nextParams.set('cursor', result.nextCursor);
   return (
     <main id="main" className="workspace-page">
-      <SiteHeader title={t.headerTitle} currentPath="/community" subtitle={t.headerSubtitle} primaryActions={<Link href="/community/mine" className="btn-outline btn-sm">{t.mine}</Link>} />
+      <SiteHeader title={t.headerTitle} currentPath="/community" primaryActions={<Link href="/community/mine" className="btn-outline btn-sm">{t.mine}</Link>} />
       <CommunityListImpression sort={query.sort} />
       <div className="workspace-content community-page">
-        <section className="community-hero"><div><span className="studio-eyebrow">{t.eyebrow}</span><h2>{t.heroTitle}</h2><p>{t.heroBody}</p></div><Link href="/community/rules" className="btn-outline">{t.rules}</Link></section>
-        <form className="community-filters" method="get" action="/community">
-          <label><span className="sr-only">{t.searchLabel}</span><input name="q" maxLength={80} defaultValue={query.q} className="input-field" placeholder={t.searchPlaceholder} /></label>
-          <label><span className="sr-only">{t.sortLabel}</span><select name="sort" defaultValue={query.sort} className="input-compact"><option value="latest">{t.latest}</option><option value="featured">{t.featured}</option><option value="popular">{t.popular}</option></select></label>
-          <button className="btn-primary btn-sm">{t.filter}</button>
-          {query.tag && <input type="hidden" name="tag" value={query.tag} />}
-          {query.palette && <input type="hidden" name="palette" value={query.palette} />}
-          <details className="community-filter-details"><summary>{t.moreFilters}</summary><div>
-            <label>{t.authorFilter}<input name="author" defaultValue={query.author} maxLength={80} className="input-field" /></label>
-            <label>{t.boardFilter}<select name="boardProfile" defaultValue={query.boardProfile ?? ''} className="input-field"><option value="">{t.allBoards}</option>{BOARD_PROFILE_IDS.map((id) => <option key={id} value={id}>{getBoardProfile(id).displayName}</option>)}</select></label>
-            <label>{t.fromDate}<input type="date" name="from" defaultValue={query.from} className="input-field" /></label>
-            <label>{t.toDate}<input type="date" name="to" defaultValue={query.to} className="input-field" /></label>
-          </div></details>
-        </form>
+        <section className="community-hero"><div><h2>{t.heroTitle}</h2><p>{t.heroBody}</p></div><Link href="/community/rules" className="link-action">{t.rules}</Link></section>
+        <CommunityFilters key={JSON.stringify(query)} query={query} />
         {activeFilters && result.items.length > 0 && <Link href="/community" className="link-soft">{t.clearFilters}</Link>}
         {result.items.length === 0 ? <section className="community-empty"><h2>{activeFilters ? t.noMatch : t.emptyTitle}</h2><p>{activeFilters ? t.noMatchHint : t.emptyBody}</p><Link href={activeFilters ? '/community' : '/designs'} className="btn-primary">{activeFilters ? t.clearFilters : t.chooseDesign}</Link></section> : (
           <ul className="community-grid">{result.items.map((work) => (

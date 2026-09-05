@@ -1,4 +1,7 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import SegmentedControl from '@/components/ui/SegmentedControl';
+import Switch from '@/components/ui/Switch';
 
 /** 生成参数面板（spec §F3）：核心参数 + 高级折叠；300ms 防抖上抛；UI 层无法输入非法值。 */
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
@@ -316,25 +319,18 @@ export default function GenerationParamsPanel({
       {advancedOpen && (
         <div className="flex flex-col gap-4 rounded-xl border border-lilac/30 bg-lilac-soft/40 p-3">
           <div className="text-sm">
-            <label className="flex items-center gap-2 text-ink-soft">
-              <input type="checkbox" checked={local.dithering} onChange={(e) => patch({ dithering: e.target.checked })} aria-describedby="param-dithering-hint" />
-              {t.dithering}
-            </label>
+            <Switch label={t.dithering} checked={local.dithering} onChange={checked=>patch({dithering:checked})} describedBy="param-dithering-hint" />
             <p id="param-dithering-hint" className="mt-1 text-xs text-ink-soft">{t.ditheringHint}</p>
           </div>
           <div>
-            <label htmlFor="param-mode" className="mb-1 block text-sm text-ink-soft">
+            <p className="mb-1 block text-sm text-ink-soft">
               {t.sampleMode}
-            </label>
-            <select
-              id="param-mode"
+            </p>
+            <SegmentedControl label={t.sampleMode}
               value={local.mode}
-              onChange={(e) => patch({ mode: e.target.value as 'dominant' | 'average' })}
-              className="w-full input-compact py-1.5"
-            >
-              <option value="dominant">{t.sampleDominant}</option>
-              <option value="average">{t.sampleAverage}</option>
-            </select>
+              onValueChange={(mode) => patch({ mode: mode as 'dominant' | 'average' })}
+              options={[{value:'dominant',label:t.sampleDominant},{value:'average',label:t.sampleAverage}]}
+            />
           </div>
 
           {(
@@ -360,14 +356,7 @@ export default function GenerationParamsPanel({
             </div>
           ))}
 
-          <label className="flex items-center gap-2 text-sm text-ink-soft">
-            <input
-              type="checkbox"
-              checked={local.backgroundRemoval}
-              onChange={(e) => patch({ backgroundRemoval: e.target.checked })}
-            />
-            {t.backgroundRemoval}
-          </label>
+          <Switch label={t.backgroundRemoval} checked={local.backgroundRemoval} onChange={checked=>patch({backgroundRemoval:checked})} />
 
           {local.backgroundRemoval && (
             <div className="flex flex-col gap-3">
@@ -386,14 +375,7 @@ export default function GenerationParamsPanel({
                   className="w-full"
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm text-ink-soft">
-                <input
-                  type="checkbox"
-                  checked={local.backgroundPrototype !== null && local.backgroundPrototype !== undefined}
-                  onChange={(event) => patch({ backgroundPrototype: event.target.checked ? '#FFFFFF' : null })}
-                />
-                {t.manualBackground}
-              </label>
+              <Switch label={t.manualBackground} checked={local.backgroundPrototype !== null && local.backgroundPrototype !== undefined} onChange={checked=>patch({backgroundPrototype:checked?'#FFFFFF':null})} />
               {local.backgroundPrototype && (
                 <>
                   <label className="flex items-center justify-between gap-3 text-sm text-ink-soft">
@@ -441,44 +423,27 @@ export default function GenerationParamsPanel({
         />
       </div>
       <div className="mb-2 text-sm">
-        <label htmlFor="param-board-profile" className="mb-1 block font-medium text-ink-soft">
-          {t.boardProfile}
-        </label>
-        <select
+        <ResponsiveSelect label={t.boardProfile}
           id="param-board-profile"
           value={selectedBoardProfile}
           disabled={paletteLocked}
-          onChange={(event) => onBoardProfileSelect(event.target.value as BoardProfileId)}
-          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {boardProfileOptions.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </select>
+          onValueChange={(value) => onBoardProfileSelect(value as BoardProfileId)} options={boardProfileOptions}
+        />
         <p className="mt-1 text-xs text-ink-soft">{t.boardProfileHint}</p>
       </div>
       <div className="mb-2 text-sm">
-        <label htmlFor="param-kit" className="mb-1 block font-medium text-ink-soft">
-          {t.kitTier}
-        </label>
         {/*
           套装档位（H-3）：内置色板是「品牌一共有多少色」，但用户手里常常只有
           一盒 24/48 色套装。不限制时生成结果里会出现买不到的色号——这是用户
           反馈里很常见的一条。档位从色板里按覆盖色域挑代表色，只用这些色生成。
         */}
-        <select
+        <ResponsiveSelect label={t.kitTier}
           id="param-kit"
-          value={kitTier}
+          value={String(kitTier)}
           disabled={paletteLocked}
-          onChange={(e) => onKitTierChange?.(Number(e.target.value))}
-          className="w-full input-compact py-1.5 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {availableKitTiers.map((tier) => (
-            <option key={tier} value={tier}>
-              {tier === 0 ? t.kitTierAll(paletteColorCount) : t.kitTierOption(tier)}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => onKitTierChange?.(Number(value))}
+          options={availableKitTiers.map(tier=>({value:String(tier),label:tier===0?t.kitTierAll(paletteColorCount):t.kitTierOption(tier)}))}
+        />
         <p className="mt-1 text-xs text-ink-soft">{t.kitTierHint}</p>
       </div>
     </section>

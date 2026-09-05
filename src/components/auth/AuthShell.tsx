@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Brand from '@/components/layout/Brand';
 import Icon from '@/components/ui/Icon';
 import { zhCN } from '@/messages/zh-CN';
+import { ConsentSlot } from '@/components/analytics/ConsentPlacement';
 
 export default function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
   const t = zhCN.authPages;
@@ -20,6 +21,7 @@ export default function AuthShell({ title, children }: { title: string; children
       </section>
       <section className="auth-form-column">
         <div className="auth-mobile-brand"><Brand compact /></div>
+        <ConsentSlot />
         <div className="auth-form-card">
           <header><h1>{title}</h1><p>{t.formHint}</p></header>
           {children}

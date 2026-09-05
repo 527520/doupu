@@ -12,6 +12,8 @@ import ColorBand from './ColorBand';
 import { zhCN } from '@/messages/zh-CN';
 import type { BuiltinPaletteExclusionReason } from '@/lib/palettes';
 import type { PaletteColor } from '@/lib/types';
+import DetailPanel from '@/components/ui/DetailPanel';
+import { Button } from 'react-aria-components';
 
 export interface PaletteSwatchColor extends PaletteColor {
   excludedReason?: BuiltinPaletteExclusionReason;
@@ -44,16 +46,17 @@ export default function PaletteSwatches({ name, colors }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <ColorBand colors={hexes} label={t.bandAria(name, colors.length)} />
-      <button
+      <Button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        aria-label={t.showColors}
+        onPress={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-controls={gridId}
-        className="link-soft self-start text-xs"
+        className="link-action self-start"
       >
-        {open ? t.hideColors : t.showColors}
-      </button>
-      {open && (
+        {t.showColors}
+      </Button>
+      <DetailPanel title={name} open={open} onClose={()=>setOpen(false)}>
         <ul
           id={gridId}
           tabIndex={0}
@@ -100,7 +103,7 @@ export default function PaletteSwatches({ name, colors }: Props) {
             );
           })}
         </ul>
-      )}
+      </DetailPanel>
     </div>
   );
 }

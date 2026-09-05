@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import ColorBand from './ColorBand';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 export interface PalettePickerOption {
   /** 稳定色板选择值；只作为表单值，不进入可见主文案。 */
@@ -59,13 +60,10 @@ export default function PalettePicker({
 
   return (
     <div className={`palette-picker${className ? ` ${className}` : ''}`}>
-      <label className="palette-picker-field">
-        <span>{zhCN.params.brand}</span>
-        <select
+      <ResponsiveSelect label={zhCN.params.brand} className="palette-picker-field"
           value={displayBrand}
           disabled={disabled || options.length === 0}
-          onChange={(event) => {
-            const brand = event.target.value;
+          onValueChange={(brand) => {
             const rememberedValue = lastSelectionByBrandRef.current.get(brand);
             const next = options.find((option) => (
               option.brand === brand && option.value === rememberedValue
@@ -76,33 +74,18 @@ export default function PalettePicker({
               setBrandBrowse({ brand, selectedValueAtStart: selectedValue ?? null });
             }
           }}
-          className="input-compact"
-        >
-          {!selected && <option value="">{zhCN.params.paletteUnavailable}</option>}
-          {brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}
-        </select>
-      </label>
-      <label className="palette-picker-field">
-        <span>{zhCN.params.series}</span>
-        <select
+          options={[...(!selected ? [{value:'',label:zhCN.params.paletteUnavailable}] : []), ...brands.map((brand)=>({value:brand,label:brand}))]}
+      />
+      <ResponsiveSelect label={zhCN.params.series} className="palette-picker-field"
           value={displayedSelection?.value ?? ''}
           disabled={disabled || !displayBrand}
           aria-describedby={displayedSelection ? detailId : undefined}
-          onChange={(event) => {
+          onValueChange={(nextValue) => {
             setBrandBrowse(null);
-            onSelect(event.target.value);
+            onSelect(nextValue);
           }}
-          className="input-compact"
-        >
-          {!displayBrand && <option value="">{zhCN.params.paletteUnavailable}</option>}
-          {displayBrand && !displayedSelection && (
-            <option value="">{zhCN.params.paletteSeriesRequired}</option>
-          )}
-          {seriesOptions.map((option) => (
-            <option key={option.value} value={option.value}>{option.series}</option>
-          ))}
-        </select>
-      </label>
+          options={[...(!displayedSelection ? [{value:'',label:displayBrand ? zhCN.params.paletteSeriesRequired : zhCN.params.paletteUnavailable}] : []), ...seriesOptions.map((option)=>({value:option.value,label:option.series,colors:option.colors}))]}
+      />
       {displayedSelection && (
         <section id={detailId} className="palette-picker-card" aria-label={zhCN.params.paletteCurrentSeries}>
           <div className="palette-picker-card-heading">

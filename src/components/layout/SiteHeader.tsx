@@ -7,6 +7,7 @@ import Icon, { type IconName } from '@/components/ui/Icon';
 import ActionOverflow from '@/components/layout/ActionOverflow';
 import { useAuthStatus } from '@/components/account/useAuthStatus';
 import { zhCN } from '@/messages/zh-CN';
+import { ConsentSlot } from '@/components/analytics/ConsentPlacement';
 
 interface SiteHeaderProps {
   title: string;
@@ -91,7 +92,7 @@ export default function SiteHeader({
       <header className="workspace-header">
         <div className="workspace-topbar">
           <div className="workspace-mobile-brand"><Brand compact onClick={(event) => navigate(event, '/')} /></div>
-          <div className="workspace-page-heading">
+          <div className={`workspace-page-heading${currentPath === '/' ? ' home-page-heading' : ''}`}>
             <h1>{title}</h1>
             {subtitle && <p>{subtitle}</p>}
           </div>
@@ -101,6 +102,7 @@ export default function SiteHeader({
           </div>
         </div>
       </header>
+      <ConsentSlot />
 
       <nav aria-label={zhCN.nav.mainNav} className="workspace-mobile-nav" data-testid="workspace-mobile-nav">
         {mobileNavigation.map((item) => (

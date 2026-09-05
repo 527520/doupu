@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 /** 自定义色板编辑器（spec §F6 / 边界 E20）：逐行录入 + 即时校验 + 粘贴/文件导入 + 复制内置色板。 */
 import { Fragment, useMemo, useRef, useState, type SetStateAction } from 'react';
@@ -201,25 +202,11 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
             }}
           />
         </label>
-        <select
+        <ResponsiveSelect label={t.copyFromBrand} hideLabel
           value=""
-          onChange={(e) => copyFromBuiltin(e.target.value)}
-          aria-label={t.copyFromBrand}
-          className="btn-outline btn-xs"
-        >
-          <option value="" disabled>
-            {t.copyFromBrand}
-          </option>
-          {BUILTIN_PALETTE_GROUPS.map(([brandLabel, palettes]) => (
-            <optgroup key={brandLabel} label={brandLabel}>
-              {palettes.map((palette) => (
-                <option key={palette.id} value={palette.id}>
-                  {palette.series}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          onValueChange={copyFromBuiltin}
+          options={[{value:'',label:t.copyFromBrand,disabled:true},...BUILTIN_PALETTE_GROUPS.flatMap(([brand,palettes])=>palettes.map(palette=>({value:palette.id,label:`${brand} · ${palette.series}`})))]}
+        />
       </div>
 
       {importError && <p role="alert" className="whitespace-pre-line text-xs text-danger">{importError}</p>}

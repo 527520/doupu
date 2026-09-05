@@ -1,4 +1,5 @@
 import { forbidden } from 'next/navigation';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import Link from 'next/link';
 import { getDb } from '@/lib/auth/db';
 import { authorize } from '@/lib/auth/authorization';
@@ -28,7 +29,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const t = zhCN.communityAdmin.analyticsDashboard;
   const dimensions = Object.entries(t.dimensions);
   const funnelNames = Object.entries(t.funnelNames);
-  const select = (name: typeof DASHBOARD_COMBINATION_FILTERS[number], label: string, options: Record<string, string>) => <label>{label}<select name={name} defaultValue={requested[name] ?? ''}><option value="">{t.all}</option>{Object.entries(options).map(([key, option]) => <option key={key} value={key}>{option}</option>)}</select></label>;
+  const select = (name: typeof DASHBOARD_COMBINATION_FILTERS[number], label: string, options: Record<string, string>) => <ResponsiveSelect label={label} name={name} defaultValue={requested[name]??''} options={[{value:'',label:t.all},...Object.entries(options).map(([value,label])=>({value,label}))]} />;
   return <main id="main" className="admin-page">
     <header className="admin-page-header"><div><span>{t.eyebrow}</span><h1>{t.title}</h1></div><p>{t.description}</p></header>
     {invalid && <p role="alert" className="notice notice-warning">{t.invalidQuery}</p>}
@@ -36,8 +37,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       <div className="admin-analytics-filters">
         <label>{t.start}<input type="date" name="start" defaultValue={requested.start} /></label><label>{t.end}<input type="date" name="end" defaultValue={requested.end} /></label>
         <label>{t.eventName}<input name="eventName" maxLength={80} defaultValue={requested.eventName ?? ''} placeholder={t.eventExample} /></label>
-        <label>{t.dimension}<select name="dimension" defaultValue={dimension}>{dimensions.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-        <label>{t.funnel}<select name="funnel" defaultValue={funnel}>{funnelNames.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <ResponsiveSelect label={t.dimension} name="dimension" defaultValue={dimension} options={dimensions.map(([value,label])=>({value,label}))} />
+        <ResponsiveSelect label={t.funnel} name="funnel" defaultValue={funnel} options={funnelNames.map(([value,label])=>({value,label}))} />
       </div>
       <details className="admin-advanced-filters" open={DASHBOARD_COMBINATION_FILTERS.some((key) => requested[key] !== undefined)}><summary>{t.advanced}</summary><p>{t.advancedHint}</p><div className="admin-analytics-filters">
         {select('device', t.device, t.devices)}{select('browser', t.browser, t.browsers)}{select('os', t.os, t.systems)}{select('actor', t.actor, t.actors)}

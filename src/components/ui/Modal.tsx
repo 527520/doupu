@@ -69,7 +69,8 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       // 上层确认框会将当前 Portal 设为 inert；仅最上层弹窗处理键盘。
-      if (portalRoot?.hasAttribute('inert')) return;
+      if (portalRoot?.hasAttribute('inert') || portalRoot?.getAttribute('aria-hidden') === 'true'
+        || event.defaultPrevented || (event.target instanceof Node && !panelRef.current?.contains(event.target))) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();

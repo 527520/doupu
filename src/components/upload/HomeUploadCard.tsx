@@ -29,12 +29,8 @@ export default function HomeUploadCard() {
 
   return (
     <section className="studio-panel home-start-card">
-      <header className="home-start-heading">
-        <span><Icon name="upload" size={25} /></span>
-        <div><h2>{zhCN.home.fromImage}</h2><p>{zhCN.home.fromImageHint}</p></div>
-      </header>
       {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
-      <UploadDropzone onValid={onValid} disabled={handing} />
+      <UploadDropzone onValid={onValid} disabled={handing} prominent />
       <Link href="/app?new=1#blank-start" className="home-blank-action">
         <Icon name="blank" />
         <span><strong>{zhCN.home.blankStart}</strong><small>{zhCN.home.blankHint}</small></span>

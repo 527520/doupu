@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ANALYTICS_CONSENT_COOKIE, serializeConsentCookie, serializePendingWithdrawalCookie, type AnalyticsConsent } from '@/lib/analytics/cookies';
 import { clearAnalyticsQueue, track, setAnalyticsInitialized } from '@/lib/analytics/client';
 import { surfaceForPath } from './PageViewTracker';
@@ -102,16 +103,20 @@ function usePreference() {
   return state;
 }
 
-export function AnalyticsConsentBanner() {
-  const t = zhCN.communityAdmin.analytics;
-  const { preference, ready, saving, message, error } = usePreference();
+export function AnalyticsConsentInitialization() {
   useEffect(() => {
     const timer = window.setTimeout(() => { if (readPreference() === 'granted') void choose('granted'); }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+  return null;
+}
+
+export function AnalyticsConsentBanner({ target }: { target?: HTMLElement | null } = {}) {
+  const t = zhCN.communityAdmin.analytics;
+  const { preference, ready, saving, message, error } = usePreference();
   if (!ready || (preference === 'granted' && !error) || preference === 'denied') return null;
   const pending = preference === 'withdrawn';
-  return (
+  const banner = (
     <aside className="analytics-consent" aria-label={t.bannerLabel}>
       <div>
         <strong>{pending ? recovery.stoppedTitle : t.bannerTitle}</strong>
@@ -127,6 +132,7 @@ export function AnalyticsConsentBanner() {
       </div>
     </aside>
   );
+  return target ? createPortal(banner,target) : banner;
 }
 
 export function AnalyticsConsentSettings() {

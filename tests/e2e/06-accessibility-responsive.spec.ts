@@ -85,10 +85,6 @@ for (const width of widths) {
   test(`工作台 ${width}px 无横向溢出且关键操作可见`, async ({ page }) => {
     const consoleErrors: Array<{ text: string; url: string }> = [];
     const expectedAnonymousResponses = new Set<string>();
-    // 界面子集字体源文件不入库（见 NOTICE.md 与 scripts/build-ui-font-subset.mjs），
-    // CI/未跑 prebuild 的环境里 @font-face 会 404 并回退系统字体——这是刻意支持的状态，
-    // 不计入控制台错误。
-    const toleratedConsole = /ui-sans-sc\.subset\.ttf/;
     const httpErrors: string[] = [];
     page.on('console', (message) => {
       if (message.type() === 'error') {
@@ -99,7 +95,7 @@ for (const width of widths) {
       const { pathname } = new URL(response.url());
       if (response.status() === 401 && pathname === '/api/auth/me') {
         expectedAnonymousResponses.add(response.url());
-      } else if (response.status() >= 400 && !toleratedConsole.test(response.url())) {
+      } else if (response.status() >= 400) {
         httpErrors.push(`${response.status()} ${response.url()}`);
       }
     });
@@ -114,9 +110,7 @@ for (const width of widths) {
     if (width < 768) {
       await page.waitForLoadState('networkidle');
       const unexpectedConsoleErrors = consoleErrors.filter(
-        (error) => !expectedAnonymousResponses.has(error.url)
-          && !toleratedConsole.test(error.text)
-          && !toleratedConsole.test(error.url),
+        (error) => !expectedAnonymousResponses.has(error.url),
       );
       const errors = [
         ...httpErrors,

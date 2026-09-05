@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -208,9 +209,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       {reportTarget && <Modal label={t.reportTitle} onClose={() => { if (!pendingRef.current) setReportTarget(null); }} panelClassName="max-w-md">
         <form className="community-report-form" onSubmit={(event) => { event.preventDefault(); void report(); }}>
           <h2>{t.reportTitle}</h2>{feedback}
-          <label>{t.reportCategory}<select value={category} disabled={pending !== null} onChange={(event) => setCategory(event.target.value as ReportCategory)}>
-            {Object.entries(t.categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select></label>
+          <ResponsiveSelect label={t.reportCategory} value={category} disabled={pending !== null} onValueChange={value=>setCategory(value as ReportCategory)} options={Object.entries(t.categories).map(([value,label])=>({value,label}))} />
           <label>{t.reportDetails}<textarea value={details} maxLength={500} disabled={pending !== null} onChange={(event) => setDetails(event.target.value)} /></label>
           <div><button type="button" className="btn-outline" disabled={pending !== null} onClick={() => setReportTarget(null)}>{zhCN.common.cancel}</button><button type="submit" className="btn-primary" disabled={pending !== null}>{t.submitReport}</button></div>
         </form>

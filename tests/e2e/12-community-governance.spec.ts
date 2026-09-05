@@ -45,7 +45,8 @@ test('已验证用户引用独立副本并发布评论', async ({ page }, testIn
 
 test('投稿从可信云端预览确认，失败保留草稿并可撤回重提', async ({ page }, testInfo) => {
   await login(page, 'e2e-user@example.com', '/community/submit');
-  await page.getByLabel('选择云端设计').selectOption({ label: 'E2E 私人设计' });
+  await page.getByRole('button',{name:/选择云端设计/}).click();
+  await page.getByRole('option',{name:'E2E 私人设计',exact:true}).click();
   await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
   const title = `E2E ${testInfo.project.name} 投稿恢复`;
   await page.getByLabel('公开作品标题').fill(title);

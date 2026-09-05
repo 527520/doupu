@@ -8,6 +8,14 @@ import { expect, type Page } from '@playwright/test';
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100';
 
+/** Exercise the visible selection surface, never its hidden native form bridge. */
+export async function selectChoice(page: Page, label: string, option: string) {
+  await page.getByRole('button', {name:new RegExp(label)}).click();
+  const search=page.getByRole('searchbox',{name:'搜索选项'});
+  if(await search.count()) await search.fill(option);
+  await page.getByRole('option',{name:option,exact:true}).click();
+}
+
 export function uniqueEmail(prefix = 'e2e'): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
 }

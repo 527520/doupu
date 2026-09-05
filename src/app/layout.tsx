@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import './globals.css';
+import '../../public/fonts/ui/fonts.css';
 import { zhCN } from '@/messages/zh-CN';
 import { APP_NAME } from '@/lib/appInfo';
 import ClientReadyMarker from '@/components/system/ClientReadyMarker';
-import { AnalyticsConsentBanner } from '@/components/analytics/AnalyticsConsent';
+import { ConsentPlacement } from '@/components/analytics/ConsentPlacement';
 import PageViewTracker from '@/components/analytics/PageViewTracker';
 
 const appUrl = () => process.env.APP_URL ?? 'http://localhost:3000';
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#f8f7f4',
+  themeColor: '#FAF8F4',
   width: 'device-width',
   initialScale: 1,
 };
@@ -65,8 +66,7 @@ export default async function RootLayout({
         </a>
         <ClientReadyMarker />
         <PageViewTracker />
-        <AnalyticsConsentBanner />
-        {children}
+        <ConsentPlacement>{children}</ConsentPlacement>
       </body>
     </html>
   );

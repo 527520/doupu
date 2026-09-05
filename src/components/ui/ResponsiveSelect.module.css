@@ -1,0 +1,40 @@
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font: inherit; }
+.label { color: var(--color-ink-soft); font-size: 13px; font-weight: 500; }
+.trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; color: var(--color-ink); font-family: var(--font-sans); font-size: 16px; line-height: 1.5; text-align: left; transition: border-color 160ms, background-color 160ms, box-shadow 160ms; }
+.value { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.trigger svg { flex: 0 0 auto; color: var(--color-ink-soft); transition: transform 180ms var(--ease-gentle); }
+.trigger[data-pressed] { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.trigger[data-pressed] svg { transform: rotate(180deg); }
+.trigger[data-focus-visible] { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.trigger[data-disabled], .trigger:disabled { opacity: .55; cursor: not-allowed; }
+.field[data-invalid] .trigger { border-color: var(--color-danger); }
+.error { color: var(--color-danger); font-size: 13px; }
+.popover { z-index: 100; min-width: var(--trigger-width); max-width: min(420px, calc(100vw - 24px)); max-height: min(420px, var(--available-height)); border: 1px solid var(--color-border); border-radius: 16px; padding: 6px; background: #fff; box-shadow: 0 12px 36px rgb(41 38 51 / 14%); outline: none; overflow: auto; }
+.popover[data-entering] { animation: popIn 180ms var(--ease-gentle); }
+.list { min-height: 44px; max-height: inherit; padding: 0; margin: 0; overflow: auto; overscroll-behavior: contain; outline: none; }
+.option { display: flex; align-items: center; gap: 16px; min-height: 48px; padding: 12px; border-radius: 10px; color: var(--color-ink); font: 15px/1.5 var(--font-sans); outline: none; cursor: pointer; }
+.option[data-focused] { background: var(--color-cream-deep); }
+.option[data-selected] { color: var(--color-primary-deep); background: var(--color-primary-soft); font-weight: 600; }
+.option[data-disabled] { opacity: .45; cursor: not-allowed; }
+.optionCopy { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.optionCopy [slot=description] { color: var(--color-ink-soft); font-size: 13px; font-weight: 400; }
+.colors { display: flex; gap: 3px; margin-top: 5px; }
+.colors i { width: 14px; height: 14px; border: 1px solid rgb(41 38 51 / 12%); border-radius: 4px; }
+.check { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; font-weight: 700; }
+.option[data-selected] .check { background: var(--color-primary); color: #fff; border-color: transparent; animation: settle 180ms var(--ease-gentle); }
+/* Keep RAC's collection, focus scope and modal underlay; only its anchor geometry
+   is replaced on compact screens. ModalOverlay cannot collect Select's options. */
+.mobilePopover { position: fixed !important; inset: auto 0 var(--sheet-bottom, 0px) !important; width: 100%; max-height: calc(var(--sheet-height, 100dvh) * .7) !important; display: flex; flex-direction: column; border-radius: 24px 24px 0 0; padding: 8px 12px max(16px, env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 0 0 100vmax rgb(41 38 51 / 30%), 0 -8px 40px rgb(41 38 51 / 12%); outline: none; }
+.mobilePopover[data-entering] { animation: sheetIn 220ms var(--ease-gentle); }
+.mobilePopover .list { min-height: 0; }
+.sheetHeader { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 4px 12px 12px; color: var(--color-ink); }
+.sheetHeader strong { font-size: 18px; font-weight: 600; }
+.close { width: 44px; height: 44px; border-radius: 14px; background: var(--color-cream); color: var(--color-ink-soft); font: 24px/1 var(--font-sans); }
+.empty { padding: 20px 12px; color: var(--color-ink-soft); font-size: 14px; }
+@keyframes popIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sheetIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes settle { from { transform: scale(.8); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .field *, .popover, .mobilePopover, .option, .check { animation: none !important; transition: none !important; } }
+.search { padding: 8px 8px 4px; flex-shrink: 0; }
+.search input { width: 100%; min-height: 44px; border: 1px solid var(--color-cream-border); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 16px; background: var(--color-cream); color: var(--color-ink); }
+.search input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }

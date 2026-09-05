@@ -1,4 +1,6 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import Switch from '@/components/ui/Switch';
 
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useId, useMemo, useRef, useState } from 'react';
@@ -172,22 +174,13 @@ export default function PngExportButton({
         <section aria-label={t.dialogTitle} className="rounded-2xl border border-lilac/40 bg-white p-3 shadow-soft">
           <h3 className="mb-2 text-sm font-medium">{t.dialogTitle}</h3>
           <div className="flex flex-col gap-2 text-sm">
-            <label htmlFor={optionsId} className="flex items-center justify-between gap-2 text-ink-soft">
-              {t.cellSize}
-              <select
+              <ResponsiveSelect label={t.cellSize}
                 id={optionsId}
                 disabled={busy}
-                value={optCellPx}
-                onChange={(e) => setOptCellPx(Number(e.target.value))}
-                className="input-compact"
-              >
-                {EXPORT_CELL_PX_CHOICES.map((size) => (
-                  <option key={size} value={size} disabled={!fits.get(size)}>
-                    {fits.get(size) ? t.cellSizeValue(size) : t.cellSizeTooLarge(size)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                value={String(optCellPx)}
+                onValueChange={(value) => setOptCellPx(Number(value))}
+                options={EXPORT_CELL_PX_CHOICES.map(size=>({value:String(size),label:fits.get(size)?t.cellSizeValue(size):t.cellSizeTooLarge(size),disabled:!fits.get(size)}))}
+              />
             {!currentFits && (
               <p role="alert" className="text-xs text-danger">
                 {zhCN.export.pngTooLargeError(suggestedCellPx)}
@@ -198,14 +191,8 @@ export default function PngExportButton({
                 {t.splitArchiveNotice}
               </p>
             )}
-            <label className="flex items-center gap-2 text-ink-soft">
-              <input type="checkbox" checked={optCrop} disabled={busy} onChange={(e) => setOptCrop(e.target.checked)} />
-              {t.cropToContent}
-            </label>
-            <label className="flex items-center gap-2 text-ink-soft">
-              <input type="checkbox" checked={optLegend} disabled={busy} onChange={(e) => setOptLegend(e.target.checked)} />
-              {t.includeLegend}
-            </label>
+            <Switch label={t.cropToContent} checked={optCrop} disabled={busy} onChange={setOptCrop} />
+            <Switch label={t.includeLegend} checked={optLegend} disabled={busy} onChange={setOptLegend} />
           </div>
           <div className="mt-3 flex justify-end gap-2">
             <button

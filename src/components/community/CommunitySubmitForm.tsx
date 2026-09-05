@@ -1,4 +1,5 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -134,9 +135,7 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
   return (
     <form className="community-submit-form" onSubmit={(event) => void submit(event)}>
       <p>{workId ? t.editHelp : t.previewHelp}</p>
-      <label>{t.chooseSource}<select className="input-field" value={designId} disabled={loading || locked} onChange={(event) => void selectSource(event.target.value)}>
-        <option value="">{t.choosePlaceholder}</option>{designs.map((design) => <option key={design.id} value={design.id}>{design.name}</option>)}
-      </select></label>
+      <ResponsiveSelect label={t.chooseSource} value={designId} disabled={loading || locked} onValueChange={(value)=>void selectSource(value)} options={[{value:'',label:t.choosePlaceholder},...designs.map(design=>({value:design.id,label:design.name}))]} />
       {loading && <p role="status">{t.loadingSources}</p>}
       {!loading && !designs.length && !error && <p>{t.noSources}</p>}
       {preview && <section className="submission-preview" aria-label={t.preview}><CommunityPreviewCanvas preview={preview} label={t.previewAria(title || source!.name)} /><div><strong>{title || source!.name}</strong><p>{t.author}{displayName}</p><p>{t.previewSize(preview.originalWidth, preview.originalHeight)}</p></div></section>}

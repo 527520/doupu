@@ -13,13 +13,13 @@ export default function Home() {
   const { home, footer } = zhCN;
   return (
     <main id="main" className="workspace-page">
-      <SiteHeader title={zhCN.workspace.start} currentPath="/" subtitle={zhCN.workspace.homeSubtitle} primaryActions={<HomeAuthNav />} />
+      <SiteHeader title={zhCN.workspace.start} currentPath="/" primaryActions={<HomeAuthNav />} />
 
       <div className="workspace-content home-studio-grid">
         <div className="home-hero">
         <section className="home-welcome">
           <div>
-            <h2>{home.question}</h2>
+            <h2><span>{home.questionLead}</span><span>{home.questionEnd}</span></h2>
             <p>{home.startHint}</p>
             <p className="home-privacy"><Icon name="lock" size={16} />{zhCN.workspace.localGeneration}</p>
           </div>
@@ -28,7 +28,7 @@ export default function Home() {
         </div>
         <RecentDesigns />
         <HomeCommunityShelf />
-        <details className="home-guide"><summary>{zhCN.workspace.helpAndGuide}</summary><OnboardingGuide /><Link href="/help" className="link-soft">{home.fullGuide}</Link></details>
+        <details className="home-guide"><summary>{zhCN.workspace.helpAndGuide}</summary><OnboardingGuide /><Link href="/help" className="link-action">{home.fullGuide}</Link></details>
         <footer className="home-footer">
           <p>{home.openSourceNotice} · <a href={SOURCE_REPO_URL} target="_blank" rel="noreferrer">{footer.sourceCode}</a></p>
           <p>{footer.author(AUTHOR_NAME)} · <a href={AUTHOR_GITHUB_URL} target="_blank" rel="noreferrer">{footer.authorGithub}</a></p>

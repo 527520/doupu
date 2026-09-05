@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import TagsManager from './TagsManager';
+import userEvent from '@testing-library/user-event';
 
 const tags = [
   { id: 'source', name: '小猫', slug: 'cats', sortOrder: 0, active: true, mergedIntoTagId: null, version: 2 },
@@ -14,14 +15,16 @@ it('requires selecting a tag and explicitly confirms the named merge target', as
   fireEvent.click(await screen.findByRole('button', { name: /小猫/ }));
   fireEvent.change(screen.getByRole('textbox', { name: '操作理由' }), { target: { value: '统一相同分类' } });
   fireEvent.click(screen.getByText('合并重复标签'));
-  fireEvent.change(screen.getByRole('combobox', { name: '合并到标签' }), { target: { value: 'target' } });
+  const user=userEvent.setup();
+  await user.click(screen.getByRole('button',{name:/合并到标签/}));
+  await user.click(screen.getByRole('option',{name:'动物'}));
   expect(screen.getByRole('button', { name: '确认合并标签' })).toBeDisabled();
   fireEvent.click(screen.getByRole('checkbox', { name: /小猫.*动物/ }));
   vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
   fireEvent.click(screen.getByRole('button', { name: '确认合并标签' }));
   await screen.findByRole('button', { name: '重试确认上次操作' });
   expect(screen.getByRole('textbox', { name: '操作理由' })).toHaveValue('统一相同分类');
-  expect(screen.getByRole('combobox', { name: '合并到标签' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /合并到标签/ })).toBeDisabled();
   vi.mocked(fetch).mockResolvedValueOnce(new Response('{}'));
   fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
   await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());

@@ -3,7 +3,8 @@
  * 色板可视化（批次 E）：色带取样规则、可展开色格、编辑器取色器。
  */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import ColorBand, { sampleColors } from './ColorBand';
 import PaletteSwatches from './PaletteSwatches';
 import PaletteEditor from './PaletteEditor';
@@ -42,14 +43,19 @@ describe('ColorBand 取样（E-1）', () => {
 describe('PaletteSwatches（E-1）', () => {
   const palette: PaletteColor[] = [...getBuiltinPalette('MARD').colors];
 
-  it('默认只显示色带，展开后铺出全部色格并带色号', () => {
+  it('默认只显示色带，详情面板铺出全部色格并带色号，关闭恢复入口焦点', async () => {
     render(<PaletteSwatches name="MARD" colors={palette} />);
     expect(screen.getByRole('img', { name: zhCN.palettes.bandAria('MARD', palette.length) })).toBeTruthy();
     expect(screen.queryByLabelText(`${palette[0].code} ${palette[0].hex}`)).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: zhCN.palettes.showColors }));
+    const user=userEvent.setup();
+    const entry=screen.getByRole('button', {name:zhCN.palettes.showColors});
+    await user.click(entry);
     expect(screen.getByLabelText(`${palette[0].code} ${palette[0].hex}`)).toBeTruthy();
-    expect(screen.getByRole('button', { name: zhCN.palettes.hideColors })).toBeTruthy();
+    expect(screen.getByRole('dialog',{name:'MARD'})).toBeVisible();
+    await user.click(screen.getByRole('button',{name:zhCN.selection.close}));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(()=>expect(entry).toHaveFocus());
   });
 
   it('透明特殊材质使用棋盘格并明确标为仅展示', () => {

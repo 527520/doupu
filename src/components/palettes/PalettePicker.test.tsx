@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import PalettePicker, { type PalettePickerOption } from './PalettePicker';
 
@@ -42,8 +43,13 @@ const options: readonly PalettePickerOption[] = [
   },
 ];
 
+async function select(label:string, option:string) {
+  const user=userEvent.setup();
+  await user.click(screen.getByRole('button',{name:new RegExp(label)}));
+  await user.click(screen.getByRole('option',{name:option}));
+}
 describe('PalettePicker', () => {
-  it('把品牌与系列拆成两个原生选择器，并用色带卡片展示选择依据', () => {
+  it('把品牌与系列拆成两个选择器，并用色带卡片展示选择依据', () => {
     render(
       <PalettePicker
         options={options}
@@ -52,8 +58,8 @@ describe('PalettePicker', () => {
       />,
     );
 
-    expect(screen.getByRole('combobox', { name: '色板品牌' })).toHaveValue('MARD');
-    expect(screen.getByRole('combobox', { name: '色板系列' })).toHaveValue('builtin:mard-public');
+    expect(screen.getByRole('button', { name: /色板品牌/ })).toHaveTextContent('MARD');
+    expect(screen.getByRole('button', { name: /色板系列/ })).toHaveTextContent('291 色公开资料版');
     expect(screen.getByRole('img', { name: 'MARD 291 色公开资料版色带' })).toBeTruthy();
     expect(screen.getByText('收录 291 色')).toBeTruthy();
     expect(screen.getByText('可生成 291 色')).toBeTruthy();
@@ -63,7 +69,7 @@ describe('PalettePicker', () => {
     expect(technicalDetails?.open).toBe(false);
   });
 
-  it('切换品牌只提交该品牌的一个稳定系列值', () => {
+  it('切换品牌只提交该品牌的一个稳定系列值', async () => {
     const onSelect = vi.fn();
     render(
       <PalettePicker
@@ -73,29 +79,25 @@ describe('PalettePicker', () => {
       />,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板品牌' }), {
-      target: { value: 'COCO' },
-    });
+    await select('色板品牌','COCO');
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('builtin:coco-classic');
   });
 
-  it('品牌默认系列由显式标记决定，不依赖选项数组顺序', () => {
+  it('品牌默认系列由显式标记决定，不依赖选项数组顺序', async () => {
     const onSelect = vi.fn();
     const reordered = [options[0], options[1], {
       ...options[2], value: 'builtin:coco-public', series: 'COCO 公开版', defaultForBrand: false,
     }, options[2]];
     render(<PalettePicker options={reordered} value="builtin:mard-public" onSelect={onSelect} />);
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板品牌' }), {
-      target: { value: 'COCO' },
-    });
+    await select('色板品牌','COCO');
 
     expect(onSelect).toHaveBeenCalledWith('builtin:coco-classic');
   });
 
-  it('切回我的色板时恢复本会话上次选择而不依赖 ID 或选项顺序', () => {
+  it('切回我的色板时恢复本会话上次选择而不依赖 ID 或选项顺序', async () => {
     const onSelect = vi.fn();
     const customOptions: readonly PalettePickerOption[] = [
       ...options,
@@ -118,21 +120,17 @@ describe('PalettePicker', () => {
       <PalettePicker options={customOptions} value="custom:z-last" onSelect={onSelect} />,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板品牌' }), {
-      target: { value: 'MARD' },
-    });
+    await select('色板品牌','MARD');
     expect(onSelect).toHaveBeenLastCalledWith('builtin:mard-classic');
     view.rerender(
       <PalettePicker options={customOptions} value="builtin:mard-classic" onSelect={onSelect} />,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板品牌' }), {
-      target: { value: '我的色板' },
-    });
+    await select('色板品牌','我的色板');
     expect(onSelect).toHaveBeenLastCalledWith('custom:z-last');
   });
 
-  it('从未选择过且没有默认项的品牌只展开系列，不自动改动项目色板', () => {
+  it('从未选择过且没有默认项的品牌只展开系列，不自动改动项目色板', async () => {
     const onSelect = vi.fn();
     const customOptions: readonly PalettePickerOption[] = [
       ...options,
@@ -155,16 +153,12 @@ describe('PalettePicker', () => {
       <PalettePicker options={customOptions} value="builtin:mard-classic" onSelect={onSelect} />,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板品牌' }), {
-      target: { value: '我的色板' },
-    });
+    await select('色板品牌','我的色板');
 
     expect(onSelect).not.toHaveBeenCalled();
-    expect(screen.getByRole('combobox', { name: '色板品牌' })).toHaveValue('我的色板');
-    expect(screen.getByRole('combobox', { name: '色板系列' })).toHaveValue('');
-    fireEvent.change(screen.getByRole('combobox', { name: '色板系列' }), {
-      target: { value: 'custom:a-first' },
-    });
+    expect(screen.getByRole('button', { name: /色板品牌/ })).toHaveTextContent('我的色板');
+    expect(screen.getByRole('button', { name: /色板系列/ })).toHaveTextContent('请选择一个色板系列。');
+    await select('色板系列','冷色组');
     expect(onSelect).toHaveBeenCalledWith('custom:a-first');
   });
 
@@ -173,10 +167,10 @@ describe('PalettePicker', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('当前色板不可用');
     expect(screen.queryByRole('img', { name: /色带/ })).toBeNull();
-    expect(screen.getByRole('combobox', { name: '色板品牌' })).toHaveValue('');
+    expect(screen.getByRole('button', { name: /色板品牌/ })).toHaveTextContent('当前色板不可用');
   });
 
-  it('切换同品牌系列时原样提交稳定值', () => {
+  it('切换同品牌系列时原样提交稳定值', async () => {
     const onSelect = vi.fn();
     render(
       <PalettePicker
@@ -186,9 +180,7 @@ describe('PalettePicker', () => {
       />,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: '色板系列' }), {
-      target: { value: 'builtin:mard-public' },
-    });
+    await select('色板系列','291 色公开资料版');
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('builtin:mard-public');

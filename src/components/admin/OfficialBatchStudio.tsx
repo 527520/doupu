@@ -1,4 +1,6 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import Switch from '@/components/ui/Switch';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
@@ -26,14 +28,14 @@ function BatchParamsEditor({ value, inherited, onChange }: { value: Partial<Gene
   const number = (key: 'targetWidth' | 'targetColorCount' | 'brightness' | 'contrast' | 'bgTolerance', min: number, max: number) => <input type="number" min={min} max={max} step={1} value={value[key] ?? ''} placeholder={inherited ? String(inherited[key]) : undefined} onChange={(event) => {
     const next = { ...value }; if (event.target.value === '') delete next[key]; else next[key] = Number(event.target.value); onChange(next);
   }} />;
-  const bool = (key: 'dithering' | 'backgroundRemoval') => <select value={value[key] === undefined ? '' : String(value[key])} onChange={(event) => {
-    const next = { ...value }; if (!event.target.value) delete next[key]; else next[key] = event.target.value === 'true'; onChange(next);
-  }}>{inherited && <option value="">{t.inherit}</option>}<option value="true">{t.enabled}</option><option value="false">{t.disabled}</option></select>;
+  const bool = (key: 'dithering' | 'backgroundRemoval') => inherited ? <ResponsiveSelect label={t[key]} value={value[key] === undefined ? '' : String(value[key])} onValueChange={raw => {
+    const next = { ...value }; if (!raw) delete next[key]; else next[key] = raw === 'true'; onChange(next);
+  }} options={[{value:'',label:t.inherit},{value:'true',label:t.enabled},{value:'false',label:t.disabled}]} /> : <Switch label={t[key]} checked={value[key]??false} onChange={checked=>onChange({...value,[key]:checked})} />;
   return <div className="batch-params-grid">
     <label>{t.width}{number('targetWidth', 20, 200)}</label><label>{t.colors}{number('targetColorCount', 2, 128)}</label>
-    <label>{t.mode}<select value={value.mode ?? ''} onChange={(event) => { const next = { ...value }; if (!event.target.value) delete next.mode; else next.mode = event.target.value as GenerationParams['mode']; onChange(next); }}>{inherited && <option value="">{t.inherit}</option>}<option value="dominant">{t.dominant}</option><option value="average">{t.average}</option></select></label>
-    <label>{t.dithering}{bool('dithering')}</label><label>{t.brightness}{number('brightness', -100, 100)}</label><label>{t.contrast}{number('contrast', -100, 100)}</label>
-    <label>{t.backgroundRemoval}{bool('backgroundRemoval')}</label><label>{t.bgTolerance}{number('bgTolerance', 0, 40)}</label>
+    <ResponsiveSelect label={t.mode} value={value.mode ?? ''} onValueChange={raw=>{const next={...value};if(!raw)delete next.mode;else next.mode=raw as GenerationParams['mode'];onChange(next);}} options={[...(inherited?[{value:'',label:t.inherit}]:[]),{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} />
+    {bool('dithering')}<label>{t.brightness}{number('brightness', -100, 100)}</label><label>{t.contrast}{number('contrast', -100, 100)}</label>
+    {bool('backgroundRemoval')}<label>{t.bgTolerance}{number('bgTolerance', 0, 40)}</label>
     <label>{t.backgroundPrototype}<input value={value.backgroundPrototype ?? ''} placeholder={inherited?.backgroundPrototype ?? t.autoBackground} maxLength={7} onChange={(event) => onChange({ ...value, backgroundPrototype: event.target.value || null })} /></label>
   </div>;
 }

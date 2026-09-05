@@ -1,4 +1,6 @@
 'use client';
+import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import Switch from '@/components/ui/Switch';
 
 import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
@@ -71,14 +73,12 @@ export default function TagsManager() {
           <label>{t.slug}<input value={slug} maxLength={50} disabled={!editable} onChange={(event) => setSlug(event.target.value)} aria-describedby="tag-slug-help" /></label>
           <p id="tag-slug-help" className="admin-help">{t.slugHelp}</p>
           <label>{t.sort}<input type="number" step="1" value={order} disabled={!editable} onChange={(event) => setOrder(event.target.value)} /></label>
-          {!creating && <label className="admin-check"><input type="checkbox" checked={active} disabled={!editable} onChange={(event) => setActive(event.target.checked)} />{t.enabled}</label>}
+          {!creating && <Switch label={t.enabled} checked={active} disabled={!editable} onChange={setActive} />}
           <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
           <button type="button" className="btn-primary" disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</button>
           {selected && <details><summary>{t.merge}</summary><div className="admin-form-stack">
             <p>{t.mergeHelp}</p>
-            <label>{t.mergeTarget}<select value={mergeTarget} disabled={!editable} onChange={(event) => { setMergeTarget(event.target.value); setMergeConfirmed(false); }}>
-              <option value="">{t.chooseTarget}</option>{queue.items.filter((tag) => tag.id !== selected.id && tag.active && !tag.mergedIntoTagId).map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-            </select></label>
+            <ResponsiveSelect label={t.mergeTarget} value={mergeTarget} disabled={!editable} onValueChange={value=>{setMergeTarget(value);setMergeConfirmed(false);}} options={[{value:'',label:t.chooseTarget},...queue.items.filter(tag=>tag.id!==selected.id&&tag.active&&!tag.mergedIntoTagId).map(tag=>({value:tag.id,label:tag.name}))]} />
             {target && <label className="admin-check"><input type="checkbox" checked={mergeConfirmed} disabled={!editable} onChange={(event) => setMergeConfirmed(event.target.checked)} />{t.confirmMerge(selected.name, target.name)}</label>}
             <button type="button" className="btn-danger-outline" disabled={!editable || !target || !mergeConfirmed || !validReason} onClick={() => void merge()}>{t.mergeSubmit}</button>
           </div></details>}
