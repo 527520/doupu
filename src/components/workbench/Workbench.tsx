@@ -6,7 +6,7 @@
  * 刷新恢复最后设计；配额满/存储不可用降级提示（E39）。
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
@@ -1680,7 +1680,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const cropAction = <div className="preview-crop-action">
     <button type="button" className="btn-outline" disabled={busy || generating} aria-expanded={!decoded ? cropRecoveryOpen : undefined} onClick={(event) => {
       event.currentTarget.focus();
-      if (decoded) setStep('crop');
+      // Opening the cropper re-renders the workspace and mounts a measured
+      // canvas. Let React yield between render work instead of extending the
+      // input event into a single main-thread task; image operations stay urgent.
+      if (decoded) startTransition(() => setStep('crop'));
       else setCropRecoveryOpen((open) => !open);
     }}>{zhCN.crop.title}</button>
     {!decoded && cropRecoveryOpen && <>
