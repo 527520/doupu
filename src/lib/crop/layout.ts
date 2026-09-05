@@ -46,6 +46,14 @@ export function buildCropPreview(
   maxHeight: number,
 ): ImageDataLike {
   const size = fitCropPreviewSize(image.width, image.height, maxWidth, maxHeight);
+  // The decoder already supplies a bounded preview. At its native size a
+  // typed-array copy preserves isolation without repeating 640,000 samples
+  // in the synchronous crop-dialog render (twice under React Strict Mode).
+  if (size.width === image.width && size.height === image.height) {
+    const data = new Uint8ClampedArray(size.width * size.height * 4);
+    data.set(image.data.subarray(0, data.length));
+    return { ...size, data };
+  }
   const data = new Uint8ClampedArray(size.width * size.height * 4);
   for (let y = 0; y < size.height; y++) {
     const sourceY = Math.min(image.height - 1, Math.floor((y * image.height) / size.height));

@@ -150,3 +150,10 @@
 - 定向 `review-recovery-green.log` 9 文件 83 项；`review-final-targeted.log` 6 文件 49 项通过。真实 PostgreSQL 16 `review-pg.log` 12 项通过；`final-query-plans.log` 14 条实际应用 SELECT 完成 EXPLAIN ANALYZE（小数据夹具，不代表生产规模性能）。最终完整门禁尚未完成。
 - `release-recovery-browser.log`：后台六页键盘链接、HTTPS 同意失败恢复、损坏历史保护三项 × 三浏览器，加首页五宽度视觉，共 10 项通过；2 个重复视觉用例按设计跳过。之前 HTTP/Safari Secure Cookie 和 macOS form-only Tab 的测试环境不匹配分别按真实 HTTPS/Option+Tab 修正，不改产品安全边界。新首页两张代表截图已目视。
 - `release-coverage.log`：185 文件全部通过，1454 项通过、13 项按原设计跳过；Statements 91.04%、Branches 82.85%、Functions 95.53%、Lines 94.61%。随后仅类型收窄与测试代理/键盘环境修正，无业务行为变化。静态门禁仍在最终复验；完整 E2E 稳定三轮、性能与本地生产运行仍待完成。
+
+## 08H 大图裁剪打开的长任务 — 2026-09-05
+
+- 稳定 E2E 第一轮在 64 MP 场景记录 52 ms 长任务，立即停止该轮，不记为通过。此前隔离重跑 10 次无失败，保留注册/导出/HEIC 前置旅程再抓 CPU profile 后 3 轮中复现 2 次（57/56 ms）。`large-image-profile.log` 保留结果。
+- 采样定位为同步裁剪挂载：Workbench/子组件开发渲染和预览处理在同一任务内，buildCropPreview 的相同尺寸逐像素复制占约 10.8 ms；该窗口未显示 GC 为主因。原解码器已生成最长边 800px 预览，800→800 再采样没有改变像素。
+- 仅相同尺寸增加原生 typed-array copy 快路；保持独立缓冲、精确目标长度、越界源截断与不足通道补零，不改比例/自然坐标/原图/提交/撤销语义。操作预算单元先 RED（逐像素访问 2,560,000 次），修复后通过；50 项裁剪单元通过。
+- `crop-copy-browser.log`：同样的 00–03 前置旅程无 profiling 连续三轮共 36 项通过，原 50 ms Long Task 判据未修改。临时 CPU profiling 分支已移除。该修正后需重新运行最终覆盖率、构建与稳定 E2E。

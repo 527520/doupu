@@ -245,6 +245,22 @@ describe('cropImageData', () => {
 });
 
 describe('fitCropPreviewSize', () => {
+  it.each([{ input: [1, 2], expected: [1, 2, 0, 0] }, { input: [1, 2, 3, 4, 5, 6], expected: [1, 2, 3, 4] }])('keeps preview byte length bounded for $input', ({ input, expected }) => {
+    // Extra bytes remain excluded and absent channels retain the old zero fill.
+    const preview = buildCropPreview({ width: 1, height: 1, data: new Uint8ClampedArray(input) }, 1, 1);
+    expect([...preview.data]).toEqual(expected);
+  });
+  it('copies an already bounded preview without per-pixel reads and keeps output isolated', () => {
+    const data = new Uint8ClampedArray(800 * 800 * 4).fill(173);
+    let reads = 0;
+    const preview = buildCropPreview({ width: 800, height: 800, get data() { reads++; return data; } }, 800, 800);
+    expect(reads).toBeLessThanOrEqual(2);
+    expect(preview.data === data).toBe(false);
+    expect(preview.data.length).toBe(data.length);
+    expect(preview.data.every((value) => value === 173)).toBe(true);
+    preview.data[0] = 0;
+    expect(data[0]).toBe(173);
+  });
   it('超大正方形与极窄长图均限制在 800×800 预览内', () => {
     expect(fitCropPreviewSize(8000, 8000, 800, 800)).toEqual({ width: 800, height: 800 });
     expect(fitCropPreviewSize(100, 8000, 800, 800)).toEqual({ width: 10, height: 800 });
