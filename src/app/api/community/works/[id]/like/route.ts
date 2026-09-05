@@ -3,7 +3,16 @@ import { getDb } from '@/lib/auth/db';
 import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, withApiErrors } from '@/lib/auth/http';
-import { setCommunityLike } from '@/lib/community/interactions';
+import { getCommunityLike, setCommunityLike } from '@/lib/community/interactions';
+import { getSessionActor } from '@/lib/auth/session';
+
+async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const workId = z.string().uuid().parse((await params).id);
+  const actor = await getSessionActor({ renew: true });
+  return okJson(await getCommunityLike(getDb(), { workId, userId: actor?.userId }), {
+    headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' },
+  });
+}
 
 async function mutate(request: Request, context: { params: Promise<{ id: string }> }, liked: boolean) {
   const guard = enforceMutatingGuard(request);
@@ -22,4 +31,5 @@ async function remove(request: Request, context: { params: Promise<{ id: string 
 }
 
 export const PUT = withApiErrors(put);
+export const GET = withApiErrors(get);
 export const DELETE = withApiErrors(remove);

@@ -91,6 +91,13 @@ async function moderateCommentBody(
   return moderation;
 }
 
+export async function getCommunityLike(db: AnyDatabase, input: { workId: string; userId?: string }) {
+  const work = await activeWork(db, input.workId);
+  const likes = input.userId ? await db.select({ workId: communityLikes.workId }).from(communityLikes)
+    .where(and(eq(communityLikes.workId, work.id), eq(communityLikes.userId, input.userId))).limit(1) : [];
+  return { liked: likes.length > 0, likeCount: work.likeCount };
+}
+
 export async function setCommunityLike(db: AnyDatabase, input: { actor: Actor; workId: string; liked: boolean }) {
   return db.transaction(async (tx) => {
     await lockActiveAccount(tx, input.actor.userId, 'community:interact');

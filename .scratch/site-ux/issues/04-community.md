@@ -1,6 +1,6 @@
 # 04 豆社浏览与引用
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 ## 范围
@@ -15,5 +15,4 @@ Type: task
 
 ## Comments
 
-- 待实施；行为测试先行，阶段完成后记录验证及提交。
-
+- 2026-09-05：筛选/翻页/返回保留上下文；真实点赞单按钮与私有状态读取；引用幂等重试、落本机再打开；评论加载/锁定失败保留输入；举报确认表单完成。27 项单元/PGlite、真实 PostgreSQL 16 的 8 项并发合约及本地浏览器验证通过，见 ../verification.md。

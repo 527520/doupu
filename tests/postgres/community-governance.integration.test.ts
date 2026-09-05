@@ -19,7 +19,7 @@ import { updateUserGovernance } from '@/lib/admin/userGovernance';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import type { Actor } from '@/lib/auth/authorization';
 import { executeIdempotently } from '@/lib/idempotency';
-import { createCommunityComment, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
+import { createCommunityComment, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
 import { reviewCommunityRevision } from '@/lib/community/service';
 import { moderateCommunityWork } from '@/lib/community/adminService';
 import { createOfficialBatch, publishOfficialBatch, saveOfficialDraft } from '@/lib/community/officialBatch';
@@ -251,6 +251,8 @@ describe('PostgreSQL 16 community and governance concurrency', () => {
       setCommunityLike(db, { actor, workId: work.id, liked: true }),
     ]);
     expect(likes.every((result) => result.likeCount === 1)).toBe(true);
+    expect(await getCommunityLike(db, { workId: work.id, userId: actor.userId })).toEqual({ liked: true, likeCount: 1 });
+    expect(await getCommunityLike(db, { workId: work.id })).toEqual({ liked: false, likeCount: 1 });
     expect(await db.select().from(communityLikes).where(eq(communityLikes.workId, work.id))).toHaveLength(1);
 
     const key = randomUUID();

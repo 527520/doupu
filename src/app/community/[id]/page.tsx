@@ -21,28 +21,32 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: work.title, description: zhCN.communityAdmin.detail.metadataDescription(work.author.displayName, work.width, work.height), openGraph: { title: work.title, description: zhCN.communityAdmin.detail.openGraphDescription(work.author.displayName) } };
 }
 
-export default async function CommunityDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CommunityDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const work = await load((await params).id);
   if (!work) notFound();
   const t = zhCN.communityAdmin.detail;
+  const candidate = (await searchParams)?.returnTo;
+  const returnTo = typeof candidate === 'string' && candidate.length <= 2000 && candidate.startsWith('/community?') && !/[\\\r\n]/u.test(candidate) ? candidate : '/community';
   const publishedAt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long', timeZone: 'Asia/Shanghai' }).format(new Date(work.publishedAt));
   return (
     <main id="main" className="workspace-page">
-      <SiteHeader title={t.headerTitle} currentPath="/community" subtitle={t.proofNumber(work.id.slice(0, 8).toUpperCase())} />
+      <SiteHeader title={t.headerTitle} currentPath="/community" />
       <CommunityDetailImpression />
       <div className="workspace-content community-detail">
-        <header className="community-detail-header"><div><span className="studio-eyebrow">{t.eyebrow}</span><h2>{work.title}</h2><p>{t.publication(work.author.displayName, publishedAt)}</p></div>{work.featured && <span className="community-featured">{t.featured}</span>}</header>
+        <Link className="link-soft" href={returnTo}>{t.backToList}</Link>
+        <header className="community-detail-header"><div><h2>{work.title}</h2><p>{t.publication(work.author.displayName, publishedAt)}</p></div>{work.featured && <span className="community-featured">{t.featured}</span>}</header>
         <div className="community-detail-layout">
           <section className="community-pattern"><PatternPreview pattern={work.snapshot.pattern} boardSize={getBoardProfile(work.snapshot.boardProfile).boardCols} /></section>
+          <CommunityInteractions key={work.id} workId={work.id} initialLikes={work.counts.likes} initialReuses={work.counts.reuses} commentsLocked={work.commentsLocked}>
           <aside className="community-proof-meta">
-            <dl><div><dt>{t.size}</dt><dd>{work.width} × {work.height}</dd></div><div><dt>{t.colors}</dt><dd>{t.colorValue(work.colorCount)}</dd></div><div><dt>{t.boardProfile}</dt><dd>{getBoardProfile(work.snapshot.boardProfile).displayName}</dd></div><div><dt>{t.engineVersion}</dt><dd>{work.snapshot.engineVersion}</dd></div></dl>
+            <dl><div><dt>{t.size}</dt><dd>{work.width} × {work.height}</dd></div><div><dt>{t.colors}</dt><dd>{t.colorValue(work.colorCount)}</dd></div><div><dt>{t.boardProfile}</dt><dd>{getBoardProfile(work.snapshot.boardProfile).displayName}</dd></div></dl>
             <div className="community-color-band large">{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
             <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={`/community?tag=${tag.slug}`}>{tag.name}</Link>)}</div>
             <p className="community-license-note">{t.license}</p>
-            <div className="community-counts"><span>{t.likeCount(work.counts.likes)}</span><span>{t.commentCount(work.counts.comments)}</span><span>{t.reuseCount(work.counts.reuses)}</span></div>
+            <details><summary>{t.technicalDetails}</summary><dl><div><dt>{t.engineVersion}</dt><dd>{work.snapshot.engineVersion}</dd></div></dl></details>
           </aside>
+          </CommunityInteractions>
         </div>
-        <CommunityInteractions workId={work.id} initialLikes={work.counts.likes} initialReuses={work.counts.reuses} commentsLocked={work.commentsLocked} />
       </div>
     </main>
   );

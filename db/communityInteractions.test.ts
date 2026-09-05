@@ -28,6 +28,7 @@ import {
   reportCommunityTarget,
   reuseCommunityWork,
   setCommunityLike,
+  getCommunityLike,
 } from '@/lib/community/interactions';
 import { executeIdempotently } from '@/lib/idempotency';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
@@ -81,7 +82,11 @@ describe('community reuse, interaction and governance transactions', () => {
   });
 
   it('keeps like counters exact and creates one independent idempotent reuse', async () => {
+    expect(await getCommunityLike(db, { workId, userId: user.userId })).toEqual({ liked: false, likeCount: 0 });
     expect(await setCommunityLike(db, { actor: user, workId, liked: true })).toMatchObject({ liked: true, likeCount: 1 });
+    expect(await getCommunityLike(db, { workId, userId: user.userId })).toEqual({ liked: true, likeCount: 1 });
+    expect(await getCommunityLike(db, { workId, userId: moderator.userId })).toEqual({ liked: false, likeCount: 1 });
+    expect(await getCommunityLike(db, { workId })).toEqual({ liked: false, likeCount: 1 });
     expect(await setCommunityLike(db, { actor: user, workId, liked: true })).toMatchObject({ liked: true, likeCount: 1 });
     expect(await setCommunityLike(db, { actor: user, workId, liked: false })).toMatchObject({ liked: false, likeCount: 0 });
     expect(await db.select().from(communityLikes)).toHaveLength(0);

@@ -1,0 +1,57 @@
+import { chromium, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { resolve } from 'node:path';
+
+const browser = await chromium.launch();
+try {
+  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:3109' });
+  const page = await context.newPage();
+  await page.goto('/login?next=%2Fcommunity');
+  await page.getByRole('button', { name: '拒绝', exact: true }).click();
+  await page.getByLabel('邮箱', { exact: true }).fill('e2e-user@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('E2e-pass-123!');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page).toHaveURL(/\/community$/);
+  const inspect = async (name, width) => {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const axe = await new AxeBuilder({ page }).analyze();
+    expect(axe.violations.filter((item) => item.impact === 'critical' || item.impact === 'serious')).toEqual([]);
+    await page.screenshot({ path: resolve(`.scratch/site-ux/${name}-${width}.png`), fullPage: true });
+    console.log(JSON.stringify({ name, width, noOverflow: true, seriousAxe: 0 }));
+  };
+  await page.goto('/community?q=E2E&sort=latest');
+  for (const width of [350, 390, 768, 1280, 1440]) await inspect('community', width);
+  await page.locator('.community-card-preview').first().click();
+  await expect(page).toHaveURL(/\/community\/[0-9a-f-]{36}/);
+  const workUrl = page.url();
+  await expect(page.getByRole('link', { name: '返回作品列表' })).toHaveAttribute('href', '/community?q=E2E&sort=latest');
+  for (const width of [350, 390, 768, 1280, 1440]) await inspect('community-detail', width);
+  const like = page.getByRole('button', { name: '点赞', exact: true });
+  await expect(like).toBeEnabled(); await like.click();
+  await expect(page.getByRole('button', { name: '取消赞', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await page.getByRole('button', { name: '取消赞', exact: true }).click();
+  await expect(page.getByRole('button', { name: '点赞', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: '作品更多操作' }).click();
+  await page.getByRole('button', { name: '举报作品' }).click();
+  await inspect('community-report', 350);
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '用这张制作' }).click();
+  await expect(page).toHaveURL(/\/app\?id=.+&mode=edit/);
+  await expect(page.getByTestId('mobile-immersive-workspace')).toBeVisible();
+  const copyId = new URL(page.url()).searchParams.get('id');
+  const copy = await page.evaluate(async (id) => (await (await fetch('/api/designs/' + id)).json()), copyId);
+  expect(copy.project.communityOrigin).toBe(true);
+  expect(copy.name).toMatch(/（引用）$/);
+  console.log(JSON.stringify({ reuseClicks: 1, openedIndependentDesign: true, likeSurvivesReload: true }));
+  await page.goto(workUrl);
+  await page.getByRole('link', { name: '返回作品列表' }).click();
+  await expect(page.getByLabel('搜索作品标题')).toHaveValue('E2E');
+  await page.goto('/community?q=no-such-work');
+  await expect(page.getByRole('heading', { name: '没有符合这些条件的作品' })).toBeVisible();
+  await page.getByRole('link', { name: '清除筛选' }).click();
+  await expect(page.locator('.community-card').first()).toBeVisible();
+  console.log(JSON.stringify({ filtersPreserved: true, emptyReset: true }));
+  await context.close();
+} finally { await browser.close(); }

@@ -31,8 +31,12 @@ test('已验证用户引用独立副本并发布评论', async ({ page }, testIn
   await login(page, 'e2e-user@example.com');
   await page.goto('/community');
   await page.locator('.community-card a').first().click();
-  await page.getByRole('button', { name: '创建私人副本' }).click();
-  await expect(page.getByText(/私人副本已创建/)).toBeVisible();
+  const originalWorkUrl = page.url();
+  await page.getByRole('button', { name: '用这张制作' }).click();
+  await expect(page).toHaveURL(/\/app\?id=.+&mode=edit/);
+  await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByLabel('设计名称')).toHaveValue(/（引用）$/);
+  await page.goto(originalWorkUrl);
   await page.getByLabel('发表评论').fill(`E2E ${testInfo.project.name} 普通评论`);
   await page.getByRole('button', { name: '发布评论' }).click();
   await expect(page.getByText(/评论已发布|审核通过后公开/)).toBeVisible();
