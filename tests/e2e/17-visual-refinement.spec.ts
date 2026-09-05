@@ -183,16 +183,26 @@ test('多色续作、长标题，以及加载失败后的重试状态',async({pa
   await page.setViewportSize({width:390,height:844});
   await page.goto('/login?next=/community');await fillField(page,'邮箱','e2e-user@example.com');await fillField(page,'密码','E2e-pass-123!');
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/community');
-  await page.locator('.community-card a').first().click();await page.getByRole('button',{name:'用这张制作'}).click();
+  // 固定真实花朵样本，不依赖跨浏览器共享库的最新作品排序。
+  const samples=await Promise.all(['E2E 已公开作品','E2E 待审修改版'].map(async title=>{
+    const response=await page.request.get(`/api/community/works?q=${encodeURIComponent(title)}`);
+    expect(response.ok()).toBe(true);return (await response.json()).items as Array<{id:string;title:string}>;
+  }));
+  const flowers=samples.flat().filter(item=>/^E2E (已公开作品|待审修改版)$/.test(item.title));
+  expect(flowers).toHaveLength(1);await page.goto(`/community/${flowers[0].id}`);
+  await page.getByRole('button',{name:'用这张制作'}).click();
   await expect(page).toHaveURL(/\/app\?id=/);
+  const designId=new URL(page.url()).searchParams.get('id');expect(designId).toBeTruthy();
   await page.getByRole('button',{name:'返回预览',exact:true}).click();
   const name='窗边的小花与暖暖阳光——给自己的一份手作礼物';
   await fillField(page,'设计名称',name);
   await page.getByRole('button',{name:'保存',exact:true}).click();await expect(page.getByText('本地：已保存', {exact:true}).first()).toBeVisible();
   await page.route('**/api/community/works?sort=*',route=>route.fulfill({status:503,json:{}}));
   await page.goto('/');const recent=page.getByRole('region',{name:'继续上次制作'});
-  await expect(recent.getByRole('heading',{name,exact:true})).toBeVisible();
-  const preview=recent.locator('.recent-design-preview').first();expect((await preview.boundingBox())!.width).toBeGreaterThanOrEqual(88);
+  // 同名设计合法；必须检查本次实际创建的独立副本，不能只按名称或取首项。
+  const resumed=recent.locator(`a[href^="/app?id=${designId}&"]`);await expect(resumed).toHaveCount(1);
+  await expect(resumed.getByRole('heading',{name,exact:true})).toBeVisible();
+  const preview=resumed.locator('.recent-design-preview');expect((await preview.boundingBox())!.width).toBeGreaterThanOrEqual(88);
   await expect(recent.locator('.recent-design-preview > span')).toHaveCount(0);
   await expect(page.locator('.home-community').getByRole('alert')).toBeVisible();
   await page.screenshot({path:output(`recent-error-${info.project.name}.png`),fullPage:true});
