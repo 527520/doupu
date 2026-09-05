@@ -8,7 +8,14 @@ export function safeAuthReturnTo(value: string | null | undefined): string {
   } catch { return '/designs'; }
 }
 
+/** 后台入口只按安全归一化后的路径判断，不匹配 /administrator 等相似前缀。 */
+export function isAdminReturnTo(value: string): boolean {
+  const pathname = safeAuthReturnTo(value).split(/[?#]/u)[0];
+  return pathname === '/admin' || pathname.startsWith('/admin/');
+}
+
 export function authPageHref(page: 'login' | 'register' | 'forgot-password', next: string): string {
   const target = safeAuthReturnTo(next);
+  if (page === 'register' && isAdminReturnTo(target)) return '/register';
   return `/${page}${target === '/designs' ? '' : `?${new URLSearchParams({ next: target })}`}`;
 }

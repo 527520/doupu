@@ -562,6 +562,7 @@ export const zhCN = {
     registerSubmit: '注册',
     submit: '提交',
     noAccount: '还没有账号？去注册',
+    adminAccountNotice: '管理员账号由现有管理员授权，无法自行注册',
     hasAccount: '已有账号？去登录',
     loginSuccess: '登录成功，正在跳转…',
     registeredSent: '注册成功！验证邮件已发送，请查收邮件并点击链接完成验证。',

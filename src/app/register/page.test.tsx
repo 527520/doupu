@@ -19,6 +19,17 @@ function fill(email: string, password: string, confirm: string): void {
 describe('register 页', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    window.history.replaceState(null, '', '/register');
+  });
+
+  it('直接访问携带后台回跳的注册链接不会把后台带入注册后登录流程', async () => {
+    window.history.replaceState(null, '', '/register?next=%2Fadmin%2Fusers');
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    render(<RegisterPage />);
+    fill('a@b.com', '12345678', '12345678');
+    fireEvent.click(screen.getByRole('button', { name: '注册' }));
+    const login = await screen.findByRole('link', { name: zhCN.authPages.goLogin });
+    expect(login).toHaveAttribute('href', '/login');
   });
 
   it('两次密码不一致本地拦截（spec E31 客户端校验）', async () => {

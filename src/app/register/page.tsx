@@ -11,12 +11,13 @@ import { registerSchema } from '@/lib/schemas';
 import { DEV_MAIL_LINK_HEADER } from '@/lib/auth/mailMeta';
 import { LIMITS } from '@/lib/appInfo';
 import { track } from '@/lib/analytics/client';
-import { authPageHref } from '@/lib/auth/returnTo';
+import { authPageHref, isAdminReturnTo } from '@/lib/auth/returnTo';
 import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 export default function RegisterPage() {
   const t = zhCN.authPages;
-  const returnTo = useAuthReturnTo();
+  const next = useAuthReturnTo();
+  const returnTo = isAdminReturnTo(next) ? '/designs' : next;
   const requestPending = useRef(false);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');

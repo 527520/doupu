@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 
 const push = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -32,11 +33,25 @@ describe('login 页', () => {
     expect(screen.getByLabelText('密码')).toBeTruthy();
   });
 
+  it('服务端首屏尚未解析回跳时不展示可能误导的注册链接', () => {
+    window.history.replaceState(null, '', '/login?next=%2Fadmin');
+    expect(renderToString(<LoginPage />)).not.toContain('href="/register');
+  });
+
+  it.each(['/admin', '/admin/reviews?status=pending#queue'])('后台回跳 %s 提示授权而非注册，仍可找回密码', async (next) => {
+    window.history.replaceState(null, '', `/login?next=${encodeURIComponent(next)}`);
+    render(<LoginPage />);
+    expect(await screen.findByText('管理员账号由现有管理员授权，无法自行注册')).toBeVisible();
+    expect(screen.queryByRole('link', { name: zhCN.authPages.noAccount })).toBeNull();
+    const forgot = screen.getByRole('link', { name: zhCN.authPages.forgotTitle });
+    expect(new URL(forgot.getAttribute('href')!, 'http://local').searchParams.get('next')).toBe(next);
+  });
+
   it('转注册和找回密码保留安全的原操作路径，不自动执行原操作', async () => {
     const next = '/community/submit?designId=00000000-0000-4000-a000-000000000001';
     window.history.replaceState(null, '', `/login?next=${encodeURIComponent(next)}`);
     render(<LoginPage />);
-    const register = screen.getByRole('link', { name: zhCN.authPages.noAccount });
+    const register = await screen.findByRole('link', { name: zhCN.authPages.noAccount });
     await waitFor(() => expect(new URL(register.getAttribute('href')!, 'http://local').searchParams.get('next')).toBe(next));
     const forgot = screen.getByRole('link', { name: zhCN.authPages.forgotTitle });
     expect(new URL(forgot.getAttribute('href')!, 'http://local').searchParams.get('next')).toBe(next);

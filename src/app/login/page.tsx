@@ -10,13 +10,14 @@ import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
 import { loginRedirectTarget } from './loginRedirect';
 import { track } from '@/lib/analytics/client';
-import { authPageHref } from '@/lib/auth/returnTo';
+import { authPageHref, isAdminReturnTo } from '@/lib/auth/returnTo';
 import { useAuthReturnTo } from '@/components/auth/useAuthReturnTo';
 
 export default function LoginPage() {
   const t = zhCN.authPages;
   const router = useRouter();
-  const next = useAuthReturnTo();
+  const next = useAuthReturnTo('');
+  const adminLogin = isAdminReturnTo(next);
   const requestPending = useRef(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -98,10 +99,13 @@ export default function LoginPage() {
         <button type="submit" disabled={pending} className="btn-primary w-full">
           {pending ? '…' : t.loginSubmit}
         </button>
+        {adminLogin && <p className="text-sm text-ink-soft">{t.adminAccountNotice}</p>}
         <div className="flex justify-between text-sm">
-          <Link href={authPageHref('register', next)} className="link-soft">
-            {t.noAccount}
-          </Link>
+          {next && !adminLogin && (
+            <Link href={authPageHref('register', next)} className="link-soft">
+              {t.noAccount}
+            </Link>
+          )}
           <Link href={authPageHref('forgot-password', next)} className="link-soft">
             {t.forgotTitle}
           </Link>
