@@ -15,6 +15,7 @@ import {
   users,
 } from '@/../db/schema';
 import type { Actor } from '@/lib/auth/authorization';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 import { resolvePublicDisplayName, ANONYMIZED_DISPLAY_NAME } from '@/lib/identity/publicAuthor';
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
@@ -35,6 +36,14 @@ async function activeWork(tx: AnyDatabase, workId: string, lock = false) {
     throw new AppError('NOT_FOUND', '作品不存在');
   }
   return work;
+}
+
+/** 评论版本可变，但所属作品不可变；先锁作品再锁评论，和注销计数清理一致。 */
+async function lockCommentWork(tx: AnyDatabase, commentId: string) {
+  const [target] = await tx.select({ workId: communityComments.workId }).from(communityComments)
+    .where(eq(communityComments.id, commentId));
+  if (target) await tx.select({ id: communityWorks.id }).from(communityWorks)
+    .where(eq(communityWorks.id, target.workId)).for('update');
 }
 
 async function commentIdentity(tx: AnyDatabase, actor: Actor) {
@@ -84,6 +93,7 @@ async function moderateCommentBody(
 
 export async function setCommunityLike(db: AnyDatabase, input: { actor: Actor; workId: string; liked: boolean }) {
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId, 'community:interact');
     const work = await activeWork(tx, input.workId, true);
     if (input.liked) {
       const inserted = await tx.insert(communityLikes).values({ workId: work.id, userId: input.actor.userId })
@@ -112,8 +122,8 @@ export async function setCommunityLike(db: AnyDatabase, input: { actor: Actor; w
 export async function reuseCommunityWork(db: AnyDatabase, input: { actor: Actor; workId: string; now?: Date }) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
-    const work = await activeWork(tx, input.workId, true);
     await lockDesignStorage(tx, input.actor.userId, now);
+    const work = await activeWork(tx, input.workId, true);
     const [revision] = await tx.select().from(communityRevisions)
       .where(eq(communityRevisions.id, work.currentPublishedRevisionId!));
     const snapshot = parseCommunitySnapshot(revision?.snapshot);
@@ -155,6 +165,7 @@ export async function createCommunityComment(db: AnyDatabase, input: {
   if (!body.success) throw new AppError('VALIDATION', '评论需为 1–500 个字符', 'body');
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId, 'community:interact');
     const work = await activeWork(tx, input.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
     const [identity, moderation] = await Promise.all([
@@ -184,6 +195,8 @@ export async function editCommunityComment(db: AnyDatabase, input: {
   if (!body.success) throw new AppError('VALIDATION', '评论需为 1–500 个字符', 'body');
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
+    await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.authorUserId !== input.actor.userId || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
     if (comment.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '评论版本已变化');
@@ -219,6 +232,8 @@ export async function deleteCommunityComment(db: AnyDatabase, input: {
 }) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
+    await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.authorUserId !== input.actor.userId || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
     if (comment.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '评论版本已变化');
@@ -266,6 +281,7 @@ export async function reportCommunityTarget(db: AnyDatabase, input: {
   const details = input.details?.trim();
   if (details && details.length > 500) throw new AppError('VALIDATION', '举报补充说明最多 500 字', 'details');
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     let targetVersion: number;
     if (input.targetType === 'work') {
       const work = await activeWork(tx, input.targetId);
@@ -295,6 +311,8 @@ export async function moderateCommunityComment(db: AnyDatabase, input: {
   const reason = reasonSchema.parse(input.reason);
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
+    await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
     if (comment.version !== input.expectedVersion || !['pending_review', 'published'].includes(comment.status)) {
@@ -329,6 +347,7 @@ export async function handleCommunityReport(db: AnyDatabase, input: {
   const reason = reasonSchema.parse(input.reason);
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     const [report] = await tx.select().from(communityReports).where(eq(communityReports.id, input.reportId)).for('update');
     if (!report) throw new AppError('NOT_FOUND', '举报不存在');
     const allowed = input.decision === 'accepted'
@@ -370,6 +389,7 @@ export async function createModerationRuleSet(db: AnyDatabase, input: {
   const rules = moderationRulesSchema.parse(input.rules);
   const reason = reasonSchema.parse(input.reason);
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     const [current] = await tx.select({ value: count(), max: sql<number>`coalesce(max(${moderationRuleSetVersions.version}), 0)` })
       .from(moderationRuleSetVersions);
     await tx.update(moderationRuleSetVersions).set({ active: false }).where(eq(moderationRuleSetVersions.active, true));

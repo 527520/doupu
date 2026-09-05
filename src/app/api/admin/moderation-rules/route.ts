@@ -29,7 +29,7 @@ async function post(request: Request) {
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: 'admin.moderation-rules',
+    actorUserId: actor.userId, capability: 'moderation-rules:manage', scope: 'admin.moderation-rules',
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => createModerationRuleSet(tx, { actor, requestId, ...input }));
   return okJson({ id: result.value.id, version: result.value.version }, { status: result.replayed ? 200 : 201 });

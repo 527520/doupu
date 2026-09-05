@@ -6,6 +6,7 @@ import {
   analyticsVisitors,
 } from '@/../db/schema';
 import type { Actor } from '@/lib/auth/authorization';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 import { hashToken } from '@/lib/auth/tokens';
 import { APP_VERSION } from '@/lib/appInfo';
 import type { AnalyticsEnvelope } from './events';
@@ -29,6 +30,7 @@ export async function ingestAnalyticsEvents(
   now: Date = new Date(),
 ): Promise<number> {
   return db.transaction(async (tx) => {
+    if (context.actor) await lockActiveAccount(tx, context.actor.userId);
     const [visitor] = await tx.select().from(analyticsVisitors)
       .where(eq(analyticsVisitors.tokenHash, hashToken(visitorToken)))
       .for('update');

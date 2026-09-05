@@ -49,7 +49,7 @@ async function run(input, databaseUrl) {
       `SELECT id, role, account_status, governance_version, public_author_id
          FROM users
         WHERE id = $1 AND lower(email) = $2
-        FOR UPDATE`,
+        FOR NO KEY UPDATE`,
       [input.userId, input.email],
     );
     if (result.rowCount !== 1) throw new Error('verified target account not found');

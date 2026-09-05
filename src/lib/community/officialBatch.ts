@@ -75,7 +75,7 @@ export async function saveOfficialDraft(db: AnyDatabase, input: {
 }
 
 export async function transitionOfficialBatch(db: AnyDatabase, input: {
-  actor: Actor; batchId: string; action: 'pause' | 'resume' | 'cancel'; expectedVersion: number;
+  actor: Actor; batchId: string; action: 'pause' | 'resume' | 'cancel' | 'finish'; expectedVersion: number;
   reason: string; requestId: string; now?: Date;
 }) {
   const reason = reasonSchema.parse(input.reason);
@@ -84,15 +84,17 @@ export async function transitionOfficialBatch(db: AnyDatabase, input: {
     const [batch] = await tx.select().from(officialBatches).where(eq(officialBatches.id, input.batchId)).for('update');
     if (!batch || batch.adminUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '批次不存在');
     if (batch.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '批次版本已变化');
-    const next = input.action === 'pause' ? 'paused' : input.action === 'resume' ? 'running' : 'cancelled';
+    const next = input.action === 'pause' ? 'paused' : input.action === 'resume' ? 'running' : input.action === 'finish' ? 'completed' : 'cancelled';
     const allowed = (input.action === 'pause' && batch.status === 'running')
-      || (input.action === 'resume' && batch.status === 'paused')
+      || (input.action === 'resume' && (batch.status === 'paused'
+        || (['completed', 'cancelled'].includes(batch.status) && batch.successCount < batch.itemCount)))
+      || (input.action === 'finish' && ['running', 'paused'].includes(batch.status))
       || (input.action === 'cancel' && ['running', 'paused'].includes(batch.status));
     if (!allowed) throw new AppError('STATE_CONFLICT', '批次状态不能执行此操作');
     const [updated] = await tx.update(officialBatches).set({
       status: next, version: batch.version + 1, updatedAt: now,
-      completedAt: next === 'cancelled' ? now : null,
-      failureCount: next === 'cancelled' ? Math.max(0, batch.itemCount - batch.successCount) : batch.failureCount,
+      completedAt: ['cancelled', 'completed'].includes(next) ? now : null,
+      failureCount: ['cancelled', 'completed'].includes(next) ? Math.max(0, batch.itemCount - batch.successCount) : 0,
     }).where(and(eq(officialBatches.id, batch.id), eq(officialBatches.version, batch.version))).returning();
     await tx.insert(adminAuditLogs).values({
       actorUserId: input.actor.userId, actorRole: input.actor.role,
@@ -117,10 +119,16 @@ export async function publishOfficialBatch(db: AnyDatabase, input: {
     const [batch] = await tx.select().from(officialBatches).where(eq(officialBatches.id, input.batchId)).for('update');
     if (!batch || batch.adminUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '批次不存在');
     if (batch.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '批次状态已变化');
+    // 下架按 work → revision 加锁；发布必须同序，并在取得锁后重新校验草稿。
+    await tx.select({ id: communityWorks.id }).from(communityWorks).where(inArray(communityWorks.id,
+      tx.select({ workId: communityRevisions.workId }).from(communityRevisions).where(and(
+        eq(communityRevisions.officialBatchId, batch.id), inArray(communityRevisions.id, revisionIds),
+      )),
+    )).orderBy(communityWorks.id).for('update');
     const drafts = await tx.select().from(communityRevisions).where(and(
       eq(communityRevisions.officialBatchId, batch.id), eq(communityRevisions.status, 'draft'),
       eq(communityRevisions.authorType, 'official'), inArray(communityRevisions.id, revisionIds),
-    )).for('update');
+    )).orderBy(communityRevisions.id).for('update');
     if (drafts.length !== revisionIds.length) throw new AppError('STATE_CONFLICT', '所选草稿包含无效或已发布项目');
     for (const draft of drafts) {
       await tx.update(communityRevisions).set({
@@ -138,10 +146,8 @@ export async function publishOfficialBatch(db: AnyDatabase, input: {
       });
     }
     // 发布只消耗所选草稿；生成未结束时仍可保存、重试，取消也不丢弃已保存草稿。
-    const generatedAll = batch.successCount === batch.itemCount;
     const [updated] = await tx.update(officialBatches).set({
-      status: generatedAll && batch.status !== 'cancelled' ? 'completed' : batch.status,
-      version: batch.version + 1, completedAt: batch.completedAt ?? (generatedAll ? now : null), updatedAt: now,
+      version: batch.version + 1, updatedAt: now,
     }).where(eq(officialBatches.id, batch.id)).returning();
     return { batch: updated, publishedRevisionIds: revisionIds };
   });

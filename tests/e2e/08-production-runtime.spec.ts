@@ -1,7 +1,37 @@
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { Pool } from 'pg';
 
 const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
+
+test('an aging administrator can render read-only pages and renew the database and browser together', async ({ page, context }) => {
+  const token = process.env.E2E_ADMIN_SESSION_TOKEN;
+  const origin = process.env.E2E_BASE_URL;
+  const connectionString = process.env.DATABASE_URL;
+  if (!token || !origin || !connectionString) throw new Error('production session regression requires E2E_ADMIN_SESSION_TOKEN, E2E_BASE_URL and DATABASE_URL');
+  if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw new Error('candidate session regression only accepts a local test server');
+  const pool = new Pool({ connectionString, max: 1 });
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  try {
+    const before = (await pool.query('select expires_at from sessions where token_hash=$1', [tokenHash])).rows[0].expires_at as Date;
+    expect(before.getTime() - Date.now()).toBeLessThan(15 * 24 * 60 * 60 * 1000);
+    await context.addCookies([{ name: 'doupu_session', value: token, url: origin, httpOnly: true, sameSite: 'Lax' }]);
+    const renewal = page.waitForResponse((response) => response.url().endsWith('/api/auth/me'));
+    const rendered = await page.goto('/admin/analytics');
+    expect(rendered?.status()).toBe(200);
+    await expect(page.getByRole('heading', { level: 1, name: '匿名分析' })).toBeVisible();
+    expect((await renewal).status()).toBe(200);
+    const after = (await pool.query('select expires_at from sessions where token_hash=$1', [tokenHash])).rows[0].expires_at as Date;
+    expect(after.getTime() - before.getTime()).toBeGreaterThan(15 * 24 * 60 * 60 * 1000);
+    await expect.poll(async () => (await context.cookies()).find((cookie) => cookie.name === 'doupu_session')?.expires ?? 0)
+      .toBeGreaterThan(after.getTime() / 1000 - 2);
+    const cookie = (await context.cookies()).find((item) => item.name === 'doupu_session')!;
+    expect(Math.abs(cookie.expires - after.getTime() / 1000)).toBeLessThan(2);
+    await page.getByRole('link', { name: /系统信息/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: '系统信息' })).toBeVisible();
+  } finally { await pool.end(); }
+});
 
 test('standalone production CSP permits RSC navigation and the generation Worker', async ({ page }) => {
   const cspErrors: string[] = [];

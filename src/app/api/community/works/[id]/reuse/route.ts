@@ -12,7 +12,7 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   const actor = await requireApiActor('community:interact');
   const workId = z.string().uuid().parse((await params).id);
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: `community.reuse:${workId}`,
+    actorUserId: actor.userId, capability: 'community:interact', scope: `community.reuse:${workId}`,
     key: request.headers.get('idempotency-key') ?? '', request: { workId },
   }, (tx) => reuseCommunityWork(tx, { actor, workId }));
   return okJson(result.value, { status: result.replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(result.replayed) } });

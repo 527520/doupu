@@ -19,7 +19,7 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
   const body = await readJson(request, 8 * 1024); if (!body.ok) return body.response;
   const input = schema.parse(body.data);
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: `admin.user:${targetUserId}`,
+    actorUserId: actor.userId, scope: `admin.user:${targetUserId}`, governance: true, capability: 'users:manage',
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => updateUserGovernance(tx, { actorUserId: actor.userId, targetUserId,
     requestId: request.headers.get('x-request-id') ?? crypto.randomUUID(), ...input }));

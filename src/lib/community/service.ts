@@ -11,6 +11,7 @@ import {
   users,
 } from '@/../db/schema';
 import type { Actor } from '@/lib/auth/authorization';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 import { resolvePublicDisplayName } from '@/lib/identity/publicAuthor';
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
@@ -24,6 +25,13 @@ import {
 
 export const communityTitleSchema = z.string().trim().min(1).max(80);
 const reasonSchema = z.string().trim().min(3).max(500);
+
+async function lockRevisionWork(tx: AnyDatabase, revisionId: string) {
+  const [target] = await tx.select({ workId: communityRevisions.workId }).from(communityRevisions)
+    .where(eq(communityRevisions.id, revisionId));
+  if (target) await tx.select({ id: communityWorks.id }).from(communityWorks)
+    .where(eq(communityWorks.id, target.workId)).for('update');
+}
 
 interface CreateRevisionInput {
   actor: Actor;
@@ -52,7 +60,7 @@ async function authorIdentity(tx: AnyDatabase, actor: Actor, now: Date) {
     publicAuthorId: users.publicAuthorId,
     accountStatus: users.accountStatus,
     emailVerifiedAt: users.emailVerifiedAt,
-  }).from(users).where(eq(users.id, actor.userId)).for('update');
+  }).from(users).where(eq(users.id, actor.userId)).for('no key update');
   if (!account || account.accountStatus !== 'active' || !account.emailVerifiedAt || !account.email) {
     throw new AppError('FORBIDDEN', '账号当前不能投稿');
   }
@@ -94,6 +102,7 @@ async function revisionPayload(tx: AnyDatabase, input: CreateRevisionInput) {
 export async function createCommunityWork(db: AnyDatabase, input: CreateRevisionInput) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     const payload = await revisionPayload(tx, { ...input, now });
     const [work] = await tx.insert(communityWorks).values({
       authorUserId: input.actor.userId,
@@ -136,6 +145,7 @@ export async function createCommunityRevision(
 ) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     const [work] = await tx.select().from(communityWorks).where(eq(communityWorks.id, input.workId)).for('update');
     if (!work || work.authorUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '作品不存在');
     if (work.lifecycleStatus !== 'active') throw new AppError('STATE_CONFLICT', '作品当前不能提交新修订');
@@ -182,6 +192,8 @@ export async function submitCommunityRevision(
 ) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
+    await lockRevisionWork(tx, input.revisionId);
     const [revision] = await tx.select({
       id: communityRevisions.id,
       workId: communityRevisions.workId,
@@ -208,22 +220,26 @@ export async function withdrawCommunitySubmission(
   input: { actor: Actor; revisionId: string; expectedVersion: number; now?: Date },
 ) {
   const now = input.now ?? new Date();
-  const [revision] = await db.select({
+  return db.transaction(async (tx) => {
+  await lockActiveAccount(tx, input.actor.userId);
+  await lockRevisionWork(tx, input.revisionId);
+  const [revision] = await tx.select({
     id: communityRevisions.id,
     version: communityRevisions.version,
     status: communityRevisions.status,
     authorUserId: communityWorks.authorUserId,
   }).from(communityRevisions).innerJoin(communityWorks, eq(communityWorks.id, communityRevisions.workId))
-    .where(eq(communityRevisions.id, input.revisionId));
+    .where(eq(communityRevisions.id, input.revisionId)).for('update');
   if (!revision || revision.authorUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '修订不存在');
   if (revision.version !== input.expectedVersion || !['draft', 'pending_review'].includes(revision.status)) {
     throw new AppError('STATE_CONFLICT', '修订状态已变化，请刷新后重试');
   }
-  const [updated] = await db.update(communityRevisions).set({
+  const [updated] = await tx.update(communityRevisions).set({
     status: 'withdrawn', version: revision.version + 1, withdrawnAt: now, updatedAt: now,
   }).where(and(eq(communityRevisions.id, revision.id), eq(communityRevisions.version, revision.version))).returning();
   if (!updated) throw new AppError('STATE_CONFLICT', '修订状态已变化，请刷新后重试');
   return updated;
+  });
 }
 
 export async function withdrawCommunityWork(
@@ -232,6 +248,7 @@ export async function withdrawCommunityWork(
 ) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
     const [work] = await tx.select().from(communityWorks).where(eq(communityWorks.id, input.workId)).for('update');
     if (!work || work.authorUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '作品不存在');
     if (work.version !== input.expectedVersion || work.lifecycleStatus !== 'active') {
@@ -263,6 +280,8 @@ export async function reviewCommunityRevision(
   if (!reason.success) throw new AppError('VALIDATION', '审核理由需为 3–500 个字符', 'reason');
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.actor.userId);
+    await lockRevisionWork(tx, input.revisionId);
     const [revision] = await tx.select().from(communityRevisions)
       .where(eq(communityRevisions.id, input.revisionId)).for('update');
     if (!revision) throw new AppError('NOT_FOUND', '修订不存在');

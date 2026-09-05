@@ -1,13 +1,14 @@
 import { and, count, eq, lt, sql, sum } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
-import { designs, users } from '@/../db/schema';
+import { designs } from '@/../db/schema';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 import { LIMITS } from '@/lib/appInfo';
 import { AppError } from '@/lib/errors';
 import { tombstoneCutoff } from './revision';
 
 /** 所有云端设计写入共用用户锁；NO KEY UPDATE 兼容幂等记录的外键锁。 */
 export async function lockDesignStorage(tx: AnyDatabase, userId: string, now = new Date()): Promise<void> {
-  await tx.execute(sql`select id from ${users} where id = ${userId} for no key update`);
+  await lockActiveAccount(tx, userId);
   await tx.delete(designs).where(and(eq(designs.userId, userId), lt(designs.deletedAt, tombstoneCutoff(now))));
 }
 

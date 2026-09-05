@@ -17,6 +17,7 @@ import { apiError, noContent, okJson, withApiErrors } from '@/lib/auth/http';
 import { generateToken, hashToken } from '@/lib/auth/tokens';
 import { AppError } from '@/lib/errors';
 import { shareSnapshotFromProject } from '@/lib/share/snapshot';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 
 const idSchema = z.string().uuid('设计 id 必须为 UUID');
 
@@ -29,7 +30,6 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   if (!idSchema.safeParse(id).success) return apiError(new AppError('VALIDATION', '设计 id 必须为 UUID'));
 
   const db = getDb();
-  await enforceSyncWriteLimit(db, userId);
 
   const rows = await db
     .select({ name: designs.name, project: designs.project })
@@ -45,6 +45,8 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   // 一个设计同时只保留一条有效分享：重新分享会作废旧链接（用户预期「换个链接」）。
   // 删除旧链接和创建新链接必须原子完成；否则新 token 冲突或数据库故障会把仍可用的旧链接一并丢掉。
   await db.transaction(async (tx) => {
+    await lockActiveAccount(tx, userId);
+    await enforceSyncWriteLimit(tx, userId);
     await tx.delete(designShares).where(and(eq(designShares.userId, userId), eq(designShares.designId, id)));
     await tx.insert(designShares).values({
       designId: id,

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { deleteAccountSchema, updateProfileSchema } from '@/lib/schemas';
@@ -31,7 +31,7 @@ async function deleteAccount(request: Request): Promise<NextResponse> {
   const rows = await db
     .select({ id: users.id, passwordHash: users.passwordHash })
     .from(users)
-    .where(eq(users.id, userId));
+    .where(and(eq(users.id, userId), eq(users.accountStatus, 'active')));
   if (rows.length === 0 || rows[0].passwordHash === null || !(await verifyPassword(rows[0].passwordHash, parsed.data.password))) {
     return apiError(new AppError('VALIDATION', zhCN.auth.currentPasswordWrong, 'password'));
   }
@@ -66,7 +66,7 @@ async function updateProfile(request: Request): Promise<NextResponse> {
   await getDb()
     .update(users)
     .set({ username: parsed.data.username || null, updatedAt: new Date() })
-    .where(eq(users.id, userId));
+    .where(and(eq(users.id, userId), eq(users.accountStatus, 'active')));
   return new NextResponse(null, { status: 204 });
 }
 

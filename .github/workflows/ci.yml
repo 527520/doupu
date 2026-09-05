@@ -190,18 +190,24 @@ jobs:
           if [ "$healthy" != true ]; then docker logs doupu-standalone-ci; exit 1; fi
           SESSION_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
           VERIFY_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
+          ADMIN_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
           SESSION_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$SESSION_TOKEN")
           VERIFY_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$VERIFY_TOKEN")
+          ADMIN_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$ADMIN_TOKEN")
           docker exec ${{ job.services.postgres.id }} psql -U doupu -d doupu -v ON_ERROR_STOP=1 -c "
             INSERT INTO users(id,email,password_hash,email_verified_at) VALUES
               ('00000000-0000-4000-8000-000000000101','production-contract@example.test','not-used',now()),
               ('00000000-0000-4000-8000-000000000102','production-token@example.test','not-used',NULL);
+            INSERT INTO users(id,email,password_hash,email_verified_at,role) VALUES
+              ('00000000-0000-4000-8000-000000000103','production-admin@example.test','not-used',now(),'admin');
             INSERT INTO sessions(user_id,token_hash,expires_at,absolute_expires_at)
               VALUES ('00000000-0000-4000-8000-000000000101','$SESSION_HASH',now()+interval '30 days',now()+interval '90 days');
+            INSERT INTO sessions(user_id,token_hash,expires_at,absolute_expires_at)
+              VALUES ('00000000-0000-4000-8000-000000000103','$ADMIN_HASH',now()+interval '14 days',now()+interval '74 days');
             INSERT INTO email_tokens(user_id,purpose,token_hash,expires_at)
               VALUES ('00000000-0000-4000-8000-000000000102','verify','$VERIFY_HASH',now()+interval '1 day');"
           E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" node tests/postgres/route-contract.cjs
-          E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" E2E_VERIFY_TOKEN="$VERIFY_TOKEN" npm run test:e2e:production
+          E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" E2E_VERIFY_TOKEN="$VERIFY_TOKEN" E2E_ADMIN_SESSION_TOKEN="$ADMIN_TOKEN" npm run test:e2e:production
           docker rm -f doupu-standalone-ci
         env:
           DATABASE_URL: postgresql://doupu:doupu-ci-password@127.0.0.1:5432/doupu

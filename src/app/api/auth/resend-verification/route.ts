@@ -10,6 +10,7 @@ import { buildVerifyLink, isDevMailMode, isMailCircuitOpen, sendMail } from '@/l
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { apiError, noContent, readJson, withApiErrors } from '@/lib/auth/http';
 import { zhCN } from '@/messages/zh-CN';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RATE_LIMIT = 10;
@@ -63,12 +64,18 @@ async function post(request: Request) {
 
     if (rows.length === 1 && rows[0].emailVerifiedAt === null) {
       const token = generateToken();
-      await db.insert(emailTokens).values({
-        userId: rows[0].id,
-        purpose: 'verify',
-        tokenHash: hashToken(token),
-        expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
-      });
+      try {
+        await db.transaction(async (tx) => {
+          await lockActiveAccount(tx, rows[0].id);
+          await tx.insert(emailTokens).values({
+            userId: rows[0].id, purpose: 'verify', tokenHash: hashToken(token),
+            expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+          });
+        });
+      } catch (error) {
+        if (error instanceof AppError && error.code === 'FORBIDDEN') return noContent();
+        throw error;
+      }
       const link = buildVerifyLink(token);
       try {
         await sendMail(

@@ -12,7 +12,7 @@ async function post(request: Request) {
   const guard = enforceMutatingGuard(request); if (guard) return guard;
   const actor = await requireApiActor('official:manage'); const body = await readJson(request, 64 * 1024); if (!body.ok) return body.response;
   const input = schema.parse(body.data); const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
-  const result = await executeIdempotently(getDb(), { actorUserId: actor.userId, scope: 'admin.official-batch.create', key: request.headers.get('idempotency-key') ?? '', request: input },
+  const result = await executeIdempotently(getDb(), { actorUserId: actor.userId, capability: 'official:manage', scope: 'admin.official-batch.create', key: request.headers.get('idempotency-key') ?? '', request: input },
     (tx) => createOfficialBatch(tx, { actor, requestId, ...input }));
   return okJson(result.value, { status: result.replayed ? 200 : 201 });
 }

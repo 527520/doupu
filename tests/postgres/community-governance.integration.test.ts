@@ -7,6 +7,7 @@ import * as schema from '../../db/schema';
 import {
   adminAuditLogs,
   communityLikes,
+  communityComments,
   communityReuses,
   communityRevisions,
   communityWorks,
@@ -15,10 +16,13 @@ import {
   users,
 } from '../../db/schema';
 import { updateUserGovernance } from '@/lib/admin/userGovernance';
+import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import type { Actor } from '@/lib/auth/authorization';
 import { executeIdempotently } from '@/lib/idempotency';
-import { reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
+import { createCommunityComment, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
 import { reviewCommunityRevision } from '@/lib/community/service';
+import { moderateCommunityWork } from '@/lib/community/adminService';
+import { createOfficialBatch, publishOfficialBatch, saveOfficialDraft } from '@/lib/community/officialBatch';
 import { COMMUNITY_LICENSE_VERSION, deriveCommunityPreview, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
@@ -101,6 +105,87 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL 16 community and governance concurrency', () => {
+  it('orders official publication and removal as work before revision without a deadlock', async () => {
+    const publisher = await createUser('admin');
+    const moderator = await createUser('admin');
+    const batch = await createOfficialBatch(db, { actor: publisher, itemCount: 1, defaultParams: DEFAULT_GENERATION_PARAMS, engineVersion: 'postgres-contract', reason: '并发发布下架验证', requestId: randomUUID() });
+    const draft = await saveOfficialDraft(db, { actor: publisher, batchId: batch.id, title: '并发草稿', snapshot, reason: '保存并发测试草稿', requestId: randomUUID() });
+    let publication!: ReturnType<typeof publishOfficialBatch>;
+    await db.transaction(async (tx) => {
+      await tx.select().from(communityWorks).where(eq(communityWorks.id, draft.workId)).for('update');
+      publication = publishOfficialBatch(db, { actor: publisher, batchId: batch.id, revisionIds: [draft.revisionId], expectedVersion: 1, reason: '同时发布该草稿', requestId: randomUUID() });
+      // Attach a handler before waiting, so even a regression deadlock rejection is observed.
+      void publication.catch(() => undefined);
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const state = await pool.query("select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%community_works%'");
+        waiting = state.rows[0].n;
+        if (waiting > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBeGreaterThan(0);
+      await moderateCommunityWork(tx, { actor: moderator, workId: draft.workId, action: 'remove', expectedVersion: 1, reason: '同时下架该草稿', requestId: randomUUID() });
+    });
+    await expect(publication).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
+    expect((await db.select().from(communityRevisions).where(eq(communityRevisions.id, draft.revisionId)))[0].status).toBe('withdrawn');
+    await db.delete(users).where(inArray(users.id, [publisher.userId, moderator.userId]));
+  });
+
+  it.each(['user', 'admin'] as const)('serializes %s erasure against stale saves, reuse, likes and comments', async (role) => {
+    const actor = await createUser(role);
+    const keeper = role === 'admin' ? await createUser('admin') : null;
+    const { work } = await createPublishedWork(actor);
+    sessionToken = (await createSession(db, actor.userId)).token;
+    const project: ProjectFile = {
+      format: 'doupu-project', version: 3, name: 'stale candidate',
+      engineVersion: snapshot.engineVersion, boardProfile: snapshot.boardProfile,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      paletteSelection: snapshot.paletteSelection, params: snapshot.params, pattern,
+    };
+    let release!: () => void; let entered!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const erased = new Promise<void>((resolve) => { entered = resolve; });
+    const erasure = db.transaction(async (tx) => {
+      await anonymizeAccount(tx, { userId: actor.userId, requestId: randomUUID() });
+      entered(); await barrier;
+    });
+    await erased;
+    const id = randomUUID();
+    const operations = Promise.allSettled([
+      saveDesign(new Request(`http://localhost:3000/api/designs/${id}`, {
+        method: 'PUT', headers: { origin: 'http://localhost:3000', 'content-type': 'application/json' },
+        body: JSON.stringify({ name: project.name, project, baseRevision: 0 }),
+      }), { params: Promise.resolve({ id }) }),
+      executeIdempotently(db, { actorUserId: actor.userId, scope: 'erasure-reuse', key: randomUUID(), request: {} },
+        (tx) => reuseCommunityWork(tx, { actor, workId: work.id })),
+      setCommunityLike(db, { actor, workId: work.id, liked: true }),
+      createCommunityComment(db, { actor, workId: work.id, body: '注销期间的陈旧评论' }),
+    ]);
+    let waiting = 0;
+    try {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const state = await pool.query("select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%users%'");
+        waiting = state.rows[0].n;
+        if (waiting >= 4) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(waiting).toBeGreaterThanOrEqual(4);
+    } finally { release(); }
+    await erasure;
+    const results = await operations;
+    expect(results[0].status === 'fulfilled' && results[0].value instanceof Response && results[0].value.status).toBe(403);
+    for (const result of results.slice(1)) {
+      expect(result.status).toBe('rejected');
+      if (result.status === 'rejected') expect(result.reason).toMatchObject({ code: 'FORBIDDEN' });
+    }
+    expect(await db.select().from(designs).where(eq(designs.userId, actor.userId))).toEqual([]);
+    expect(await db.select().from(communityReuses).where(eq(communityReuses.userId, actor.userId))).toEqual([]);
+    expect(await db.select().from(communityLikes).where(eq(communityLikes.userId, actor.userId))).toEqual([]);
+    expect(await db.select().from(communityComments).where(eq(communityComments.authorUserId, actor.userId))).toEqual([]);
+    expect(await db.select().from(idempotencyRecords).where(eq(idempotencyRecords.actorUserId, actor.userId))).toEqual([]);
+    if (keeper) await db.delete(users).where(eq(users.id, keeper.userId));
+  });
+
   it.each(['active', 'bytes'] as const)('serializes ordinary saves and distinct idempotent reuses at the %s quota', async (quota) => {
     const actor = await createUser();
     const { work } = await createPublishedWork(actor);

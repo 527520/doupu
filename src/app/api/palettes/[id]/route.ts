@@ -14,6 +14,7 @@ import { LIMITS } from '@/lib/appInfo';
 import { AppError } from '@/lib/errors';
 import type { CustomPaletteColor } from '@/lib/types';
 import { measureJsonBytes, tombstoneCutoff } from '@/lib/sync/revision';
+import { lockActiveAccount } from '@/lib/auth/writeAccess';
 
 const idSchema = z.string().uuid('色板 id 必须为 UUID');
 
@@ -57,10 +58,10 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
   const { name, colors, baseRevision } = result.data;
 
   const db = getDb();
-  await enforceSyncWriteLimit(db, userId);
   const payloadBytes = measureJsonBytes(colors);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select id from users where id = ${userId} for update`);
+    await lockActiveAccount(tx, userId);
+    await enforceSyncWriteLimit(tx, userId);
     await tx.delete(palettes).where(and(eq(palettes.userId, userId), lt(palettes.deletedAt, tombstoneCutoff())));
     const existing = (await tx.select().from(palettes).where(and(eq(palettes.userId, userId), eq(palettes.id, id))))[0];
     if (existing) {
@@ -99,9 +100,9 @@ async function del(request: Request, { params }: { params: Promise<{ id: string 
   if (!result.success) return apiError(result.error);
   const { baseRevision } = result.data;
   const db = getDb();
-  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select id from users where id = ${userId} for update`);
+    await lockActiveAccount(tx, userId);
+    await enforceSyncWriteLimit(tx, userId);
     await tx.delete(palettes).where(and(eq(palettes.userId, userId), lt(palettes.deletedAt, tombstoneCutoff())));
     const rows = await tx.select({ revision: palettes.revision, deletedAt: palettes.deletedAt, updatedAt: palettes.updatedAt }).from(palettes).where(and(eq(palettes.userId, userId), eq(palettes.id, id)));
     if (rows.length === 0) return okJson({ revision: baseRevision, updatedAt: new Date().toISOString() });

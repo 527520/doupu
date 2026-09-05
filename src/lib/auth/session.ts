@@ -11,6 +11,7 @@ import { getDb } from './db';
 import { generateToken, hashToken } from './tokens';
 import { readSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, sessionCookieOptions } from './cookies';
 import type { AccountStatus, Actor, UserRole } from './authorization';
+import { lockActiveAccount } from './writeAccess';
 
 const TTL_MS = SESSION_TTL_SECONDS * 1000;
 const ABSOLUTE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -26,7 +27,10 @@ export async function createSession(
   const token = generateToken();
   const expiresAt = new Date(now.getTime() + TTL_MS);
   const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_TTL_MS);
-  await db.insert(sessions).values({ userId, tokenHash: hashToken(token), expiresAt, absoluteExpiresAt });
+  await db.transaction(async (tx) => {
+    await lockActiveAccount(tx, userId);
+    await tx.insert(sessions).values({ userId, tokenHash: hashToken(token), expiresAt, absoluteExpiresAt });
+  });
   return { token, expiresAt };
 }
 

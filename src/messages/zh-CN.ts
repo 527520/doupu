@@ -1070,7 +1070,7 @@ export const zhCN = {
       width: '目标宽度', colors: '目标颜色数', mode: '取样模式', dominant: '主色', average: '平均色', dithering: '抖动',
       brightness: '亮度', contrast: '对比度', backgroundRemoval: '背景去除', bgTolerance: '背景容差', enabled: '开启', disabled: '关闭',
       backgroundPrototype: '手动背景色', resetOverrides: '清除逐项覆盖',
-      status: { pending: '待处理', running: '生成中', saved: '已保存', published: '已发布', failed: '失败', cancelled: '已取消' },
+      status: { pending: '待处理', running: '生成中', saved: '已保存', published: '已发布', failed: '失败', cancelled: '已取消', unavailable: '已撤回或不可发布' },
     },
     reviewFailed: '审核失败',
     rules: { saveFailed: '保存失败', harm: '明确伤害', harassment: '骚扰', sexual: '色情', spam: '垃圾推广', current: '当前', history: '历史', newVersion: '新规则版本', literalOnly: '仅字面词', literal: '字面词', category: '伤害分类', add: '加入版本', remove: '移除', reason: '启用理由', publish: '创建并启用不可变版本', historyTitle: '版本历史', version: '版本', ruleCount: '规则数', status: '状态', reasonColumn: '理由' },

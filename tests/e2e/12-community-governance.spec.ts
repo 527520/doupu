@@ -136,6 +136,9 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await expect(savedItem).toContainText('已保存 · 100%');
   await expect(failedItem).toContainText('失败');
   await expect(failedItem.getByRole('button', { name: '重试' })).toBeEnabled();
+  const completedBatch = await page.evaluate(async () => (await (await fetch('/api/admin/batches')).json()).items[0]);
+  expect(completedBatch).toMatchObject({ status: 'completed', successCount: 2, failureCount: 1 });
+  expect(completedBatch.completedAt).not.toBeNull();
 
   await savedItem.getByRole('checkbox').check();
   await page.getByRole('button', { name: '发布已勾选草稿' }).click();

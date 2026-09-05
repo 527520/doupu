@@ -3,6 +3,8 @@ import { and, eq } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
 import { idempotencyRecords } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
+import { lockAccountGovernance, lockActiveAccount } from '@/lib/auth/writeAccess';
+import type { Capability } from '@/lib/auth/authorization';
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -23,7 +25,7 @@ export function idempotencyRequestHash(value: unknown): string {
  */
 export async function executeIdempotently<T>(
   db: AnyDatabase,
-  input: { actorUserId: string; scope: string; key: string; request: unknown; now?: Date },
+  input: { actorUserId: string; scope: string; key: string; request: unknown; now?: Date; governance?: boolean; capability?: Capability },
   operation: (tx: AnyDatabase) => Promise<T>,
 ): Promise<{ value: T; replayed: boolean }> {
   const key = input.key.trim();
@@ -31,6 +33,8 @@ export async function executeIdempotently<T>(
   const requestHash = idempotencyRequestHash(input.request);
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
+    if (input.governance) await lockAccountGovernance(tx);
+    await lockActiveAccount(tx, input.actorUserId, input.capability);
     const inserted = await tx.insert(idempotencyRecords).values({
       actorUserId: input.actorUserId,
       scope: input.scope,

@@ -458,8 +458,14 @@ describe('Workbench 全流程', () => {
     await screen.findByText(/共 10000 粒/);
 
     const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
-    fireEvent.change(widthInput, { target: { value: '20' } });
-    fireEvent.blur(widthInput);
+    // Drive the documented 300 ms debounce explicitly; full coverage under
+    // concurrent browser/build load must not race Testing Library's 1 s clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.change(widthInput, { target: { value: '20' } });
+      fireEvent.blur(widthInput);
+      await act(async () => vi.advanceTimersByTimeAsync(300));
+    } finally { vi.useRealTimers(); }
 
     await screen.findByText(zhCN.workbench.generateFailed);
     await waitFor(() => expect(

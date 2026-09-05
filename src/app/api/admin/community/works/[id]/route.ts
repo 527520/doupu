@@ -22,7 +22,7 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: `admin.community.work:${workId}`,
+    actorUserId: actor.userId, capability: 'community:moderate', scope: `admin.community.work:${workId}`,
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => moderateCommunityWork(tx, { actor, workId, requestId, ...input }));
   const work = result.value;

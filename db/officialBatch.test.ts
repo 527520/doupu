@@ -27,14 +27,15 @@ describe('official browser-local batch persistence', () => {
       reason: '保存成功生成结果', requestId: 'save-1' });
     const second = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '官方作品 02', snapshot,
       reason: '保存成功生成结果', requestId: 'save-2' });
+    const finished = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'finish', expectedVersion: batch.version, reason: '完成全部图纸生成', requestId: 'finish' });
     const result = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [second.revisionId],
-      expectedVersion: batch.version, reason: '复核勾选作品后发布', requestId: 'publish' });
+      expectedVersion: finished.version, reason: '复核勾选作品后发布', requestId: 'publish' });
     expect(result.batch).toMatchObject({ status: 'completed', successCount: 2, failureCount: 0 });
     const revisions = await db.select().from(communityRevisions);
     expect(revisions.find((item) => item.id === first.revisionId)?.status).toBe('draft');
     expect(revisions.find((item) => item.id === second.revisionId)).toMatchObject({ status: 'published', authorType: 'official', publicAuthorId: 'doupu-official', sourceDesignId: null });
     expect((await db.select().from(communityWorks)).find((work) => work.id === second.workId)?.currentPublishedRevisionId).toBe(second.revisionId);
-    expect(await db.select().from(adminAuditLogs)).toHaveLength(4);
+    expect(await db.select().from(adminAuditLogs)).toHaveLength(5);
     const remaining = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [first.revisionId],
       expectedVersion: result.batch.version, reason: '再次复核剩余草稿后发布', requestId: 'publish-remaining' });
     expect(remaining.publishedRevisionIds).toEqual([first.revisionId]);
@@ -48,6 +49,22 @@ describe('official browser-local batch persistence', () => {
     const cancelled = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'cancel', expectedVersion: paused.version, reason: '取消剩余任务', requestId: 'cancel' });
     expect(cancelled).toMatchObject({ status: 'cancelled', failureCount: 3 });
     expect((await db.select().from(officialBatches))[0].completedAt).not.toBeNull();
+  });
+
+  it('finishes generation independently of publishing and reopens incomplete items for retry', async () => {
+    const batch = await createOfficialBatch(db, { actor: admin, itemCount: 2, defaultParams: DEFAULT_GENERATION_PARAMS,
+      engineVersion: '2.0.0', reason: '独立验证生成完成', requestId: 'start' });
+    await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '成功项', snapshot, reason: '保存生成结果', requestId: 'save' });
+    const finished = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'finish', expectedVersion: 1, reason: '所有本地任务结束', requestId: 'finish' });
+    expect(finished).toMatchObject({ status: 'completed', successCount: 1, failureCount: 1 });
+    expect(finished.completedAt).not.toBeNull();
+    expect((await db.select().from(communityRevisions))[0].status).toBe('draft');
+    const retrying = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'resume', expectedVersion: finished.version, reason: '重试本地失败项目', requestId: 'retry' });
+    expect(retrying).toMatchObject({ status: 'running', completedAt: null, failureCount: 0 });
+    await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '重试成功项', snapshot, reason: '保存重试结果', requestId: 'save-again' });
+    const done = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'finish', expectedVersion: retrying.version, reason: '全部任务已经完成', requestId: 'finish-again' });
+    expect(done).toMatchObject({ status: 'completed', successCount: 2, failureCount: 0 });
+    await expect(transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'resume', expectedVersion: done.version, reason: '没有剩余任务重试', requestId: 'invalid' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
   });
 
   it('continues saving after a partial publish and can publish saved drafts after cancellation', async () => {

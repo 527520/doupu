@@ -7,6 +7,8 @@
 import { and, eq, gt, isNull, ne } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
 import { emailTokens, sessions, users } from '@/../db/schema';
+import { lockActiveAccount } from './writeAccess';
+import { AppError } from '@/lib/errors';
 
 export interface AuthTransitionHooks {
   afterTokenConsumed?: () => void | Promise<void>;
@@ -54,6 +56,11 @@ export async function verifyEmailWithToken(
   hooks: Pick<AuthTransitionHooks, 'afterTokenConsumed'> = {},
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ userId: emailTokens.userId }).from(emailTokens).where(and(
+      eq(emailTokens.tokenHash, input.tokenHash), eq(emailTokens.purpose, 'verify'), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, input.now),
+    ));
+    if (!owner) return false;
+    await lockActiveAccount(tx, owner.userId);
     const consumed = await tx
       .update(emailTokens)
       .set({ usedAt: input.now })
@@ -89,6 +96,7 @@ export async function rotateEmailToken(
   hooks: Pick<AuthTransitionHooks, 'afterTokenConsumed'> = {},
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.userId);
     await tx
       .update(emailTokens)
       .set({ usedAt: input.now })
@@ -119,17 +127,21 @@ export async function deliverResetEmailToken(
   delivery: () => Promise<void>,
   hooks: Pick<AuthTransitionHooks, 'afterTokenConsumed'> = {},
 ): Promise<void> {
-  await db.insert(emailTokens).values({
-    userId: input.userId,
-    purpose: 'reset',
-    tokenHash: input.tokenHash,
-    expiresAt: input.expiresAt,
-    usedAt: input.now,
+  await db.transaction(async (tx) => {
+    await lockActiveAccount(tx, input.userId);
+    await tx.insert(emailTokens).values({
+      userId: input.userId,
+      purpose: 'reset',
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+      usedAt: input.now,
+    });
   });
 
   try {
     await delivery();
     await db.transaction(async (tx) => {
+      await lockActiveAccount(tx, input.userId);
       await tx
         .update(emailTokens)
         .set({ usedAt: input.now })
@@ -141,7 +153,7 @@ export async function deliverResetEmailToken(
           ),
         );
       await hooks.afterTokenConsumed?.();
-      await tx
+      const activated = await tx
         .update(emailTokens)
         .set({ usedAt: null })
         .where(
@@ -150,7 +162,8 @@ export async function deliverResetEmailToken(
             eq(emailTokens.purpose, 'reset'),
             eq(emailTokens.tokenHash, input.tokenHash),
           ),
-        );
+        ).returning();
+      if (activated.length === 0) throw new AppError('STATE_CONFLICT', '重置令牌已失效');
     });
   } catch (error) {
     await db.delete(emailTokens).where(eq(emailTokens.tokenHash, input.tokenHash));
@@ -165,6 +178,11 @@ export async function resetPasswordWithToken(
   hooks: AuthTransitionHooks = {},
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ userId: emailTokens.userId }).from(emailTokens).where(and(
+      eq(emailTokens.tokenHash, input.tokenHash), eq(emailTokens.purpose, 'reset'), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, input.now),
+    ));
+    if (!owner) return false;
+    await lockActiveAccount(tx, owner.userId);
     const consumed = await tx
       .update(emailTokens)
       .set({ usedAt: input.now })
@@ -200,7 +218,7 @@ export async function changePasswordAndRevokeSessions(
     const updated = await tx
       .update(users)
       .set({ passwordHash: input.passwordHash, updatedAt: input.now })
-      .where(and(eq(users.id, input.userId), eq(users.passwordHash, input.expectedPasswordHash)))
+      .where(and(eq(users.id, input.userId), eq(users.accountStatus, 'active'), eq(users.passwordHash, input.expectedPasswordHash)))
       .returning();
     if (updated.length === 0) return false;
     await hooks.afterPasswordUpdated?.();

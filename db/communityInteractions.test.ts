@@ -6,6 +6,7 @@ import {
   communityComments,
   communityLikes,
   communityReports,
+  communityRevisions,
   communityReuses,
   communityWorks,
   designs,
@@ -31,6 +32,7 @@ import {
 import { executeIdempotently } from '@/lib/idempotency';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import { LIMITS } from '@/lib/appInfo';
+import { listCommunityReviewQueue } from '@/lib/community/queries';
 
 function project(): ProjectFile {
   return {
@@ -48,6 +50,18 @@ describe('community reuse, interaction and governance transactions', () => {
   let moderator: Actor;
   let workId: string;
   let designId: string;
+
+  it('rejects stale actors after account erasure without recreating private data or idempotency facts', async () => {
+    await anonymizeAccount(db, { userId: user.userId, requestId: 'erase' });
+    await expect(reuseCommunityWork(db, { actor: user, workId })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(setCommunityLike(db, { actor: user, workId, liked: true })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(executeIdempotently(db, { actorUserId: user.userId, scope: 'community.reuse', key: 'stale', request: {} },
+      (tx) => reuseCommunityWork(tx, { actor: user, workId }))).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await db.select().from(designs).where(eq(designs.userId, user.userId))).toEqual([]);
+    expect(await db.select().from(communityReuses).where(eq(communityReuses.userId, user.userId))).toEqual([]);
+    expect(await db.select().from(communityLikes).where(eq(communityLikes.userId, user.userId))).toEqual([]);
+    expect(await db.select().from(idempotencyRecords).where(eq(idempotencyRecords.actorUserId, user.userId))).toEqual([]);
+  });
 
   beforeEach(async () => {
     db = await createTestClient();
@@ -226,6 +240,9 @@ describe('community reuse, interaction and governance transactions', () => {
   });
 
   it('anonymizes the account without deleting public works or governance facts', async () => {
+    const newWork = await createCommunityWork(db, { actor: user, designId, title: '尚未公开的作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    const revision = await createCommunityRevision(db, { actor: user, workId, designId, title: '已有作品的待审修改', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    const pending = await submitCommunityRevision(db, { actor: user, revisionId: revision.id, expectedVersion: revision.version });
     await setCommunityLike(db, { actor: user, workId, liked: true });
     await createCommunityComment(db, { actor: user, workId, body: '注销前评论' });
     await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'other' });
@@ -237,6 +254,15 @@ describe('community reuse, interaction and governance transactions', () => {
       targetType: 'user', targetId: user.userId, reason: '注销前去身份化样本', requestId: 'pre-erase',
       beforeState: { accountStatus: 'active', publicAuthorId: 'must-not-remain' },
     });
+    await db.update(communityWorks).set({ featuredByUserId: user.userId }).where(eq(communityWorks.id, workId));
+    await db.update(communityRevisions).set({ reviewedByUserId: user.userId }).where(eq(communityRevisions.workId, workId));
+    await db.update(communityComments).set({ reviewedByUserId: user.userId }).where(eq(communityComments.workId, workId));
+    await db.update(communityReports).set({ handledByUserId: user.userId }).where(eq(communityReports.reporterUserId, user.userId));
+    await db.insert(idempotencyRecords).values([
+      { actorUserId: moderator.userId, scope: `admin.user:${user.userId}`, key: 'other-operator-governance', requestHash: 'hash', response: { userId: user.userId }, expiresAt: new Date(Date.now() + 60_000) },
+      { actorUserId: moderator.userId, scope: 'admin.comment', key: 'other-operator-response', requestHash: 'hash', response: { comment: { authorUserId: user.userId } }, expiresAt: new Date(Date.now() + 60_000) },
+      { actorUserId: moderator.userId, scope: 'admin.revision', key: 'other-operator-public-identity', requestHash: 'hash', response: { publicAuthorId: (await db.select().from(users).where(eq(users.id, user.userId)))[0].publicAuthorId, sourceDesignId: designId }, expiresAt: new Date(Date.now() + 60_000) },
+    ]);
     await anonymizeAccount(db, { userId: user.userId, requestId: 'erase-account' });
     expect((await db.select().from(users).where(eq(users.id, user.userId)))[0]).toMatchObject({
       email: null, passwordHash: null, accountStatus: 'anonymized', role: 'user',
@@ -246,8 +272,17 @@ describe('community reuse, interaction and governance transactions', () => {
     expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0]).toMatchObject({ likeCount: 0, commentCount: 0, reuseCount: 1 });
     expect((await db.select().from(communityComments))[0]).toMatchObject({ authorUserId: null, status: 'deleted', body: '' });
     expect((await db.select().from(communityReports))[0].reporterUserId).toBeNull();
+    expect((await db.select().from(communityReports))[0].handledByUserId).toBeNull();
+    expect((await db.select().from(communityComments))[0].reviewedByUserId).toBeNull();
+    expect((await db.select().from(communityRevisions))[0].reviewedByUserId).toBeNull();
+    expect((await db.select().from(communityWorks))[0].featuredByUserId).toBeNull();
     expect((await db.select().from(communityReuses))[0]).toMatchObject({ userId: null, designId: null });
     expect(await db.select().from(idempotencyRecords)).toHaveLength(0);
+    expect((await db.select().from(communityWorks).where(eq(communityWorks.id, newWork.work.id)))[0].lifecycleStatus).toBe('withdrawn');
+    expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].lifecycleStatus).toBe('active');
+    expect((await db.select().from(communityRevisions).where(eq(communityRevisions.id, pending.id)))[0].status).toBe('withdrawn');
+    expect(await listCommunityReviewQueue(db)).toEqual([]);
+    await expect(reviewCommunityRevision(db, { actor: moderator, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: '账号已注销不可再发布', requestId: 'late-review' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
     const audits = await db.select().from(adminAuditLogs);
     expect(audits.filter((audit) => audit.targetType === 'user')).toEqual([
       expect.objectContaining({ actorUserId: null, targetId: 'anonymized', beforeState: null, afterState: null }),

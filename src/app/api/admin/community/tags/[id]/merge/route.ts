@@ -18,7 +18,7 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: `admin.community.tag.merge:${sourceTagId}`,
+    actorUserId: actor.userId, capability: 'community:moderate', scope: `admin.community.tag.merge:${sourceTagId}`,
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => mergeCommunityTag(tx, { actor, sourceTagId, requestId, ...input }));
   return okJson(result.value);

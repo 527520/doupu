@@ -311,18 +311,20 @@ export async function listCommunityReviewQueue(db: AnyDatabase) {
     colorCount: communityRevisions.colorCount,
     boardProfile: communityRevisions.boardProfile,
     submittedAt: communityRevisions.submittedAt,
+    accountStatus: users.accountStatus,
   }).from(communityRevisions).innerJoin(communityWorks, eq(communityWorks.id, communityRevisions.workId))
+    .leftJoin(users, eq(users.id, communityWorks.authorUserId))
     .where(and(eq(communityRevisions.status, 'pending_review'), eq(communityWorks.lifecycleStatus, 'active')))
     .orderBy(communityRevisions.submittedAt, communityRevisions.id)
     .limit(100);
   return rows.flatMap((row) => {
     const preview = communityPreviewSchema.safeParse(row.preview);
-    const { publicAuthorId, frozenDisplayName, authorType, ...safeRow } = row;
+    const { publicAuthorId, frozenDisplayName, authorType, accountStatus, ...safeRow } = row;
     return preview.success ? [{
       ...safeRow,
       author: authorType === 'official'
         ? { authorType: 'official' as const, publicAuthorId: 'doupu-official', displayName: '豆谱官方' }
-        : { authorType: 'user' as const, publicAuthorId, displayName: frozenDisplayName },
+        : { authorType: 'user' as const, publicAuthorId, displayName: accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : frozenDisplayName },
       preview: preview.data,
       submittedAt: row.submittedAt?.toISOString() ?? null,
     }] : [];

@@ -25,7 +25,7 @@ async function post(request: Request) {
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: 'admin.community.tag.create',
+    actorUserId: actor.userId, capability: 'community:moderate', scope: 'admin.community.tag.create',
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => createCommunityTag(tx, { actor, requestId, ...input }));
   return okJson(result.value, { status: result.replayed ? 200 : 201 });

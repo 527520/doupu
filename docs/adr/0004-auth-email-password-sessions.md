@@ -21,3 +21,7 @@ Open registration with email + password, email verification and password reset (
 - An SMTP provider is required (腾讯云邮件推送 SES with SMTP credentials); without it, verification/reset emails cannot be delivered.
 - argon2id hashing is CPU-bound: run it in a separate worker thread or accept ~100–300 ms latency on register/login (fine at this scale).
 - No refresh tokens; expired sessions require re-login.
+
+## 2026-09-05 clarification
+
+Server Components resolve sessions read-only. Only Route Handlers renew both the database expiry and response Cookie. Read-only admin navigation and foreground activity probe `/api/auth/me`, so an active administrator does not lose rolling expiry merely by using server-rendered analytics, audit or system pages.

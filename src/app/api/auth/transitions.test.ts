@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { emailTokens, sessions, users } from '@/../db/schema';
+import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
+import { createSession } from '@/lib/auth/session';
 import {
   changePasswordAndRevokeSessions,
   createUnverifiedUser,
@@ -16,6 +18,18 @@ describe('auth state transitions', () => {
 
   beforeEach(async () => {
     db = await createTestClient();
+  });
+
+  it('does not reactivate or recreate credentials when erasure commits during mail delivery', async () => {
+    const [user] = await db.insert(users).values({ email: 'erased-during-mail@example.com', passwordHash: 'old-hash' }).returning();
+    const now = new Date();
+    await expect(deliverResetEmailToken(db, { userId: user.id, tokenHash: 'late-mail-token', now, expiresAt: new Date(now.getTime() + 60_000) },
+      () => anonymizeAccount(db, { userId: user.id, requestId: 'mail-erasure' }))).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(rotateEmailToken(db, { userId: user.id, purpose: 'verify', tokenHash: 'late-verify-token', now, expiresAt: new Date(now.getTime() + 60_000) })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(createSession(db, user.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await db.select().from(emailTokens).where(eq(emailTokens.userId, user.id))).toEqual([]);
+    expect(await db.select().from(sessions).where(eq(sessions.userId, user.id))).toEqual([]);
+    expect((await db.select().from(users).where(eq(users.id, user.id)))[0]).toMatchObject({ accountStatus: 'anonymized', email: null, passwordHash: null });
   });
 
   it('rolls back token consumption, password update and session revocation when reset fails', async () => {

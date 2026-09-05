@@ -69,9 +69,9 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
   }
 
   const db = getDb();
-  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
     await lockDesignStorage(tx, userId);
+    await enforceSyncWriteLimit(tx, userId);
     const updatedAt = new Date();
     const requestedWithMetadata: ProjectFile = { ...requestedProject, name, updatedAt: updatedAt.toISOString() };
     const existing = await tx.select().from(designs).where(and(eq(designs.userId, userId), eq(designs.id, id)));
@@ -110,9 +110,9 @@ async function del(request: Request, { params }: { params: Promise<{ id: string 
   if (!result.success) return apiError(result.error);
   const { baseRevision } = result.data;
   const db = getDb();
-  await enforceSyncWriteLimit(db, userId);
   return db.transaction(async (tx) => {
     await lockDesignStorage(tx, userId);
+    await enforceSyncWriteLimit(tx, userId);
     const rows = await tx.select({ revision: designs.revision, deletedAt: designs.deletedAt, updatedAt: designs.updatedAt }).from(designs).where(and(eq(designs.userId, userId), eq(designs.id, id)));
     if (rows.length === 0) return okJson({ revision: baseRevision, updatedAt: new Date().toISOString() });
     if (rows[0].deletedAt && rows[0].revision === baseRevision + 1) return okJson({ revision: rows[0].revision, updatedAt: rows[0].updatedAt.toISOString() });

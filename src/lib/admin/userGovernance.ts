@@ -1,9 +1,10 @@
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
 import { adminAuditLogs, sessions, users } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import type { AccountStatus, UserRole } from '@/lib/auth/authorization';
 import { sanitizeAuditState } from './audit';
+import { lockAccountGovernance } from '@/lib/auth/writeAccess';
 
 export interface UpdateUserGovernanceInput {
   actorUserId: string;
@@ -37,16 +38,14 @@ export async function updateUserGovernance(
   }
 
   return db.transaction(async (tx) => {
-    // Serializes every mutation that can change the active administrator set.
-    // Row locks work in both PostgreSQL 16 and the PGlite contract adapter.
-    await tx.execute(sql`select id from ${users} where ${users.role} = 'admin' for update`);
+    await lockAccountGovernance(tx);
 
     const [actor] = await tx.select({
       id: users.id,
       role: users.role,
       accountStatus: users.accountStatus,
       emailVerifiedAt: users.emailVerifiedAt,
-    }).from(users).where(eq(users.id, input.actorUserId));
+    }).from(users).where(eq(users.id, input.actorUserId)).for('no key update');
     if (!actor || actor.role !== 'admin' || actor.accountStatus !== 'active' || !actor.emailVerifiedAt) {
       throw new AppError('FORBIDDEN', '没有人员治理权限');
     }
@@ -56,7 +55,7 @@ export async function updateUserGovernance(
       role: users.role,
       accountStatus: users.accountStatus,
       governanceVersion: users.governanceVersion,
-    }).from(users).where(eq(users.id, input.targetUserId));
+    }).from(users).where(eq(users.id, input.targetUserId)).for('no key update');
     if (!target || target.accountStatus === 'anonymized') {
       throw new AppError('NOT_FOUND', '账号不存在');
     }

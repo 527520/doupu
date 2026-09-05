@@ -18,7 +18,7 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   const result = await executeIdempotently(getDb(), {
-    actorUserId: actor.userId, scope: `admin.community.comment:${commentId}`,
+    actorUserId: actor.userId, capability: 'community:moderate', scope: `admin.community.comment:${commentId}`,
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => moderateCommunityComment(tx, { actor, commentId, requestId, ...input }));
   return okJson({ id: result.value.id, status: result.value.status, version: result.value.version });
