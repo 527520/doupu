@@ -1,7 +1,7 @@
 # 豆谱视觉与交互重塑
 
 Status: ready-for-agent
-Completion: in-progress
+Completion: complete
 Baseline: 012ec85bcc9a4dbadc63066eb56d2c0e81222ba5
 
 ## 已批准的设计合同
@@ -34,8 +34,8 @@ Chrome 已查看：桌面首页/色板/登录；390px 首页/豆社列表与详�
 
 ## 进度
 
-- 01 字体与设计基础：implemented；字体资源已提交 ca7feee，哈希、缺失和篡改门禁通过。
-- 02 选择器与交互基础：implemented；选择、表单、必填、错误、重置、禁用、搜索与嵌套焦点测试通过。
-- 03 首页豆社样板：implemented；三浏览器视觉专项 18/18 通过，截图在 evidence/。
-- 04 全站推广：implemented；原生 select 仅保留无 JS 降级，布尔开关与危险确认分离。
-- 05 验证与审查：in-progress；完整回归与独立审查进行中，最终证据待归档。
+- 01 字体与设计基础：complete；字体资源已提交 ca7feee，哈希、缺失和篡改门禁通过。
+- 02 选择器与交互基础：complete；选择、表单、必填、错误、重置、禁用、搜索与嵌套焦点测试通过。
+- 03 首页豆社样板：complete；最终视觉专项 27/27 在三轮全量中均通过，截图在 evidence/。
+- 04 全站推广：complete；原生 select 仅保留无 JS 降级，布尔开关与危险确认分离。
+- 05 验证与审查：complete；三轮全量 E2E、五轮性能、覆盖率、静态检查与生产构建通过，独立审查发现已关闭。完整结果和前后对照见 [verification.md](verification.md)。
