@@ -236,7 +236,7 @@ const selectPaletteBrand = (): HTMLSelectElement => screen.getByLabelText(zhCN.p
 const selectPaletteSeries = (): HTMLSelectElement => screen.getByLabelText(zhCN.params.series) as HTMLSelectElement;
 const clickGuestRestart = (): void => {
   fireEvent.click(screen.getByRole('button', { name: zhCN.nav.more }));
-  fireEvent.click(within(screen.getByTestId('site-overflow-panel'))
+  fireEvent.click(within(screen.getByRole('region', { name: zhCN.nav.more }))
     .getByRole('button', { name: zhCN.workbench.restart }));
 };
 
@@ -268,6 +268,16 @@ function mockMobileViewport(): () => void {
 }
 
 describe('Workbench 全流程', () => {
+  it.each(['edit', 'stitch'] as const)('明确的 %s 恢复入口直接打开指定设计的任务', async (mode) => {
+    window.history.replaceState(null, '', `/app?id=chosen&mode=${mode}`);
+    const storage = new FakeStorage();
+    storage.designs.set('chosen', record('chosen', savedProject('选中的作品', '2026-09-01T00:00:00Z')));
+    storage.designs.set('other', record('other', savedProject('另一张作品', '2026-09-02T00:00:00Z')));
+    render(<Workbench storage={storage} />);
+    await screen.findByDisplayValue('选中的作品');
+    expect(screen.getByRole('tab', { name: mode === 'edit' ? zhCN.workbench.editTab : zhCN.stitch.tab })).toHaveAttribute('aria-selected', 'true');
+    window.history.replaceState(null, '', '/app');
+  });
   it.each(['failure', 'cancel', 'undo'] as const)('重新裁剪 %s 后保存的图纸与本地生成源保持匹配', async (ending) => {
     const storage = new FakeStorage();
     let finish!: (output: EngineOutput) => void;
@@ -682,7 +692,7 @@ describe('Workbench 项目操作栏', () => {
 
     const more = await screen.findByRole('button', { name: zhCN.nav.more });
     fireEvent.click(more);
-    const panel = screen.getByTestId('site-overflow-panel');
+    const panel = screen.getByRole('region', { name: zhCN.nav.more });
     const login = within(panel).getByRole('link', { name: zhCN.nav.login });
     const register = within(panel).getByRole('link', { name: zhCN.nav.registerAccount });
     expect(login).toHaveClass('btn-primary', 'workspace-overflow-action');

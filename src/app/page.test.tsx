@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import Home from './page';
 import { resetAuthStatusCache } from '@/components/account/useAuthStatus';
 
@@ -22,7 +22,7 @@ describe('首页', () => {
   it('渲染标题、引导与上传入口', async () => {
     render(<Home />);
     expect(screen.getByRole('heading', { level: 1, name: '开始创作' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '今天想把什么变成拼豆？' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '把喜欢，一颗颗拼出来。' })).toBeTruthy();
     expect(screen.getByRole('status')).toHaveTextContent('正在检查登录状态…');
     expect(screen.getByText(/拖拽图片到此处/)).toBeTruthy();
     expect(within(screen.getByTestId('workspace-sidebar')).getByRole('link', { name: '工作台' })).toBeTruthy();
@@ -41,30 +41,18 @@ describe('首页', () => {
     expectLink('色板管理', '/palettes');
     expectLink('帮助与教程', '/help');
     expectLink('关于', '/about');
-    expectLink('账户与状态', '/account');
+    expect(within(screen.getByTestId('workspace-sidebar')).getByRole('link', { name: '账户与状态' })).toHaveAttribute('href', '/account');
     await screen.findByRole('link', { name: '登录' });
     expect(screen.getByRole('link', { name: '登录' }).getAttribute('href')).toBe('/login');
   });
 
-  it('已登录时显示邮箱与退出登录，不再显示登录按钮', async () => {
+  it('已登录时只保留账号入口，不重复展示邮箱与退出操作', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ email: 'wqa527520@qq.com', emailVerified: true }), { status: 200 }));
     render(<Home />);
-    expect(await screen.findByText('wqa527520@qq.com')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '退出登录' })).toBeTruthy();
+    await screen.findByText('wqa527520');
+    expect(screen.queryByText('wqa527520@qq.com')).toBeNull();
+    expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull();
     expect(screen.queryByRole('link', { name: '登录' })).toBeNull();
-  });
-
-  it('点击退出登录调用登出接口并回到未登录显示', async () => {
-    fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ email: 'a@b.com', emailVerified: true }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    render(<Home />);
-    await screen.findByRole('button', { name: '退出登录' });
-    await act(async () => {
-      screen.getByRole('button', { name: '退出登录' }).click();
-    });
-    await screen.findByRole('link', { name: '登录' });
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ method: 'POST' }));
   });
 
   it('页脚包含源码、作者与隐私入口', async () => {

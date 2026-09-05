@@ -6,6 +6,17 @@ import type { MouseEvent } from 'react';
 import SiteHeader from './SiteHeader';
 
 describe('SiteHeader', () => {
+  it('所有页面的更多入口提供色板、帮助和隐私，并使用离开保护', async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn((event: MouseEvent<HTMLAnchorElement>, _href: string) => event.preventDefault());
+    render(<SiteHeader title="工作台" currentPath="/app" onNavigate={onNavigate} />);
+    await user.click(screen.getByRole('button', { name: '更多入口' }));
+    const panel = within(screen.getByTestId('site-overflow-panel'));
+    expect(panel.getByRole('link', { name: '色板管理' })).toHaveAttribute('href', '/palettes');
+    expect(panel.getByRole('link', { name: '帮助与教程' })).toHaveAttribute('href', '/help');
+    await user.click(panel.getByRole('link', { name: '隐私与分析偏好' }));
+    expect(onNavigate.mock.calls.at(-1)?.[1]).toBe('/privacy');
+  });
   it('提供唯一页面标题、主导航和移动端可展开的操作入口', async () => {
     const user = userEvent.setup();
     render(
@@ -20,7 +31,7 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('我的设计');
     expect(screen.getByRole('button', { name: '新建设计' })).toBeTruthy();
-    const more = screen.getByRole('button', { name: '更多操作' });
+    const more = screen.getByRole('button', { name: '更多入口' });
     expect(more).toHaveAttribute('aria-expanded', 'false');
     await user.click(more);
     expect(more).toHaveAttribute('aria-expanded', 'true');
@@ -38,12 +49,11 @@ describe('SiteHeader', () => {
       '.workspace-privacy-note',
       '.workspace-profile',
       '.workspace-mobile-brand .brand-lockup',
-      '.workspace-top-avatar',
     ]) {
       await user.click(container.querySelector(selector) as HTMLAnchorElement);
     }
 
-    expect(onNavigate.mock.calls.map((call) => call[1])).toEqual(['/', '/about', '/account', '/', '/account']);
+    expect(onNavigate.mock.calls.map((call) => call[1])).toEqual(['/', '/privacy', '/account', '/']);
   });
 
 });

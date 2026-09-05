@@ -51,7 +51,12 @@ export default function SiteHeader({
   };
   const displayName = auth.kind === 'user' ? auth.username || auth.email.split('@')[0] : zhCN.workspace.localCreator;
   const avatar = displayName.trim().charAt(0).toUpperCase() || zhCN.app.name.charAt(0);
-  const overflowControl = overflowActions ? <ActionOverflow actions={overflowActions} /> : null;
+  const overflowControl = <ActionOverflow label={zhCN.nav.moreLinks} actions={<>
+    {overflowActions}
+    <Link href="/palettes" onClick={(event) => navigate(event, '/palettes')}>{zhCN.nav.palettes}</Link>
+    <Link href="/help" onClick={(event) => navigate(event, '/help')}>{zhCN.workspace.helpAndGuide}</Link>
+    <Link href="/privacy" onClick={(event) => navigate(event, '/privacy')}>{zhCN.workspace.privacyPreferences}</Link>
+  </>} />;
 
   return (
     <>
@@ -70,16 +75,13 @@ export default function SiteHeader({
               <Icon name={item.icon} /><span>{item.label}</span>
             </Link>
           ))}
-          <Link href="/account" onClick={(event) => navigate(event, '/account')} aria-current={active(currentPath, '/account') ? 'page' : undefined} className="workspace-nav-item">
-            <Icon name="user" /><span>{zhCN.workspace.account}</span>
-          </Link>
         </nav>
-        <Link href="/about" onClick={(event) => navigate(event, '/about')} className="workspace-privacy-note">
+        <Link href="/privacy" onClick={(event) => navigate(event, '/privacy')} className="workspace-privacy-note">
           <strong><Icon name="lock" size={15} />{zhCN.workspace.localGeneration}</strong>
           <span>{zhCN.workspace.localGenerationHint}</span>
           <small>{zhCN.workspace.learnPrivacy}<Icon name="arrow" size={14} /></small>
         </Link>
-        <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-profile">
+        <Link href="/account" onClick={(event) => navigate(event, '/account')} aria-label={zhCN.workspace.account} aria-current={active(currentPath, '/account') ? 'page' : undefined} className="workspace-profile">
           <span className="workspace-avatar">{avatar}</span>
           <span><strong>{displayName}</strong><small>{auth.kind === 'user' ? zhCN.workspace.cloudReady : zhCN.workspace.localCreating}</small></span>
           <Icon name="more" size={18} />
@@ -96,7 +98,6 @@ export default function SiteHeader({
           <div className="workspace-top-actions">
             {primaryActions}
             {overflowControl}
-            <Link href="/account" onClick={(event) => navigate(event, '/account')} className="workspace-top-avatar" aria-label={zhCN.workspace.account}>{avatar}</Link>
           </div>
         </div>
       </header>

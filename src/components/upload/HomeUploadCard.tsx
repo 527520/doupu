@@ -5,11 +5,11 @@
  *
  * 之前这里是个长得像落区的 `<Link>`，拖图进去没反应；文案还写着「支持拍照」
  * 却没有任何拍照入口。现在复用工作台的 UploadDropzone：拖拽、点击选择、
- * 文件级校验与错误提示都是同一套实现，校验通过后把文件交给工作台继续裁剪。
+ * 文件级校验与错误提示都是同一套实现，校验通过后交给工作台自动生成整图预览。
  */
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useCallback, useState, type CSSProperties } from 'react';
+import { useCallback, useState } from 'react';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
 import Icon from '@/components/ui/Icon';
 import { setPendingUpload } from '@/lib/upload/pendingUpload';
@@ -23,7 +23,7 @@ export default function HomeUploadCard() {
     setPendingUpload(file);
     setHanding(true);
     // ?new=1：与「新建设计」同一语义——跳过历史设计恢复，避免上一张设计
-    // 的恢复流程在竞态里把即将进入裁剪的新图顶掉（回到旧设计）。
+    // 的恢复流程在竞态里把即将生成预览的新图顶掉（回到旧设计）。
     router.push('/app?new=1');
   }, [router]);
 
@@ -40,13 +40,6 @@ export default function HomeUploadCard() {
         <span><strong>{zhCN.home.blankStart}</strong><small>{zhCN.home.blankHint}</small></span>
         <Icon name="arrow" size={17} />
       </Link>
-      <ol className="home-ticket-rail" aria-label={zhCN.home.process} tabIndex={0}>
-        {[zhCN.home.guideStep1, zhCN.home.guideStep2, zhCN.home.guideStep3].map((step, index) => (
-          <li key={step} style={{ '--ticket': ['#a83f68', '#756a8c', '#c58d47'][index] } as CSSProperties}>
-            <span aria-hidden="true">{index + 1}</span><p>{step}</p>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }

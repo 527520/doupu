@@ -1524,6 +1524,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         setActiveDesignId(last.id);
         setSavedNames(records.map((r) => r.name));
         loadCommittedProject(project, localSource);
+        const requestedMode = urlParams.get('mode');
+        if (requestedId && (requestedMode === 'edit' || requestedMode === 'stitch')) setTab(requestedMode);
       } catch {
         adapterRef.current = null;
         setStorageReady(false);

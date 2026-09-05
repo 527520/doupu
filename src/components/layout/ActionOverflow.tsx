@@ -6,10 +6,11 @@ import Icon from '@/components/ui/Icon';
 
 interface Props {
   actions: ReactNode;
+  label?: string;
 }
 
 /** 页面与项目操作栏共用的可访问溢出菜单。 */
-export default function ActionOverflow({ actions }: Props) {
+export default function ActionOverflow({ actions, label = zhCN.nav.more }: Props) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export default function ActionOverflow({ actions }: Props) {
         ref={triggerRef}
         type="button"
         className="icon-button"
-        aria-label={zhCN.nav.more}
+        aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
@@ -49,6 +50,8 @@ export default function ActionOverflow({ actions }: Props) {
       </button>
       <div
         id={panelId}
+        role="region"
+        aria-label={label}
         data-testid="site-overflow-panel"
         hidden={!open}
         className={`workspace-overflow-panel${open ? ' is-open' : ''}`}
