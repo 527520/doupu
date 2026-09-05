@@ -185,3 +185,13 @@
 - 仅将“打开裁剪”的 `setStep('crop')` 标记为 React 可中断视图更新；按钮焦点保持同步，确认/取消、解码、操作令牌、源与提交/撤销全部不变。依据 React 官方 startTransition 文档与本地 Next 客户端指南；没有人为 sleep、跳过、重试、降采样或放宽 50 ms 门槛。
 - `crop-transition-browser.log`：删除全部临时采样代码后，相同 00–03 前置连续五轮共 60 项通过。Standards、Spec 各自只读复核均 0 未解决：同一状态队列顺序及清源时 decoded 清理防止旧 crop 更新覆盖急更新或复活旧图。
 - 此处仍仅为定向证据；新应用改动之后重新运行最终覆盖率、构建、本地生产模式和完整三轮稳定 E2E。
+
+## 08L 完整顺序测试契约与弹窗焦点 — 2026-09-05
+
+- `verified-coverage.log`：bd92f62 的 185 文件、1457 项通过，13 项原设计跳过；`src/lib` 覆盖率仍为 91.05% / 82.87% / 95.53% / 94.61%（语句/分支/函数/行）。`verified-performance.log` 五轮各 4 文件 7 项通过。`verified-build.log` 的 `doupu-app:siteux-verified` 生产镜像、原生 Argon2、全新本地数据库镜像预检、实际生产模式路由合约和 4 项 Chromium、真实 PostgreSQL 修订与 12 项治理合约全部通过。此记录属于修复焦点之前的候选，不能替代后续最终源代码门禁。
+- `verified-stable-e2e.log` 第一轮完整运行 237 项：210 passed、5 failed、22 原设计 skipped，不算稳定通过。大图 50 ms 判据通过；失败为裁剪缺原图的旧 disabled 断言（三浏览器）和社区评论场景错选其他浏览器刚发布的作品（Firefox/WebKit）。
+- 社区测试改为唯一匹配带种子评论的具名作品，先断言自己的过期评论及他人评论确实存在，再断言编辑/删除权限；防止负断言空匹配通过。裁剪测试改为验证按需展开缺原图指引：入口可用、aria-expanded 从 false 到 true、解释出现、真实裁剪弹窗始终不存在；仍断言取消重绑、拒绝替换保留 10000 粒图纸。无新 skip、重试、放宽超时或性能判据。
+- `final-contract-recovery.log` 在上述测试修正后 60 passed、1 failed、2 原设计 skipped；唯一失败为 Firefox 取消真实裁剪后未恢复入口焦点，是产品缺陷而非旧测试。三浏览器原生 DOM 探针均验证：背景设置 inert 时即时焦点仍在入口，绘制后可变为 body。并发打开允许此绘制发生在 React 被动 effect 之前，原实现记录焦点太晚。
+- 新增普通模式、StrictMode、嵌套弹窗 3 项回归，模拟 jsdom 缺失的 inert 失焦行为；`modal-focus-red.log` 修复前 3 failed、5 passed。只将入口引用记录提前到既有 layout effect 内、设置 inert 之前；自动聚焦与恢复仍留在原被动 effect，不搬入昂贵布局操作，不改变背景恢复和裁剪源语义。
+- `modal-focus-green.log`：Modal/裁剪/工作台 4 文件 99 项全部通过；`modal-focus-browser.log`：完整整图生成→取消恢复焦点→确认更新→刷新缺原图→重绑取消/拒绝替换，三浏览器各连续五次，共 15 项通过。lint、typecheck 通过。扩展回归、独立复审及最终全量门禁仍在运行。
+- `modal-focus-recovery.log`：12/13/14 三个完整 E2E 文件覆盖社区、裁剪、治理，Chromium/Firefox/WebKit 共 61 项通过、2 个原设计重复视觉用例跳过，2.8 分钟。Modal 增量两轴独立复审均 0 未解决；之后冻结产品源代码，重新执行最终门禁。

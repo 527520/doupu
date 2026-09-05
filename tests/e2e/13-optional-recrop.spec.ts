@@ -8,6 +8,17 @@ const cropButton = (page: Page) => page.getByRole('button', { name: '裁剪图�
 const cropDialog = (page: Page) => page.getByRole('dialog', { name: '裁剪图片', exact: true });
 const beads = (page: Page, count: number) => page.getByText(new RegExp(`共 ${count} 粒`)).first();
 
+async function revealMissingOriginalHelp(page: Page) {
+  const explanation = page.getByText(/当前会话没有完整原图/);
+  await expect(cropButton(page)).toBeEnabled();
+  await expect(cropButton(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(explanation).toHaveCount(0);
+  await cropButton(page).click();
+  await expect(cropButton(page)).toHaveAttribute('aria-expanded', 'true');
+  await expect(cropDialog(page)).toHaveCount(0);
+  await expect(explanation).toBeVisible();
+}
+
 async function start(page: Page) {
   await page.goto('/app?new=1');
   await uploadFile(page, PHOTO);
@@ -36,16 +47,16 @@ test('整图首版 → 取消不更新 → 确认自动更新 → 刷新缺原�
   await expect(page.getByText('本地：已保存', { exact: true }).first()).toBeVisible();
   await page.reload();
   await expect(beads(page, 10000)).toBeVisible();
-  await expect(cropButton(page)).toBeDisabled();
-  await expect(page.getByText(/当前会话没有完整原图/)).toBeVisible();
+  await revealMissingOriginalHelp(page);
   await page.getByRole('button', { name: '重新选择图片', exact: true }).click();
   await page.getByRole('button', { name: '取消选图，返回原图纸' }).click();
   await expect(beads(page, 10000)).toBeVisible();
+  await revealMissingOriginalHelp(page);
   await page.getByRole('button', { name: '重新选择图片', exact: true }).click();
   await page.getByLabel('图片文件选择器').setInputFiles(PHOTO);
   await page.getByRole('dialog', { name: '替换当前图纸？' }).getByRole('button', { name: '取消', exact: true }).click();
   await expect(beads(page, 10000)).toBeVisible();
-  await expect(cropButton(page)).toBeDisabled();
+  await revealMissingOriginalHelp(page);
 });
 
 test('手工修改：取消裁剪和拒绝覆盖均保留，确认后可以撤销重生成', async ({ page }) => {

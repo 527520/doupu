@@ -2,12 +2,60 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import axe from 'axe-core';
 import Modal from './Modal';
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+// jsdom does not implement inert's focus loss. Browsers may clear the focused
+// background before passive effects run, especially for concurrent renders.
+function blurFocusedBackgroundOnInert() {
+  const setAttribute = HTMLElement.prototype.setAttribute;
+  vi.spyOn(HTMLElement.prototype, 'setAttribute').mockImplementation(function (this: HTMLElement, name, value) {
+    const focused = document.activeElement;
+    setAttribute.call(this, name, value);
+    if (name === 'inert' && focused instanceof HTMLElement && this.contains(focused)) focused.blur();
+  });
+}
 
 describe('Modal', () => {
+  it.each([false, true])('背景 inert 先使浏览器失焦时仍恢复入口（StrictMode=%s）', (strict) => {
+    blurFocusedBackgroundOnInert();
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    try {
+      const modal = <Modal label="焦点顺序" onClose={() => {}}><button>弹窗操作</button></Modal>;
+      const { unmount } = render(strict ? <StrictMode>{modal}</StrictMode> : modal);
+      expect(screen.getByRole('button', { name: '弹窗操作' })).toHaveFocus();
+      unmount();
+      expect(trigger).toHaveFocus();
+    } finally { trigger.remove(); }
+  });
+
+  it('嵌套弹窗逐层恢复各自入口，即使 inert 使背景失焦', () => {
+    blurFocusedBackgroundOnInert();
+    const trigger = document.createElement('button');
+    document.body.append(trigger);
+    trigger.focus();
+    try {
+      const tree = (nested: boolean) => <>
+        <Modal label="第一层" onClose={() => {}}><button>第二层入口</button></Modal>
+        {nested && <Modal label="第二层" onClose={() => {}}><button>第二层操作</button></Modal>}
+      </>;
+      const { rerender, unmount } = render(tree(false));
+      const nestedTrigger = screen.getByRole('button', { name: '第二层入口' });
+      expect(nestedTrigger).toHaveFocus();
+      rerender(tree(true));
+      expect(screen.getByRole('button', { name: '第二层操作' })).toHaveFocus();
+      rerender(tree(false));
+      expect(nestedTrigger).toHaveFocus();
+      unmount();
+      expect(trigger).toHaveFocus();
+    } finally { trigger.remove(); }
+  });
+
   it('焦点循环跳过收起区域、负 tabindex 和隐藏控件', async () => {
     render(<Modal label="带折叠操作" onClose={() => {}}>
       <button>第一个可见操作</button><button>最后一个可见操作</button>

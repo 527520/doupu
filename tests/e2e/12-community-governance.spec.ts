@@ -98,8 +98,15 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
 
 test('评论删除独立于编辑窗口，待审评论只对本人显示', async ({ page }, testInfo) => {
   await login(page, 'e2e-user@example.com');
-  await page.locator('.community-card').filter({ hasText: 'E2E' }).first().locator('a').first().click();
+  // Earlier browser projects publish other E2E works into this shared fixture
+  // database. Select the seeded work, not whichever matching title sorts first.
+  const seededWork = page.locator('.community-card').filter({
+    has: page.getByRole('heading', { name: /^E2E (已公开作品|待审修改版)$/ }),
+  });
+  await expect(seededWork).toHaveCount(1);
+  await seededWork.locator('a').first().click();
   const expired = page.locator('.community-comment-list li', { hasText: `E2E 可删除旧评论 ${testInfo.project.name}` });
+  await expect(expired).toBeVisible();
   await expect(expired.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0);
   await expired.getByRole('button', { name: '删除', exact: true }).click();
   await expect(expired).toHaveCount(0);
@@ -108,6 +115,7 @@ test('评论删除独立于编辑窗口，待审评论只对本人显示', async
   await pending.getByRole('button', { name: '删除', exact: true }).click();
   await expect(pending).toHaveCount(0);
   const foreign = page.locator('.community-comment-list li', { hasText: 'E2E 被举报评论' });
+  await expect(foreign).toBeVisible();
   await expect(foreign.getByRole('button', { name: '删除', exact: true })).toHaveCount(0);
 });
 

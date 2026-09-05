@@ -20,6 +20,7 @@ interface ModalProps {
 
 export default function Modal({ label, onClose, children, panelClassName = '', panelStyle, testId }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const [portalRoot] = useState<HTMLDivElement | null>(() => {
     if (typeof document === 'undefined') return null;
     const root = document.createElement('div');
@@ -37,6 +38,9 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
   // inert，而不会连弹窗自身一并禁用。清理时逐项恢复调用方原状态。
   useLayoutEffect(() => {
     if (!portalRoot) return;
+    // 先记录入口再设 inert：并发渲染允许浏览器在被动 effect 前绘制，
+    // 此时背景焦点可能已变成 body，不能等自动聚焦 effect 才读取。
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const background = Array.from(document.body.children).filter(
       (element): element is HTMLElement => element instanceof HTMLElement && element !== portalRoot,
     );
@@ -94,7 +98,7 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
 
   // 自动聚焦首个可聚焦控件；关闭后恢复打开弹窗前的焦点。
   useEffect(() => {
-    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousActive = restoreFocusRef.current;
     const panel = panelRef.current;
     if (!panel) return;
     const first = focusableElements(panel)[0];
