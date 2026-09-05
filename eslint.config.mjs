@@ -16,9 +16,9 @@ const eslintConfig = defineConfig([
       '@typescript-eslint/no-require-imports': 'off',
     },
   },
-  // .scratch 是 issue tracker 与调研草稿区（含 vendored 上游副本，见 .gitignore），
-  // 不属于本仓库源码，不参与 lint。
-  globalIgnores(['.next/**', '.artifacts/**', 'out/**', 'build/**', 'coverage/**', 'playwright-report/**', 'next-env.d.ts', '.scratch/**']),
+  // .scratch 是调研草稿区；test-results / playwright-report 是浏览器生成物，
+  // 包括第三方运行时 trace，不属于本仓库源码，不参与 lint。
+  globalIgnores(['.next/**', '.artifacts/**', 'out/**', 'build/**', 'coverage/**', 'test-results/**', 'playwright-report/**', 'next-env.d.ts', '.scratch/**']),
 ]);
 
 export default eslintConfig;

@@ -1,6 +1,9 @@
 # 01 服务端页面中的会话续期写入只读 Cookie
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P1
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,5 @@ Next.js 真实只读 Cookie 适配器 + 隔离 PGlite 请求上下文复现；�
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - 会话解析默认只读；Route Handler 显式续期并写浏览器 Cookie。真实 Next.js 只读适配器覆盖续期前、续期窗口、绝对截止边界；API 续期检查数据库与 Cookie 的同一截止时间。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 后台导航、窗口聚焦和页面重新可见会触发合法续期请求；候选生产镜像中以过半有效期的真实管理员会话验证 RSC 200、数据库和浏览器 Cookie 同步续期，以及后续服务端导航。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。

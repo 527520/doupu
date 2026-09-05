@@ -1,6 +1,9 @@
 # 09 举报后台缺少被举报对象的内容和定位入口
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P2
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,4 @@ src/components/admin/GovernanceConsole.tsx:54–57；src/components/community/Co
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - 新增管理员／审核员专用案件材料读取接口，按被举报作品修订加载完整冻结图纸；评论只提供当前版本并标明变化或删除。后台展示编号、版本、状态、内容和公开定位入口；越权 401／403、下架作品、更新／删除评论测试通过。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。

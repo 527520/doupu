@@ -1,6 +1,9 @@
 # 08 作者删除入口错误受 15 分钟编辑窗口限制
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P2
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,4 @@ src/components/community/CommunityInteractions.tsx:123；src/lib/community/inter
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - DTO 分离 editable 与 deletable，评论锁也参与编辑资格判断；作者可看到并删除自己的待审／隐藏评论，游客与他人看不到这些非公开内容。服务测试与三浏览器删除旧评论／待审评论的真实页面旅程通过。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。

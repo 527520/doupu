@@ -1,6 +1,9 @@
 # 02 社区引用绕过设计数量与容量配额
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P1
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,5 @@ src/lib/community/interactions.ts:110–143；src/app/api/community/works/[id]/r
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - 引用与普通云端保存共用用户级配额锁和活动数量、墓碑总行数、总字节检查；失败回滚设计、引用事实、计数和幂等记录。PGlite 三类满额测试与 PostgreSQL 16 普通保存／两个不同幂等引用并发争用测试通过。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 追加事务内账号状态复验；PostgreSQL 16 验证普通用户及管理员注销期间，保存、引用、点赞和评论四路写入等待同一用户锁，注销提交后全部拒绝，不重建私人数据或幂等记录。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。

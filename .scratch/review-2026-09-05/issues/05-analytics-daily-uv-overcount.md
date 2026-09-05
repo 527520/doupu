@@ -1,6 +1,9 @@
 # 05 历史日 UV 相加各事件 UV 导致重复计数
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P2
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,4 @@ src/lib/analytics/reports.ts:178–195；src/lib/analytics/maintenance.ts:47–5
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - 日聚合增加跨事件去重的总量及单维统计；单事件查询继续按事件过滤，跨日 UV 保持不可用。旧聚合缺少跨事件去重信息时保留事件总数，UV 返回 null 并显示原因，绝不伪造准确人数。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。

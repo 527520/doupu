@@ -1,6 +1,9 @@
 # 06 评论编辑清空审核时间导致后续编辑窗口错误
 
 Status: ready-for-agent
+State: closed
+Resolution: implemented-and-verified
+Closed: 2026-09-05
 Priority: P2
 Baseline: 6f44fbc
 Verified: 2026-09-05
@@ -37,4 +40,4 @@ src/lib/community/interactions.ts:185–200
 
 - 2026-09-05：用户授权主会话实施修复，原只读记录阶段结束。
 - 迁移 0012 增加可空 published_at，审核时间与编辑窗口分离；历史行按原审核／创建时间惰性兼容。延迟审核后连续安全编辑与超时拒绝测试通过；配套 down SQL 仅限尚未写入新业务数据。
-- 当前为针对性验证；完整门禁及双轴审查结果汇总于 [审查记录](../spec.md)。
+- 针对性回归、完整本地门禁与双轴复核均已通过；实现提交 `8c1d986`、`629937e`，验证细节与证据边界见 [审查记录](../spec.md)。本票无剩余实施项。
