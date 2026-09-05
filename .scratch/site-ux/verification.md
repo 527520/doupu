@@ -157,3 +157,23 @@
 - 采样定位为同步裁剪挂载：Workbench/子组件开发渲染和预览处理在同一任务内，buildCropPreview 的相同尺寸逐像素复制占约 10.8 ms；该窗口未显示 GC 为主因。原解码器已生成最长边 800px 预览，800→800 再采样没有改变像素。
 - 仅相同尺寸增加原生 typed-array copy 快路；保持独立缓冲、精确目标长度、越界源截断与不足通道补零，不改比例/自然坐标/原图/提交/撤销语义。操作预算单元先 RED（逐像素访问 2,560,000 次），修复后通过；50 项裁剪单元通过。
 - `crop-copy-browser.log`：同样的 00–03 前置旅程无 profiling 连续三轮共 36 项通过，原 50 ms Long Task 判据未修改。临时 CPU profiling 分支已移除。该修正后需重新运行最终覆盖率、构建与稳定 E2E。
+
+## 08I 最终候选门禁（acebeca）— 2026-09-05
+
+- 静态：`crop-final-lint.log`、`crop-final-typecheck.log` 全部通过；临时 profiling 代码已移除，性能判据未改。
+- `final-candidate-coverage.log`：185 文件通过，1457 项通过、13 项原有按设计跳过。`src/lib` 覆盖率 Statements 91.05%（5199/5710）、Branches 82.87%（3175/3831）、Functions 95.53%（813/851）、Lines 94.61%（4641/4905），全部达到仓库门槛；不是全站 UI 行覆盖率。
+- `final-candidate-performance.log`：连续五轮，每轮 4 文件、7 项全部通过，无自动重试或放宽阈值。
+- PostgreSQL 16.15：`final-candidate-pg-revision.log` 修订/配额合约、`final-candidate-pg-governance.log` 12 项治理/并发合约通过；新隔离数据库 `siteux_upgrade_final` 的 `final-candidate-pg-upgrade.log` 验证带既存用户/设计/分享的 0004 升级、无新业务数据时 down/重升、no-op、不倒填执行时间、咨询锁竞争和故意失败 DDL 回滚，全部通过。
+- `final-candidate-build.log`：本地 Docker 生产构建通过，镜像 `doupu-app:siteux-final-candidate`；镜像内原生 Argon2 hash/verify 通过。`final-candidate-image-preflight.log` 在新本地 `siteux_image_final` 空库直接运行镜像检查器和迁移，通过 v3 数据校验及旧协议只读拒绝。
+- `final-candidate-production.log`：最终镜像 + 本地 PostgreSQL 的实际路由 CAS/配额/墓碑/分页/重试合约及 4 项 production-Chromium 通过，覆盖管理员续期、真实 CSP/RSC/Worker、单次令牌事务、HTTPS 明确同意后的当天长期分析与五宽度分类图表/数据表可访问性。已目视最终手机分析截图。测试账号清理，临时应用容器已停止；没有生产连接或真实邮件发送。
+- 14 条实际应用 SELECT 的 EXPLAIN ANALYZE 在 08G 已完成；acebeca 只改客户端相同尺寸预览复制，不改变查询。小夹具结果不代表生产规模性能。
+- 独立审查：Standards 0 未解决、Spec 0 未解决；08H 快路另经两人独立复核关闭，见 review-followups.md。
+- 此次完整三浏览器稳定 E2E 首轮发现三处旧测试断言失败后停止，结果不是通过，处理见 08J。以上日志位于本地 `/tmp/doupu-siteux-` 前缀下，完整通过结果待追加。
+
+## 08J 手机导航与材料测试契约 — 2026-09-05
+
+- `final-candidate-stable-e2e.log` 首轮：350/390 px 仍找旧“我的”标签，移动用色仍找旧“共 N 粒”摘要；实际失败 DOM 已显示计划中的“账号”和完整采购清单。该轮 3 failed、1 interrupted、40 passed，其余未运行或按原设计跳过，不算稳定成功；大图 50 ms 用例已通过。
+- 最小反馈命令 `npm run test:e2e -- tests/e2e/06-accessibility-responsive.spec.ts --project=chromium --grep '工作台 350px|移动工作台可切换'` 在未改动时两项均失败（`responsive-contract-red.log`）。症状为确定的旧文本定位，无产品逻辑或资源压力问题；无需性能插桩。
+- 仅测试修正：五个移动入口逐一断言精确名称、可见性和 href；用色检查当前采购清单 region 的 10000 粒总量、逐色列表及复制按钮。保留工具切换、无横向溢出、控制台/HTTP 错误、安全 capture、axe 和所有性能判据，不增加跳过或重试。
+- `responsive-contract-green.log` 完整 06 文件三浏览器：56 项通过、10 个原有跨浏览器重复/专属模拟用例按设计跳过；lint/typecheck/diff 检查通过。Standards 与 Spec 独立只读复核均 0 未解决。
+- 应用代码仍为 acebeca，08I 完整覆盖率、性能、真实 PostgreSQL、构建和最终镜像运行证据继续适用；测试契约修正后重新执行完整三轮稳定 E2E。

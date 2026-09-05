@@ -124,8 +124,14 @@ for (const width of widths) {
       ];
       expect(errors, errors.join('\n')).toEqual([]);
       const mobileNav = page.getByTestId('workspace-mobile-nav');
-      await expect(mobileNav.getByRole('link', { name: '设计' })).toBeVisible();
-      await expect(mobileNav.getByRole('link', { name: '我的' })).toBeVisible();
+      for (const [name, href] of [
+        ['首页', '/'], ['工作台', '/app'], ['设计', '/designs'],
+        ['豆社', '/community'], ['账号', '/account'],
+      ] as const) {
+        const link = mobileNav.getByRole('link', { name, exact: true });
+        await expect(link).toBeVisible();
+        await expect(link).toHaveAttribute('href', href);
+      }
     }
     const dimensions = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
@@ -228,7 +234,10 @@ test('移动工作台可切换编辑、用色与导出工具', async ({ page }, 
   const colors = page.getByRole('button', { name: '用色', exact: true });
   await colors.click();
   await expect(colors).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.mobile-tool-sheet').getByText(/共 \d+ 粒/).first()).toBeVisible();
+  const materials = page.getByRole('region', { name: '采购清单', exact: true });
+  await expect(materials.getByText(/^10000 粒 · \d+ 色 · 约 \d+ 包/)).toBeVisible();
+  await expect(materials.getByRole('list', { name: '逐色材料用量' })).toBeVisible();
+  await expect(materials.getByRole('button', { name: '复制清单', exact: true })).toBeVisible();
 
   const exportTools = page.getByRole('button', { name: '导出', exact: true });
   await exportTools.click();
