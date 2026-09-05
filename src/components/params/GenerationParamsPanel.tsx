@@ -304,24 +304,6 @@ export default function GenerationParamsPanel({
         <p className="mt-1 text-xs text-ink-soft">{t.colorCountHint}</p>
       </div>
 
-      <div className="text-sm">
-        <label className="flex items-center gap-2 text-ink-soft">
-          <input
-            type="checkbox"
-            checked={local.dithering}
-            onChange={(e) => patch({ dithering: e.target.checked })}
-            aria-describedby="param-dithering-hint"
-          />
-          {t.dithering}
-        </label>
-        {/* D-10：「抖动」是算法术语，对新手不可懂；用一句大白话说明它换来什么、代价是什么。 */}
-        <p id="param-dithering-hint" className="mt-1 text-xs text-ink-soft">
-          {t.ditheringHint}
-        </p>
-      </div>
-
-
-
       <button
         type="button"
         onClick={() => setAdvancedOpen((v) => !v)}
@@ -333,6 +315,13 @@ export default function GenerationParamsPanel({
 
       {advancedOpen && (
         <div className="flex flex-col gap-4 rounded-xl border border-lilac/30 bg-lilac-soft/40 p-3">
+          <div className="text-sm">
+            <label className="flex items-center gap-2 text-ink-soft">
+              <input type="checkbox" checked={local.dithering} onChange={(e) => patch({ dithering: e.target.checked })} aria-describedby="param-dithering-hint" />
+              {t.dithering}
+            </label>
+            <p id="param-dithering-hint" className="mt-1 text-xs text-ink-soft">{t.ditheringHint}</p>
+          </div>
           <div>
             <label htmlFor="param-mode" className="mb-1 block text-sm text-ink-soft">
               {t.sampleMode}

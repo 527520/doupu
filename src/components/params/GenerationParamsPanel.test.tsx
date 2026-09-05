@@ -52,7 +52,9 @@ describe('GenerationParamsPanel', () => {
     setup();
     expect(widthSlider()).toBeTruthy();
     expect(colorsSlider()).toBeTruthy();
-    expect(screen.getByText('抖动')).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: '抖动' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('高级选项'));
+    expect(screen.getByRole('checkbox', { name: '抖动' })).toBeVisible();
     expect(screen.getByLabelText('色板品牌')).toBeTruthy();
     expect(screen.getByLabelText('色板系列')).toBeTruthy();
   });

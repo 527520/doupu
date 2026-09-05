@@ -36,7 +36,7 @@ import SiteHeader from '@/components/layout/SiteHeader';
 import { useMobileLayout } from '@/components/layout/useMobileLayout';
 import DesignNameEditor from './DesignNameEditor';
 import WorkbenchProjectBar from './WorkbenchProjectBar';
-import SaveStatus, { type CloudSaveState, type SaveState } from './SaveStatus';
+import SaveStatus, { LocalSaveBadge, type CloudSaveState, type SaveState } from './SaveStatus';
 import { zhCN } from '@/messages/zh-CN';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams, type PaletteColor, type PaletteSelection, type Pattern, type ProjectFile, type ProjectPalette } from '@/lib/types';
 import {
@@ -229,10 +229,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>(zhCN.workbench.decoding);
+  const [cropRecoveryOpen, setCropRecoveryOpen] = useState(false);
   const clearOriginalSource = useCallback((): void => {
     imageOperationRef.current += 1;
     imageBusyRef.current = false;
     setBusy(false);
+    setCropRecoveryOpen(false);
     setDecoded(null);
     setLastCropRect(undefined);
     encodedSourceRef.current = null;
@@ -266,7 +268,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const stats = generationSession.committed?.stats ?? [];
   const total = generationSession.committed?.total ?? 0;
   /**
-   * 生成完成计数（D-1）：每次成功 +1，用来重播结果句的上浮并触发一次礼貌播报。
+   * 生成完成计数：每次成功 +1，触发一次礼貌播报。
    * 0 表示本会话还没生成过（不放动效）。
    */
   const [doneToken, setDoneToken] = useState(0);
@@ -387,6 +389,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     dirtyRef.current = true;
     editGenRef.current += 1;
     setSaveState('dirty');
+    setCloudSaveState('pending');
     scheduleAutosave();
   }, [scheduleAutosave]);
 
@@ -1516,10 +1519,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         const records = await adapter.getAll();
         if (cancelled || imageOperationRef.current !== restoreOperation) return;
         const last = requestedId ? records.find((r) => r.id === requestedId) : records[0];
-        if (!last) return;
+        if (!last) {
+          if (requestedId) setErrorMsg(t.designNotLocal);
+          return;
+        }
         const project = parseStoredProject(last.projectJson);
-        if (!project) return;
-        const localSource = await adapter.getGenerationSource(last.id);
+        if (!project) {
+          setErrorMsg(t.designUnreadable);
+          return;
+        }
+        // The derivative source is optional. A failed source read must not
+        // make a complete design inaccessible or authorize clearing that source.
+        const localSource = await adapter.getGenerationSource(last.id).catch(() => null);
         if (cancelled || imageOperationRef.current !== restoreOperation) return;
         setActiveDesignId(last.id);
         setSavedNames(records.map((r) => r.name));
@@ -1536,7 +1547,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => {
       cancelled = true;
     };
-  }, [loadCommittedProject, setActiveDesignId, storage]);
+  }, [loadCommittedProject, setActiveDesignId, storage, t.designNotLocal, t.designUnreadable]);
 
   // ---------- 导入 ----------
 
@@ -1632,18 +1643,23 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }, [clearOriginalSource, generationSession.status, resetWorkbench, saveBeforeLeave]);
 
   const mobileWorkspaceOpen = mobileLayout && step === 'workspace' && tab !== 'preview';
+  const requestOriginal = (): void => { void saveBeforeLeave(() => {
+    rebindRestoredSourceRef.current = true;
+    clearOriginalSource();
+    setStep('upload');
+  }); };
+  const sourceAdjustment = generationSession.status === 'restored-locked' && <div className="source-adjustment-note">
+    <p>{t.sourceRequired}</p>{!cropRecoveryOpen && <button type="button" className="btn-outline" onClick={requestOriginal}>{t.reselectOriginal}</button>}
+  </div>;
   const cropAction = <div className="preview-crop-action">
-    <button type="button" className="btn-outline" disabled={!decoded || busy || generating} onClick={(event) => {
+    <button type="button" className="btn-outline" disabled={busy || generating} aria-expanded={!decoded ? cropRecoveryOpen : undefined} onClick={(event) => {
       event.currentTarget.focus();
-      setStep('crop');
+      if (decoded) setStep('crop');
+      else setCropRecoveryOpen((open) => !open);
     }}>{zhCN.crop.title}</button>
-    {!decoded && <>
+    {!decoded && cropRecoveryOpen && <>
       <span>{t.cropSourceMissing}</span>
-      <button type="button" className="btn-outline" disabled={busy || generating} onClick={() => void saveBeforeLeave(() => {
-        rebindRestoredSourceRef.current = true;
-        clearOriginalSource();
-        setStep('upload');
-      })}>{t.reselectOriginal}</button>
+      <button type="button" className="btn-outline" disabled={busy || generating} onClick={requestOriginal}>{t.reselectOriginal}</button>
     </>}
   </div>;
 
@@ -1776,7 +1792,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       {saveState === 'unavailable' && <Notice kind="warning">{t.unavailable}</Notice>}
       {/* 配额不足此前只体现在头部徽标文字里（现已缩短），必须在正文说清怎么办（D-8）。 */}
       {saveState === 'quota' && <Notice kind="danger">{t.quotaError}</Notice>}
-      {visibleErrorMsg && <Notice kind="danger">{visibleErrorMsg}</Notice>}
+      {visibleErrorMsg && <Notice kind="danger"><span>{visibleErrorMsg}
+        {(visibleErrorMsg === t.designNotLocal || visibleErrorMsg === t.designUnreadable) && <>{' '}<Link className="link-soft" href="/designs">{t.backToDesigns}</Link></>}
+      </span></Notice>}
       {syncNotice && <Notice kind="warning">{syncNotice}</Notice>}
 
       {step === 'upload' && (
@@ -1846,11 +1864,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         <div className="mobile-workbench">
           <div className="mobile-workbench-overview" aria-hidden={mobileWorkspaceOpen || undefined}>
           {doneToken > 0 && !generating && (
-            <p key={doneToken} role="status" className="animate-rise mobile-workbench-feedback text-success">
+            <p key={doneToken} role="status" className="mobile-workbench-feedback text-success">
               {t.generateDone(pattern.width, pattern.height, total, stats.length)}
             </p>
           )}
-          {generationSession.status === 'restored-locked' && <Notice kind="warning">{t.sourceRequired}</Notice>}
           {paletteLoadFailed && <Notice kind="warning" compact>{t.paletteLoadFailed}</Notice>}
           {remapNotice && <Notice kind="success" compact>{remapNotice}</Notice>}
           <div className="mobile-mode-switcher" role="tablist" aria-label={t.title} onKeyDown={handleTabKey}>
@@ -1860,7 +1877,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           </div>
 
           <section className="mobile-canvas-shell">
-            <header><span className="saved-dot" />{saveState === 'dirty' ? t.unsaved : t.saved}<strong>{pattern.width} × {pattern.height}</strong></header>
+            <header><LocalSaveBadge state={saveState} /><strong>{pattern.width} × {pattern.height}</strong></header>
             {cropAction}
             <div className="mobile-canvas-stage">
               <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} boardSize={boardSpec.boardCols} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>
@@ -1887,6 +1904,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <section className="mobile-tool-sheet">
             <span className="mobile-sheet-handle" aria-hidden="true" />
             {mobilePanel === 'params' && (
+              <>
+              {sourceAdjustment}
               <GenerationParamsPanel
                 params={params}
                 paletteOptions={paletteOptions}
@@ -1903,6 +1922,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 kitTier={kitTier}
                 onKitTierChange={handleKitTierChange}
               />
+              </>
             )}
             {mobilePanel === 'colors' && (
               <div className="mobile-color-summary">
@@ -2012,14 +2032,14 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         <div className="desktop-workbench-layout grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_260px] lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="flex min-w-0 flex-col gap-3">
             {/*
-              生成完成的结果句（D-1 第一段）：礼貌播报 + 上浮出现。
+              生成完成的结果句：礼貌播报，保持文字对比度，不淡入。
               以前生成完成没有任何反馈——进度行消失、图纸静默替换，用户不确定是否已完成。
             */}
             {doneToken > 0 && !generating && (
               <p
                 key={doneToken}
                 role="status"
-                className="animate-rise text-sm font-medium text-success"
+                className="text-sm font-medium text-success"
               >
                 {t.generateDone(pattern.width, pattern.height, total, stats.length)}
               </p>
@@ -2082,7 +2102,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 {/*
                   这里刻意不做「图纸淡入」动效：淡入需要重挂载才能重播，而重挂载会
                   把用户的缩放、网格/板缝/色号开关全部重置——每次调参都丢一次视图状态，
-                  代价远大于一个 400ms 的动效。完成感由上方结果句的上浮与数字滚动承担。
+                  代价远大于一个 400ms 的动效。完成状态由上方稳定的结果句播报。
                 */}
                 <PatternPreview
                   pattern={pattern}
@@ -2142,9 +2162,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           </section>
 
           <aside className="desktop-inspector-stack flex flex-col gap-4">
-            {generationSession.status === 'restored-locked' && (
-              <Notice kind="warning">{t.sourceRequired}</Notice>
-            )}
+            {sourceAdjustment}
             {paletteLoadFailed && (
               <Notice kind="warning" compact>{t.paletteLoadFailed}</Notice>
             )}
@@ -2171,7 +2189,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               <p className="font-semibold text-ink">
                 {t.statsTotal(total)} · {t.colorCount(stats.length)}
               </p>
-              <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto">
+              <ul tabIndex={0} aria-label={t.colorCount(stats.length)} className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto">
                 {stats.slice(0, 50).map((item) => (
                   <li key={item.hex} className="flex items-center gap-2 text-xs text-ink-soft">
                     <span className="inline-block h-3 w-3 rounded-sm border border-lilac/40" style={{ backgroundColor: item.hex }} />

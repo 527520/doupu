@@ -19,7 +19,7 @@ export default function StepIndicator({ step }: { step: WorkbenchStep }) {
   const currentIndex = ORDER.indexOf(step === 'crop' ? 'workspace' : step);
 
   return (
-    <nav aria-label={t.stepsAria} className="step-ticket-nav">
+    <nav aria-label={t.stepsAria} className={step === 'upload' ? 'step-ticket-nav' : 'sr-only'}>
       <ol>
         {ORDER.map((item, index) => {
           const done = index < currentIndex;

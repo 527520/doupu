@@ -1640,6 +1640,8 @@ body {
 .preview-crop-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
 .preview-crop-action .btn-outline { min-height: 44px; }
 .preview-crop-action > span { flex: 1 1 180px; color: var(--color-ink-soft); font-size: 12px; }
+.source-adjustment-note { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border-left: 3px solid var(--color-lilac); color: var(--color-ink-soft); font-size: 13px; }
+.source-adjustment-note .btn-outline { min-height: 44px; }
 .crop-dialog { display: flex; flex-direction: column; min-width: 0; overflow: auto; padding: 0; background: var(--color-cream); }
 .crop-dialog .crop-studio { flex: 1; min-height: 200px; min-width: 0; border: 0; border-radius: inherit; box-shadow: none; overflow: hidden; }
 .crop-dialog .crop-studio-heading, .crop-dialog .crop-meta, .crop-dialog .crop-actions { flex-shrink: 0; }
@@ -1830,14 +1832,14 @@ body {
   .mobile-mode-switcher button { min-height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--color-ink-soft); font-size: 11px; font-weight: 700; }
   .mobile-mode-switcher button[aria-selected='true'] { background: var(--color-primary-soft); color: var(--color-primary-deep); }
   .mobile-canvas-shell { overflow: hidden; margin-top: 10px; border: 1px solid #e7e2df; border-radius: 18px; background: white; box-shadow: var(--shadow-card); }
-  .mobile-canvas-shell > header { display: flex; height: 42px; align-items: center; gap: 7px; padding: 0 13px; color: var(--color-ink-soft); font-size: 9px; }
+  .mobile-canvas-shell > header { display: flex; min-height: 42px; align-items: center; gap: 7px; padding: 0 13px; color: var(--color-ink-soft); font-size: 12px; }
   .mobile-canvas-shell > header strong { margin-left: auto; font-family: ui-monospace, monospace; }
   .saved-dot { width: 7px; height: 7px; border-radius: 50%; background: #6c967a; box-shadow: 0 0 0 4px rgb(108 150 122 / 12%); }
   .mobile-canvas-stage { min-width: 0; min-height: min(78vw, 430px); overflow: hidden; border-block: 1px solid #e7e2df; background: #f5f3f0; padding: 10px; }
   .mobile-canvas-stage > [role='tabpanel'] { min-width: 0; }
   /* 预览组件自己计算适配尺寸；编辑/跟拼 Canvas 严禁再被 CSS 二次压缩。 */
   .mobile-canvas-stage .grid-canvas-viewport canvas { max-width: none !important; }
-  .mobile-canvas-shell > footer { display: flex; min-height: 44px; align-items: center; gap: 10px; padding: 8px 13px; color: var(--color-ink); font-size: 9px; font-weight: 700; }
+  .mobile-canvas-shell > footer { display: flex; flex-wrap: wrap; min-height: 44px; align-items: center; gap: 10px; padding: 8px 13px; color: var(--color-ink); font-size: 12px; font-weight: 700; }
   .mobile-canvas-shell > footer span { margin-left: auto; color: var(--color-ink-soft); font-weight: 400; }
   .mobile-tool-dock { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 10px; border: 1px solid #e7e2df; border-radius: 16px; background: white; padding: 6px; }
   .mobile-tool-dock button { display: flex; min-height: 54px; align-items: center; justify-content: center; flex-direction: column; gap: 4px; border: 0; border-radius: 11px; background: transparent; color: var(--color-ink-soft); font-size: 9px; }

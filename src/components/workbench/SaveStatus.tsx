@@ -15,7 +15,7 @@ interface Props {
   loggedIn: boolean;
 }
 
-export default function SaveStatus({ state, cloudState = 'pending', onSave, loggedIn, disabled }: Props) {
+export function LocalSaveBadge({ state }: { state: SaveState }) {
   const t = zhCN.workbench;
   /**
    * 徽标：可见文字要短（D-8），完整说明走 aria-label/title。
@@ -23,9 +23,7 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
    * 由工作台的提示条负责完整表述，这里只给短标签。
    */
   const badge: Record<SaveState, { text: string; full?: string; className: string }> = {
-    idle: loggedIn
-      ? { text: t.localSavedBadge, full: t.localSaved, className: 'text-ink-soft' }
-      : { text: t.localOnlyBadge, full: t.localOnly, className: 'text-ink-soft' },
+    idle: { text: t.notSaved, className: 'text-ink-soft' },
     dirty: { text: t.unsaved, className: 'text-warning' },
     saving: { text: t.saving, className: 'text-primary-deep' },
     saved: { text: t.saved, className: 'text-success' },
@@ -34,6 +32,12 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
     unavailable: { text: t.saveFailed, full: t.unavailable, className: 'text-danger' },
   };
   const current = badge[state];
+  return <span role="status" className={`text-xs ${current.className}`}
+    {...(current.full ? { 'aria-label': current.full, title: current.full } : {})}>{current.text}</span>;
+}
+
+export default function SaveStatus({ state, cloudState = 'pending', onSave, loggedIn, disabled }: Props) {
+  const t = zhCN.workbench;
   const cloudText: Record<CloudSaveState, string> = {
     pending: t.cloudPending,
     syncing: t.cloudSyncing,
@@ -42,16 +46,10 @@ export default function SaveStatus({ state, cloudState = 'pending', onSave, logg
 
   return (
     <div className="flex items-center gap-2 sm:gap-3">
-      <span
-        role="status"
-        className={`text-xs ${current.className}`}
-        {...(current.full ? { 'aria-label': current.full, title: current.full } : {})}
-      >
-        {current.text}
-      </span>
+      <LocalSaveBadge state={state} />
       {loggedIn && (
         <span role="status" className="text-xs text-ink-soft">
-          {cloudText[cloudState]}
+          {cloudText[state !== 'saved' && cloudState === 'synced' ? 'pending' : cloudState]}
         </span>
       )}
       <button

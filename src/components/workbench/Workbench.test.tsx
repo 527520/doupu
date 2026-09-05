@@ -268,6 +268,60 @@ function mockMobileViewport(): () => void {
 }
 
 describe('Workbench 全流程', () => {
+  it('恢复图纸先继续制作，用户需要裁剪时才提示重新选择原图', async () => {
+    const storage = new FakeStorage();
+    await renderRestored(storage);
+    expect(screen.queryByText(zhCN.workbench.cropSourceMissing)).not.toBeInTheDocument();
+    const crop = screen.getByRole('button', { name: zhCN.crop.title });
+    expect(crop).toBeEnabled();
+    fireEvent.click(crop);
+    expect(screen.getByText(zhCN.workbench.cropSourceMissing)).toBeVisible();
+    expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
+    fireEvent.click(crop);
+    expect(screen.queryByText(zhCN.workbench.cropSourceMissing)).not.toBeInTheDocument();
+  });
+
+  it('手机画布不会在配额错误时显示绿色已保存', async () => {
+    const restoreViewport = mockMobileViewport();
+    try {
+      const storage = new FakeStorage();
+      const name = await renderRestored(storage);
+      storage.quotaExceeded = true;
+      fireEvent.change(name, { target: { value: '尚未写入' } });
+      fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+      await screen.findByText(zhCN.workbench.quotaError);
+      const header = document.querySelector('.mobile-canvas-shell > header')!;
+      expect(header).toHaveTextContent(zhCN.workbench.saveFailed);
+      expect(header).not.toHaveTextContent(zhCN.workbench.saved);
+    } finally { restoreViewport(); }
+  });
+
+  it('指定设计不在本机时给出明确返回入口，不误开其他记录', async () => {
+    window.history.replaceState(null, '', '/app?id=missing');
+    const storage = new FakeStorage();
+    storage.designs.set('other', record('other', savedProject('其他作品', '2026-09-01T00:00:00Z')));
+    render(<Workbench storage={storage} />);
+    expect(await screen.findByText('这张设计不在本机，请回到我的设计下载或选择其他图纸。')).toBeVisible();
+    expect(screen.queryByDisplayValue('其他作品')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '返回我的设计' })).toHaveAttribute('href', '/designs');
+    window.history.replaceState(null, '', '/app');
+  });
+
+  it('生成源读取失败仍能打开完整图纸，保存不清除原有生成源', async () => {
+    const storage = new FakeStorage();
+    storage.designs.set('source-read', record('source-read', savedProject('可以继续编辑', '2026-09-01T00:00:00Z')));
+    vi.spyOn(storage, 'getGenerationSource').mockRejectedValueOnce(new Error('source read failed'));
+    const put = vi.spyOn(storage, 'put');
+    render(<Workbench storage={storage} />);
+    const name = await screen.findByDisplayValue('可以继续编辑');
+    expect(screen.getByRole('tab', { name: zhCN.workbench.editTab })).toBeEnabled();
+    expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
+    fireEvent.change(name, { target: { value: '已编辑' } });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
+    await waitFor(() => expect(put).toHaveBeenCalled());
+    expect(put.mock.calls.at(-1)?.[1]).toBeUndefined();
+    expect(JSON.parse(storage.designs.get('source-read')!.projectJson).name).toBe('已编辑');
+  });
   it.each(['edit', 'stitch'] as const)('明确的 %s 恢复入口直接打开指定设计的任务', async (mode) => {
     window.history.replaceState(null, '', `/app?id=chosen&mode=${mode}`);
     const storage = new FakeStorage();
@@ -609,7 +663,8 @@ describe('Workbench 全流程', () => {
     expect(screen.getByText(/共 10000 粒/)).toBeTruthy();
     expect(screen.queryByText(/共 400 粒/)).toBeNull();
     expect(vi.mocked(decoder.clear).mock.calls.length).toBeGreaterThan(clears);
-    expect(screen.getByRole('button', { name: zhCN.crop.title })).toBeDisabled();
+    expect(screen.getByRole('button', { name: zhCN.crop.title })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.title }));
     expect(screen.getByText(zhCN.workbench.cropSourceMissing)).toBeInTheDocument();
     expect(widthInput).not.toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
@@ -757,7 +812,8 @@ describe('Workbench 本地保存', () => {
     first.unmount();
     render(<Workbench storage={storage} generateFn={instantGenerate} />);
     await screen.findByDisplayValue('只改名称');
-    expect(screen.getByRole('button', { name: zhCN.crop.title })).toBeDisabled();
+    expect(screen.getByRole('button', { name: zhCN.crop.title })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.title }));
     expect(screen.getByText(zhCN.workbench.cropSourceMissing)).toBeInTheDocument();
     expect(screen.queryByText(zhCN.workbench.sourceRequired)).toBeNull();
     const widthInput = screen.getByRole('spinbutton', { name: zhCN.params.targetWidth }) as HTMLInputElement;
