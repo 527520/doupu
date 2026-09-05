@@ -186,7 +186,7 @@ export async function mergeCommunityTag(db: AnyDatabase, input: {
   if (input.sourceTagId === input.targetTagId) throw new AppError('VALIDATION', '不能把标签合并到自身');
   const why = reason(input.reason);
   return db.transaction(async (tx) => {
-    const rows = await tx.select().from(communityTags).where(inArray(communityTags.id, [input.sourceTagId, input.targetTagId])).for('update');
+    const rows = await tx.select().from(communityTags).where(inArray(communityTags.id, [input.sourceTagId, input.targetTagId])).orderBy(communityTags.id).for('update');
     const source = rows.find((tag) => tag.id === input.sourceTagId);
     const target = rows.find((tag) => tag.id === input.targetTagId);
     if (!source || !target || !target.active || target.mergedIntoTagId) throw new AppError('NOT_FOUND', '源标签或目标标签不存在');

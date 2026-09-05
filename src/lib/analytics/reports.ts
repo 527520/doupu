@@ -16,6 +16,7 @@ import { analyticsDailyRollups, analyticsEvents } from '@/../db/schema';
 import { AppError } from '@/lib/errors';
 import { computeOrderedFunnel, FUNNELS, type FunnelId } from './funnel';
 import { analyticsRangeCapability } from './time';
+import { ALL_EVENTS_ROLLUP_NAME } from './maintenance';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 export const analyticsDimensionSchema = z.enum([
@@ -132,6 +133,27 @@ function aggregateConditions(query: AnalyticsQuery): SQL[] {
   return conditions;
 }
 
+/** 每组必须限定一天；无新版跨事件聚合的历史数据只能保留事件数，UV 不可推算。 */
+function aggregateMeasures(singleEvent: boolean) {
+  const allEvents = eq(analyticsDailyRollups.eventName, ALL_EVENTS_ROLLUP_NAME);
+  return {
+    events: singleEvent ? sum(analyticsDailyRollups.eventCount)
+      : sql<string>`coalesce(max(${analyticsDailyRollups.eventCount}) filter (where ${allEvents}), sum(${analyticsDailyRollups.eventCount}))`,
+    uniqueVisitors: singleEvent ? sum(analyticsDailyRollups.uniqueVisitors)
+      : sql<string | null>`max(${analyticsDailyRollups.uniqueVisitors}) filter (where ${allEvents})`,
+  };
+}
+
+async function aggregateDailyTotals(db: AnyDatabase, query: AnalyticsQuery) {
+  const rows = await db.select({ day: analyticsDailyRollups.day, ...aggregateMeasures(Boolean(query.eventName)) })
+    .from(analyticsDailyRollups).where(and(
+      ...aggregateConditions(query), eq(analyticsDailyRollups.dimensionName, 'all'), eq(analyticsDailyRollups.dimensionValue, 'all'),
+    )).groupBy(analyticsDailyRollups.day).orderBy(asc(analyticsDailyRollups.day));
+  return rows.map((row) => ({
+    day: row.day, events: Number(row.events ?? 0), uniqueVisitors: row.uniqueVisitors === null ? null : Number(row.uniqueVisitors),
+  }));
+}
+
 export async function queryAnalyticsSummary(db: AnyDatabase, query: AnalyticsQuery, now = new Date()) {
   const capability = assertSupportedRange(query, now);
   if (capability.mode === 'exact') {
@@ -145,16 +167,10 @@ export async function queryAnalyticsSummary(db: AnyDatabase, query: AnalyticsQue
   if (hasCombinationFilter(query)) {
     throw new AppError('VALIDATION', '超过 90 天的范围只支持总量与单维趋势');
   }
-  const [row] = await db.select({ events: sum(analyticsDailyRollups.eventCount) })
-    .from(analyticsDailyRollups)
-    .where(and(
-      ...aggregateConditions(query),
-      eq(analyticsDailyRollups.dimensionName, 'all'),
-      eq(analyticsDailyRollups.dimensionValue, 'all'),
-    ));
+  const days = await aggregateDailyTotals(db, query);
   return {
     capability,
-    totals: { events: Number(row.events ?? 0), uniqueVisitors: null, sessions: null },
+    totals: { events: days.reduce((total, day) => total + day.events, 0), uniqueVisitors: null, sessions: null },
   };
 }
 
@@ -175,25 +191,9 @@ export async function queryAnalyticsTrend(db: AnyDatabase, query: AnalyticsQuery
   if (hasCombinationFilter(query)) {
     throw new AppError('VALIDATION', '超过 90 天的范围只支持总量与单维趋势');
   }
-  const rows = await db.select({
-    day: analyticsDailyRollups.day,
-    events: sum(analyticsDailyRollups.eventCount),
-    uniqueVisitors: sum(analyticsDailyRollups.uniqueVisitors),
-  }).from(analyticsDailyRollups)
-    .where(and(
-      ...aggregateConditions(query),
-      eq(analyticsDailyRollups.dimensionName, 'all'),
-      eq(analyticsDailyRollups.dimensionValue, 'all'),
-    ))
-    .groupBy(analyticsDailyRollups.day)
-    .orderBy(asc(analyticsDailyRollups.day));
   return {
     capability,
-    points: rows.map((row) => ({
-      day: row.day,
-      events: Number(row.events ?? 0),
-      uniqueVisitors: Number(row.uniqueVisitors ?? 0),
-    })),
+    points: await aggregateDailyTotals(db, query),
   };
 }
 
@@ -220,25 +220,28 @@ export async function queryAnalyticsDimensions(
     throw new AppError('VALIDATION', '超过 90 天的范围只支持单维趋势');
   }
   const rows = await db.select({
+    day: analyticsDailyRollups.day,
     value: analyticsDailyRollups.dimensionValue,
-    events: sum(analyticsDailyRollups.eventCount),
-    uniqueVisitors: sum(analyticsDailyRollups.uniqueVisitors),
+    ...aggregateMeasures(Boolean(query.eventName) || dimension === 'event'),
   }).from(analyticsDailyRollups)
     .where(and(
       ...aggregateConditions(query),
       eq(analyticsDailyRollups.dimensionName, rollupDimensionNames[dimension]),
     ))
-    .groupBy(analyticsDailyRollups.dimensionValue)
+    .groupBy(analyticsDailyRollups.day, analyticsDailyRollups.dimensionValue)
     .orderBy(asc(analyticsDailyRollups.dimensionValue));
+  const values = new Map<string, { value: string; events: number; uniqueVisitors: null; dailyUniqueVisitorsSum: number | null }>();
+  for (const row of rows) {
+    const total = values.get(row.value) ?? { value: row.value, events: 0, uniqueVisitors: null, dailyUniqueVisitorsSum: 0 };
+    total.events += Number(row.events ?? 0);
+    total.dailyUniqueVisitorsSum = total.dailyUniqueVisitorsSum === null || row.uniqueVisitors === null
+      ? null : total.dailyUniqueVisitorsSum + Number(row.uniqueVisitors);
+    values.set(row.value, total);
+  }
   return {
     capability,
     dimension,
-    values: rows.map((row) => ({
-      value: row.value,
-      events: Number(row.events ?? 0),
-      uniqueVisitors: null,
-      dailyUniqueVisitorsSum: Number(row.uniqueVisitors ?? 0),
-    })),
+    values: [...values.values()],
   };
 }
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
 import { analyticsDailyRollups, analyticsEvents, analyticsVisitors } from '@/../db/schema';
+import { rollupAnalyticsDay } from './maintenance';
 import {
   queryAnalyticsDimensions,
   queryAnalyticsFunnel,
@@ -46,6 +47,17 @@ describe('analytics reports', () => {
     await expect(queryAnalyticsDimensions(db, query, 'device', NOW)).resolves.toMatchObject({
       values: [{ value: 'mobile', events: 2, uniqueVisitors: 1 }],
     });
+    await rollupAnalyticsDay(db, query.start, NOW);
+    const later = new Date('2026-12-10T00:00:00Z');
+    await expect(queryAnalyticsTrend(db, query, later)).resolves.toMatchObject({
+      points: [{ day: query.start, events: 2, uniqueVisitors: 1 }],
+    });
+    await expect(queryAnalyticsTrend(db, { ...query, eventName: 'page_viewed' }, later)).resolves.toMatchObject({
+      points: [{ day: query.start, events: 1, uniqueVisitors: 1 }],
+    });
+    await expect(queryAnalyticsDimensions(db, query, 'device', later)).resolves.toMatchObject({
+      values: [{ value: 'mobile', events: 2, uniqueVisitors: null, dailyUniqueVisitorsSum: 1 }],
+    });
     const funnel = await queryAnalyticsFunnel(db, query, 'creation', NOW);
     expect(funnel.steps?.slice(0, 2)).toMatchObject([
       { name: 'page_viewed', sessions: 1 },
@@ -67,12 +79,12 @@ describe('analytics reports', () => {
     });
     await expect(queryAnalyticsTrend(db, query, NOW)).resolves.toMatchObject({
       points: [
-        { day: '2026-05-01', events: 10, uniqueVisitors: 7 },
-        { day: '2026-05-02', events: 11, uniqueVisitors: 8 },
+        { day: '2026-05-01', events: 10, uniqueVisitors: null },
+        { day: '2026-05-02', events: 11, uniqueVisitors: null },
       ],
     });
     await expect(queryAnalyticsDimensions(db, query, 'device', NOW)).resolves.toMatchObject({
-      values: [{ value: 'mobile', events: 13, uniqueVisitors: null, dailyUniqueVisitorsSum: 11 }],
+      values: [{ value: 'mobile', events: 13, uniqueVisitors: null, dailyUniqueVisitorsSum: null }],
     });
     await expect(queryAnalyticsFunnel(db, query, 'creation', NOW)).resolves.toMatchObject({
       unavailableReason: '仅最近 90 天原始事件支持同会话漏斗',

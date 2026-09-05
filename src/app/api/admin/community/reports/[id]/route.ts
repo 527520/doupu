@@ -5,8 +5,14 @@ import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { handleCommunityReport } from '@/lib/community/interactions';
 import { executeIdempotently } from '@/lib/idempotency';
+import { inspectCommunityReport } from '@/lib/community/reportInspection';
 
 const schema = z.object({ decision: z.enum(['accepted', 'resolved', 'dismissed']), expectedVersion: z.number().int().positive(), reason: z.string() }).strict();
+
+async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  await requireApiActor('community:moderate');
+  return okJson(await inspectCommunityReport(getDb(), z.string().uuid().parse((await params).id)));
+}
 
 async function patch(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
@@ -25,3 +31,4 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
 }
 
 export const PATCH = withApiErrors(patch);
+export const GET = withApiErrors(get);

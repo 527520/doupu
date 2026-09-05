@@ -46,7 +46,7 @@ export async function revokeOtherSessions(db: AnyDatabase, userId: string, keepT
 }
 
 /**
- * 从 Cookie 头解析令牌并解析会话（含阈值滚动续期）。
+ * 从 Cookie 头只读解析会话；允许写响应 Cookie 的入口才显式传 renew。
  * 返回 userId 或 null；会话不存在/已过期/用户不存在均返回 null。
  * requireVerified：要求用户邮箱已验证（未验证会话的调用按未登录处理）。
  */
@@ -60,7 +60,7 @@ export async function resolveSession(
   db: AnyDatabase,
   cookieHeader: string | null,
   now: Date = new Date(),
-  opts: { requireVerified?: boolean } = {},
+  opts: { requireVerified?: boolean; renew?: boolean } = {},
 ): Promise<ResolvedSession | null> {
   const token = readSessionToken(cookieHeader);
   if (!token) return null;
@@ -83,7 +83,7 @@ export async function resolveSession(
   if (opts.requireVerified && !rows[0].verified) return null;
   let renewedExpiresAt: Date | null = null;
   // 半程阈值滚动续期：仅当剩余有效期不足 15 天时把过期时间前移 30 天
-  if (rows[0].expiresAt.getTime() - now.getTime() < RENEW_THRESHOLD_MS) {
+  if (opts.renew && rows[0].expiresAt.getTime() - now.getTime() < RENEW_THRESHOLD_MS) {
     renewedExpiresAt = new Date(Math.min(now.getTime() + TTL_MS, rows[0].absoluteExpiresAt.getTime()));
     await db.update(sessions).set({ expiresAt: renewedExpiresAt }).where(eq(sessions.id, rows[0].sessionId));
   }
@@ -106,12 +106,12 @@ export async function resolveSessionUserId(
   return (await resolveSession(db, cookieHeader, now, opts))?.userId ?? null;
 }
 
-/** 读取当前请求的登录用户 id（未登录/会话过期返回 null）。 */
+/** Route Handler 入口：解析并同步续期数据库与响应 Cookie。 */
 export async function getSessionUserId(): Promise<string | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE_NAME)?.value ?? null;
   const now = new Date();
-  const result = await resolveSession(getDb(), buildHeader(token), now);
+  const result = await resolveSession(getDb(), buildHeader(token), now, { renew: true });
   renewCookie(jar, result, now);
   return result?.userId ?? null;
 }
@@ -121,13 +121,13 @@ export async function getVerifiedSessionUserId(): Promise<string | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE_NAME)?.value ?? null;
   const now = new Date();
-  const result = await resolveSession(getDb(), buildHeader(token), now, { requireVerified: true });
+  const result = await resolveSession(getDb(), buildHeader(token), now, { requireVerified: true, renew: true });
   renewCookie(jar, result, now);
   return result?.userId ?? null;
 }
 
-/** Server-side DAL entry point for role-aware authorization. */
-export async function getSessionActor(opts: { requireVerified?: boolean } = {}): Promise<Actor | null> {
+/** 页面默认只读；仅 Route Handler / Server Action 可显式启用续期。 */
+export async function getSessionActor(opts: { requireVerified?: boolean; renew?: boolean } = {}): Promise<Actor | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE_NAME)?.value ?? null;
   const now = new Date();

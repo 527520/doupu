@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
 import {
@@ -19,6 +19,8 @@ import { resolvePublicDisplayName, ANONYMIZED_DISPLAY_NAME } from '@/lib/identit
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
 import type { ProjectFile } from '@/lib/types';
+import { assertDesignQuota, lockDesignStorage } from '@/lib/sync/designQuota';
+import { measureJsonBytes } from '@/lib/sync/revision';
 import { INITIAL_MODERATION_RULES, moderateText, moderationRulesSchema, type ModerationRule } from './moderation';
 import { parseCommunitySnapshot } from './snapshot';
 
@@ -41,7 +43,7 @@ async function commentIdentity(tx: AnyDatabase, actor: Actor) {
     username: users.username,
     publicAuthorId: users.publicAuthorId,
     accountStatus: users.accountStatus,
-  }).from(users).where(eq(users.id, actor.userId)).for('update');
+  }).from(users).where(eq(users.id, actor.userId)).for('no key update');
   if (!user || user.accountStatus !== 'active' || !user.email) throw new AppError('FORBIDDEN', '账号当前不可用');
   const publicAuthorId = user.publicAuthorId ?? randomUUID();
   if (!user.publicAuthorId) {
@@ -111,6 +113,7 @@ export async function reuseCommunityWork(db: AnyDatabase, input: { actor: Actor;
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const work = await activeWork(tx, input.workId, true);
+    await lockDesignStorage(tx, input.actor.userId, now);
     const [revision] = await tx.select().from(communityRevisions)
       .where(eq(communityRevisions.id, work.currentPublishedRevisionId!));
     const snapshot = parseCommunitySnapshot(revision?.snapshot);
@@ -127,10 +130,11 @@ export async function reuseCommunityWork(db: AnyDatabase, input: { actor: Actor;
       params: snapshot.params,
       pattern: snapshot.pattern,
     };
-    const encoded = JSON.stringify(project);
+    const payloadBytes = measureJsonBytes(project);
+    await assertDesignQuota(tx, input.actor.userId, payloadBytes);
     await tx.insert(designs).values({
       id: designId, userId: input.actor.userId, name: project.name, project,
-      payloadBytes: Buffer.byteLength(encoded), revision: 1,
+      payloadBytes, revision: 1,
       communitySourceWorkId: work.id, communitySourceRevisionId: revision.id,
       updatedAt: now,
     });
@@ -162,6 +166,7 @@ export async function createCommunityComment(db: AnyDatabase, input: {
       workId: work.id, authorUserId: input.actor.userId,
       publicAuthorId: identity.publicAuthorId, frozenDisplayName: identity.displayName,
       status, body: body.data, riskCategories: moderation.categories,
+      publishedAt: status === 'published' ? now : null,
       createdAt: now, updatedAt: now,
     }).returning();
     if (status === 'published') {
@@ -183,7 +188,7 @@ export async function editCommunityComment(db: AnyDatabase, input: {
     if (!comment || comment.authorUserId !== input.actor.userId || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
     if (comment.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '评论版本已变化');
     if (comment.status !== 'published') throw new AppError('FORBIDDEN', '评论只能在发布后编辑');
-    const publishedAt = comment.reviewedAt ?? comment.createdAt;
+    const publishedAt = comment.publishedAt ?? comment.reviewedAt ?? comment.createdAt;
     if (now.getTime() - publishedAt.getTime() > 15 * 60 * 1000) throw new AppError('FORBIDDEN', '评论只能在发布后 15 分钟内编辑');
     const work = await activeWork(tx, comment.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
@@ -197,6 +202,7 @@ export async function editCommunityComment(db: AnyDatabase, input: {
     const [updated] = await tx.update(communityComments).set({
       body: body.data, status, riskCategories: moderation.categories,
       version: comment.version + 1, editedAt: now, updatedAt: now,
+      publishedAt: status === 'published' ? publishedAt : null,
       reviewedAt: null, reviewedByUserId: null, reviewReason: null,
     }).where(and(eq(communityComments.id, comment.id), eq(communityComments.version, comment.version))).returning();
     if (!updated) throw new AppError('STATE_CONFLICT', '评论版本已变化');
@@ -228,24 +234,29 @@ export async function deleteCommunityComment(db: AnyDatabase, input: {
 }
 
 export async function listCommunityComments(db: AnyDatabase, workId: string, viewerUserId?: string) {
-  await activeWork(db, workId);
+  const work = await activeWork(db, workId);
   const rows = await db.select({
     id: communityComments.id, publicAuthorId: communityComments.publicAuthorId,
     authorUserId: communityComments.authorUserId,
     frozenDisplayName: communityComments.frozenDisplayName, accountStatus: users.accountStatus,
-    body: communityComments.body, version: communityComments.version,
+    body: communityComments.body, version: communityComments.version, status: communityComments.status,
     createdAt: communityComments.createdAt, reviewedAt: communityComments.reviewedAt,
+    publishedAt: communityComments.publishedAt,
     editedAt: communityComments.editedAt,
   }).from(communityComments).leftJoin(users, eq(users.id, communityComments.authorUserId))
-    .where(and(eq(communityComments.workId, workId), eq(communityComments.status, 'published')))
+    .where(and(eq(communityComments.workId, workId), or(
+      eq(communityComments.status, 'published'),
+      viewerUserId ? and(eq(communityComments.authorUserId, viewerUserId), inArray(communityComments.status, ['pending_review', 'hidden'])) : undefined,
+    )))
     .orderBy(communityComments.createdAt).limit(100);
   return rows.map((row) => ({
     id: row.id,
     author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
-    body: row.body, version: row.version,
+    body: row.body, version: row.version, status: row.status,
     createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null,
-    editable: row.authorUserId === viewerUserId
-      && Date.now() - (row.reviewedAt ?? row.createdAt).getTime() <= 15 * 60 * 1000,
+    deletable: row.authorUserId === viewerUserId,
+    editable: row.authorUserId === viewerUserId && row.status === 'published' && !work.commentsLocked
+      && Date.now() - (row.publishedAt ?? row.reviewedAt ?? row.createdAt).getTime() <= 15 * 60 * 1000,
   }));
 }
 
@@ -291,6 +302,9 @@ export async function moderateCommunityComment(db: AnyDatabase, input: {
     }
     const [updated] = await tx.update(communityComments).set({
       status: input.decision, version: comment.version + 1,
+      publishedAt: input.decision === 'published'
+        ? (comment.status === 'published' ? comment.publishedAt ?? comment.reviewedAt ?? comment.createdAt : now)
+        : null,
       reviewedByUserId: input.actor.userId, reviewReason: reason, reviewedAt: now, updatedAt: now,
     }).where(and(eq(communityComments.id, comment.id), eq(communityComments.version, comment.version))).returning();
     const delta = Number(input.decision === 'published') - Number(comment.status === 'published');

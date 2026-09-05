@@ -148,16 +148,25 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
   const conditions = publicBaseConditions();
   if (query.q) conditions.push(ilike(communityRevisions.title, `%${query.q}%`));
   if (query.author) conditions.push(or(
-    ilike(communityRevisions.frozenDisplayName, `%${query.author}%`),
+    ilike(sql`case
+      when ${communityRevisions.authorType} = 'official' then '豆谱官方'
+      when ${users.accountStatus} = 'anonymized' then ${ANONYMIZED_DISPLAY_NAME}
+      else ${communityRevisions.frozenDisplayName}
+    end`, `%${query.author}%`),
     ilike(communityRevisions.publicAuthorId, `%${query.author}%`),
   )!);
   if (query.tag) {
-    const [requestedTag] = await db.select({ id: communityTags.id, mergedIntoTagId: communityTags.mergedIntoTagId })
-      .from(communityTags).where(eq(communityTags.slug, query.tag));
-    const resolvedTagId = requestedTag?.mergedIntoTagId ?? requestedTag?.id;
-    conditions.push(resolvedTagId
-      ? sql`exists (select 1 from ${communityRevisionTags} crt where crt.revision_id = ${communityRevisions.id} and crt.tag_id = ${resolvedTagId})`
-      : sql`false`);
+    // UNION 去重也使损坏的环路有限终止；历史入口沿任意长度的合并链抵达终点。
+    conditions.push(sql`exists (
+      with recursive resolved_tags as (
+        select id, merged_into_tag_id from ${communityTags} where slug = ${query.tag}
+        union
+        select t.id, t.merged_into_tag_id from ${communityTags} t
+          join resolved_tags r on t.id = r.merged_into_tag_id
+      )
+      select 1 from ${communityRevisionTags} crt join resolved_tags r on r.id = crt.tag_id
+      where crt.revision_id = ${communityRevisions.id} and r.merged_into_tag_id is null
+    )`);
   }
   if (query.boardProfile) conditions.push(eq(communityRevisions.boardProfile, query.boardProfile));
   if (query.palette) conditions.push(eq(communityRevisions.paletteId, query.palette));

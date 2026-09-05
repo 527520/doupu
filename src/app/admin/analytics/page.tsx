@@ -27,7 +27,7 @@ function defaultQuery(now: Date): AnalyticsQuery {
   return { start: toShanghaiDay(new Date(now.getTime() - 29 * DAY_MS)), end: toShanghaiDay(now) };
 }
 
-function TrendChart({ points }: { points: Array<{ day: string; events: number; uniqueVisitors: number }> }) {
+function TrendChart({ points }: { points: Array<{ day: string; events: number; uniqueVisitors: number | null }> }) {
   const t = zhCN.communityAdmin.analyticsDashboard;
   if (points.length === 0) return <div className="admin-empty">{t.empty}</div>;
   const max = Math.max(...points.map((point) => point.events), 1);
@@ -44,7 +44,8 @@ function TrendChart({ points }: { points: Array<{ day: string; events: number; u
         {coordinates.map((point) => <circle key={point.day} cx={point.x} cy={point.y} r="5" tabIndex={0}><title>{t.chartPoint(point.day, point.events)}</title></circle>)}
       </svg>
     </figure>
-    <div className="admin-table-scroll"><table><caption className="sr-only">{t.trendTable}</caption><thead><tr><th>{t.day}</th><th>{t.events}</th><th>{t.visitors}</th></tr></thead><tbody>{points.map((point) => <tr key={point.day}><td>{point.day}</td><td>{point.events}</td><td>{point.uniqueVisitors}</td></tr>)}</tbody></table></div>
+    {points.some((point) => point.uniqueVisitors === null) && <p className="notice">{t.legacyDailyUvUnavailable}</p>}
+    <div className="admin-table-scroll"><table><caption className="sr-only">{t.trendTable}</caption><thead><tr><th>{t.day}</th><th>{t.events}</th><th>{t.visitors}</th></tr></thead><tbody>{points.map((point) => <tr key={point.day}><td>{point.day}</td><td>{point.events}</td><td>{point.uniqueVisitors ?? t.emptyValue}</td></tr>)}</tbody></table></div>
   </>;
 }
 

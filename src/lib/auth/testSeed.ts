@@ -37,6 +37,12 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
   await submitCommunityRevision(db, { actor: user, revisionId: replacement.id, expectedVersion: replacement.version });
   await createModerationRuleSet(db, { actor: admin, rules: [{ literal: 'E2E风险词', category: 'spam', risk: 'review' }], reason: 'E2E 启动期规则', requestId: 'e2e-seed-rules' });
   await createCommunityComment(db, { actor: user, workId: created.work.id, body: '包含 E2E风险词 的评论' });
-  await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: created.work.id, category: 'other', details: 'E2E 举报案件' });
+  for (const browser of ['chromium', 'firefox', 'webkit']) {
+    await createCommunityComment(db, { actor: user, workId: created.work.id, body: `E2E 可删除旧评论 ${browser}`, now: new Date(Date.now() - 30 * 60 * 1000) });
+    await createCommunityComment(db, { actor: user, workId: created.work.id, body: `E2E风险词 待审删除 ${browser}` });
+  }
+  const reportedComment = await createCommunityComment(db, { actor: admin, workId: created.work.id, body: 'E2E 被举报评论' });
+  await reportCommunityTarget(db, { actor: user, targetType: 'comment', targetId: reportedComment.id, category: 'other' });
+  await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: created.work.id, category: 'other' });
   void moderatorRow;
 }

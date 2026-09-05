@@ -10,7 +10,7 @@ const schema = z.object({ body: z.string() }).strict();
 
 async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const workId = z.string().uuid().parse((await params).id);
-  const actor = await getSessionActor();
+  const actor = await getSessionActor({ renew: true });
   return okJson({ items: await listCommunityComments(getDb(), workId, actor?.userId) });
 }
 

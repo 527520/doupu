@@ -13,6 +13,8 @@ interface CommentItem {
   createdAt: string;
   editedAt: string | null;
   editable: boolean;
+  deletable: boolean;
+  status: 'published' | 'pending_review' | 'hidden';
 }
 
 export default function CommunityInteractions({ workId, initialLikes, initialReuses, commentsLocked }: {
@@ -120,7 +122,16 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
         <div><small>{body.length}/500</small><button className="btn-primary" type="button" disabled={commentsLocked || body.trim().length === 0} onClick={() => void comment()}>{t.publishComment}</button></div>
       </div>
       <ol className="community-comment-list">
-        {comments.map((item) => <li key={item.id}><header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>{editingId === item.id ? <div className="community-inline-edit"><textarea maxLength={500} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" onClick={() => void editComment(item)}>{t.saveEdit}</button><button type="button" onClick={() => setEditingId(null)}>{t.cancelEdit}</button></div> : <p>{item.body}</p>}<div className="community-comment-actions">{item.editable && <><button type="button" onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>{t.edit}</button><button type="button" onClick={() => void deleteComment(item)}>{t.delete}</button></>}<button type="button" onClick={() => void reportComment(item)}>{t.report}</button></div></li>)}
+        {comments.map((item) => <li key={item.id} id={`comment-${item.id}`}>
+          <header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>
+          {item.status !== 'published' && <small>{zhCN.communityAdmin.states.comment[item.status]}</small>}
+          {editingId === item.id ? <div className="community-inline-edit"><textarea aria-label={t.edit} maxLength={500} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" onClick={() => void editComment(item)}>{t.saveEdit}</button><button type="button" onClick={() => setEditingId(null)}>{t.cancelEdit}</button></div> : <p>{item.body}</p>}
+          <div className="community-comment-actions">
+            {item.editable && <button type="button" onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>{t.edit}</button>}
+            {item.deletable && <button type="button" onClick={() => void deleteComment(item)}>{t.delete}</button>}
+            {item.status === 'published' && <button type="button" onClick={() => void reportComment(item)}>{t.report}</button>}
+          </div>
+        </li>)}
       </ol>
     </section>
   );

@@ -116,7 +116,7 @@ export async function publishOfficialBatch(db: AnyDatabase, input: {
   return db.transaction(async (tx) => {
     const [batch] = await tx.select().from(officialBatches).where(eq(officialBatches.id, input.batchId)).for('update');
     if (!batch || batch.adminUserId !== input.actor.userId) throw new AppError('NOT_FOUND', '批次不存在');
-    if (batch.version !== input.expectedVersion || !['running', 'paused'].includes(batch.status)) throw new AppError('STATE_CONFLICT', '批次状态已变化');
+    if (batch.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '批次状态已变化');
     const drafts = await tx.select().from(communityRevisions).where(and(
       eq(communityRevisions.officialBatchId, batch.id), eq(communityRevisions.status, 'draft'),
       eq(communityRevisions.authorType, 'official'), inArray(communityRevisions.id, revisionIds),
@@ -137,9 +137,11 @@ export async function publishOfficialBatch(db: AnyDatabase, input: {
         afterState: sanitizeAuditState({ revisionStatus: 'published', revision: draft.version + 1 }),
       });
     }
+    // 发布只消耗所选草稿；生成未结束时仍可保存、重试，取消也不丢弃已保存草稿。
+    const generatedAll = batch.successCount === batch.itemCount;
     const [updated] = await tx.update(officialBatches).set({
-      status: 'completed', version: batch.version + 1, completedAt: now, updatedAt: now,
-      failureCount: Math.max(0, batch.itemCount - batch.successCount),
+      status: generatedAll && batch.status !== 'cancelled' ? 'completed' : batch.status,
+      version: batch.version + 1, completedAt: batch.completedAt ?? (generatedAll ? now : null), updatedAt: now,
     }).where(eq(officialBatches.id, batch.id)).returning();
     return { batch: updated, publishedRevisionIds: revisionIds };
   });

@@ -460,6 +460,7 @@ export const communityComments = pgTable(
     version: integer('version').notNull().default(1),
     body: text('body').notNull(),
     riskCategories: jsonb('risk_categories').notNull().default(sql`'[]'::jsonb`),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
     reviewedByUserId: uuid('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     reviewReason: text('review_reason'),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),

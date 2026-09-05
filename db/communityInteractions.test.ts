@@ -22,6 +22,7 @@ import {
   deleteCommunityComment,
   editCommunityComment,
   handleCommunityReport,
+  listCommunityComments,
   moderateCommunityComment,
   reportCommunityTarget,
   reuseCommunityWork,
@@ -29,6 +30,7 @@ import {
 } from '@/lib/community/interactions';
 import { executeIdempotently } from '@/lib/idempotency';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
+import { LIMITS } from '@/lib/appInfo';
 
 function project(): ProjectFile {
   return {
@@ -84,6 +86,27 @@ describe('community reuse, interaction and governance transactions', () => {
     expect((copy.project as ProjectFile).communityOrigin).toBe(true);
   });
 
+  it.each(['active', 'rows', 'bytes'] as const)('rejects reuse at the %s quota without partial facts or a cached success', async (quota) => {
+    if (quota === 'bytes') {
+      await db.update(designs).set({ payloadBytes: LIMITS.designBytesPerUser }).where(eq(designs.id, designId));
+    } else {
+      const limit = quota === 'active' ? LIMITS.designsPerUser : LIMITS.designRowsPerUser;
+      await db.insert(designs).values(Array.from({ length: limit - 1 }, () => ({
+        id: crypto.randomUUID(), userId: user.userId, name: '配额占用', project: quota === 'rows' ? null : project(), payloadBytes: 0,
+        deletedAt: quota === 'rows' ? new Date() : null,
+      })));
+    }
+    const before = await db.select({ id: designs.id }).from(designs);
+    const reuse = () => executeIdempotently(db, {
+      actorUserId: user.userId, scope: `reuse:${workId}`, key: 'quota-reuse', request: { workId },
+    }, (tx) => reuseCommunityWork(tx, { actor: user, workId }));
+    await expect(reuse()).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await db.select({ id: designs.id }).from(designs)).toHaveLength(before.length);
+    expect(await db.select().from(communityReuses)).toHaveLength(0);
+    expect(await db.select().from(idempotencyRecords)).toHaveLength(0);
+    expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].reuseCount).toBe(0);
+  });
+
   it('re-reviews risky edits, enforces edit window and maintains published count', async () => {
     await createModerationRuleSet(db, { actor: { ...moderator, role: 'admin' },
       rules: [{ literal: '伤害词', category: 'harm', risk: 'review' }], reason: '启用伤害治理字面词', requestId: 'rules' });
@@ -115,16 +138,44 @@ describe('community reuse, interaction and governance transactions', () => {
       decision: 'published', reason: '结合语境确认允许公开', requestId: 'publish-delayed',
       now: new Date('2026-09-05T03:00:00Z'),
     });
-    await expect(editCommunityComment(db, {
+    const firstEdit = await editCommunityComment(db, {
       actor: user, commentId: pending.id, expectedVersion: published.version,
-      body: '发布后仍可编辑', now: new Date('2026-09-05T03:10:00Z'),
-    })).resolves.toMatchObject({ status: 'published' });
+      body: '发布后仍可编辑', now: new Date('2026-09-05T03:01:00Z'),
+    });
+    const secondEdit = await editCommunityComment(db, {
+      actor: user, commentId: pending.id, expectedVersion: firstEdit.version,
+      body: '发布后继续安全编辑', now: new Date('2026-09-05T03:02:00Z'),
+    });
+    expect(secondEdit.status).toBe('published');
+    await expect(editCommunityComment(db, {
+      actor: user, commentId: pending.id, expectedVersion: secondEdit.version,
+      body: '窗口结束拒绝编辑', now: new Date('2026-09-05T03:15:00.001Z'),
+    })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('rejects an empty moderation rule-set version', async () => {
     await expect(createModerationRuleSet(db, {
       actor: { ...moderator, role: 'admin' }, rules: [], reason: '不允许关闭全部治理词表', requestId: 'empty-rules',
     })).rejects.toBeDefined();
+  });
+
+  it('lets authors delete expired, pending and hidden comments without exposing private comments to others', async () => {
+    const expired = await createCommunityComment(db, { actor: user, workId, body: '过了编辑时间仍可删除', now: new Date('2026-01-01T00:00:00Z') });
+    const pending = await createCommunityComment(db, { actor: user, workId, body: '请去死' });
+    const foreign = await createCommunityComment(db, { actor: moderator, workId, body: '他人的正常评论' });
+    const foreignPending = await createCommunityComment(db, { actor: moderator, workId, body: '请去死' });
+    const own = await listCommunityComments(db, workId, user.userId);
+    expect(own.find((item) => item.id === expired.id)).toMatchObject({ editable: false, deletable: true });
+    expect(own.find((item) => item.id === pending.id)).toMatchObject({ status: 'pending_review', editable: false, deletable: true });
+    expect(own.find((item) => item.id === foreign.id)).toMatchObject({ editable: false, deletable: false });
+    expect(own.some((item) => item.id === foreignPending.id)).toBe(false);
+    expect((await listCommunityComments(db, workId)).some((item) => item.id === pending.id)).toBe(false);
+    const hidden = await moderateCommunityComment(db, { actor: moderator, commentId: pending.id,
+      expectedVersion: pending.version, decision: 'hidden', reason: '隐藏明确伤害评论', requestId: 'hide-own-pending' });
+    expect((await listCommunityComments(db, workId, user.userId)).find((item) => item.id === hidden.id)).toMatchObject({ status: 'hidden', deletable: true });
+    await deleteCommunityComment(db, { actor: user, commentId: expired.id, expectedVersion: expired.version });
+    await deleteCommunityComment(db, { actor: user, commentId: hidden.id, expectedVersion: hidden.version });
+    expect((await listCommunityComments(db, workId, user.userId)).map((item) => item.id)).toEqual([foreign.id]);
   });
 
   it('applies repeat-spam review rules again when a published comment is edited', async () => {

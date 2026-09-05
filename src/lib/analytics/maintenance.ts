@@ -22,6 +22,8 @@ import { shanghaiDayBounds, toShanghaiDay } from './time';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANALYTICS_MAINTENANCE_LOCK = 8_130_605_911;
+/** 聚合专用，不属于可采集事件名。 */
+export const ALL_EVENTS_ROLLUP_NAME = '__all__';
 
 const dimensions = [
   ['device', analyticsEvents.deviceType],
@@ -55,6 +57,10 @@ export async function rollupAnalyticsDay(db: AnyDatabase, day: string, now = new
       { day, ...row, dimensionName: 'all', dimensionValue: 'all', updatedAt: now },
       { day, ...row, dimensionName: 'event', dimensionValue: row.eventName, updatedAt: now },
     ]);
+    const [daily] = await tx.select({
+      eventCount: count(), uniqueVisitors: countDistinct(analyticsEvents.visitorId),
+    }).from(analyticsEvents).where(baseWhere);
+    rows.push({ day, ...daily, eventName: ALL_EVENTS_ROLLUP_NAME, dimensionName: 'all', dimensionValue: 'all', updatedAt: now });
 
     for (const [dimensionName, column] of dimensions) {
       const value = sql<string>`coalesce(${column}::text, '(none)')`;
@@ -65,6 +71,10 @@ export async function rollupAnalyticsDay(db: AnyDatabase, day: string, now = new
         uniqueVisitors: countDistinct(analyticsEvents.visitorId),
       }).from(analyticsEvents).where(baseWhere).groupBy(analyticsEvents.name, value);
       rows.push(...values.map((row) => ({ day, ...row, dimensionName, updatedAt: now })));
+      const dimensionTotals = await tx.select({
+        dimensionValue: value, eventCount: count(), uniqueVisitors: countDistinct(analyticsEvents.visitorId),
+      }).from(analyticsEvents).where(baseWhere).groupBy(value);
+      rows.push(...dimensionTotals.map((row) => ({ day, ...row, eventName: ALL_EVENTS_ROLLUP_NAME, dimensionName, updatedAt: now })));
     }
 
     await tx.delete(analyticsDailyRollups).where(eq(analyticsDailyRollups.day, day));

@@ -33,7 +33,7 @@ describe('session expiry', () => {
       absoluteExpiresAt,
     });
 
-    const result = await resolveSession(db, `${SESSION_COOKIE_NAME}=${token}`, now);
+    const result = await resolveSession(db, `${SESSION_COOKIE_NAME}=${token}`, now, { renew: true });
     const [stored] = await db.select().from(sessions).where(eq(sessions.tokenHash, hashToken(token)));
     expect(result?.renewedExpiresAt?.toISOString()).toBe(absoluteExpiresAt.toISOString());
     expect(stored.expiresAt.toISOString()).toBe(absoluteExpiresAt.toISOString());

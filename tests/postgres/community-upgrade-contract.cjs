@@ -99,7 +99,7 @@ async function main() {
 
   await migrate(db, { migrationsFolder: migrations });
   let journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
-  assert.equal(journal.rows[0].count, 12, 'idempotent replay changed migration journal');
+  assert.equal(journal.rows[0].count, 13, 'idempotent replay changed migration journal');
   const initialRules = await pool.query(
     `select version, jsonb_array_length(rules)::int as rule_count, active
      from moderation_rule_set_versions where id='f0c81a4d-a5d8-4d6a-97e4-e42dc8ca9cc8'`,
@@ -110,6 +110,7 @@ async function main() {
   // exists. This fixture contains exclusively pre-0005 rows, so rehearse the
   // complete reverse path and prove the Drizzle journal permits re-upgrade.
   for (const tag of [
+    '0012_comment_publication_time',
     '0011_initial_moderation_rules',
     '0010_analytics_time_index',
     '0009_official_batch_links',
@@ -139,7 +140,7 @@ async function main() {
 
   await migrate(db, { migrationsFolder: migrations });
   journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
-  assert.equal(journal.rows[0].count, 12, 're-upgrade after down SQL did not restore all migrations');
+  assert.equal(journal.rows[0].count, 13, 're-upgrade after down SQL did not restore all migrations');
   const reupgraded = await pool.query(
     `select
        (select project from designs where id=$1) as project,

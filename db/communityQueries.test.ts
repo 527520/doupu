@@ -9,6 +9,8 @@ import {
   users,
 } from './schema';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
+import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
+import { mergeCommunityTag } from '@/lib/community/adminService';
 import {
   getPublicCommunityWork,
   listCommunityReviewQueue,
@@ -185,5 +187,34 @@ describe('public community query boundary', () => {
     await db.update(users).set({ accountStatus: 'anonymized' }).where(eq(users.id, authorId));
     const detail = await getPublicCommunityWork(db, workIds[1]);
     expect(detail?.author.displayName).toBe('已注销用户');
+  });
+
+  it('cannot rediscover an anonymized author by the old frozen name or its fragments', async () => {
+    await anonymizeAccount(db, { userId: authorId, requestId: 'erase-author-search' });
+    for (const author of ['Alice', 'lic']) {
+      expect((await listPublicCommunityWorks(db, { sort: 'latest', author })).items).toEqual([]);
+    }
+    const retained = await listPublicCommunityWorks(db, { sort: 'latest', author: publicAuthorId });
+    expect(retained.items).toHaveLength(24);
+    expect(retained.items.every((item) => item.author.displayName === '已注销用户')).toBe(true);
+    expect((await listPublicCommunityWorks(db, { sort: 'latest', author: '已注销用户' })).items).toHaveLength(24);
+    expect((await getPublicCommunityWork(db, workIds[0]))?.author.publicAuthorId).toBe(publicAuthorId);
+  });
+
+  it('resolves the whole historical merge chain and rejects cycles or inactive targets', async () => {
+    const [final] = await db.insert(communityTags).values({ name: '动物', slug: 'animals' }).returning();
+    const actor = { userId: authorId, role: 'moderator' as const, accountStatus: 'active' as const, emailVerified: true };
+    await mergeCommunityTag(db, { actor, sourceTagId: resolvedTagId, targetTagId: final.id, expectedVersion: 1,
+      reason: '连续合并到最终标签', requestId: 'merge-chain' });
+    const terminal = await listPublicCommunityWorks(db, { sort: 'latest', tag: 'animals' });
+    for (const tag of ['old-pets', 'pets']) {
+      expect((await listPublicCommunityWorks(db, { sort: 'latest', tag })).items.map((item) => item.id)).toEqual(terminal.items.map((item) => item.id));
+    }
+    expect(terminal.items.every((item) => item.tags.length === 1 && item.tags[0].id === final.id)).toBe(true);
+    await expect(mergeCommunityTag(db, { actor, sourceTagId: final.id, targetTagId: resolvedTagId, expectedVersion: 1,
+      reason: '禁止形成合并环路', requestId: 'cycle' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const [inactive] = await db.insert(communityTags).values({ name: '停用', slug: 'inactive', active: false }).returning();
+    await expect(mergeCommunityTag(db, { actor, sourceTagId: final.id, targetTagId: inactive.id, expectedVersion: 1,
+      reason: '禁止合并到停用标签', requestId: 'inactive' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

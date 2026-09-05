@@ -35,6 +35,10 @@ describe('official browser-local batch persistence', () => {
     expect(revisions.find((item) => item.id === second.revisionId)).toMatchObject({ status: 'published', authorType: 'official', publicAuthorId: 'doupu-official', sourceDesignId: null });
     expect((await db.select().from(communityWorks)).find((work) => work.id === second.workId)?.currentPublishedRevisionId).toBe(second.revisionId);
     expect(await db.select().from(adminAuditLogs)).toHaveLength(4);
+    const remaining = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [first.revisionId],
+      expectedVersion: result.batch.version, reason: '再次复核剩余草稿后发布', requestId: 'publish-remaining' });
+    expect(remaining.publishedRevisionIds).toEqual([first.revisionId]);
+    expect((await db.select().from(communityRevisions)).every((revision) => revision.status === 'published')).toBe(true);
   });
 
   it('pauses without cancelling work and cancellation records unfinished items', async () => {
@@ -44,6 +48,18 @@ describe('official browser-local batch persistence', () => {
     const cancelled = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'cancel', expectedVersion: paused.version, reason: '取消剩余任务', requestId: 'cancel' });
     expect(cancelled).toMatchObject({ status: 'cancelled', failureCount: 3 });
     expect((await db.select().from(officialBatches))[0].completedAt).not.toBeNull();
+  });
+
+  it('continues saving after a partial publish and can publish saved drafts after cancellation', async () => {
+    const batch = await createOfficialBatch(db, { actor: admin, itemCount: 3, defaultParams: DEFAULT_GENERATION_PARAMS,
+      engineVersion: '2.0.0', reason: '验证生成与发布独立', requestId: 'start' });
+    const first = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '先完成作品', snapshot, reason: '保存生成结果', requestId: 'first' });
+    const result = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [first.revisionId], expectedVersion: 1, reason: '只发布先完成作品', requestId: 'publish-first' });
+    expect(result.batch).toMatchObject({ status: 'running', failureCount: 0, completedAt: null });
+    const second = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '后完成作品', snapshot, reason: '保存后续结果', requestId: 'second' });
+    const cancelled = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'cancel', expectedVersion: result.batch.version, reason: '取消未完成生成', requestId: 'cancel' });
+    const remaining = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [second.revisionId], expectedVersion: cancelled.version, reason: '复核保留草稿并发布', requestId: 'publish-second' });
+    expect(remaining.batch).toMatchObject({ status: 'cancelled', failureCount: 1, completedAt: cancelled.completedAt });
   });
 
   it('rejects arbitrary batch metadata before it can reach persistence', async () => {
