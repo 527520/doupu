@@ -150,7 +150,7 @@ export default function PngExportButton({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="export-primary-actions"><button type="button" onClick={() => void confirm(true)} disabled={disabled || !defaultFits || busy} className="btn-primary btn-sm">{busy ? '正在导出…' : '下载 PNG'}</button>
+      <div className="export-primary-actions"><button type="button" onClick={() => void confirm(true)} disabled={disabled || !defaultFits || busy} className="btn-primary btn-sm">{busy ? t.working : t.quickDownload}</button>
       <button
         type="button"
         onClick={handleClick}
@@ -158,10 +158,10 @@ export default function PngExportButton({
         className="btn-outline btn-sm"
         aria-expanded={open}
       >
-        PNG 选项
+        {t.options}
       </button></div>
       {defaultPlan.kind === 'split' && !open && <p className="text-xs text-ink-soft">{t.splitArchiveNotice}</p>}
-      {defaultPlan.kind === 'too-large' && !open && <p className="text-xs text-ink-soft">默认尺寸超出导出上限，请展开 PNG 选项调整。</p>}
+      {defaultPlan.kind === 'too-large' && !open && <p className="text-xs text-ink-soft">{t.defaultTooLarge}</p>}
       {error && (
         <p role="alert" className="text-xs text-danger">
           {error}

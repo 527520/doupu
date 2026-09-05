@@ -122,7 +122,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
               : t.pageCount(layout.gridPages.length, legendPageCount)}
           </p>
           {layout.gridPages.length > 10 && <p className="mt-1 text-xs text-ink-soft">{t.largeHint}</p>}
-          <p className="mt-2 text-xs text-ink-soft">每格 {metrics.cellMm} mm。打印时请选择“实际大小 / 100%”，不要选择“适合页面”；先试打一页，用尺子核对格子尺寸。</p>
+          <p className="mt-2 text-xs text-ink-soft">{t.printingInstructions(metrics.cellMm)}</p>
           {error && (
             <p role="alert" className="mt-2 text-sm text-danger">
               {error}

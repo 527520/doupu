@@ -167,9 +167,9 @@ export default function PalettesPage() {
       setEditing(null);
     } catch (error) {
       const code = error instanceof Error && 'code' in error ? error.code : null;
-      if (code === 'UNAUTHORIZED') { setEditorError('登录已失效，当前编辑内容仍保留。'); setEditorLoginRequired(true); }
+      if (code === 'UNAUTHORIZED') { setEditorError(t.loginExpiredKept); setEditorLoginRequired(true); }
       else if (code === 'REVISION_CONFLICT') {
-        setEditorError(`${t.revisionConflict} 当前输入仍保留；请先复制需要保留的内容，再取消并刷新列表。`);
+        setEditorError(t.conflictInputKept(t.revisionConflict));
       } else if (code === 'CONFLICT') setEditorError(t.limitReached);
       else setEditorError(t.saveFailed);
     } finally {
@@ -203,7 +203,7 @@ export default function PalettesPage() {
     } finally { deletingRef.current = false; setDeleting(false); }
   };
 
-  const renderPaletteLink = (value: string) => targetDesignId ? <Link className="btn-outline btn-sm" href={`/app?${new URLSearchParams({ id: targetDesignId, palette: value })}`}>用于当前图纸</Link> : null;
+  const renderPaletteLink = (value: string) => targetDesignId ? <Link className="btn-outline btn-sm" href={`/app?${new URLSearchParams({ id: targetDesignId, palette: value })}`}>{t.useForDesign}</Link> : null;
 
   return (
     <main id="main" className="workspace-page flex flex-col gap-6">
@@ -223,8 +223,8 @@ export default function PalettesPage() {
       />
 
       <section className="palette-hero">
-        <div><h2>{t.heroTitle}</h2><p>{t.heroHint}</p><p>{targetDesignId ? '选择色板后返回原图纸确认应用，换色可撤销。' : '从工作台的“查看完整色板库”进入，可选择色板用于指定图纸。'}</p></div>
-        {targetDesignId && <Link href={`/app?id=${targetDesignId}`} className="btn-outline">返回原图纸</Link>}
+        <div><h2>{t.heroTitle}</h2><p>{t.heroHint}</p><p>{targetDesignId ? t.targetHelp : t.noTargetHelp}</p></div>
+        {targetDesignId && <Link href={`/app?id=${targetDesignId}`} className="btn-outline">{t.backToDesign}</Link>}
       </section>
 
       {pageError && (
@@ -301,7 +301,7 @@ export default function PalettesPage() {
                           </dl>
                           <PaletteSwatches name={palette.label} colors={palette.colors} />
                           {renderPaletteLink(`builtin:${palette.id}`)}
-                          <details className="palette-source-details"><summary>来源与收录说明</summary><dl className="palette-card-meta">
+                          <details className="palette-source-details"><summary>{t.sources}</summary><dl className="palette-card-meta">
                             <div>
                               <dt>{t.sourceQuality}</dt>
                               <dd>
@@ -330,7 +330,7 @@ export default function PalettesPage() {
         <h2>{t.customTitle}</h2>
         {loading ? (
           <p role="status" className="text-sm text-ink-soft/80">{t.loading}</p>
-        ) : records.length === 0 && (pageError || loginRequired) ? <p className="palette-empty">{loginRequired ? '登录后查看自己的自定义色板。' : '暂时无法确认自定义色板，请重试。'}</p> : records.length === 0 ? (
+        ) : records.length === 0 && (pageError || loginRequired) ? <p className="palette-empty">{loginRequired ? t.loginToRead : t.readUnknown}</p> : records.length === 0 ? (
           <p className="palette-empty">
             {t.empty}
           </p>
@@ -365,7 +365,7 @@ export default function PalettesPage() {
 
       {editing && (
         <Modal label={t.edit} onClose={() => { if (!savingRef.current) setEditing(null); }} panelClassName="w-full max-w-xl max-h-[85vh] overflow-auto">
-          {editorError && <div role="alert" className="notice notice-danger">{editorError}{editorLoginRequired && <Link href="/login?next=/palettes" target="_blank" rel="noopener noreferrer" className="link-soft">另开窗口登录后重试</Link>}</div>}
+          {editorError && <div role="alert" className="notice notice-danger">{editorError}{editorLoginRequired && <Link href="/login?next=/palettes" target="_blank" rel="noopener noreferrer" className="link-soft">{t.loginWindow}</Link>}</div>}
           <fieldset disabled={saving}>
           <PaletteEditor
             initialName={editing.name}

@@ -69,16 +69,16 @@ export default function ShoppingListPanel({ stats, designName, width, height, ex
         <span>{t.title}</span>
         <span className="text-xs text-ink-soft">{open ? t.hide : t.show}</span>
       </button>
-      <p className="text-xs text-ink-soft">{validPack ? t.summary(list.total, list.colors, list.packs, list.beadsPerPack) : `${list.total} 粒 · ${list.colors} 色`}</p>
+      <p className="text-xs text-ink-soft">{validPack ? t.summary(list.total, list.colors, list.packs, list.beadsPerPack) : t.totals(list.total, list.colors)}</p>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => void copy()} disabled={!validPack} className="btn-outline btn-sm">{t.copy}</button>
         {copied === 'done' && copiedText === text && <span role="status" className="text-xs text-success">{t.copied}</span>}
       </div>
-      {copied === 'failed' && copiedText === text && <><Notice kind="warning" compact>{t.copyFailed}</Notice><label className="text-xs text-ink-soft">手动复制材料清单<textarea readOnly value={text} rows={6} className="input-field w-full" onFocus={(event) => event.target.select()} /></label></>}
+      {copied === 'failed' && copiedText === text && <><Notice kind="warning" compact>{t.copyFailed}</Notice><label className="text-xs text-ink-soft">{t.manualCopy}<textarea readOnly value={text} rows={6} className="input-field w-full" onFocus={(event) => event.target.select()} /></label></>}
 
       {open && (
         <>
-          <details className="shopping-pack-options"><summary>包装换算设置（每包 {validPack ? perPack : '—'} 粒）</summary><label className="flex items-center gap-2 text-xs text-ink-soft">
+          <details className="shopping-pack-options"><summary>{t.packOptions(validPack ? perPack : '—')}</summary><label className="flex items-center gap-2 text-xs text-ink-soft">
             {t.beadsPerPack}
             <input
               type="number"
@@ -92,9 +92,9 @@ export default function ShoppingListPanel({ stats, designName, width, height, ex
             />
           </label>
           <p className="text-xs text-ink-soft">{t.packHint}</p></details>
-          {!validPack && <p role="alert" className="text-xs text-danger">每包颗数需要填写正整数。</p>}
+          {!validPack && <p role="alert" className="text-xs text-danger">{t.invalidPack}</p>}
 
-          <ul tabIndex={0} aria-label="逐色材料用量" className="shopping-material-list flex max-h-56 flex-col gap-1 overflow-auto pr-1">
+          <ul tabIndex={0} aria-label={t.listAria} className="shopping-material-list flex max-h-56 flex-col gap-1 overflow-auto pr-1">
             {list.items.map((item) => (
               <li key={`${item.code}-${item.hex}`} className="flex items-center gap-2 text-xs">
                 <span
@@ -105,7 +105,7 @@ export default function ShoppingListPanel({ stats, designName, width, height, ex
                 <span className="w-14 shrink-0 font-mono text-ink">{item.code}</span>
                 <span className="w-16 shrink-0 tabular-nums text-ink">{item.count} {zhCN.export.countUnit}</span>
                 <span className="w-12 shrink-0 tabular-nums text-ink-soft">{item.share}%</span>
-                <span className="ml-auto tabular-nums text-ink-soft">{validPack ? t.packs(item.packs) : '— 包'}</span>
+                <span className="ml-auto tabular-nums text-ink-soft">{validPack ? t.packs(item.packs) : t.unknownPacks}</span>
               </li>
             ))}
           </ul>

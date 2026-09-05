@@ -30,9 +30,9 @@ export default async function CommunitySubmitPage({ searchParams }: { searchPara
   if (workId && (!z.string().uuid().safeParse(workId).success || !work)) notFound();
   const unavailable = work && (work.lifecycleStatus !== 'active' || work.revisions.some((item) => item.status === 'draft' || item.status === 'pending_review'));
   const t = zhCN.communityAdmin.submission;
-  return <main id="main" className="workspace-page"><SiteHeader title={work ? '修改并重新投稿' : t.pageTitle} currentPath="/community" subtitle={t.pageSubtitle} /><div className="workspace-content community-narrow">
-    {!actor.emailVerified ? <section className="community-empty"><h2>验证邮箱后即可投稿</h2><p>请先完成账号验证，设计会继续保留。</p><Link href="/account" className="btn-primary">前往账号验证</Link></section>
-      : unavailable ? <section className="community-empty"><h2>请先处理当前投稿</h2><p>作品已有草稿、正在审核，或当前已隐藏，暂时不能提交修改版。</p><Link href="/community/mine" className="btn-primary">查看我的投稿</Link></section>
+  return <main id="main" className="workspace-page"><SiteHeader title={work ? t.editTitle : t.pageTitle} currentPath="/community" subtitle={t.pageSubtitle} /><div className="workspace-content community-narrow">
+    {!actor.emailVerified ? <section className="community-empty"><h2>{t.verifyTitle}</h2><p>{t.verifyHelp}</p><Link href="/account" className="btn-primary">{t.verifyAction}</Link></section>
+      : unavailable ? <section className="community-empty"><h2>{t.unavailableTitle}</h2><p>{t.unavailableHelp}</p><Link href="/community/mine" className="btn-primary">{t.mine}</Link></section>
         : <CommunitySubmitForm initialDesignId={initialDesignId} workId={workId} displayName={resolvePublicDisplayName(account.username, account.email)} />}
   </div></main>;
 }

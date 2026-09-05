@@ -49,7 +49,7 @@ export default function RecentDesigns({ storage }: { storage?: Pick<StorageAdapt
       : items === null ? <p aria-live="polite">{t.recentLoading}</p>
         : items.length === 0 ? <p>{t.recentEmpty}</p>
           : <ul>{items.map((item) => <li key={item.id}>
-            <Link href={`/app?id=${encodeURIComponent(item.id)}&mode=${item.percent === null ? 'edit' : 'stitch'}`} aria-label={`${item.percent === null ? t.resumeEdit : t.resumeStitch}：${item.name}`}>
+            <Link href={`/app?id=${encodeURIComponent(item.id)}&mode=${item.percent === null ? 'edit' : 'stitch'}`} aria-label={t.resumeAria(item.percent === null ? t.resumeEdit : t.resumeStitch, item.name)}>
               <div className="recent-design-preview">{item.thumbnail
                 // eslint-disable-next-line @next/next/no-img-element
                 ? <img src={item.thumbnail} alt="" /> : <span>{item.width} × {item.height}</span>}</div>

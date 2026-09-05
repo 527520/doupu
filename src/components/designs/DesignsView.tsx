@@ -420,7 +420,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                 {t.delete}
               </button>
               {me !== 'loading' && me.state === 'verified' && design.cloudPresent && (
-                <Link href={`/community/submit?designId=${design.id}`} className="btn-outline btn-xs">投稿豆社</Link>
+                <Link href={`/community/submit?designId=${design.id}`} className="btn-outline btn-xs">{zhCN.designs.submitCommunity}</Link>
               )}
               </>} />
             </div>

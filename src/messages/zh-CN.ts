@@ -76,6 +76,7 @@ export const zhCN = {
     accountSubtitle: '管理展示资料、登录安全与同步状态。',
   },
   home: {
+    resumeAria: (action: string, name: string) => `${action}：${name}`,
     recentTitle: '继续上次制作',
     fullGuide: '查看完整教程',
     allDesigns: '全部设计',
@@ -207,6 +208,7 @@ export const zhCN = {
     countUnit: '粒',
   },
   exportPng: {
+    quickDownload: '下载 PNG', working: '正在导出…', options: 'PNG 选项', defaultTooLarge: '默认尺寸超出导出上限，请展开 PNG 选项调整。',
     dialogTitle: 'PNG 导出选项',
     cellSize: '格子大小',
     cellSizeValue: (n: number) => `${n}px`,
@@ -219,6 +221,8 @@ export const zhCN = {
   },
   /* 采购清单（F-3）：把用量统计变成「照着买」的清单。 */
   shopping: {
+    totals: (total: number, colors: number) => `${total} 粒 · ${colors} 色`, manualCopy: '手动复制材料清单', packOptions: (count: number | string) => `包装换算设置（每包 ${count} 粒）`,
+    invalidPack: '每包颗数需要填写正整数。', listAria: '逐色材料用量', unknownPacks: '— 包',
     title: '采购清单',
     show: '展开',
     hide: '收起',
@@ -331,6 +335,7 @@ export const zhCN = {
     ariaCropCanvas: '裁剪选区画布',
   },
   project: {
+    exportFailed: '项目文件导出失败，图纸仍保留，请重试。',
     exportLabel: '导出项目文件',
     importLabel: '导入项目文件',
     importTitle: '导入项目文件',
@@ -393,6 +398,7 @@ export const zhCN = {
     editScaleNotice: '已放大到可编辑比例',
   },
   exportPdf: {
+    printingInstructions: (mm: number) => `每格 ${mm} mm。打印时请选择“实际大小 / 100%”，不要选择“适合页面”；先试打一页，用尺子核对格子尺寸。`,
     button: '导出 PDF',
     dialogTitle: '确认导出 PDF',
     pageCount: (grid: number, legend: number) => `共 ${grid + legend} 页：图纸 ${grid} 页 + 图例清单 ${legend} 页`,
@@ -412,6 +418,8 @@ export const zhCN = {
     untitled: '未命名设计',
   },
   workbench: {
+    paletteLibrary: '查看完整色板库', paletteIntentAria: '色板库选择确认', paletteIntentQuestion: (brand: string, series: string, name: string) => `把「${brand} · ${series}」应用到「${name}」？`,
+    paletteIntentMissing: '所选色板暂不可用，请检查登录账号或稍后重试。', paletteIntentHelp: '仅对这张图纸换色，必要时同步调整制作规格；保留格子位置和透明区域，可一步撤销。', paletteIntentApply: '应用到这张图纸', paletteIntentCancel: '取消选择',
     title: '工作台',
     /** 工作台步骤标签（D-2）：故意比页面标题更短——它表达位置，不重复标题；
         也避免与「上传图片」「裁剪图片」这两个页面标题同名造成歧义。 */
@@ -567,6 +575,9 @@ export const zhCN = {
     cooldown: (seconds: number) => `请 ${seconds} 秒后再试`,
   },
   palettes: {
+    loginExpiredKept: '登录已失效，当前编辑内容仍保留。', conflictInputKept: (message: string) => `${message} 当前输入仍保留；请先复制需要保留的内容，再取消并刷新列表。`,
+    useForDesign: '用于当前图纸', targetHelp: '选择色板后返回原图纸确认应用，换色可撤销。', noTargetHelp: '从工作台的“查看完整色板库”进入，可选择色板用于指定图纸。', backToDesign: '返回原图纸',
+    sources: '来源与收录说明', loginToRead: '登录后查看自己的自定义色板。', readUnknown: '暂时无法确认自定义色板，请重试。', loginWindow: '另开窗口登录后重试', codeListAria: (name: string) => `${name} 色号列表`,
     title: '色板管理',
     libraryKicker: '颜色资料库',
     heroTitle: '把手里的颜色，整理成随时可用的配方。',
@@ -757,6 +768,7 @@ export const zhCN = {
     },
   },
   designs: {
+    submitCommunity: '投稿豆社',
     title: '我的设计',
     collectionKicker: '作品档案',
     collectionTitle: '把每一张图纸，都留在手边。',
@@ -806,6 +818,8 @@ export const zhCN = {
     loading: '正在加载设计…',
   },
   account: {
+    readFailed: '账号信息暂时无法读取，不能确认当前登录状态。', statusUnknown: '账号状态待确认', loading: '正在读取账号…', noSyncClaim: '此处不代表某张图纸已同步，请以工作台上的保存状态为准。',
+    analyticsPreferences: '管理匿名统计偏好', logoutFailed: '退出登录失败，请检查网络后重试。',
     menuLabel: '账号',
     profileTitle: '展示资料',
     profileHint: '用户名用于界面和新投稿署名，不影响邮箱登录；既有作品保留投稿时的署名。',
@@ -1018,6 +1032,9 @@ export const zhCN = {
       likeCount: (count: number) => `${count} 赞`, commentCount: (count: number) => `${count} 评论`, reuseCount: (count: number) => `${count} 次引用`,
     },
     minePage: {
+      progressSubtitle: '查看审核进度，继续处理自己的投稿', chooseForSubmission: '选择设计投稿', author: '公开作者：', reviewReason: '审核意见：', originalVisible: '原审核通过的版本仍在公开展示。',
+      removedHelp: '作品已下架，当前不可公开访问。如有异议，请查看申诉说明。', withdrawnHelp: '整件作品已撤回，当前不可公开访问。已有私人副本保留。', previewFailed: '预览暂时无法读取，请刷新后重试。', copyright: '版权与申诉说明', history: (count: number) => `查看历史投稿（${count} 次）`,
+      nextStep: { draft: '已保存冻结草稿，尚未提交审核。可以直接提交；如需修改，请先撤回草稿。', pending_review: '正在等待审核，审核通过后才会公开这次内容。', published: '作品已公开。修改设计后，可以提交新版本重新审核。', rejected: '这次投稿未通过。请按审核意见修改设计，再重新投稿。', withdrawn: '这次投稿已撤回。可以选择自己的设计，重新提交。', superseded: '此版本已由更新的审核通过版本替代。' },
       title: '我的投稿', subtitle: '查看草稿、审核结论和公开版本', submitFromDesign: '从设计投稿',
       emptyTitle: '还没有投稿', emptyBody: '先保存并同步一张设计，再从设计卡片发起投稿。', chooseDesign: '选择设计',
       preview: (title: string) => `${title} 预览`, revision: (number: number, status: string) => `修订 ${number} · ${status}`, publicPage: '查看公开页',
@@ -1182,7 +1199,16 @@ export const zhCN = {
       categories: { harm: '明确伤害', harassment: '骚扰', sexual: '色情', spam: '垃圾推广', copyright: '版权', other: '其他规则问题' },
       actionFailed: '操作失败，请稍后重试', genericFailed: '操作失败', reuseFailed: '引用失败', reuseCreated: (id: string) => `私人副本已创建：${id}。可前往“我的设计”继续编辑。`, pending: '评论已提交，审核通过后公开。', published: '评论已发布。', commentFailed: '评论失败', reported: '举报已进入治理队列。', reportFailed: '举报失败', editPending: '修改已进入审核。', updated: '评论已更新。', editFailed: '修改失败', deleted: '评论已删除。', deleteFailed: '删除失败', commentReported: '评论举报已进入治理队列。', locked: '评论已锁定', commentPlaceholder: '最多 500 字；链接仅作为纯文本展示', eyebrow: 'COMMUNITY ACTIONS', title: '引用与讨论', counts: (likes: number, reuses: number) => `${likes} 赞 · ${reuses} 次引用`, like: '点赞', unlike: '取消赞', reuse: '用这张制作', reportWork: '举报作品', myDesigns: '我的设计', comment: '发表评论', publishComment: '发布评论', saveEdit: '保存修改', cancelEdit: '取消', edit: '编辑', delete: '删除', report: '举报' },
     mine: { withdrawing: '撤回中…', withdraw: '撤回作品' },
-    submission: { createFailed: '创建投稿失败', submitFailedDraftKept: '提交审核失败，草稿已保留', failed: '提交失败', submitting: '提交中…', submit: '冻结快照并提交审核', pageTitle: '提交豆社作品', pageSubtitle: '冻结当前云端设计，审核通过后公开', designId: '私人设计 ID', title: '公开作品标题', tags: '正式标签（最多 10 个）', license: '我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。', copyright: '查看版权与申诉说明', back: '返回设计' },
+    submission: {
+      retryableFailure: '暂时无法提交，请重试。', unknownResult: '未能确认服务器结果，请重试原投稿。', sourceInvalid: '此设计暂时无法投稿，请返回设计检查图纸并同步。', previewFailed: '预览加载失败，请重试。', optionsFailed: '投稿选项加载失败，请重新载入。', sourceUnavailable: '这张设计未同步、已删除或不属于当前账号。请返回设计同步，或重新选择。', loadFailed: '云端设计或投稿选项加载失败，请重新载入。',
+      draftKept: (message: string) => `草稿已保留。${message} 可重试提交审核，或在“我的投稿”继续处理。`, editHelp: '这次修改会重新审核，通过前原公开作品保持不变。', previewHelp: '先确认公开预览。原图、私人设计和分享链接不会随投稿公开。', chooseSource: '选择云端设计', choosePlaceholder: '请选择已同步的设计', loadingSources: '正在读取云端设计…', noSources: '还没有可投稿的云端设计。请先在工作台保存并同步。', preview: '公开预览', previewAria: (title: string) => `公开预览：${title}`, author: '公开作者：', previewSize: (width: number, height: number) => `${width} × ${height} 格 · 以本次云端预览为准`, reloadPreview: '重新载入预览', mine: '查看我的投稿', retryReview: '重试提交审核', retryOriginal: '重试原投稿',
+      editTitle: '修改并重新投稿', verifyTitle: '验证邮箱后即可投稿', verifyHelp: '请先完成账号验证，设计会继续保留。', verifyAction: '前往账号验证', unavailableTitle: '请先处理当前投稿', unavailableHelp: '作品已有草稿、正在审核，或当前已隐藏，暂时不能提交修改版。',
+      createFailed: '创建投稿失败', submitFailedDraftKept: '提交审核失败，草稿已保留', failed: '提交失败', submitting: '提交中…', submit: '冻结快照并提交审核', pageTitle: '提交豆社作品', pageSubtitle: '冻结当前云端设计，审核通过后公开', designId: '私人设计 ID', title: '公开作品标题', tags: '正式标签（最多 10 个）', license: '我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。', copyright: '查看版权与申诉说明', back: '返回设计',
+    },
+    mineActions: {
+      requestFailed: '操作暂时失败，请重试或刷新状态。', failed: '操作失败，请重试。', refreshState: '刷新状态', submitDraft: '提交草稿审核', withdrawDraft: '撤回草稿后修改', withdrawReview: '撤回本次审核', edit: '修改并重新投稿', withdrawWork: '撤回整件作品', done: '操作已完成，正在刷新投稿状态。', refresh: '刷新', withdrawRevision: '撤回本次投稿', confirmWorkTitle: '撤回整件作品？', confirmRevisionTitle: '撤回本次投稿？',
+      workImpact: '这会隐藏公开作品，并终止本次待审或草稿。已有私人副本会保留，恢复公开需要管理员复核。', revisionImpact: '只终止本次草稿或审核，原公开作品保持不变。撤回后可以从自己的设计重新投稿。', keep: '暂不撤回', withdrawing: '撤回中…', confirm: '确认撤回',
+    },
     home: { featured: '人工精选', latest: '豆社新作', featuredProofs: '本期作品校样', latestProofs: '最近公开作品', open: '打开豆社', preview: (title: string) => `${title} 预览`, loading: '正在读取豆社作品…', loadFailed: '暂时无法读取豆社作品，请重试。', empty: '还没有已公开作品。' },
     consentRecovery: {
       stopped: '已停止采集，但服务器尚未确认清除原始数据。请重试；完成前不能重新同意。',
@@ -1192,6 +1218,7 @@ export const zhCN = {
     },
   },
   about: {
+    privacyLink: '隐私说明与分析偏好',
     title: '关于豆谱',
     intro:
       '豆谱（DouPu）是一个免费、开源的拼豆图纸生成工具：上传照片或像素画，生成可打印的拼豆图纸。',

@@ -104,7 +104,7 @@ export default function ProjectFileButtons({ source, existingNames, onImport, di
         onChange={onFileChange}
         className="sr-only"
       />
-      {exportError && <Notice kind="danger">项目文件导出失败，图纸仍保留，请重试。</Notice>}
+      {exportError && <Notice kind="danger">{t.exportFailed}</Notice>}
       {errors.length > 0 && (
         <Notice kind="danger" as="div" className="flex-col gap-1">
           <p className="font-medium">{t.importFailed}</p>

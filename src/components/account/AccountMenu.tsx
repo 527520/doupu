@@ -246,7 +246,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       track({ name: 'logout_succeeded', properties: {} });
       onAuthChanged();
     } catch {
-      setActionError('退出登录失败，请检查网络后重试。');
+      setActionError(zhCN.account.logoutFailed);
     } finally { operations.current.logout = false; setLogoutBusy(false); }
   };
 

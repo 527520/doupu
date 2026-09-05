@@ -1660,7 +1660,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     <p>{t.sourceRequired}</p>{!cropRecoveryOpen && <button type="button" className="btn-outline" onClick={requestOriginal}>{t.reselectOriginal}</button>}
   </div>;
   const paletteLibraryHref = `/palettes?designId=${encodeURIComponent(designId)}`;
-  const paletteLibraryLink = <Link href={paletteLibraryHref} className="link-soft text-sm" onClick={(event) => handleNavigationClick(event, paletteLibraryHref)}>查看完整色板库</Link>;
+  const paletteLibraryLink = <Link href={paletteLibraryHref} className="link-soft text-sm" onClick={(event) => handleNavigationClick(event, paletteLibraryHref)}>{t.paletteLibrary}</Link>;
   const intentOption = paletteIntent && paletteOptions.find((option) => option.value === paletteIntent.value
     && (!option.value.startsWith('custom:') || cloudPalettes.some((item) => `custom:${item.id}` === option.value)));
   const dismissPaletteIntent = () => {
@@ -1669,13 +1669,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     url.searchParams.delete('palette');
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   };
-  const paletteIntentNotice = paletteIntent?.designId === designId && <section className="palette-intent" aria-label="色板库选择确认">
-    <p>{intentOption ? `把「${intentOption.brand} · ${intentOption.series}」应用到「${name}」？` : '所选色板暂不可用，请检查登录账号或稍后重试。'}</p>
-    <small>仅对这张图纸换色，必要时同步调整制作规格；保留格子位置和透明区域，可一步撤销。</small>
+  const paletteIntentNotice = paletteIntent?.designId === designId && <section className="palette-intent" aria-label={t.paletteIntentAria}>
+    <p>{intentOption ? t.paletteIntentQuestion(intentOption.brand, intentOption.series, name) : t.paletteIntentMissing}</p>
+    <small>{t.paletteIntentHelp}</small>
     <div className="community-form-actions"><button type="button" className="btn-primary btn-sm" disabled={!intentOption || busy || generating || !generationSession.committed} onClick={() => {
       if (!paletteIntent || paletteIntent.designId !== designId || !intentOption) return;
       handlePaletteSelect(paletteIntent.value); dismissPaletteIntent();
-    }}>应用到这张图纸</button><button type="button" className="btn-outline btn-sm" onClick={dismissPaletteIntent}>取消选择</button></div>
+    }}>{t.paletteIntentApply}</button><button type="button" className="btn-outline btn-sm" onClick={dismissPaletteIntent}>{t.paletteIntentCancel}</button></div>
   </section>;
   const cropAction = <div className="preview-crop-action">
     <button type="button" className="btn-outline" disabled={busy || generating} aria-expanded={!decoded ? cropRecoveryOpen : undefined} onClick={(event) => {
