@@ -1,18 +1,78 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
-interface UserRow { userId: string; maskedEmail: string | null; username: string | null; role: 'user' | 'moderator' | 'admin'; accountStatus: 'active' | 'suspended' | 'anonymized'; governanceVersion: number; emailVerified: boolean; createdAt: string }
+import { USER_ROLES, type UserRole, type AccountStatus } from '@/lib/auth/authorization';
+import AdminCommandNotice from './AdminCommandNotice';
+import AdminQueueState from './AdminQueueState';
+import { useAdminCollection } from './useAdminCollection';
+import { useAdminCommand } from './useAdminCommand';
+import { useAdminTaskFocus } from './useAdminTaskFocus';
 
-export default function UsersManager() {
+interface UserRow { userId: string; maskedEmail: string | null; username: string | null; role: UserRole; accountStatus: AccountStatus; governanceVersion: number; emailVerified: boolean; createdAt: string }
+
+export default function UsersManager({ currentUserId }: { currentUserId: string }) {
   const t = zhCN.communityAdmin.users;
+  const c = zhCN.communityAdmin.command;
   const states = zhCN.communityAdmin.states;
-  const [items, setItems] = useState<UserRow[]>([]); const [q, setQ] = useState(''); const [reason, setReason] = useState(''); const [confirmation, setConfirmation] = useState(''); const [message, setMessage] = useState<string | null>(null);
-  const load = async (search = q) => { const response = await fetch(`/api/admin/users?q=${encodeURIComponent(search)}`); const body = await response.json(); if (response.ok) setItems(body.items); else setMessage(body?.error?.message ?? t.loadFailed); };
-  useEffect(() => { let active = true; void fetch('/api/admin/users').then(async (response) => { const body = await response.json(); if (active && response.ok) setItems(body.items); }); return () => { active = false; }; }, []);
-  const update = async (user: UserRow, change: { role?: UserRow['role']; accountStatus?: 'active' | 'suspended' }) => {
-    const response = await fetch(`/api/admin/users/${user.userId}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ ...change, expectedVersion: user.governanceVersion, targetConfirmation: confirmation, reason }) });
-    const body = await response.json().catch(() => null); setMessage(response.ok ? t.updated : body?.error?.message ?? t.updateFailed); if (response.ok) { setConfirmation(''); await load(); }
+  const [q, setQ] = useState('');
+  const [search, setSearch] = useState('');
+  const queue = useAdminCollection<UserRow>(`/api/admin/users?q=${encodeURIComponent(search)}`);
+  const command = useAdminCommand();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = queue.items.find((item) => item.userId === selectedId) ?? null;
+  const { queueRef, detailRef } = useAdminTaskFocus(selected?.userId ?? null);
+  const [role, setRole] = useState<UserRole>('user');
+  const [reason, setReason] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const canGovern = selected && selected.userId !== currentUserId && selected.accountStatus !== 'anonymized';
+  const ready = canGovern && !queue.loading && !queue.error && !command.locked && reason.trim().length >= 3 && confirmation === selected.userId;
+  const select = (user: UserRow | null) => {
+    if (command.locked) return;
+    setSelectedId(user?.userId ?? null); setRole(user?.role ?? 'user'); setReason(''); setConfirmation(''); command.resetNotice();
   };
-  return <section className="admin-panel"><header><h2>{t.title}</h2><span>{items.length}</span></header><div className="admin-form-stack user-filters"><label>{t.search}<input value={q} onChange={(event) => setQ(event.target.value)} /></label><button type="button" className="btn-secondary" onClick={() => void load()}>{t.query}</button><label>{t.reason}<input value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></label><label>{t.confirmation}<input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label></div>{message && <p className="notice" role="status">{message}</p>}<div className="admin-table-scroll"><table><thead><tr><th>{t.account}</th><th>{t.role}</th><th>{t.status}</th><th>{t.action}</th></tr></thead><tbody>{items.map((user) => <tr key={user.userId}><td><strong>{user.username || user.maskedEmail || t.anonymized}</strong><small className="mono-id">{user.userId}</small></td><td>{states.role[user.role]}</td><td>{states.account[user.accountStatus]}{!user.emailVerified && t.unverified}</td><td><div className="table-actions"><button type="button" disabled={reason.trim().length < 3 || confirmation !== user.userId || user.accountStatus === 'anonymized'} onClick={() => void update(user, { role: user.role === 'user' ? 'moderator' : 'user' })}>{user.role === 'user' ? t.promote : t.demote}</button><button type="button" disabled={reason.trim().length < 3 || confirmation !== user.userId || user.accountStatus === 'anonymized'} onClick={() => void update(user, { accountStatus: user.accountStatus === 'suspended' ? 'active' : 'suspended' })}>{user.accountStatus === 'suspended' ? t.restore : t.suspend}</button></div></td></tr>)}</tbody></table></div></section>;
+  const query = () => {
+    if (command.locked) return;
+    select(null);
+    if (q.trim() === search) void queue.reload();
+    else setSearch(q.trim());
+  };
+  const update = async (change: { role?: UserRole; accountStatus?: 'active' | 'suspended' }) => {
+    if (!selected || !ready) return;
+    await command.run({ url: `/api/admin/users/${selected.userId}`, method: 'PATCH',
+      body: { ...change, expectedVersion: selected.governanceVersion, targetConfirmation: confirmation, reason },
+    }, async () => { setSelectedId(null); setConfirmation(''); setReason(''); await queue.reload(); });
+  };
+  return <div className={`admin-task-layout${selected ? ' is-inspecting' : ''}`}>
+    <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
+      <header><h2>{t.title}</h2></header>
+      <form className="admin-form-stack" onSubmit={(event) => { event.preventDefault(); query(); }}>
+        <label>{t.search}<input value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} /></label>
+        <button type="submit" className="btn-outline" disabled={command.locked || queue.loading}>{t.query}</button><p className="admin-help">{t.searchHelp}</p>
+      </form>
+      <AdminQueueState {...queue} empty={queue.items.length === 0}>
+        <ul className="admin-object-list">{queue.items.map((user) => <li key={user.userId}><button type="button" disabled={command.locked} aria-current={selected?.userId === user.userId} onClick={() => select(user)}>
+          <strong>{user.username || user.maskedEmail || t.anonymized}</strong><span>{states.role[user.role]} · {states.account[user.accountStatus]}</span><small className="mono-id">{user.userId}</small>
+        </button></li>)}</ul>
+      </AdminQueueState>
+    </section>
+    <section className="admin-panel admin-task-detail" tabIndex={-1} ref={detailRef} aria-label={t.action}>
+      {selected ? <div className="admin-form-stack">
+        <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
+        <h2>{selected.username || selected.maskedEmail || t.anonymized}</h2>
+        <dl className="admin-facts"><div><dt>{t.accountId}</dt><dd className="break-all">{selected.userId}</dd></div><div><dt>{t.email}</dt><dd>{selected.maskedEmail ?? t.anonymized}{!selected.emailVerified && t.unverified}</dd></div>
+          <div><dt>{t.role}</dt><dd>{states.role[selected.role]}</dd></div><div><dt>{t.status}</dt><dd>{states.account[selected.accountStatus]}</dd></div></dl>
+        {!canGovern ? <p className="notice">{selected.userId === currentUserId ? t.selfProtected : t.anonymizedProtected}</p> : <>
+          <p className="notice notice-warning">{t.impact}</p>
+          <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
+          <label>{t.confirmation}<input value={confirmation} disabled={command.locked} autoComplete="off" spellCheck={false} onChange={(event) => setConfirmation(event.target.value)} /></label>
+          <label>{t.nextRole}<select value={role} disabled={command.locked} onChange={(event) => setRole(event.target.value as UserRole)}>{USER_ROLES.map((value) => <option key={value} value={value}>{states.role[value]}</option>)}</select></label>
+          {role === 'admin' && selected.role !== 'admin' && <p className="notice notice-warning">{t.adminWarning}</p>}
+          <button type="button" className="btn-primary" disabled={!ready || role === selected.role} onClick={() => void update({ role })}>{t.changeRole}</button>
+          <button type="button" className="btn-danger-outline" disabled={!ready} onClick={() => void update({ accountStatus: selected.accountStatus === 'suspended' ? 'active' : 'suspended' })}>{selected.accountStatus === 'suspended' ? t.restore : t.suspend}</button>
+        </>}
+      </div> : <p className="admin-empty">{c.select}</p>}
+    </section>
+    <div className="admin-task-notice"><AdminCommandNotice command={command} onRefresh={() => void queue.reload()} />{selected && queue.error && <AdminQueueState {...queue} empty={false}>{null}</AdminQueueState>}</div>
+  </div>;
 }

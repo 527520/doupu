@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import PatternPreview from '@/components/preview/PatternPreview';
 import { getBoardProfile } from '@/lib/boardProfiles';
 import type { ReportTargetInspection } from '@/lib/community/reportInspection';
 import { zhCN } from '@/messages/zh-CN';
+import { useAdminCollection } from './useAdminCollection';
+import { useAdminInspection } from './useAdminInspection';
+import { useAdminCommand } from './useAdminCommand';
+import AdminCommandNotice from './AdminCommandNotice';
+import { useAdminTaskFocus } from './useAdminTaskFocus';
 
 type Mode = 'comments' | 'reports';
 interface Item { id: string; workId?: string; targetType?: string; targetId?: string; status: string; version: number; body?: string; category?: string; riskCategories?: string[]; details?: string | null }
@@ -36,68 +41,54 @@ function ReportMaterial({ target }: { target: ReportTargetInspection }) {
 export default function GovernanceConsole({ mode }: { mode: Mode }) {
   const t = zhCN.communityAdmin;
   const g = t.governance;
+  const c = t.command;
   const states = t.states;
-  const [items, setItems] = useState<Item[]>([]);
+  const queue = useAdminCollection<Item>(`/api/admin/community/${mode}`);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [inspection, setInspection] = useState<ReportTargetInspection | null>(null);
-  const [inspectionError, setInspectionError] = useState<string | null>(null);
-  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
-  const reportId = mode === 'reports' ? selected?.id : undefined;
-  const target = inspection?.reportId === reportId ? inspection : null;
-  const canDecide = Boolean(selected) && reason.trim().length >= 3 && (mode === 'comments' || target !== null);
+  const selected = queue.items.find((item) => item.id === selectedId) ?? null;
+  const { queueRef, detailRef } = useAdminTaskFocus(selected?.id ?? null);
+  const inspection = useAdminInspection<ReportTargetInspection>(mode === 'reports' && selected ? `/api/admin/community/reports/${selected.id}` : null);
+  const target = inspection.data?.reportId === selected?.id ? inspection.data : null;
+  const command = useAdminCommand();
+  const canDecide = !queue.loading && !queue.error && !command.locked && Boolean(selected)
+    && reason.trim().length >= 3 && (mode === 'comments' || target !== null);
   const statusLabel = (status: string) => mode === 'comments'
     ? states.comment[status as keyof typeof states.comment] ?? status
     : states.report[status as keyof typeof states.report] ?? status;
   const riskLabel = (risk: string) => states.risk[risk as keyof typeof states.risk] ?? risk;
-  const load = async () => {
-    const response = await fetch(`/api/admin/community/${mode}`);
-    const body = await response.json();
-    if (!response.ok) { setError(body?.error?.message ?? t.queueLoadFailed); return; }
-    setItems(body.items);
-    setSelectedId((current) => body.items.some((item: Item) => item.id === current) ? current : body.items[0]?.id ?? null);
+  const select = (id: string | null) => {
+    if (command.locked) return;
+    setSelectedId(id); setReason(''); command.resetNotice();
   };
-  useEffect(() => {
-    let active = true;
-    void fetch(`/api/admin/community/${mode}`).then(async (response) => {
-      const body = await response.json();
-      if (!active) return;
-      if (!response.ok) { setError(body?.error?.message ?? t.queueLoadFailed); return; }
-      setItems(body.items);
-      setSelectedId(body.items[0]?.id ?? null);
-    });
-    return () => { active = false; };
-  }, [mode, t.queueLoadFailed]);
-
-  useEffect(() => {
-    if (!reportId) return;
-    let active = true;
-    void fetch(`/api/admin/community/reports/${reportId}`).then(async (response) => {
-      const body = await response.json();
-      if (!active) return;
-      if (!response.ok) throw new Error(body?.error?.message ?? g.inspectionFailed);
-      setInspection(body); setInspectionError(null);
-    }).catch(() => { if (active) setInspectionError(g.inspectionFailed); });
-    return () => { active = false; };
-  }, [reportId, g.inspectionFailed]);
-
   const decide = async (decision: string) => {
     if (!selected || !canDecide) return;
-    const response = await fetch(`/api/admin/community/${mode}/${selected.id}`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
-      body: JSON.stringify({ decision, expectedVersion: selected.version, reason }),
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) { setError(body?.error?.message ?? t.actionFailed); return; }
-    setReason(''); setError(null); await load();
+    await command.run({
+      url: `/api/admin/community/${mode}/${selected.id}`, method: 'PATCH',
+      body: { decision, expectedVersion: selected.version, reason },
+    }, async () => { setReason(''); setSelectedId(null); await queue.reload(); });
   };
-
-  return <div className="review-console governance-console">
-    <section className="review-queue" aria-label={g.queue}><header><h2>{mode === 'comments' ? t.pendingComments : t.pendingReports}</h2><span>{items.length}</span></header>
-      {items.length === 0 ? <p className="admin-empty">{g.empty}</p> : <ul>{items.map((item) => <li key={item.id}><button type="button" aria-current={selected?.id === item.id} onClick={() => setSelectedId(item.id)}><span><strong>{item.body?.slice(0, 24) || `${states.target[item.targetType as keyof typeof states.target] ?? item.targetType} / ${item.category ? riskLabel(item.category) : t.unmarked}`}</strong><small>{statusLabel(item.status)} · v{item.version}</small></span></button></li>)}</ul>}
+  const refresh = async () => { await queue.reload(); await inspection.reload(); };
+  return <div className={`review-console governance-console${selected ? ' is-inspecting' : ''}`}>
+    <section className="review-queue" aria-label={g.queue} tabIndex={-1} ref={queueRef}>
+      <header><h2>{mode === 'comments' ? t.pendingComments : t.pendingReports}</h2><span>{queue.items.length}</span></header>
+      {queue.error ? <div><p role="alert" className="notice notice-danger">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>
+        : queue.loading ? <p role="status" className="admin-empty">{c.loading}</p>
+          : queue.items.length === 0 ? <p className="admin-empty">{g.empty}</p>
+            : <ul>{queue.items.map((item) => <li key={item.id}><button type="button" disabled={command.locked} aria-current={selected?.id === item.id} onClick={() => select(item.id)}><span><strong>{item.body?.slice(0, 24) || `${states.target[item.targetType as keyof typeof states.target] ?? item.targetType} / ${item.category ? riskLabel(item.category) : t.unmarked}`}</strong><small>{statusLabel(item.status)} · v{item.version}</small></span></button></li>)}</ul>}
     </section>
-    <section className="review-preview">{selected ? <><span className="studio-eyebrow">{g.caseMaterial.toUpperCase()}</span><h2>{mode === 'comments' ? t.commentPlainText : t.reportFacts}</h2><p className="governance-body">{selected.body || selected.details || t.noDetails}</p><dl><div><dt>{g.status}</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>{g.risk}</dt><dd>{selected.riskCategories?.map(riskLabel).join(g.separator) || (selected.category ? riskLabel(selected.category) : t.unmarked)}</dd></div></dl>{mode === 'reports' && (target ? <ReportMaterial target={target} /> : <p role="status">{inspectionError ?? g.loadingTarget}</p>)}</> : <p className="admin-empty">{g.select}</p>}</section>
-    <aside className="review-actions"><h2>{g.action}</h2><label>{g.reason}<textarea value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></label>{error && <p role="alert" className="notice notice-danger">{error}</p>}<div>{mode === 'comments' ? <><button className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button><button className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{t.actions.publish}</button></> : <><button className="btn-ghost" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected?.status === 'accepted' ? <button className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></aside>
+    <section className="review-preview" aria-label={g.caseMaterial} tabIndex={-1} ref={detailRef}>{selected ? <>
+      <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
+      <span className="studio-eyebrow">{g.caseMaterial}</span><h2>{mode === 'comments' ? t.commentPlainText : t.reportFacts}</h2>
+      <p className="governance-body">{selected.body || selected.details || t.noDetails}</p>
+      <dl><div><dt>{g.status}</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>{g.risk}</dt><dd>{selected.riskCategories?.map(riskLabel).join(g.separator) || (selected.category ? riskLabel(selected.category) : t.unmarked)}</dd></div></dl>
+      {mode === 'reports' && (target ? <ReportMaterial target={target} /> : inspection.error ? <div><p role="alert">{inspection.error}</p><button type="button" className="btn-outline" onClick={() => void inspection.reload()}>{c.reload}</button></div> : <p role="status">{g.loadingTarget}</p>)}
+    </> : <p className="admin-empty">{g.select}</p>}</section>
+    <aside className="review-actions">
+      {selected && <><h2>{g.action}</h2><label>{g.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
+        <div>{mode === 'comments' ? <><button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button><button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{t.actions.publish}</button></> : <><button type="button" className="btn-ghost" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected.status === 'accepted' ? <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></>}
+      <AdminCommandNotice command={command} onRefresh={() => void refresh()} />
+      {selected && queue.error && <div><p role="alert">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>}
+    </aside>
   </div>;
 }

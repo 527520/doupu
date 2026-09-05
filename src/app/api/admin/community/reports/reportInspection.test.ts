@@ -8,6 +8,7 @@ import { SESSION_COOKIE_NAME } from '@/lib/auth/cookies';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { COMMUNITY_LICENSE_VERSION, deriveCommunityPreview } from '@/lib/community/snapshot';
 import { GET } from './[id]/route';
+import { GET as inspectRevision } from '../revisions/[id]/route';
 
 let token: string | undefined;
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (name: string) => name === SESSION_COOKIE_NAME && token ? { value: token } : undefined }) }));
@@ -40,6 +41,23 @@ describe('report target inspection authorization and context', () => {
     await db.update(communityWorks).set({ currentPublishedRevisionId: revision.id }).where(eq(communityWorks.id, workId));
   });
   const get = (id: string) => GET(new Request(`http://localhost:3000/api/admin/community/reports/${id}`), { params: Promise.resolve({ id }) });
+
+  it('loads the entire frozen review snapshot only for moderators and includes the old public revision', async () => {
+    const [original] = await db.select().from(communityRevisions).where(eq(communityRevisions.workId, workId));
+    const [pending] = await db.insert(communityRevisions).values({ ...original, id: crypto.randomUUID(), revisionNumber: 2, status: 'pending_review', title: '待审修改版', publishedAt: null }).returning();
+    const request = () => inspectRevision(new Request(`http://localhost:3000/api/admin/community/revisions/${pending.id}`), { params: Promise.resolve({ id: pending.id }) });
+    expect((await request()).status).toBe(401);
+    token = (await createSession(db, authorId)).token;
+    expect((await request()).status).toBe(403);
+    token = (await createSession(db, moderatorId)).token;
+    const response = await request();
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    const body = await response.json();
+    expect(body).toMatchObject({ id: pending.id, snapshot, previous: { title: original.title, revisionNumber: 1, snapshot } });
+    expect(JSON.stringify(body)).not.toContain(authorId);
+    expect(JSON.stringify(body)).not.toContain('private-author@example.test');
+    expect(JSON.stringify(body)).not.toContain('sourceDesignId');
+  });
 
   it('requires a moderator and can inspect an unpublished work without revealing private account fields', async () => {
     const [report] = await db.insert(communityReports).values({ targetType: 'work', targetId: workId, targetVersion: 1, category: 'other', reporterUserId: authorId }).returning();

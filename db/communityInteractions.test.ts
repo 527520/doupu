@@ -74,7 +74,7 @@ describe('community reuse, interaction and governance transactions', () => {
     moderator = { userId: reviewer.id, role: 'moderator', accountStatus: 'active', emailVerified: true };
     designId = crypto.randomUUID();
     await db.insert(designs).values({ id: designId, userId: author.id, name: 'private', project: project(), payloadBytes: 1 });
-    const created = await createCommunityWork(db, { actor: user, designId, title: '公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    const created = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: '公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
     await reviewCommunityRevision(db, { actor: moderator, revisionId: pending.id, expectedVersion: pending.version,
       decision: 'published', reason: '审核内容完整安全', requestId: 'publish' });
@@ -127,7 +127,7 @@ describe('community reuse, interaction and governance transactions', () => {
   });
 
   it('re-reviews risky edits, enforces edit window and maintains published count', async () => {
-    await createModerationRuleSet(db, { actor: { ...moderator, role: 'admin' },
+    await createModerationRuleSet(db, { actor: { ...moderator, role: 'admin' }, expectedVersion: 1,
       rules: [{ literal: '伤害词', category: 'harm', risk: 'review' }], reason: '启用伤害治理字面词', requestId: 'rules' });
     const safe = await createCommunityComment(db, { actor: user, workId, body: '普通评论', now: new Date('2026-09-05T01:00:00Z') });
     expect(safe.status).toBe('published');
@@ -174,7 +174,7 @@ describe('community reuse, interaction and governance transactions', () => {
 
   it('rejects an empty moderation rule-set version', async () => {
     await expect(createModerationRuleSet(db, {
-      actor: { ...moderator, role: 'admin' }, rules: [], reason: '不允许关闭全部治理词表', requestId: 'empty-rules',
+      actor: { ...moderator, role: 'admin' }, expectedVersion: 0, rules: [], reason: '不允许关闭全部治理词表', requestId: 'empty-rules',
     })).rejects.toBeDefined();
   });
 
@@ -230,7 +230,7 @@ describe('community reuse, interaction and governance transactions', () => {
   it('allows a new report after the work publishes a new immutable revision', async () => {
     await reportCommunityTarget(db, { actor: user, targetType: 'work', targetId: workId, category: 'other' });
     const draft = await createCommunityRevision(db, {
-      actor: user, workId, designId, title: '公开作品第二版', licenseVersion: COMMUNITY_LICENSE_VERSION,
+      actor: user, workId, designId, expectedDesignRevision: 1, title: '公开作品第二版', licenseVersion: COMMUNITY_LICENSE_VERSION,
     });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: draft.id, expectedVersion: draft.version });
     await reviewCommunityRevision(db, {
@@ -245,8 +245,8 @@ describe('community reuse, interaction and governance transactions', () => {
   });
 
   it('anonymizes the account without deleting public works or governance facts', async () => {
-    const newWork = await createCommunityWork(db, { actor: user, designId, title: '尚未公开的作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
-    const revision = await createCommunityRevision(db, { actor: user, workId, designId, title: '已有作品的待审修改', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    const newWork = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: '尚未公开的作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    const revision = await createCommunityRevision(db, { actor: user, workId, designId, expectedDesignRevision: 1, title: '已有作品的待审修改', licenseVersion: COMMUNITY_LICENSE_VERSION });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: revision.id, expectedVersion: revision.version });
     await setCommunityLike(db, { actor: user, workId, liked: true });
     await createCommunityComment(db, { actor: user, workId, body: '注销前评论' });

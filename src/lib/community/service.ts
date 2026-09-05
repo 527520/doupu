@@ -36,7 +36,7 @@ async function lockRevisionWork(tx: AnyDatabase, revisionId: string) {
 interface CreateRevisionInput {
   actor: Actor;
   designId: string;
-  expectedDesignRevision?: number;
+  expectedDesignRevision: number;
   title: string;
   licenseVersion: string;
   tagIds?: string[];
@@ -85,7 +85,7 @@ async function revisionPayload(tx: AnyDatabase, input: CreateRevisionInput) {
     sql`${designs.deletedAt} is null`,
   ));
   if (!design) throw new AppError('NOT_FOUND', '私人设计不存在');
-  if (input.expectedDesignRevision !== undefined && input.expectedDesignRevision !== design.revision) {
+  if (input.expectedDesignRevision !== design.revision) {
     throw new AppError('STATE_CONFLICT', '云端图纸已更新，请重新载入预览并确认许可');
   }
   const snapshot = communitySnapshotFromProject(design.project);

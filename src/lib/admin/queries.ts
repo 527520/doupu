@@ -11,7 +11,7 @@ export async function listGovernedUsers(db: AnyDatabase, search?: string) {
     id: users.id, email: users.email, username: users.username, role: users.role,
     accountStatus: users.accountStatus, governanceVersion: users.governanceVersion,
     emailVerifiedAt: users.emailVerifiedAt, createdAt: users.createdAt,
-  }).from(users).where(q ? or(ilike(users.email, `%${q}%`), ilike(users.username, `%${q}%`)) : undefined)
+  }).from(users).where(q ? or(ilike(users.email, `%${q}%`), ilike(users.username, `%${q}%`), sql`${users.id}::text = ${q}`) : undefined)
     .orderBy(desc(users.createdAt)).limit(100);
   return rows.map((row) => ({
     userId: row.id,

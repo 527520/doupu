@@ -28,7 +28,7 @@ beforeEach(async () => {
     paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 },
     pattern: { width: 1, height: 1, cells: [{ hex: '#FC3D46', code: 'F02', transparent: false }] },
   } });
-  const work = await createCommunityWork(db, { actor, designId, title: '测试公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+  const work = await createCommunityWork(db, { actor, designId, expectedDesignRevision: 1, title: '测试公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
   const pending = await submitCommunityRevision(db, { actor, revisionId: work.revision.id, expectedVersion: 1 });
   await reviewCommunityRevision(db, { actor, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: '测试正常公开状态', requestId: 'test' });
   workId = work.work.id;

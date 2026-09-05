@@ -70,7 +70,7 @@ describe('community work and frozen revision state machine', () => {
 
   it('keeps the approved revision public while a replacement awaits review', async () => {
     const created = await createCommunityWork(db, {
-      actor: user, designId, title: '红色小猫', licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: [tagId],
+      actor: user, designId, expectedDesignRevision: 1, title: '红色小猫', licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: [tagId],
     });
     expect(created.revision.status).toBe('draft');
     expect(await db.select().from(communityRevisionTags)).toHaveLength(1);
@@ -85,7 +85,7 @@ describe('community work and frozen revision state machine', () => {
     expect(published.status).toBe('published');
 
     const replacement = await createCommunityRevision(db, {
-      actor: user, workId: created.work.id, designId, title: '绿色小猫',
+      actor: user, workId: created.work.id, designId, expectedDesignRevision: 1, title: '绿色小猫',
       licenseVersion: COMMUNITY_LICENSE_VERSION,
     });
     const replacementPending = await submitCommunityRevision(db, {
@@ -104,7 +104,7 @@ describe('community work and frozen revision state machine', () => {
 
   it('withdraws the work and any pending revision without deleting approval facts', async () => {
     const created = await createCommunityWork(db, {
-      actor: user, designId, title: '待撤回作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
+      actor: user, designId, expectedDesignRevision: 1, title: '待撤回作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
     });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
     const withdrawn = await withdrawCommunityWork(db, { actor: user, workId: created.work.id, expectedVersion: 1 });
@@ -114,7 +114,7 @@ describe('community work and frozen revision state machine', () => {
 
   it('moves tag links atomically and restores the last approved work revision', async () => {
     const created = await createCommunityWork(db, {
-      actor: user, designId, title: '治理作品', licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: [tagId],
+      actor: user, designId, expectedDesignRevision: 1, title: '治理作品', licenseVersion: COMMUNITY_LICENSE_VERSION, tagIds: [tagId],
     });
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
     await reviewCommunityRevision(db, {
@@ -145,7 +145,7 @@ describe('community work and frozen revision state machine', () => {
 
   it('applies featured, comment-lock, and tag lifecycle changes with version checks', async () => {
     const created = await createCommunityWork(db, {
-      actor: user, designId, title: '精选与评论锁作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
+      actor: user, designId, expectedDesignRevision: 1, title: '精选与评论锁作品', licenseVersion: COMMUNITY_LICENSE_VERSION,
     });
     const pending = await submitCommunityRevision(db, {
       actor: user, revisionId: created.revision.id, expectedVersion: created.revision.version,

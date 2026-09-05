@@ -30,12 +30,12 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
     pattern: { width: 2, height: 1, cells: [{ hex: '#C2385A', code: 'R', transparent: false }, { hex: '#C2385A', code: 'R', transparent: false }] },
   };
   await db.insert(designs).values({ id: designId, userId: user.userId, name: project.name, project, payloadBytes: JSON.stringify(project).length });
-  const created = await createCommunityWork(db, { actor: user, designId, title: 'E2E 已公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+  const created = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: 'E2E 已公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
   const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
   await reviewCommunityRevision(db, { actor: admin, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: 'E2E 启动期公开样本', requestId: 'e2e-seed-publish' });
-  const replacement = await createCommunityRevision(db, { actor: user, workId: created.work.id, designId, title: 'E2E 待审修改版', licenseVersion: COMMUNITY_LICENSE_VERSION });
+  const replacement = await createCommunityRevision(db, { actor: user, workId: created.work.id, designId, expectedDesignRevision: 1, title: 'E2E 待审修改版', licenseVersion: COMMUNITY_LICENSE_VERSION });
   await submitCommunityRevision(db, { actor: user, revisionId: replacement.id, expectedVersion: replacement.version });
-  await createModerationRuleSet(db, { actor: admin, rules: [{ literal: 'E2E风险词', category: 'spam', risk: 'review' }], reason: 'E2E 启动期规则', requestId: 'e2e-seed-rules' });
+  await createModerationRuleSet(db, { actor: admin, expectedVersion: 1, rules: [{ literal: 'E2E风险词', category: 'spam', risk: 'review' }], reason: 'E2E 启动期规则', requestId: 'e2e-seed-rules' });
   await createCommunityComment(db, { actor: user, workId: created.work.id, body: '包含 E2E风险词 的评论' });
   for (const browser of ['chromium', 'firefox', 'webkit']) {
     await createCommunityComment(db, { actor: user, workId: created.work.id, body: `E2E 可删除旧评论 ${browser}`, now: new Date(Date.now() - 30 * 60 * 1000) });

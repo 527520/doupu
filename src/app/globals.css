@@ -291,7 +291,7 @@ body {
 .admin-rail nav { display: flex; flex: 1; flex-direction: column; padding: .9rem .65rem; overflow-y: auto; }
 .admin-rail nav a { display: flex; gap: .75rem; padding: .62rem .7rem; border-left: 2px solid transparent; color: rgb(255 255 255 / 76%); font-size: .84rem; }
 .admin-rail nav a:hover, .admin-rail nav a:focus-visible { border-left-color: var(--color-primary-soft); background: rgb(255 255 255 / 8%); color: white; }
-.admin-rail nav small { color: rgb(255 255 255 / 42%); font-family: ui-monospace, monospace; }
+.admin-rail nav small { color: #c7c2cc; font-family: ui-monospace, monospace; font-size: .75rem; }
 .admin-back { margin: .8rem; padding: .65rem; border: 1px solid rgb(255 255 255 / 18%); text-align: center; font-size: .8rem; }
 .admin-stage { min-height: 100svh; }
 .admin-page { padding: clamp(1rem, 3vw, 2.5rem); }
@@ -324,6 +324,42 @@ body {
 .admin-panel td:not(:first-child), .admin-panel th:not(:first-child) { text-align: right; font-family: ui-monospace, monospace; }
 .admin-empty { padding: 3rem 1rem; text-align: center; color: var(--color-ink-soft); font-size: .85rem; }
 .admin-footnote { margin-top: 1rem; color: var(--color-ink-soft); font-size: .75rem; }
+.admin-stage, .admin-panel, .admin-task-queue, .admin-task-detail, .review-queue, .review-actions { min-width: 0; }
+.admin-task-layout { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 1.4fr); gap: 1rem; margin-top: 1rem; align-items: start; }
+.admin-task-detail { position: sticky; top: 1rem; }
+.admin-task-notice { grid-column: 1 / -1; display: grid; gap: .75rem; }
+.admin-task-notice:empty { display: none; }
+.admin-pagination, .admin-work-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+.admin-pagination { padding: 1rem; justify-content: space-between; }
+.works-task-layout .admin-object-list button { display: grid; grid-template-columns: 4rem minmax(0, 1fr); }
+.works-task-layout .admin-object-list canvas { grid-row: span 2; width: 4rem; height: 4rem; }
+.works-task-layout .admin-object-list strong, .works-task-layout .admin-object-list span { grid-column: 2; }
+.works-task-layout .admin-task-detail canvas { max-height: 60svh; }
+.admin-task-detail .admin-form-stack { gap: 1rem; }
+.admin-form-stack input:not([type="checkbox"]):not([type="radio"]), .admin-form-stack select, .admin-form-stack textarea { min-width: 0; width: 100%; border-radius: .5rem; }
+.admin-form-stack :is(input:not([type="checkbox"]):not([type="radio"]), select), .admin-panel button, .admin-panel summary { min-height: 44px; }
+.admin-panel button, .review-preview button { min-width: 44px; min-height: 44px; }
+.review-preview label { min-height: 44px; }
+.admin-form-stack .admin-check { display: flex; flex-direction: row; align-items: start; gap: .6rem; font-size: .9rem; line-height: 1.6; }
+.admin-check input { width: 1.15rem; min-height: 1.15rem; height: 1.15rem; flex: 0 0 auto; margin-top: .2rem; accent-color: var(--color-primary); }
+.admin-help { font-size: .82rem; line-height: 1.6; color: var(--color-ink-soft); }
+.admin-object-list { padding: 0; margin: 0; list-style: none; }
+.admin-object-list button { display: flex; width: 100%; flex-direction: column; gap: .35rem; padding: 1rem; text-align: left; overflow-wrap: anywhere; border-bottom: 1px solid var(--color-lilac); }
+.admin-object-list button[aria-current="true"] { box-shadow: inset 3px 0 var(--color-primary); background: var(--color-primary-soft); }
+.admin-object-list button > span { font-size: .85rem; color: var(--color-ink-soft); }
+.admin-object-list button[aria-current="true"] > span { color: var(--color-ink); }
+.admin-facts { display: grid; gap: .65rem; }
+.admin-facts div { display: grid; gap: .2rem; }
+.admin-facts dt { font-size: .82rem; color: var(--color-ink-soft); }
+.admin-rule-list { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.admin-rule-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid var(--color-lilac); overflow-wrap: anywhere; }
+.admin-rule-list li > span:first-child { min-width: 0; flex: 1; }
+.admin-rule-list li > span:last-child { color: var(--color-ink-soft); font-size: .85rem; }
+.admin-panel details { border-top: 1px solid var(--color-lilac); padding-top: .5rem; }
+.admin-panel summary { cursor: pointer; padding-block: .65rem; }
+.admin-rail nav a[aria-current="page"] { border-left-color: var(--color-primary-soft); background: rgb(255 255 255 / 10%); color: white; }
+.admin-mobile-menu { display: none; }
+.admin-back-to-queue { align-self: start; margin-bottom: .5rem; }
 .review-console { display: grid; grid-template-columns: 17rem minmax(0, 1fr) 18rem; min-height: calc(100svh - 8rem); margin-top: 1rem; border: 1px solid rgb(48 41 56 / 18%); background: white; }
 .review-queue, .review-preview { border-right: 1px solid rgb(48 41 56 / 14%); }
 .review-queue > header, .review-actions > h2 { display: flex; justify-content: space-between; padding: .8rem; border-bottom: 1px solid rgb(48 41 56 / 14%); font-family: "Songti SC", "STSong", serif; }
@@ -345,6 +381,17 @@ body {
 .review-actions textarea { min-height: 9rem; resize: vertical; padding: .65rem; border: 1px solid var(--color-lilac); color: var(--color-ink); }
 .review-actions .notice { margin: 0 .8rem; }
 .review-actions > div { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .8rem; }
+.review-actions > .notice { display: block; }
+.review-actions .notice button { margin-top: .5rem; width: 100%; }
+.review-console.is-inspecting .review-preview { justify-content: start; }
+.review-preview :is(h2, h3), .review-actions, .review-queue { overflow-wrap: anywhere; }
+.governance-console .review-queue button { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 901px) and (max-width: 1200px) {
+  .review-console { grid-template-columns: 13rem minmax(0, 1fr); }
+  .review-queue { grid-row: 1 / 3; }
+  .review-actions { grid-column: 2; position: static; }
+  .review-preview { border-right: 0; }
+}
 .community-interactions { min-width: 0; padding: clamp(1rem, 2vw, 1.5rem); border: 1px solid #e7e2df; border-radius: 1.25rem; background: white; }
 .community-interactions > header, .community-comment-form > div, .community-comment-list header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .community-interactions h2 { margin: .2rem 0 0; font-family: "Songti SC", "STSong", serif; }
@@ -369,9 +416,10 @@ body {
 .community-comment-actions button, .community-inline-edit button { min-height: 44px; }
 .governance-body { padding: 1rem; border-radius: 1rem; background: var(--color-cream); }
 .governance-console .review-queue button { min-height: 4.5rem; }
-.admin-form-stack { display: grid; gap: .75rem; padding: 1rem; }
-.admin-form-stack label { display: grid; gap: .3rem; }
-.admin-form-stack input, .admin-form-stack select, .admin-form-stack textarea { padding: .65rem; border: 1px solid var(--color-lilac); background: white; color: var(--color-ink); }
+.admin-form-stack { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: .75rem; padding: 1rem; }
+.admin-form-stack > * { min-width: 0; max-width: 100%; }
+.admin-form-stack > label { display: grid; gap: .3rem; }
+.admin-form-stack input:not([type="checkbox"]):not([type="radio"]), .admin-form-stack select, .admin-form-stack textarea { padding: .65rem; border: 1px solid var(--color-lilac); background: white; color: var(--color-ink); }
 .admin-form-stack textarea { min-height: 7rem; resize: vertical; }
 .tag-create { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
 .table-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -396,12 +444,14 @@ body {
 @media (max-width: 900px) { .batch-items li { grid-template-columns: 1fr; align-items: stretch; } }
 
 @media (max-width: 900px) {
-  .admin-shell { padding-left: 0; padding-bottom: 4.5rem; }
-  .admin-rail { inset: auto 0 0; width: auto; height: 4rem; flex-direction: row; }
-  .admin-wordmark, .admin-back { display: none; }
-  .admin-rail nav { flex-direction: row; padding: .35rem; overflow-x: auto; }
-  .admin-rail nav a { flex: 0 0 auto; flex-direction: column; align-items: center; gap: .1rem; padding: .35rem .65rem; border-left: 0; border-top: 2px solid transparent; font-size: .68rem; }
-  .admin-rail nav a:hover, .admin-rail nav a:focus-visible { border-top-color: var(--color-primary-soft); border-left-color: transparent; }
+  .admin-shell { padding-left: 0; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  .admin-rail { inset: auto 0 0; width: auto; min-height: 4rem; height: auto; flex-direction: row; align-items: center; padding: .4rem .75rem calc(.4rem + env(safe-area-inset-bottom)); gap: .5rem; }
+  .admin-wordmark { display: none; }
+  .admin-mobile-menu { display: block; flex: 1; min-height: 44px; text-align: left; font-size: .9rem; }
+  .admin-back { display: block; flex: 0 0 auto; margin: 0; min-height: 44px; font-size: .85rem; }
+  .admin-rail nav { display: none; position: absolute; inset: auto 0 100%; max-height: 65svh; overflow-y: auto; background: var(--color-ink); padding: .75rem; box-shadow: 0 -8px 24px rgb(48 41 56 / 12%); }
+  .admin-rail.is-expanded nav { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+  .admin-rail nav a { min-height: 48px; align-items: center; font-size: .9rem; }
   .admin-page-header { align-items: start; flex-direction: column; }
   .admin-metrics { grid-template-columns: 1fr; }
   .admin-metrics article { border-right: 0; border-bottom: 1px solid rgb(48 41 56 / 14%); }
@@ -410,6 +460,12 @@ body {
   .review-queue, .review-preview { border-right: 0; border-bottom: 1px solid rgb(48 41 56 / 14%); }
   .review-queue ul { max-height: none; }
   .review-actions { position: static; }
+  .admin-task-layout { display: block; }
+  .admin-task-detail { position: static; }
+  .admin-task-layout:not(.is-inspecting) .admin-task-detail, .review-console:not(.is-inspecting) .review-preview { display: none; }
+  .admin-task-layout.is-inspecting .admin-task-queue, .review-console.is-inspecting .review-queue { display: none; }
+  .review-actions:empty { display: none; }
+  .review-preview canvas { max-height: 50svh; }
 }
 
 /* 豆社：真实图纸预览和用色色带是唯一视觉签名。 */

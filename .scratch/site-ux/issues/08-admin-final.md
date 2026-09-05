@@ -1,6 +1,7 @@
 # 08 后台任务化与最终验收
 
 Status: ready-for-agent
+Completion: in-progress
 Type: task
 
 ## 范围
@@ -15,5 +16,6 @@ Type: task
 
 ## Comments
 
-- 待实施；行为测试先行，阶段完成后记录验证及提交。
-
+- 08A 已实现：审核/评论/举报/标签/人员/规则/作品管理七个模块，先选对象后看完整材料/处置；明确读取失败、版本冲突和不确定结果同 key 重试；移动端队列→详情与焦点恢复。规则启用增加同基准版本 CAS + PostgreSQL 咨询锁。
+- 08A 验证：后台/Modal/API 12 文件 27 测试通过，真实 PostgreSQL 16 治理并发合约 10 项通过；七模块队列/详情 × 五宽度共 70 场景无溢出、axe serious/critical 为 0，已目视代表截图。lint/typecheck 通过。
+- 待实施：官方批次生产完整交互、分析/审计/系统只读任务优化；集中清理前阶段新增文案；最终全量门禁、稳定三浏览器和双轴复审。Completion 保持 in-progress，不以 08A 冒充最终交付。

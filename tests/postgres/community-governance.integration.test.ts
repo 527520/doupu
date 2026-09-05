@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, count, eq, inArray, sum } from 'drizzle-orm';
+import { and, count, eq, inArray, max, sum } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '../../db/schema';
@@ -13,13 +13,15 @@ import {
   communityWorks,
   designs,
   idempotencyRecords,
+  moderationRuleSetVersions,
   users,
 } from '../../db/schema';
 import { updateUserGovernance } from '@/lib/admin/userGovernance';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import type { Actor } from '@/lib/auth/authorization';
 import { executeIdempotently } from '@/lib/idempotency';
-import { createCommunityComment, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
+import { createCommunityComment, createModerationRuleSet, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
+import { inspectManagedCommunityWork, listManagedCommunityWorks } from '@/lib/community/adminQueries';
 import { reviewCommunityRevision } from '@/lib/community/service';
 import { moderateCommunityWork } from '@/lib/community/adminService';
 import { createOfficialBatch, publishOfficialBatch, saveOfficialDraft } from '@/lib/community/officialBatch';
@@ -107,6 +109,26 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL 16 community and governance concurrency', () => {
+  it('rejects a competing stale rule replacement and reads managed work material without leaking private identity', async () => {
+    const left = await createUser('admin');
+    const right = await createUser('admin');
+    const [base] = await db.select({ version: max(moderationRuleSetVersions.version) }).from(moderationRuleSetVersions);
+    const results = await Promise.allSettled([left, right].map((actor) => createModerationRuleSet(db, {
+      actor, rules: [{ literal: '本地并发治理测试词', category: 'spam', risk: 'review' }], expectedVersion: base.version ?? 0,
+      reason: '本地并发完整词表替换测试', requestId: randomUUID(),
+    })));
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const failure = results.find((result) => result.status === 'rejected');
+    expect(failure).toMatchObject({ status: 'rejected', reason: { code: 'STATE_CONFLICT' } });
+    expect(await db.select().from(moderationRuleSetVersions).where(eq(moderationRuleSetVersions.active, true))).toHaveLength(1);
+    const { work } = await createPublishedWork(left);
+    const list = await listManagedCommunityWorks(db, { q: work.id });
+    expect(list.items).toHaveLength(1); expect(JSON.stringify(list)).not.toContain('snapshot');
+    const detail = await inspectManagedCommunityWork(db, work.id);
+    expect(detail).toMatchObject({ isPublic: true, canRestore: true, material: { snapshot } });
+    expect(JSON.stringify(detail)).not.toContain(left.userId);
+    await db.delete(users).where(inArray(users.id, [left.userId, right.userId]));
+  });
   it('replays concurrent submission creation and review submission without duplicate works', async () => {
     const actor = await createUser();
     sessionToken = (await createSession(db, actor.userId)).token;

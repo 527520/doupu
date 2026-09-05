@@ -5,6 +5,12 @@ import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { moderateCommunityWork } from '@/lib/community/adminService';
 import { executeIdempotently } from '@/lib/idempotency';
+import { inspectManagedCommunityWork } from '@/lib/community/adminQueries';
+
+async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  await requireApiActor('community:moderate');
+  return okJson(await inspectManagedCommunityWork(getDb(), z.uuid().parse((await params).id)), { headers: { 'Cache-Control': 'private, no-store' } });
+}
 
 const schema = z.object({
   action: z.enum(['remove', 'restore', 'feature', 'unfeature', 'lock_comments', 'unlock_comments']),
@@ -30,3 +36,4 @@ async function patch(request: Request, { params }: { params: Promise<{ id: strin
 }
 
 export const PATCH = withApiErrors(patch);
+export const GET = withApiErrors(get);

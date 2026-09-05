@@ -10,7 +10,7 @@ import type { AnyDatabase } from '@/../db/client';
 
 const createSchema = z.object({
   designId: z.string().uuid(),
-  expectedDesignRevision: z.number().int().positive().optional(),
+  expectedDesignRevision: z.number().int().positive(),
   title: z.string(),
   licenseVersion: z.string(),
   tagIds: z.array(z.string().uuid()).max(10).optional(),

@@ -391,14 +391,16 @@ export async function listGovernanceQueues(db: AnyDatabase) {
 }
 
 export async function createModerationRuleSet(db: AnyDatabase, input: {
-  actor: Actor; rules: unknown; reason: string; requestId: string;
+  actor: Actor; rules: unknown; reason: string; requestId: string; expectedVersion: number;
 }) {
   const rules = moderationRulesSchema.parse(input.rules);
   const reason = reasonSchema.parse(input.reason);
   return db.transaction(async (tx) => {
     await lockActiveAccount(tx, input.actor.userId);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('doupu:moderation-rules', 0))`);
     const [current] = await tx.select({ value: count(), max: sql<number>`coalesce(max(${moderationRuleSetVersions.version}), 0)` })
       .from(moderationRuleSetVersions);
+    if (input.expectedVersion !== Number(current.max)) throw new AppError('STATE_CONFLICT', '规则版本已变化，请重新读取当前词表后编辑');
     await tx.update(moderationRuleSetVersions).set({ active: false }).where(eq(moderationRuleSetVersions.active, true));
     const [created] = await tx.insert(moderationRuleSetVersions).values({
       version: Number(current.max) + 1, rules, active: true,

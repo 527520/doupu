@@ -61,6 +61,13 @@ it('版本过期、非本人设计和缺少许可都不创建作品', async () =
   expect((await create(request({ ...input(), expectedDesignRevision: 2 }))).status).toBe(404);
   expect(await db.select().from(communityWorks)).toHaveLength(0);
 });
+it('首次投稿和新修订都必须明确确认所见的云端设计版本', async () => {
+  const { expectedDesignRevision: _expected, ...withoutVersion } = input();
+  expect((await create(request(withoutVersion))).status).toBe(400);
+  const created = await (await create(request(input()))).json();
+  expect((await revise(request(withoutVersion), params(created.workId))).status).toBe(400);
+  expect(await db.select().from(communityRevisions)).toHaveLength(1);
+});
 it('幂等重放仍检查账号权限，不能让注销、暂停或未验证账号执行投稿', async () => {
   expect((await create(request(input()))).status).toBe(201);
   await db.update(users).set({ emailVerifiedAt: null }).where(eq(users.id, userId));

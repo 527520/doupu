@@ -332,3 +332,26 @@ export async function listCommunityReviewQueue(db: AnyDatabase) {
     }] : [];
   });
 }
+
+/** 所选审核材料才读取完整快照；不返回内部作者或来源设计身份。 */
+export async function inspectCommunityRevision(db: AnyDatabase, revisionId: string) {
+  const [row] = await db.select({
+    id: communityRevisions.id, workId: communityRevisions.workId, title: communityRevisions.title,
+    version: communityRevisions.version, revisionNumber: communityRevisions.revisionNumber, status: communityRevisions.status,
+    snapshot: communityRevisions.snapshot, licenseVersion: communityRevisions.licenseVersion,
+    licenseConfirmedAt: communityRevisions.licenseConfirmedAt, currentPublishedRevisionId: communityWorks.currentPublishedRevisionId,
+    lifecycleStatus: communityWorks.lifecycleStatus,
+  }).from(communityRevisions).innerJoin(communityWorks, eq(communityWorks.id, communityRevisions.workId))
+    .where(eq(communityRevisions.id, revisionId));
+  if (!row) throw new AppError('NOT_FOUND', '审核版本不存在');
+  const snapshot = parseCommunitySnapshot(row.snapshot);
+  if (!snapshot) throw new AppError('STATE_CONFLICT', '审核快照不可读取');
+  const [old] = row.currentPublishedRevisionId && row.currentPublishedRevisionId !== row.id
+    ? await db.select({ title: communityRevisions.title, revisionNumber: communityRevisions.revisionNumber, snapshot: communityRevisions.snapshot })
+      .from(communityRevisions).where(eq(communityRevisions.id, row.currentPublishedRevisionId)) : [];
+  const previousSnapshot = parseCommunitySnapshot(old?.snapshot);
+  const { currentPublishedRevisionId: _privatePointer, ...safe } = row;
+  return { ...safe, snapshot, licenseConfirmedAt: row.licenseConfirmedAt.toISOString(), previous: old && previousSnapshot ? { ...old, snapshot: previousSnapshot } : null };
+}
+
+export type CommunityRevisionInspection = Awaited<ReturnType<typeof inspectCommunityRevision>>;

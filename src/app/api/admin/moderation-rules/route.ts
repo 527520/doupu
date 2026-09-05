@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { desc } from 'drizzle-orm';
 import { moderationRuleSetVersions } from '@/../db/schema';
 
-const schema = z.object({ rules: z.unknown(), reason: z.string() }).strict();
+const schema = z.object({ rules: z.unknown(), reason: z.string(), expectedVersion: z.number().int().nonnegative() }).strict();
 
 async function get() {
   await requireApiActor('moderation-rules:manage');
@@ -17,7 +17,7 @@ async function get() {
     rules: moderationRuleSetVersions.rules, active: moderationRuleSetVersions.active,
     reason: moderationRuleSetVersions.reason, createdAt: moderationRuleSetVersions.createdAt,
   }).from(moderationRuleSetVersions).orderBy(desc(moderationRuleSetVersions.version)).limit(50);
-  return okJson({ items });
+  return okJson({ items }, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 async function post(request: Request) {

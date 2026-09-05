@@ -1,83 +1,79 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import CommunityPreviewCanvas from '@/components/community/CommunityPreviewCanvas';
+import PatternPreview from '@/components/preview/PatternPreview';
 import type { CommunityPreviewV1 } from '@/lib/community/snapshot';
+import type { CommunityRevisionInspection } from '@/lib/community/queries';
+import { getBoardProfile } from '@/lib/boardProfiles';
 import { track } from '@/lib/analytics/client';
 import { zhCN } from '@/messages/zh-CN';
+import { useAdminCollection } from './useAdminCollection';
+import { useAdminInspection } from './useAdminInspection';
+import { useAdminCommand } from './useAdminCommand';
+import AdminCommandNotice from './AdminCommandNotice';
+import { useAdminTaskFocus } from './useAdminTaskFocus';
 
 interface ReviewItem {
-  revisionId: string;
-  workId: string;
-  revisionNumber: number;
-  title: string;
-  version: number;
-  width: number;
-  height: number;
-  colorCount: number;
-  boardProfile: string;
-  submittedAt: string | null;
-  author: { displayName: string; publicAuthorId: string; authorType: string };
-  preview: CommunityPreviewV1;
+  revisionId: string; workId: string; revisionNumber: number; title: string; version: number;
+  width: number; height: number; colorCount: number; boardProfile: string; submittedAt: string | null;
+  author: { displayName: string; publicAuthorId: string; authorType: string }; preview: CommunityPreviewV1;
 }
 
 export default function ReviewConsole() {
   const t = zhCN.communityAdmin;
   const r = t.review;
-  const [items, setItems] = useState<ReviewItem[]>([]);
+  const c = t.command;
+  const queue = useAdminCollection<ReviewItem>('/api/admin/community/revisions');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const selected = items.find((item) => item.revisionId === selectedId) ?? items[0] ?? null;
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('/api/admin/community/revisions');
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message ?? t.queueLoadFailed);
-      setItems(body.items);
-      setSelectedId((current) => body.items.some((item: ReviewItem) => item.revisionId === current) ? current : body.items[0]?.revisionId ?? null);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : t.queueLoadFailed); }
-    finally { setLoading(false); }
+  const selected = queue.items.find((item) => item.revisionId === selectedId) ?? null;
+  const { queueRef, detailRef } = useAdminTaskFocus(selected?.revisionId ?? null);
+  const inspection = useAdminInspection<CommunityRevisionInspection>(selected ? `/api/admin/community/revisions/${selected.revisionId}` : null);
+  const command = useAdminCommand();
+  const detail = inspection.data;
+  const ready = !queue.loading && !queue.error && selected && detail?.id === selected.revisionId
+    && detail.lifecycleStatus === 'active' && detail.status === 'pending_review' && detail.version === selected.version;
+  const refresh = async () => { await queue.reload(); await inspection.reload(); };
+  const select = (id: string | null) => {
+    if (command.locked) return;
+    setSelectedId(id); setReason(''); command.resetNotice();
   };
-  useEffect(() => {
-    let active = true;
-    void fetch('/api/admin/community/revisions').then(async (response) => {
-      const body = await response.json();
-      if (!active) return;
-      if (!response.ok) { setError(body?.error?.message ?? t.queueLoadFailed); setLoading(false); return; }
-      setItems(body.items);
-      setSelectedId(body.items[0]?.revisionId ?? null);
-      setLoading(false);
-    }).catch(() => { if (active) { setError(t.queueLoadFailed); setLoading(false); } });
-    return () => { active = false; };
-  }, [t.queueLoadFailed]);
-
   const decide = async (decision: 'published' | 'rejected') => {
-    if (!selected || reason.trim().length < 3) return;
-    setError(null);
-    const response = await fetch(`/api/admin/community/revisions/${selected.revisionId}/review`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
-      body: JSON.stringify({ decision, expectedVersion: selected.version, reason }),
+    if (!selected || !ready || reason.trim().length < 3 || command.locked) return;
+    await command.run({
+      url: `/api/admin/community/revisions/${selected.revisionId}/review`, method: 'POST',
+      body: { decision, expectedVersion: selected.version, reason },
+    }, async () => {
+      track({ name: 'community_reviewed', properties: { decision } });
+      if (decision === 'published') track({ name: 'community_published', properties: {} });
+      setReason(''); setSelectedId(null); await queue.reload();
     });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) { setError(body?.error?.message ?? t.reviewFailed); return; }
-    track({ name: 'community_reviewed', properties: { decision } });
-    if (decision === 'published') track({ name: 'community_published', properties: {} });
-    setReason('');
-    await load();
   };
-
-  return (
-    <div className="review-console">
-      <section className="review-queue" aria-label={r.queue}><header><h2>{r.title}</h2><span>{items.length}</span></header>
-        {loading ? <p className="admin-empty">{r.loading}</p> : items.length === 0 ? <p className="admin-empty">{r.empty}</p> : <ul>{items.map((item) => <li key={item.revisionId}><button type="button" aria-current={selected?.revisionId === item.revisionId} onClick={() => setSelectedId(item.revisionId)}><CommunityPreviewCanvas preview={item.preview} label={`${item.title} ${r.preview}`} /><span><strong>{item.title}</strong><small>R{item.revisionNumber} · {item.author.displayName}</small></span></button></li>)}</ul>}
-      </section>
-      <section className="review-preview">{selected ? <><header><span>{selected.workId.slice(0, 8).toUpperCase()} / R{selected.revisionNumber}</span><h2>{selected.title}</h2><p>{selected.author.displayName} · {selected.width}×{selected.height} · {selected.colorCount} {r.colorSuffix}</p></header><CommunityPreviewCanvas preview={selected.preview} label={`${selected.title} ${r.largePreview}`} /><div className="community-color-band large">{selected.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div></> : <p className="admin-empty">{r.select}</p>}</section>
-      <aside className="review-actions"><h2>{r.action}</h2><label>{r.reason}<textarea value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={r.reasonPlaceholder} /></label>{error && <p role="alert" className="notice notice-danger">{error}</p>}<div><button className="btn-danger-outline" disabled={!selected || reason.trim().length < 3} onClick={() => void decide('rejected')}>{t.actions.dismiss}</button><button className="btn-primary" disabled={!selected || reason.trim().length < 3} onClick={() => void decide('published')}>{t.actions.approve}</button></div></aside>
-    </div>
-  );
+  return <div className={`review-console${selected ? ' is-inspecting' : ''}`}>
+    <section className="review-queue" aria-label={r.queue} tabIndex={-1} ref={queueRef}>
+      <header><h2>{r.title}</h2><span>{queue.items.length}</span></header>
+      {queue.error ? <div><p role="alert" className="notice notice-danger">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>
+        : queue.loading ? <p className="admin-empty">{r.loading}</p>
+        : queue.items.length === 0 ? <p className="admin-empty">{r.empty}</p>
+        : <ul>{queue.items.map((item) => <li key={item.revisionId}><button type="button" disabled={command.locked} aria-current={selected?.revisionId === item.revisionId} onClick={() => select(item.revisionId)}><CommunityPreviewCanvas preview={item.preview} label={`${item.title} ${r.preview}`} /><span><strong>{item.title}</strong><small>R{item.revisionNumber} · {item.author.displayName}</small></span></button></li>)}</ul>}
+    </section>
+    <section className="review-preview" aria-label={c.frozenMaterial} tabIndex={-1} ref={detailRef}>
+      {selected ? <>
+        <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
+        <header><h2>{selected.title}</h2><p>{selected.author.displayName} · {selected.width}×{selected.height} · {selected.colorCount} {r.colorSuffix}</p></header>
+        {inspection.error ? <div><p role="alert">{inspection.error}</p><button type="button" className="btn-outline" onClick={() => void inspection.reload()}>{c.reload}</button></div>
+          : detail ? <><h3>{c.frozenMaterial} · R{detail.revisionNumber}</h3><PatternPreview pattern={detail.snapshot.pattern} boardSize={getBoardProfile(detail.snapshot.boardProfile).boardCols} />
+            {detail.previous && <details><summary>{c.previous} · R{detail.previous.revisionNumber}</summary><h3>{detail.previous.title}</h3><PatternPreview pattern={detail.previous.snapshot.pattern} boardSize={getBoardProfile(detail.previous.snapshot.boardProfile).boardCols} /></details>}
+            {!ready && <p className="notice notice-warning">{c.stale}</p>}</>
+          : <p role="status">{c.loading}</p>}
+      </> : <p className="admin-empty">{r.select}</p>}
+    </section>
+    <aside className="review-actions">
+      {selected && <><h2>{r.action}</h2><label>{r.reason}<textarea value={reason} disabled={command.locked} maxLength={500} onChange={(event) => setReason(event.target.value)} placeholder={r.reasonPlaceholder} /></label>
+        <div><button type="button" className="btn-danger-outline" disabled={!ready || command.locked || reason.trim().length < 3} onClick={() => void decide('rejected')}>{t.actions.dismiss}</button><button type="button" className="btn-primary" disabled={!ready || command.locked || reason.trim().length < 3} onClick={() => void decide('published')}>{t.actions.approve}</button></div></>}
+      <AdminCommandNotice command={command} onRefresh={() => void refresh()} />
+      {selected && queue.error && <div><p role="alert">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>}
+    </aside>
+  </div>;
 }

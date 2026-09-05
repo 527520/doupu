@@ -1,28 +1,90 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
+import AdminCommandNotice from './AdminCommandNotice';
+import AdminQueueState from './AdminQueueState';
+import { useAdminCollection } from './useAdminCollection';
+import { useAdminCommand } from './useAdminCommand';
+import { useAdminTaskFocus } from './useAdminTaskFocus';
+
 interface Tag { id: string; name: string; slug: string; sortOrder: number; active: boolean; mergedIntoTagId: string | null; version: number }
 
 export default function TagsManager() {
   const t = zhCN.communityAdmin.tags;
-  const [items, setItems] = useState<Tag[]>([]);
-  const [name, setName] = useState(''); const [slug, setSlug] = useState(''); const [reason, setReason] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const load = async () => { const response = await fetch('/api/admin/community/tags'); if (response.ok) setItems((await response.json()).items); };
-  useEffect(() => { let active = true; void fetch('/api/admin/community/tags').then(async (response) => { if (active && response.ok) setItems((await response.json()).items); }); return () => { active = false; }; }, []);
-  const create = async () => {
-    const response = await fetch('/api/admin/community/tags', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ name, slug, reason }) });
-    const body = await response.json().catch(() => null); setMessage(response.ok ? t.created : body?.error?.message ?? t.createFailed);
-    if (response.ok) { setName(''); setSlug(''); await load(); }
+  const c = zhCN.communityAdmin.command;
+  const queue = useAdminCollection<Tag>('/api/admin/community/tags');
+  const command = useAdminCommand();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = queue.items.find((tag) => tag.id === selectedId) ?? null;
+  const creating = selectedId === 'new';
+  const inspecting = creating || selected !== null;
+  const { queueRef, detailRef } = useAdminTaskFocus(inspecting ? selectedId : null);
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [order, setOrder] = useState('0');
+  const [active, setActive] = useState(true);
+  const [reason, setReason] = useState('');
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [mergeConfirmed, setMergeConfirmed] = useState(false);
+  const target = queue.items.find((tag) => tag.id === mergeTarget && tag.active && !tag.mergedIntoTagId);
+  const editable = !command.locked && !queue.loading && !queue.error && !selected?.mergedIntoTagId;
+  const validReason = reason.trim().length >= 3;
+  const validFields = name.trim().length > 0 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+    && order.trim() !== '' && Number.isSafeInteger(Number(order));
+  const changed = creating || (selected && (name.trim() !== selected.name || slug !== selected.slug || Number(order) !== selected.sortOrder || active !== selected.active));
+  const select = (tag: Tag | 'new' | null) => {
+    if (command.locked) return;
+    const item = typeof tag === 'object' ? tag : null;
+    setSelectedId(tag === 'new' ? 'new' : item?.id ?? null);
+    setName(item?.name ?? ''); setSlug(item?.slug ?? ''); setOrder(String(item?.sortOrder ?? 0));
+    setActive(item?.active ?? true); setReason(''); setMergeTarget(''); setMergeConfirmed(false); command.resetNotice();
   };
-  const update = async (tag: Tag, changes: Partial<Tag>) => {
-    const response = await fetch(`/api/admin/community/tags/${tag.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ expectedVersion: tag.version, reason, ...changes }) });
-    const body = await response.json().catch(() => null); setMessage(response.ok ? t.updated : body?.error?.message ?? t.updateFailed); if (response.ok) await load();
+  const completed = async () => { setSelectedId(null); setReason(''); await queue.reload(); };
+  const save = async () => {
+    if (!editable || !validReason || !validFields || !changed) return;
+    const fields = { name: name.trim(), slug, sortOrder: Number(order), reason };
+    await command.run(creating
+      ? { url: '/api/admin/community/tags', method: 'POST', body: fields }
+      : { url: `/api/admin/community/tags/${selected!.id}`, method: 'PATCH', body: { ...fields, active, expectedVersion: selected!.version } }, completed);
   };
-  const merge = async (tag: Tag, targetTagId: string) => {
-    if (!targetTagId) return; const response = await fetch(`/api/admin/community/tags/${tag.id}/merge`, { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ targetTagId, expectedVersion: tag.version, reason }) });
-    const body = await response.json().catch(() => null); setMessage(response.ok ? t.merged : body?.error?.message ?? t.mergeFailed); if (response.ok) await load();
+  const merge = async () => {
+    if (!selected || !target || !editable || !validReason || !mergeConfirmed) return;
+    await command.run({ url: `/api/admin/community/tags/${selected.id}/merge`, method: 'POST',
+      body: { targetTagId: target.id, expectedVersion: selected.version, reason } }, completed);
   };
-  return <section className="admin-panel"><header><h2>{t.title}</h2><span>{items.length}</span></header><div className="admin-form-stack tag-create"><label>{t.name}<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>{t.slug}<input value={slug} onChange={(event) => setSlug(event.target.value)} /></label><label>{t.reason}<input value={reason} onChange={(event) => setReason(event.target.value)} /></label><button type="button" className="btn-primary" disabled={!name || !slug || reason.trim().length < 3} onClick={() => void create()}>{t.create}</button></div>{message && <p role="status" className="notice">{message}</p>}<table><thead><tr><th>{t.name}</th><th>{t.slug}</th><th>{t.sort}</th><th>{t.status}</th><th>{t.action}</th></tr></thead><tbody>{items.map((tag) => <tr key={tag.id}><td>{tag.name}</td><td><code>{tag.slug}</code></td><td>{tag.sortOrder}</td><td>{tag.mergedIntoTagId ? t.mergedState : tag.active ? t.enabled : t.disabled}</td><td><div className="table-actions"><button type="button" disabled={reason.trim().length < 3 || Boolean(tag.mergedIntoTagId)} onClick={() => void update(tag, { active: !tag.active })}>{tag.active ? t.disabled : t.enabled}</button><button type="button" disabled={reason.trim().length < 3 || Boolean(tag.mergedIntoTagId)} onClick={() => void update(tag, { sortOrder: tag.sortOrder - 1 })}>{t.moveUp}</button><button type="button" disabled={reason.trim().length < 3 || Boolean(tag.mergedIntoTagId)} onClick={() => void update(tag, { sortOrder: tag.sortOrder + 1 })}>{t.moveDown}</button><button type="button" disabled={reason.trim().length < 3 || Boolean(tag.mergedIntoTagId)} onClick={() => { const value = window.prompt(t.renamePrompt, tag.name); if (value) void update(tag, { name: value }); }}>{t.rename}</button><button type="button" disabled={reason.trim().length < 3 || Boolean(tag.mergedIntoTagId)} onClick={() => { const value = window.prompt(t.mergePrompt); if (value) void merge(tag, value); }}>{t.merge}</button></div></td></tr>)}</tbody></table></section>;
+  return <div className={`admin-task-layout${inspecting ? ' is-inspecting' : ''}`}>
+    <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
+      <header><h2>{t.title}</h2><button type="button" className="btn-outline" disabled={command.locked || queue.loading || Boolean(queue.error)} onClick={() => select('new')}>{t.create}</button></header>
+      <AdminQueueState {...queue} empty={queue.items.length === 0}>
+        <ul className="admin-object-list">{queue.items.map((tag) => <li key={tag.id}><button type="button" disabled={command.locked} aria-current={selected?.id === tag.id} onClick={() => select(tag)}>
+          <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? t.mergedState : tag.active ? t.enabled : t.disabled} · {t.sort} {tag.sortOrder}</span>
+        </button></li>)}</ul>
+      </AdminQueueState>
+    </section>
+    <section className="admin-panel admin-task-detail" tabIndex={-1} ref={detailRef} aria-label={t.action}>
+      {inspecting ? <div className="admin-form-stack">
+        <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
+        <h2>{creating ? t.createTitle : selected!.name}</h2>
+        {selected?.mergedIntoTagId ? <p>{t.mergedTo} {queue.items.find((tag) => tag.id === selected.mergedIntoTagId)?.name ?? selected.mergedIntoTagId}</p> : <>
+          <label>{t.name}<input value={name} maxLength={30} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
+          <label>{t.slug}<input value={slug} maxLength={50} disabled={!editable} onChange={(event) => setSlug(event.target.value)} aria-describedby="tag-slug-help" /></label>
+          <p id="tag-slug-help" className="admin-help">{t.slugHelp}</p>
+          <label>{t.sort}<input type="number" step="1" value={order} disabled={!editable} onChange={(event) => setOrder(event.target.value)} /></label>
+          {!creating && <label className="admin-check"><input type="checkbox" checked={active} disabled={!editable} onChange={(event) => setActive(event.target.checked)} />{t.enabled}</label>}
+          <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
+          <button type="button" className="btn-primary" disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</button>
+          {selected && <details><summary>{t.merge}</summary><div className="admin-form-stack">
+            <p>{t.mergeHelp}</p>
+            <label>{t.mergeTarget}<select value={mergeTarget} disabled={!editable} onChange={(event) => { setMergeTarget(event.target.value); setMergeConfirmed(false); }}>
+              <option value="">{t.chooseTarget}</option>{queue.items.filter((tag) => tag.id !== selected.id && tag.active && !tag.mergedIntoTagId).map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+            </select></label>
+            {target && <label className="admin-check"><input type="checkbox" checked={mergeConfirmed} disabled={!editable} onChange={(event) => setMergeConfirmed(event.target.checked)} />{t.confirmMerge(selected.name, target.name)}</label>}
+            <button type="button" className="btn-danger-outline" disabled={!editable || !target || !mergeConfirmed || !validReason} onClick={() => void merge()}>{t.mergeSubmit}</button>
+          </div></details>}
+        </>}
+      </div> : <p className="admin-empty">{c.select}</p>}
+    </section>
+    <div className="admin-task-notice"><AdminCommandNotice command={command} onRefresh={() => void queue.reload()} />{inspecting && queue.error && <AdminQueueState {...queue} empty={false}>{null}</AdminQueueState>}</div>
+  </div>;
 }
