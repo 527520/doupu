@@ -195,3 +195,22 @@
 - 新增普通模式、StrictMode、嵌套弹窗 3 项回归，模拟 jsdom 缺失的 inert 失焦行为；`modal-focus-red.log` 修复前 3 failed、5 passed。只将入口引用记录提前到既有 layout effect 内、设置 inert 之前；自动聚焦与恢复仍留在原被动 effect，不搬入昂贵布局操作，不改变背景恢复和裁剪源语义。
 - `modal-focus-green.log`：Modal/裁剪/工作台 4 文件 99 项全部通过；`modal-focus-browser.log`：完整整图生成→取消恢复焦点→确认更新→刷新缺原图→重绑取消/拒绝替换，三浏览器各连续五次，共 15 项通过。lint、typecheck 通过。扩展回归、独立复审及最终全量门禁仍在运行。
 - `modal-focus-recovery.log`：12/13/14 三个完整 E2E 文件覆盖社区、裁剪、治理，Chromium/Firefox/WebKit 共 61 项通过、2 个原设计重复视觉用例跳过，2.8 分钟。Modal 增量两轴独立复审均 0 未解决；之后冻结产品源代码，重新执行最终门禁。
+
+## 08M 最终源代码验收（afa530b）— 2026-09-05
+
+- 本节日志均为本地 `/tmp/doupu-siteux-acceptance-` 前缀，不覆盖前面失败记录。最终完整稳定门禁未全部结束前，Completion 保持 in-progress。
+- `lint.log`、`typecheck.log` 通过。`build.log`：Docker Next.js 16.3.1 生产构建通过，镜像 `doupu-app:siteux-acceptance`；镜像标识 `sha256:afc0a4b8f193fd83dbe960b0ae2a0559fc68e09458abb93bfba88bb765847a0b`。`argon2.log` 的镜像内原生 hash/verify 通过。
+- `pg-revision.log`：真实 PostgreSQL 16.15 的修订/配额合约通过；`pg-governance.log`：12 项并发/治理合约通过。`image-preflight.log`：新隔离空库 `siteux_image_acceptance` 直接使用最终镜像检查器/迁移，v3 合法记录通过、旧协议只读拒绝且数据不变。
+- `production.log`：最终镜像 + 本地 PostgreSQL 的实际路由 CAS/配额/墓碑/分页/重试合约和 4 项 production-Chromium 通过，6.4 秒；包含管理员续期、CSP/RSC/Worker、单次令牌、HTTPS 明确同意后当天长期趋势及五宽度分类图表/数据表。运行时测试账号已清理，临时应用容器已停止。
+- 带既存用户/设计/分享的 0004 升级、down/重升、超时/锁竞争和失败事务回滚仍使用 08I 的真实 PostgreSQL 演练证据；此后的改动仅客户端与测试，无迁移/数据库代码改变。实际应用查询 EXPLAIN 仍使用 08G 的 14 条小数据夹具结果，不冒称生产规模验证。
+- `coverage.log`：185 文件全部通过，1460 项通过、13 项原设计跳过，285.26 秒；`src/lib` 覆盖率 Statements 91.05%（5199/5710）、Branches 82.87%（3175/3831）、Functions 95.53%（813/851）、Lines 94.61%（4641/4905），达到仓库门槛。相较前候选增加 3 项 Modal 先红回归，不降低覆盖率范围。
+- `performance.log`：隔离重型覆盖率/构建后连续五轮，每轮 4 文件 7 项全部通过；未改变性能门槛，无自动失败重试。
+- `stable-e2e.log`：afa530b 连续三轮完整 Chromium/Firefox/WebKit，每轮 215 passed、22 原设计 skipped、0 failed，各 7.6 分钟。之后目视截图引出尚未覆盖的 50 项发布长清单，故本候选通过不替代下一节修复后的最终验收。
+
+## 08N 最大批次清单的短视口边界 — 2026-09-05
+
+- 最后目视发布截图发现确认框没有单独的宽度/高度限制，原一项草稿短视口用例未覆盖合法最大 50 项。新增真实 50 文件生成→逐项保存→逐项勾选→打开发布确认的 E2E；`batch-viewport-red.log` 在 Chromium 350×400 视口下实测 dialog 顶部 -509px，稳定复现正文被裁到屏幕外。
+- 仅批次确认/替换/加载使用独立 36rem 宽度与 `100dvh - 2rem` 最大高度、内部滚动；完整图纸检查保留 56rem 宽度并共享高度限制。Portal 内标题、清单和复选框获得独立样式，长标题可折行。未改通用 Modal 或发布/许可/版本/幂等状态。
+- `batch-viewport-green.log` 首次扩大三浏览器 9 passed、1 failed、2 skipped：尺寸均通过，但 WebKit 点击取消后的入口焦点断言失败。原生按钮探针对比确认 Chromium/Firefox 鼠标点击会聚焦按钮，本地 WebKit 变为 body；仅发布入口同步 `focus()` 后再打开 Modal，使既有焦点恢复捕获正确入口。
+- `batch-viewport-final.log` 完整 15 文件三浏览器：10 passed、2 原设计重复视觉 skipped，1.1 分钟。新 50 项用例验证首尾可滚动、上下 16px 边界、确认默认未勾、取消后 50 项选择与入口焦点保留、0 发布请求、1440px 宽度约束及再次打开不继承确认。旧丢响应/暂停/取消/历史恢复与五宽度视觉同时通过；无 force、失败重试或阈值放宽。
+- Standards 与 Spec 对尺寸/滚动及补充 focus 行分别独立复核，均 0 未解决。目视修复后的 350px 发布确认；最终稳定运行另外保留 50 项短视口截图。再次冻结源代码并运行全部最终门禁，不以此前候选代替。

@@ -484,6 +484,12 @@ body {
 .batch-history li { display: grid; gap: .25rem; overflow-wrap: anywhere; }
 .batch-inspection { width: min(56rem, 100%); }
 .batch-inspection > header { display: flex; gap: 1rem; justify-content: space-between; }
+.batch-dialog, .batch-inspection { max-height: calc(100dvh - 2rem); overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.batch-dialog { width: min(36rem, 100%); display: grid; gap: .75rem; }
+.batch-dialog h2 { font-family: "Songti SC", "STSong", serif; font-size: 1.25rem; }
+.batch-dialog ul { padding-left: 1.25rem; list-style: decimal; }
+.batch-dialog .admin-checkbox { display: flex; align-items: flex-start; gap: .5rem; min-height: 44px; padding-block: .25rem; }
+.batch-dialog input[type="checkbox"] { width: 1.125rem; height: 1.125rem; flex: 0 0 auto; margin-top: .2rem; accent-color: var(--color-primary); }
 .batch-items li > div, .batch-items label { display: grid; gap: .25rem; }
 .batch-items label.admin-checkbox { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
 .batch-select-files { cursor: pointer; }

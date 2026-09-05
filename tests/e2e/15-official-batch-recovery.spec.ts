@@ -83,6 +83,41 @@ test('暂停只停止新派发，取消待处理项后继续不丢失正在保�
   } finally { release(); }
 });
 
+test('50 项发布清单在短视口内滚动，取消后保留选择且不发布', async ({ page }, info) => {
+  await login(page);
+  await page.getByLabel('选择图片', { exact: true }).setInputFiles(Array.from({ length: 50 }, (_, index) => image(`maximum-${index}.png`)));
+  await smallDefault(page); await page.getByRole('button', { name: '开始生成' }).click();
+  const choices = page.locator('.batch-items input[type=checkbox]');
+  await expect(choices).toHaveCount(50);
+  for (const choice of await choices.all()) await choice.check();
+  let publications = 0;
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/publish')) publications++; });
+  const opener = page.getByRole('button', { name: /发布已勾选草稿/ });
+  await page.setViewportSize({ width: 350, height: 400 }); await opener.click();
+  const dialog = page.getByRole('dialog', { name: '发布已勾选草稿', exact: true });
+  await expect(dialog.locator('li')).toHaveCount(50);
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.y).toBeGreaterThanOrEqual(16);
+  expect(bounds!.height).toBeLessThanOrEqual(368);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(384);
+  await dialog.locator('li').first().scrollIntoViewIfNeeded(); await expect(dialog.locator('li').first()).toBeInViewport();
+  if (info.project.name === 'chromium') await page.screenshot({ path: resolve('.scratch/site-ux/batch-maximum-350.png') });
+  await dialog.locator('li').last().scrollIntoViewIfNeeded(); await expect(dialog.locator('li').last()).toBeInViewport();
+  const confirmation = dialog.getByRole('checkbox');
+  await expect(confirmation).not.toBeChecked();
+  await expect(dialog.getByRole('button', { name: '确认公开所选草稿' })).toBeDisabled();
+  await confirmation.check();
+  await expect(dialog.getByRole('button', { name: '确认公开所选草稿' })).toBeEnabled();
+  await dialog.getByRole('button', { name: '返回草稿' }).click();
+  await expect(dialog).toHaveCount(0); await expect(opener).toBeFocused();
+  await expect(page.locator('.batch-items input[type=checkbox]:checked')).toHaveCount(50);
+  await page.setViewportSize({ width: 1440, height: 844 }); await opener.click();
+  expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(576);
+  await expect(dialog.getByRole('checkbox')).not.toBeChecked();
+  await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
+  expect(publications).toBe(0);
+});
+
 test('批次准备、裁剪、实际草稿和发布确认在五宽度下可访问且不溢出', async ({ page }, info) => {
   test.skip(info.project.name !== 'chromium');
   await login(page); await page.getByLabel('选择图片', { exact: true }).setInputFiles(image('width-check.png')); await smallDefault(page);

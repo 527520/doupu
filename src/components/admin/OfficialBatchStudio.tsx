@@ -57,7 +57,7 @@ function BatchCropEditor({ item, session, onClose }: { item: BatchItem; session:
     return () => { alive = false; decoder.dispose(); };
   }, [item.file]);
   return image ? <CropDialog image={image} initialRect={item.crop ?? undefined} onCancel={onClose} onConfirm={(crop) => { session.updateItem(item.localId, { crop }); onClose(); }} />
-    : <Modal label={t.cropTitle} onClose={onClose}><h2>{t.cropTitle}</h2><p role={error ? 'alert' : 'status'}>{error || c.loading}</p><button type="button" className="btn-outline" onClick={onClose}>{zhCN.common.close}</button></Modal>;
+    : <Modal label={t.cropTitle} onClose={onClose} panelClassName="batch-dialog"><h2>{t.cropTitle}</h2><p role={error ? 'alert' : 'status'}>{error || c.loading}</p><button type="button" className="btn-outline" onClick={onClose}>{zhCN.common.close}</button></Modal>;
 }
 
 function DraftInspection({ item, onClose }: { item: BatchItem; onClose: () => void }) {
@@ -135,7 +135,7 @@ export default function OfficialBatchStudio() {
           {state.mode !== 'running' && items.some((item) => item.status === 'pending') && <button className="btn-outline" type="button" disabled={session.locked || session.processing || state.conflict} onClick={() => void session.resume()}>{t.resume}</button>}
           {['running', 'paused'].includes(batch.status) && <><button className="btn-danger-outline" type="button" disabled={session.locked} onClick={() => void session.cancel()}>{t.cancel}</button><button className="btn-outline" type="button" disabled={session.locked || session.processing || Boolean(session.retainedSaveCount) || state.conflict || items.some((item) => item.status === 'pending')} onClick={() => void session.finish()}>{t.finishBatch}</button></>}
           <button className="btn-outline" type="button" disabled={session.locked || session.processing} onClick={() => void refresh()}>{c.refresh}</button>
-          <button className="btn-primary" type="button" disabled={session.locked || session.processing || Boolean(session.retainedSaveCount) || state.conflict || !selected.length} onClick={() => { setConfirmPublish(true); setConfirmed(false); }}>{t.publishSelected} · {selected.length}</button>
+          <button className="btn-primary" type="button" disabled={session.locked || session.processing || Boolean(session.retainedSaveCount) || state.conflict || !selected.length} onClick={(event) => { event.currentTarget.focus(); setConfirmPublish(true); setConfirmed(false); }}>{t.publishSelected} · {selected.length}</button>
         </>}
       </div>
       <ol className="batch-items">{items.map((item, index) => <li key={item.localId} aria-label={t.itemLabel(index + 1)}>
@@ -155,8 +155,8 @@ export default function OfficialBatchStudio() {
     </>}
     {cropItem && <BatchCropEditor item={cropItem} session={session} onClose={() => setCropId(null)} />}
     {inspected && <DraftInspection item={inspected} onClose={() => setInspectionId(null)} />}
-    {replacement && <Modal label={t.replaceTitle} onClose={() => setReplacement(null)}><h2>{t.replaceTitle}</h2><p>{t.replaceHelp}</p><button type="button" className="btn-outline" onClick={() => setReplacement(null)}>{t.keepFiles}</button><button type="button" className="btn-danger-outline" onClick={() => { if ('files' in replacement) session.selectFiles(replacement.files); else session.restore(replacement.batch); setReplacement(null); setConfirmPublish(false); }}>{t.replaceConfirm}</button></Modal>}
-    {confirmPublish && <Modal label={t.publishSelected} onClose={() => { if (!session.locked) setConfirmPublish(false); }}><h2>{t.publishSelected}</h2><p>{t.publishHelp}</p><ul>{selected.map((item) => <li key={item.localId}>{item.title}</li>)}</ul><label className="admin-checkbox"><input type="checkbox" checked={confirmed} disabled={session.locked} onChange={(event) => setConfirmed(event.target.checked)} />{t.confirmPublication}</label>
+    {replacement && <Modal label={t.replaceTitle} onClose={() => setReplacement(null)} panelClassName="batch-dialog"><h2>{t.replaceTitle}</h2><p>{t.replaceHelp}</p><button type="button" className="btn-outline" onClick={() => setReplacement(null)}>{t.keepFiles}</button><button type="button" className="btn-danger-outline" onClick={() => { if ('files' in replacement) session.selectFiles(replacement.files); else session.restore(replacement.batch); setReplacement(null); setConfirmPublish(false); }}>{t.replaceConfirm}</button></Modal>}
+    {confirmPublish && <Modal label={t.publishSelected} onClose={() => { if (!session.locked) setConfirmPublish(false); }} panelClassName="batch-dialog"><h2>{t.publishSelected}</h2><p>{t.publishHelp}</p><ul>{selected.map((item) => <li key={item.localId}>{item.title}</li>)}</ul><label className="admin-checkbox"><input type="checkbox" checked={confirmed} disabled={session.locked} onChange={(event) => setConfirmed(event.target.checked)} />{t.confirmPublication}</label>
       {state.error && <p role="alert">{state.error}</p>}{state.uncertain && <><p>{c.uncertain}</p><button type="button" className="btn-outline" disabled={state.busy} onClick={() => void session.retryCommand().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{c.retry}</button></>}
       <div className="table-actions"><button type="button" className="btn-outline" disabled={session.locked} onClick={() => setConfirmPublish(false)}>{t.backToDrafts}</button><button type="button" className="btn-primary" disabled={!confirmed || session.locked || !selected.length} onClick={() => void session.publish().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{t.confirmPublish}</button></div>
     </Modal>}
