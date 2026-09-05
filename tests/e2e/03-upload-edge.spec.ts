@@ -38,7 +38,8 @@ test('E10：全透明 PNG 生成后统计为 0 且 PNG 导出禁用', async ({ p
   await openApp(page);
   await uploadFile(page, fixture('transparent-64.png'));
   await expect(page.getByText(/共 0 粒/).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('button', { name: /导出 PNG/ })).toBeDisabled();
+  await page.getByRole('navigation', { name: '工作台工具' }).getByRole('button', { name: '导出', exact: true }).click();
+  await expect(page.getByRole('button', { name: '下载 PNG', exact: true })).toBeDisabled();
 });
 
 test('损坏 HEIC：尺寸探针失败时在原生/WASM 解码前拒绝', async ({ page }) => {

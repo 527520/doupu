@@ -23,7 +23,7 @@ describe('首页', () => {
     render(<Home />);
     expect(screen.getByRole('heading', { level: 1, name: '开始创作' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: '把喜欢，一颗颗拼出来。' })).toBeTruthy();
-    expect(screen.getByRole('status')).toHaveTextContent('正在检查登录状态…');
+    expect(screen.getByText('正在检查登录状态…').closest('[role="status"]')).toBeInTheDocument();
     expect(screen.getByText(/拖拽图片到此处/)).toBeTruthy();
     expect(within(screen.getByTestId('workspace-sidebar')).getByRole('link', { name: '工作台' })).toBeTruthy();
     await screen.findByRole('link', { name: '登录' }); // 等待登录态探测完成

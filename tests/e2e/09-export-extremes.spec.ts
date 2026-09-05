@@ -26,6 +26,7 @@ function project(width: number, height: number, colors: Array<{ code: string; he
 }
 
 async function importProject(page: Page, value: ReturnType<typeof project>): Promise<void> {
+  await page.getByRole('navigation', { name: '工作台工具' }).getByRole('button', { name: '导出', exact: true }).click();
   await page.getByLabel('项目文件选择器').setInputFiles({
     name: 'extreme.doupu.json',
     mimeType: 'application/json',
@@ -116,10 +117,9 @@ test('200×1 PNG has cross-browser decodable golden pixels and 500-color PDF pag
     { code: 'BLUE-LONG-CODE-00002', hex: '#0000FF' },
   ]);
   await importProject(page, pngProject);
-  await page.getByRole('button', { name: /导出 PNG/ }).click();
   const [pngDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('button', { name: '下载 PNG', exact: true }).click(),
   ]);
   const pngBytes = readFileSync((await pngDownload.path())!);
   const decoded = await page.evaluate(async (base64) => {
@@ -146,12 +146,12 @@ test('200×1 PNG has cross-browser decodable golden pixels and 500-color PDF pag
     last: [0, 0, 255, 255],
   });
 
-  await page.getByRole('button', { name: /导出 PNG/ }).click();
+  await page.getByRole('button', { name: 'PNG 选项', exact: true }).click();
   await page.getByRole('combobox', { name: '格子大小' }).selectOption('8');
   await page.getByRole('checkbox', { name: '包含图例与色号清单' }).check();
   const [legendPngDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('region', { name: 'PNG 导出选项' }).getByRole('button', { name: '导出', exact: true }).click(),
   ]);
   const legendPngBytes = readFileSync((await legendPngDownload.path())!);
   const opaqueLegend = await page.evaluate(async (base64) => {
@@ -184,7 +184,7 @@ test('200×1 PNG has cross-browser decodable golden pixels and 500-color PDF pag
   await expect(page.getByText(/图纸 \d+ 页.*图例清单 \d+ 页/)).toBeVisible();
   const [pdfDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('region', { name: '确认导出 PDF' }).getByRole('button', { name: '导出', exact: true }).click(),
   ]);
   const pdf = await PDFDocument.load(readFileSync((await pdfDownload.path())!));
   expect(pdf.getPageCount()).toBeGreaterThan(2);
@@ -202,13 +202,13 @@ test('合并超限时 ZIP 恰好包含两张可解码且不透明的 PNG', async
   const value = project(170, 170, colors);
   value.name = 'ZIP极限';
   await importProject(page, value);
-  await page.getByRole('button', { name: /导出 PNG/ }).click();
+  await page.getByRole('button', { name: 'PNG 选项', exact: true }).click();
   await page.getByRole('checkbox', { name: '包含图例与色号清单' }).check();
   await expect(page.getByRole('status').filter({ hasText: '打包为两张 PNG' })).toBeVisible();
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('region', { name: 'PNG 导出选项' }).getByRole('button', { name: '导出', exact: true }).click(),
   ]);
   expect(download.suggestedFilename()).toBe('豆谱-ZIP极限-170x170-PNG.zip');
   const entries = extractZipEntries(readFileSync((await download.path())!));

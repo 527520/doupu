@@ -65,13 +65,14 @@ describe('首页上传卡（D-3）', () => {
     vi.doUnmock('next/navigation');
   });
 
-  it('三步引导文案真的渲染了（此前 home.guideStep* 从未出现在界面上）', async () => {
+  it('上传卡优先呈现选图和空白起稿，教程不重复堆在落区', async () => {
     vi.doMock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
     const { default: HomeUploadCard } = await import('@/components/upload/HomeUploadCard');
     render(<HomeUploadCard />);
-    for (const step of [zhCN.home.guideStep1, zhCN.home.guideStep2, zhCN.home.guideStep3]) {
-      expect(screen.getByText(step)).toBeTruthy();
-    }
+    expect(screen.getByRole('heading', { name: zhCN.home.fromImage })).toBeVisible();
+    expect(screen.getByLabelText(zhCN.upload.inputLabel)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: new RegExp(zhCN.home.blankStart) })).toHaveAttribute('href', '/app?new=1#blank-start');
+    expect(screen.queryByText(zhCN.home.guideStep1)).not.toBeInTheDocument();
     vi.doUnmock('next/navigation');
   });
 });

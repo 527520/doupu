@@ -28,6 +28,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   // 取消后恢复到上一个已提交快照。
   const widthInput = page.getByRole('spinbutton', { name: '目标宽度（格）' });
   const cancelBtn = page.getByRole('button', { name: '取消', exact: true });
+  await page.getByRole('button', { name: '高级选项', exact: true }).click();
   await page.getByRole('checkbox', { name: '抖动' }).check();
   await typeSpin(page, '目标宽度（格）', '200');
   // The optimized engine can finish before a second Playwright command starts.
@@ -59,7 +60,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
       const cancel = buttons.find((button) => button.textContent?.trim() === '取消');
       if (!cancel) return;
       const width = document.querySelector<HTMLInputElement>('input[aria-label="目标宽度（格）"]');
-      const png = buttons.find((button) => button.textContent?.includes('导出 PNG'));
+      const png = buttons.find((button) => button.textContent?.includes('下载 PNG'));
       const save = buttons.find((button) => button.textContent?.includes('保存'));
       const observed = {
         // The input is effectively disabled by its ancestor fieldset.
@@ -188,11 +189,11 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.keyboard.press('Enter');
   await expect(cursorStatus).toContainText(`· ${keyboardBrushCode}（回车落笔）`);
 
-  // 导出 PNG（选项面板确认后断言下载）
-  await page.getByRole('button', { name: /导出 PNG/ }).click();
+  // 默认 PNG 一次下载；导出分区是显式的用户入口。
+  await page.getByRole('navigation', { name: '工作台工具' }).getByRole('button', { name: '导出', exact: true }).click();
   const [pngDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('button', { name: '下载 PNG', exact: true }).click(),
   ]);
   expect(pngDownload.suggestedFilename()).toMatch(/^豆谱-.*\.png$/);
   const pngPath = await pngDownload.path();
@@ -202,7 +203,7 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await page.getByRole('button', { name: /导出 PDF/ }).click();
   const [pdfDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: '导出', exact: true }).click(),
+    page.getByRole('region', { name: '确认导出 PDF' }).getByRole('button', { name: '导出', exact: true }).click(),
   ]);
   expect(pdfDownload.suggestedFilename()).toMatch(/\.pdf$/);
   const pdfPath = await pdfDownload.path();
