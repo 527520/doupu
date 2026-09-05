@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import CommunityInteractions from './CommunityInteractions';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 
@@ -91,7 +92,8 @@ it('举报收进次级菜单，只有确认分类后才提交', async () => {
   fireEvent.click(screen.getByRole('button', { name: '作品更多操作' }));
   fireEvent.click(screen.getByRole('button', { name: '举报作品' }));
   expect(state.fetch.mock.calls.filter((call) => call[0] === '/api/community/reports')).toHaveLength(0);
-  fireEvent.change(screen.getByLabelText('举报类别'), { target: { value: 'copyright' } });
+  const user=userEvent.setup();await user.click(screen.getByLabelText('举报类别'));
+  await user.click(screen.getByRole('option',{name:'版权'}));
   fireEvent.click(screen.getByRole('button', { name: '提交举报' }));
   await waitFor(() => expect(state.fetch.mock.calls.filter((call) => call[0] === '/api/community/reports')).toHaveLength(1));
   expect(JSON.parse(state.fetch.mock.calls.find((call) => call[0] === '/api/community/reports')![1].body)).toMatchObject({ category: 'copyright', targetType: 'work', targetId: workId });

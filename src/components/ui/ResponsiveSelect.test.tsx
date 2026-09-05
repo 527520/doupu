@@ -64,6 +64,10 @@ describe('ResponsiveSelect', () => {
     await user.keyboard('{Escape}');
     expect(new FormData(container.querySelector('form')!).get('palette')).toBe('4');
     await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    expect(screen.getByRole('searchbox', {name:'搜索选项'})).toHaveValue('');
+    expect(screen.getByRole('option', {name:'色板系列 4'})).toHaveAttribute('aria-selected','true');
+    await user.keyboard('{Escape}');
   });
   it('原生表单重置恢复默认值且禁用项不可选择', async () => {
     const user = userEvent.setup();

@@ -1,6 +1,7 @@
 'use client';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import Switch from '@/components/ui/Switch';
+import SegmentedControl from '@/components/ui/SegmentedControl';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
@@ -33,7 +34,7 @@ function BatchParamsEditor({ value, inherited, onChange }: { value: Partial<Gene
   }} options={[{value:'',label:t.inherit},{value:'true',label:t.enabled},{value:'false',label:t.disabled}]} /> : <Switch label={t[key]} checked={value[key]??false} onChange={checked=>onChange({...value,[key]:checked})} />;
   return <div className="batch-params-grid">
     <label>{t.width}{number('targetWidth', 20, 200)}</label><label>{t.colors}{number('targetColorCount', 2, 128)}</label>
-    <ResponsiveSelect label={t.mode} value={value.mode ?? ''} onValueChange={raw=>{const next={...value};if(!raw)delete next.mode;else next.mode=raw as GenerationParams['mode'];onChange(next);}} options={[...(inherited?[{value:'',label:t.inherit}]:[]),{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} />
+    {inherited ? <ResponsiveSelect label={t.mode} value={value.mode ?? ''} onValueChange={raw=>{const next={...value};if(!raw)delete next.mode;else next.mode=raw as GenerationParams['mode'];onChange(next);}} options={[{value:'',label:t.inherit},{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} /> : <SegmentedControl label={t.mode} value={value.mode ?? 'dominant'} onValueChange={mode=>onChange({...value,mode:mode as GenerationParams['mode']})} options={[{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} />}
     {bool('dithering')}<label>{t.brightness}{number('brightness', -100, 100)}</label><label>{t.contrast}{number('contrast', -100, 100)}</label>
     {bool('backgroundRemoval')}<label>{t.bgTolerance}{number('bgTolerance', 0, 40)}</label>
     <label>{t.backgroundPrototype}<input value={value.backgroundPrototype ?? ''} placeholder={inherited?.backgroundPrototype ?? t.autoBackground} maxLength={7} onChange={(event) => onChange({ ...value, backgroundPrototype: event.target.value || null })} /></label>

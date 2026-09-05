@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Blob as NodeBlob } from 'node:buffer';
 import PngExportButton from './PngExportButton';
 import type { Pattern, PatternCell } from '@/lib/types';
@@ -98,7 +99,9 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     const p = makePattern(2, 1, [cell('#000000', 'A01'), cell('#FFFFFF', 'T01')]);
     render(<PngExportButton pattern={p} designName="设计" />);
     fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
-    fireEvent.change(screen.getByLabelText('格子大小'), { target: { value: '48' } });
+    await userEvent.click(screen.getByRole('button', { name: /格子大小/ }));
+    await userEvent.click(screen.getByRole('option', { name: '48px' }));
+    expect(screen.getByRole('button', { name: /格子大小/ })).toHaveTextContent('48px');
     fireEvent.click(screen.getByLabelText('裁掉图纸边缘空白'));
     fireEvent.click(screen.getByLabelText('包含图例与色号清单'));
     fireEvent.click(screen.getByRole('button', { name: '导出' }));
@@ -178,7 +181,8 @@ describe('PngExportButton（优化票 10：选项面板）', () => {
     };
     render(<PngExportButton pattern={p} designName="极限" />);
     fireEvent.click(screen.getByRole('button', { name: 'PNG 选项' }));
-    fireEvent.change(screen.getByLabelText('格子大小'), { target: { value: '24' } });
+    await userEvent.click(screen.getByRole('button', { name: /格子大小/ }));
+    await userEvent.click(screen.getByRole('option', { name: '24px' }));
     fireEvent.click(screen.getByLabelText('包含图例与色号清单'));
 
     expect(screen.getByRole('status').textContent).toContain('打包为两张 PNG');

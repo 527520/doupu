@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Workbench from './Workbench';
@@ -232,8 +233,17 @@ function record(id: string, project: ProjectFile): DesignRecord {
 }
 
 const selectUploadInput = (): HTMLInputElement => screen.getByLabelText(zhCN.upload.inputLabel) as HTMLInputElement;
-const selectPaletteBrand = (): HTMLSelectElement => screen.getByLabelText(zhCN.params.brand) as HTMLSelectElement;
-const selectPaletteSeries = (): HTMLSelectElement => screen.getByLabelText(zhCN.params.series) as HTMLSelectElement;
+// 只读取表单桥接值；所有修改经过用户可见的按钮与选项。
+const selectField = (label: string): HTMLSelectElement => screen.getByLabelText(label).parentElement!.querySelector('select')!;
+const selectPaletteBrand = () => selectField(zhCN.params.brand);
+const selectPaletteSeries = () => selectField(zhCN.params.series);
+async function chooseValue(label: string, value: string) {
+  const text=[...selectField(label).options].find(option=>option.value===value)?.textContent;
+  if(!text)throw new Error(`Missing option ${label}: ${value}`);
+  const user=userEvent.setup();await user.click(screen.getByLabelText(label));
+  const search=screen.queryByRole('searchbox',{name:zhCN.selection.search});if(search)await user.type(search,text);
+  await user.click(screen.getByRole('option',{name:text}));
+}
 const clickGuestRestart = (): void => {
   fireEvent.click(screen.getByRole('button', { name: zhCN.nav.more }));
   fireEvent.click(within(screen.getByRole('region', { name: zhCN.nav.more }))
@@ -615,13 +625,13 @@ describe('Workbench 全流程', () => {
     fireEvent.pointerDown(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 91 });
     fireEvent.pointerUp(canvas, { clientX: 320, clientY: 260, pointerType: 'mouse', pointerId: 91 });
 
-    const kit = screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement;
-    fireEvent.change(kit, { target: { value: '24' } });
+    const kit = selectField(zhCN.params.kitTier);
+    await chooseValue(zhCN.params.kitTier, '24');
     fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }, { timeout: 5000 }));
     await waitFor(() => expect(kit.value).toBe('0'));
     expect(generateFn).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(kit, { target: { value: '24' } });
+    await chooseValue(zhCN.params.kitTier, '24');
     fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.confirmRegenerateAction }, { timeout: 5000 }));
     await waitFor(() => expect(generateFn).toHaveBeenCalledTimes(2));
     expect(kit.value).toBe('24');
@@ -639,10 +649,10 @@ describe('Workbench 全流程', () => {
     await waitFor(() => expect(screen.queryByLabelText(zhCN.upload.inputLabel)).not.toBeInTheDocument());
     await screen.findByText(/共 10000 粒/);
 
-    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
+    await chooseValue(zhCN.params.kitTier, '24');
     await screen.findByText(zhCN.workbench.generateFailed);
     await waitFor(() => expect(
-      (screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value,
+      (selectField(zhCN.params.kitTier)).value,
     ).toBe('0'));
   });
 
@@ -659,11 +669,11 @@ describe('Workbench 全流程', () => {
     await waitFor(() => expect(screen.queryByLabelText(zhCN.upload.inputLabel)).not.toBeInTheDocument());
     await screen.findByText(/共 10000 粒/);
 
-    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
+    await chooseValue(zhCN.params.kitTier, '24');
     fireEvent.click(await screen.findByRole('button', { name: zhCN.workbench.cancel }));
     expect(cancel).toHaveBeenCalledOnce();
     await waitFor(() => expect(
-      (screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value,
+      (selectField(zhCN.params.kitTier)).value,
     ).toBe('0'));
   });
 
@@ -1138,7 +1148,7 @@ describe('Workbench 本地保存', () => {
     fireEvent.click(await screen.findByRole('button', { name: zhCN.stitch.markRowDone }));
     await screen.findByText(/^已拼 1 \/ 1 粒/);
 
-    fireEvent.change(selectPaletteBrand(), { target: { value: 'COCO' } });
+    await chooseValue(zhCN.params.brand, 'COCO');
     await screen.findByText(/已换到新色板/);
     await act(async () => { await Promise.resolve(); });
 
@@ -1205,18 +1215,20 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await screen.findByLabelText(zhCN.params.brand);
 
     const brandSelect = selectPaletteBrand();
-    const brands = [...brandSelect.options].map((option) => option.value);
+    const brands = [...brandSelect.options].map((option) => option.value).filter(Boolean);
     expect(brands).toEqual(['MARD', 'COCO', '漫漫', '盼盼', '咪小窝', '优肯 Artkal']);
 
     let seriesCount = 0;
+    const visibleCopy:string[]=[];const user=userEvent.setup();
     for (const brand of brands) {
-      fireEvent.change(brandSelect, { target: { value: brand } });
-      seriesCount += selectPaletteSeries().options.length;
+      await chooseValue(zhCN.params.brand, brand);
+      await user.click(screen.getByLabelText(zhCN.params.series));
+      const options=screen.getAllByRole('option');seriesCount += options.length;
+      visibleCopy.push(...options.map(option=>option.textContent??''));
+      await user.keyboard('{Escape}');
     }
     expect(seriesCount).toBe(13);
-    const visibleOptionCopy = [...document.querySelectorAll('select option')]
-      .map((option) => option.textContent)
-      .join(' ');
+    const visibleOptionCopy = visibleCopy.join(' ');
     expect(visibleOptionCopy).not.toMatch(/pcd:|[0-9a-f]{40}/i);
     expect([...document.querySelectorAll('details.palette-picker-technical')]
       .every((details) => !(details as HTMLDetailsElement).open)).toBe(true);
@@ -1242,12 +1254,12 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
 
     await screen.findByLabelText(zhCN.params.brand);
-    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+    await chooseValue(zhCN.params.brand, '优肯 Artkal');
     expect(selectPaletteSeries().value).toBe('builtin:pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186');
 
-    const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    const profileSelect = selectField(zhCN.params.boardProfile);
     expect(profileSelect.value).toBe('2.6mm-50');
-    fireEvent.change(profileSelect, { target: { value: '2.6mm-52' } });
+    await chooseValue(zhCN.params.boardProfile, '2.6mm-52');
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 52) }));
     await screen.findByRole('tab', { name: zhCN.workbench.editTab });
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
@@ -1269,9 +1281,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await waitFor(() => expect(screen.queryByLabelText(zhCN.upload.inputLabel)).not.toBeInTheDocument());
     await screen.findByText(/共 10000 粒/);
 
-    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+    await chooseValue(zhCN.params.brand, '优肯 Artkal');
 
-    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    const profile = selectField(zhCN.params.boardProfile);
     await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
     expect(generateFn).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
@@ -1291,17 +1303,17 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     const series = selectPaletteSeries();
     const publicMard = 'builtin:pcd:mard-291-github@178dafbc9e77d3de556550dbd058270200129186';
     expect([...series.options].map((option) => option.value)).toContain(publicMard);
-    fireEvent.change(series, { target: { value: publicMard } });
+    await chooseValue(zhCN.params.series, publicMard);
 
     expect(selectPaletteBrand().value).toBe('MARD');
     expect(selectPaletteSeries().value).toBe(publicMard);
-    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+    expect((selectField(zhCN.params.kitTier)).value).toBe('24');
     const undo = screen.getByRole('button', { name: zhCN.workbench.undoRegeneration });
     fireEvent.click(undo);
 
     expect(selectPaletteBrand().value).toBe('MARD');
     expect(selectPaletteSeries().value).toBe('builtin:MARD');
-    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+    expect((selectField(zhCN.params.kitTier)).value).toBe('24');
     expect(screen.queryByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeNull();
   });
 
@@ -1311,9 +1323,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('档位');
 
-    const kit = screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement;
+    const kit = selectField(zhCN.params.kitTier);
     expect(kit).not.toBeDisabled(); // 与色板一样，不需要原图
-    fireEvent.change(kit, { target: { value: '24' } });
+    await chooseValue(zhCN.params.kitTier, '24');
 
     await waitFor(() => expect(screen.getByText(/已限定为 24 色套装/)).toBeTruthy());
     expect(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration })).toBeTruthy();
@@ -1337,7 +1349,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('恢复档位');
 
-    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24');
+    expect((selectField(zhCN.params.kitTier)).value).toBe('24');
   });
 
   it('导入另一项目时不继承上一设计的套装档位', async () => {
@@ -1346,8 +1358,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('旧设计');
 
-    const kit = screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement;
-    fireEvent.change(kit, { target: { value: '24' } });
+    const kit = selectField(zhCN.params.kitTier);
+    await chooseValue(zhCN.params.kitTier, '24');
     await waitFor(() => expect(kit.value).toBe('24'));
 
     const imported = savedProject('导入设计', '2026-08-15T12:00:00.000Z');
@@ -1355,7 +1367,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
 
     await screen.findByDisplayValue('导入设计');
-    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('0');
+    expect((selectField(zhCN.params.kitTier)).value).toBe('0');
   });
 
   it('重新上传进入新设计后不继承上一设计的套装档位', async () => {
@@ -1365,8 +1377,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await waitFor(() => expect(screen.queryByLabelText(zhCN.upload.inputLabel)).not.toBeInTheDocument());
     await screen.findByText(/共 10000 粒/);
 
-    fireEvent.change(screen.getByLabelText(zhCN.params.kitTier), { target: { value: '24' } });
-    await waitFor(() => expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('24'));
+    await chooseValue(zhCN.params.kitTier, '24');
+    await waitFor(() => expect((selectField(zhCN.params.kitTier)).value).toBe('24'));
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
     await waitFor(() => expect(storage.designs.size).toBe(1));
     clickGuestRestart();
@@ -1374,7 +1386,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await screen.findByLabelText(zhCN.upload.inputLabel);
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 29) }));
     await screen.findByRole('tab', { name: zhCN.workbench.editTab });
-    expect((screen.getByLabelText(zhCN.params.kitTier) as HTMLSelectElement).value).toBe('0');
+    expect((selectField(zhCN.params.kitTier)).value).toBe('0');
   });
 
   it('公开配置延迟返回不会覆盖用户已选的 Mini 色板与 52×52 规格', async () => {
@@ -1387,10 +1399,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     try {
       const generateFn = vi.fn(instantGenerate);
       render(<Workbench storage={new FakeStorage()} decodeFn={fakeDecode} generateFn={generateFn} />);
-      fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+      await chooseValue(zhCN.params.brand, '优肯 Artkal');
       const selectedArtkalSeries = selectPaletteSeries().value;
-      const profileSelect = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
-      fireEvent.change(profileSelect, { target: { value: '2.6mm-52' } });
+      await chooseValue(zhCN.params.boardProfile, '2.6mm-52');
 
       await act(async () => {
         resolveConfig(new Response(JSON.stringify({
@@ -1406,7 +1417,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
       await screen.findByText(/共 7744 粒/);
       expect(selectPaletteBrand().value).toBe('优肯 Artkal');
       expect(selectPaletteSeries().value).toBe(selectedArtkalSeries);
-      expect((screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement).value).toBe('2.6mm-52');
+      expect((selectField(zhCN.params.boardProfile)).value).toBe('2.6mm-52');
       expect(generateFn.mock.calls[0][0].params).toMatchObject({ targetWidth: 88, targetColorCount: 32 });
     } finally {
       vi.unstubAllGlobals();
@@ -1422,9 +1433,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     await screen.findByDisplayValue('Mini');
     expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
 
-    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
-    expect([...profile.options].map((option) => option.value)).toEqual(['5mm-29', '2.6mm-50', '2.6mm-52']);
-    fireEvent.change(profile, { target: { value: '2.6mm-50' } });
+    const profile = selectField(zhCN.params.boardProfile);
+    expect([...profile.options].map((option) => option.value).filter(Boolean)).toEqual(['5mm-29', '2.6mm-50', '2.6mm-52']);
+    await chooseValue(zhCN.params.boardProfile, '2.6mm-50');
 
     expect(profile.value).toBe('2.6mm-50');
     expect(screen.getByText(/制作规格已切换为 2.6mm \/ 50×50/)).toBeTruthy();
@@ -1446,15 +1457,15 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     render(<Workbench storage={storage} />);
     await screen.findByDisplayValue('Artkal');
 
-    fireEvent.change(selectPaletteBrand(), { target: { value: '优肯 Artkal' } });
+    await chooseValue(zhCN.params.brand, '优肯 Artkal');
     expect(selectPaletteSeries().value).toBe('builtin:pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186');
     const technicalDetails = screen.getByText(zhCN.params.paletteDataVersion).closest('details');
     expect(technicalDetails?.open).toBe(false);
     expect(technicalDetails?.textContent).toContain('178dafbc9e77d3de556550dbd058270200129186');
 
-    const profile = screen.getByLabelText(zhCN.params.boardProfile) as HTMLSelectElement;
+    const profile = selectField(zhCN.params.boardProfile);
     await waitFor(() => expect(profile.value).toBe('2.6mm-50'));
-    expect([...profile.options].map((option) => option.value)).toEqual(['2.6mm-50', '2.6mm-52']);
+    expect([...profile.options].map((option) => option.value).filter(Boolean)).toEqual(['2.6mm-50', '2.6mm-52']);
     expect(screen.getByText(/制作规格已切换为 2.6mm \/ 50×50/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
@@ -1488,7 +1499,7 @@ describe('Workbench 移动沉浸工作区', () => {
       const back = within(workspace).getByRole('button', { name: /返回预览/ });
       expect(workspace.contains(document.activeElement)).toBe(true);
       expect(trigger.closest('[inert]')).not.toBeNull();
-      back.focus(); fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+      back.focus(); fireEvent.keyDown(back, { key: 'Tab', shiftKey: true });
       expect(workspace.contains(document.activeElement)).toBe(true);
       expect(document.activeElement).not.toBe(back);
       fireEvent.click(back);
@@ -1617,11 +1628,11 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     await screen.findByDisplayValue('初始');
 
     // 下拉出现两个同色但身份不同的云端色板；空色板被过滤。
-    const brandSelect = (await screen.findByLabelText(zhCN.params.brand)) as HTMLSelectElement;
+    const brandSelect = selectPaletteBrand();
     await waitFor(() => {
       expect(brandSelect.textContent).toContain(zhCN.params.customPaletteGroup);
     });
-    fireEvent.change(brandSelect, { target: { value: zhCN.params.customPaletteGroup } });
+    await chooseValue(zhCN.params.brand, zhCN.params.customPaletteGroup);
     const seriesSelect = selectPaletteSeries();
     expect(seriesSelect.value).toBe('');
     expect(seriesSelect.textContent).toContain('粉彩 A');
@@ -1633,7 +1644,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
     expect(screen.getByRole('spinbutton', { name: zhCN.params.targetWidth })).toBeDisabled();
     expect(screen.getByText(zhCN.workbench.sourceRequired)).toBeTruthy();
     expect(brandSelect).not.toBeDisabled();
-    fireEvent.change(seriesSelect, { target: { value: 'custom:pal-same-colors' } });
+    await chooseValue(zhCN.params.series, 'custom:pal-same-colors');
     await waitFor(() => expect(selectPaletteSeries().value).toBe('custom:pal-same-colors'));
     // 重映射结果有明确反馈，且提供一步撤销
     expect(screen.getByText(/已换到新色板/)).toBeTruthy();
@@ -1641,7 +1652,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
 
     // 再换到内置色板后一步撤销，必须恢复刚才选中的 B；
     // 不能按颜色相等错误命中列表中排在前面的 A。
-    fireEvent.change(selectPaletteBrand(), { target: { value: 'COCO' } });
+    await chooseValue(zhCN.params.brand, 'COCO');
     await waitFor(() => expect(selectPaletteSeries().value).toBe('builtin:COCO'));
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
     await waitFor(() => expect(selectPaletteSeries().value).toBe('custom:pal-same-colors'));

@@ -1,10 +1,48 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fillField, selectChoice, waitHydrated } from './helpers';
 
 const widths=[350,390,768,1280,1440];
 const output=(name:string)=>resolve('.scratch/site-visual-refinement/evidence',name);
+async function expectNoMotionTransform(element:Locator){
+  expect(await element.evaluate(node=>{const value=getComputedStyle(node).transform;return value==='none'||new DOMMatrixReadOnly(value).isIdentity;})).toBe(true);
+  await expect(element).toHaveCSS('translate','none');
+}
+
+test('合法的长英文公开标题不裁切，减少动态效果取消卡片位移',async({page},info)=>{
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goto('/login?next=/admin/batches');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/batches');
+  await expect(page.locator('main#main h1')).toBeVisible();
+  const sourceList=await (await page.request.get('/api/community/works')).json();
+  const source=await (await page.request.get(`/api/community/works/${sourceList.items[0].id}`)).json();
+  const post=async(url:string,body:unknown)=>{
+    const result=await page.evaluate(async({url,body,key})=>{const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json','idempotency-key':key},body:JSON.stringify(body)});return {status:response.status,body:await response.json()};},{url,body,key:randomUUID()});
+    expect(result.status,JSON.stringify(result.body)).toBeLessThan(300);return result.body;
+  };
+  const title=`${info.project.name}${'HandmadeFlowers'.repeat(5)}`.slice(0,80);
+  const batch=await post('/api/admin/batches',{itemCount:1,defaultParams:source.snapshot.params,engineVersion:source.snapshot.engineVersion,reason:'本地长标题排版验证'});
+  const draft=await post(`/api/admin/batches/${batch.id}/drafts`,{title,snapshot:source.snapshot,reason:'本地长标题排版验证'});
+  await post(`/api/admin/batches/${batch.id}/publish`,{revisionIds:[draft.revisionId],expectedVersion:batch.version,reason:'本地长标题排版验证'});
+  await page.goto(`/community?q=${title}`);
+  const card=page.locator('.community-card').filter({has:page.getByRole('heading',{name:title,exact:true})});
+  for(const width of widths){
+    await page.setViewportSize({width,height:844});await expect(card).toBeVisible();
+    expect(await card.locator('.community-card-body > div').evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
+    await card.hover();await expectNoMotionTransform(card);
+  }
+  await page.screenshot({path:output(`long-title-${info.project.name}.png`),fullPage:true});
+  await page.goto('/');
+  const blank=page.locator('.home-blank-action');await blank.hover();await expectNoMotionTransform(blank);
+  const upload=page.getByRole('button',{name:'选择图片文件'});await upload.hover();await page.mouse.down();await expectNoMotionTransform(upload);await page.mouse.up();
+  await page.mouse.move(0,0);await upload.dispatchEvent('dragenter');
+  await expect(upload).toHaveClass(/is-dragging/);
+  await expect(upload).toHaveCSS('background-color','rgb(150, 48, 79)');
+  expect((await new AxeBuilder({page}).include('.upload-dropzone-primary').analyze()).violations).toEqual([]);
+  await expectNoMotionTransform(upload);await upload.dispatchEvent('dragleave');
+});
 
 test('豆社、色板和登录页五宽度排版与无障碍',async({page},info)=>{
   for(const route of ['/community','/palettes','/login']){
@@ -20,9 +58,13 @@ test('豆社、色板和登录页五宽度排版与无障碍',async({page},info)
 
 test('后台待审、批次和人员队列五宽度排版与无障碍',async({page},info)=>{
   await page.goto('/login?next=/admin/reviews');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
-  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/admin\/reviews$/);
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/reviews');
   for(const route of ['/admin/reviews','/admin/batches','/admin/users']){
-    await page.goto(route);await waitHydrated(page);await expect(page.locator('main#main h1')).toBeVisible();await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
+    await page.goto(route);await expect.poll(()=>new URL(page.url()).pathname).toBe(route);await waitHydrated(page);await expect(page.locator('.admin-page h1')).toBeVisible();await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
+    if(route==='/admin/reviews'){
+      await page.locator('.review-queue button').filter({hasText:'窗边的小花——待审视觉样本'}).click();
+      await expect(page.locator('.review-preview canvas').first()).toBeVisible();
+    }
     for(const width of widths){
       await page.setViewportSize({width,height:844});
       expect(await page.evaluate(()=>document.documentElement.scrollWidth),`${route} ${width}px`).toBeLessThanOrEqual(width);
@@ -106,7 +148,7 @@ test('色板详情独立展示不撑高卡片，关闭恢复焦点',async({page}
 test('长选项搜索、键盘取消、减少动态效果与200%布局放大',async({page},info)=>{
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('/login?next=/admin/analytics');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
-  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/admin\/analytics$/);
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/analytics');
   await expect(page.getByRole('heading',{name:'匿名分析校样',exact:true})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:output(`admin-${info.project.name}.png`),fullPage:true});
@@ -127,7 +169,7 @@ test('长选项搜索、键盘取消、减少动态效果与200%布局放大',as
 test('多色续作、长标题，以及加载失败后的重试状态',async({page},info)=>{
   await page.setViewportSize({width:390,height:844});
   await page.goto('/login?next=/community');await fillField(page,'邮箱','e2e-user@example.com');await fillField(page,'密码','E2e-pass-123!');
-  await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(/\/community$/);
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/community');
   await page.locator('.community-card a').first().click();await page.getByRole('button',{name:'用这张制作'}).click();
   await expect(page).toHaveURL(/\/app\?id=/);
   await page.getByRole('button',{name:'返回预览',exact:true}).click();

@@ -27,7 +27,7 @@ export default function AdminNav({ role }: { role: UserRole }) {
   const visible = modules.filter(([, , minimum]) => role === 'admin' || minimum === 'moderator');
   const currentLabel = visible.find(([href]) => pathname === href || pathname.startsWith(`${href}/`))?.[1] ?? zhCN.communityAdmin.adminTitle;
   return (
-    <aside className={`admin-rail${expanded ? ' is-expanded' : ''}`} onKeyDown={(event) => { if (event.key === 'Escape') { setExpanded(false); document.getElementById(`${menuId}-toggle`)?.focus(); } }}>
+    <aside aria-label={zhCN.communityAdmin.nav.label} className={`admin-rail${expanded ? ' is-expanded' : ''}`} onKeyDown={(event) => { if (event.key === 'Escape') { setExpanded(false); document.getElementById(`${menuId}-toggle`)?.focus(); } }}>
       <Link href="/admin" className="admin-wordmark"><span>{zhCN.communityAdmin.nav.wordmark}</span><strong>{zhCN.communityAdmin.adminTitle}</strong></Link>
       <button type="button" className="admin-mobile-menu" id={`${menuId}-toggle`} aria-expanded={expanded} aria-controls={menuId} onClick={() => setExpanded(!expanded)}>{currentLabel} · {expanded ? zhCN.communityAdmin.nav.closeMenu : zhCN.communityAdmin.nav.openMenu}</button>
       <nav id={menuId} aria-label={zhCN.communityAdmin.nav.label}>

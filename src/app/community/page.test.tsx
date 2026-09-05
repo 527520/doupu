@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import CommunityPage from './page';
 
 vi.mock('@/lib/auth/db', () => ({ getDb: () => ({}) }));
@@ -23,7 +23,7 @@ it('没有筛选结果时提供清除筛选，不把失败搜索说成社区没�
   query.list.mockResolvedValue({ items: [], nextCursor: null });
   render(await CommunityPage({ searchParams: Promise.resolve({ q: '不存在的作品' }) }));
   expect(screen.getByText('没有符合这些条件的作品')).toBeVisible();
-  expect(screen.getByRole('link', { name: '清除筛选' })).toHaveAttribute('href', '/community');
+  expect(within(document.querySelector('.community-empty')!).getByRole('link', { name: '清除筛选' })).toHaveAttribute('href', '/community');
 });
 
 it('无效日期筛选提供恢复入口，不让整页变为服务器错误', async () => {

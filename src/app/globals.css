@@ -536,6 +536,7 @@ body {
 .community-color-band span { min-width: .35rem; flex: 1; }
 .community-color-band.large { height: .8rem; margin-block: 1rem; }
 .community-card-body { display: flex; align-items: start; justify-content: space-between; gap: .75rem; padding: .9rem .9rem .45rem; }
+.community-card-body > div { min-width: 0; overflow-wrap: anywhere; }
 .community-card h2 { font-family: var(--font-sans); font-size: 1.05rem; font-weight: 700; }
 .community-card p { margin-top: .2rem; color: var(--color-ink-soft); font-size: .8125rem; }
 .community-featured { flex: 0 0 auto; padding: .2rem .45rem; border: 1px solid var(--color-primary); color: var(--color-primary-deep); font-size: .8125rem; }
@@ -1021,6 +1022,7 @@ body {
 .home-studio-grid > * { min-width: 0; }
 .home-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 32px; padding: 24px 0; }
 .upload-dropzone.upload-dropzone-primary { min-height: 120px; border: 1px solid transparent; padding: 20px 12px; background: var(--color-primary); color: #fff; box-shadow: 0 5px 0 var(--color-primary-deep), 0 10px 22px rgb(185 62 98 / 13%); }
+.upload-dropzone-primary:hover:not(.is-disabled), .upload-dropzone.upload-dropzone-primary.is-dragging { background: var(--color-primary-deep); color: #fff; border-color: transparent; }
 .upload-dropzone.upload-dropzone-primary .upload-dropzone-icon { display: none; }
 .upload-dropzone.upload-dropzone-primary strong { font-size: 18px; font-weight: 600; }
 .upload-dropzone.upload-dropzone-primary small { color: #fff; opacity: .9; font-size: 13px; }
@@ -2428,5 +2430,7 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
 @media (prefers-reduced-motion: reduce) {
   .segmented-control *, .switch-control *, .detail-panel { animation: none !important; transition: none !important; }
   .btn-primary:hover, .btn-outline:hover, .btn-primary:active, .btn-outline:active, .btn-tool:active, .btn-danger:active, .btn-danger-outline:active,
-  .upload-dropzone:active, .home-recent li:active, .link-action:hover::after { transform: none; }
+  .upload-dropzone.upload-dropzone-primary:active, .upload-dropzone.is-dragging,
+  .community-card:hover, .design-card:hover, .home-blank-action:hover, .workspace-nav-item:hover,
+  .upload-dropzone:hover, .upload-dropzone:active, .home-recent li:active, .link-action:hover::after { transform: none; translate: none; }
 }

@@ -69,7 +69,7 @@ describe('首页上传卡（D-3）', () => {
     vi.doMock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
     const { default: HomeUploadCard } = await import('@/components/upload/HomeUploadCard');
     render(<HomeUploadCard />);
-    expect(screen.getByRole('heading', { name: zhCN.home.fromImage })).toBeVisible();
+    expect(screen.getByRole('button', { name: zhCN.upload.selectFile })).toHaveTextContent(zhCN.home.chooseImage);
     expect(screen.getByLabelText(zhCN.upload.inputLabel)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: new RegExp(zhCN.home.blankStart) })).toHaveAttribute('href', '/app?new=1#blank-start');
     expect(screen.queryByText(zhCN.home.guideStep1)).not.toBeInTheDocument();

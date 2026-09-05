@@ -22,9 +22,9 @@ describe('首页', () => {
   it('渲染标题、引导与上传入口', async () => {
     render(<Home />);
     expect(screen.getByRole('heading', { level: 1, name: '开始创作' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: '把喜欢，一颗颗拼出来。' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /把喜欢，\s*一颗颗拼出来。/ })).toBeTruthy();
     expect(screen.getByText('正在检查登录状态…').closest('[role="status"]')).toBeInTheDocument();
-    expect(screen.getByText(/拖拽图片到此处/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '选择图片文件' })).toHaveTextContent('选择图片，开始制作');
     expect(within(screen.getByTestId('workspace-sidebar')).getByRole('link', { name: '工作台' })).toBeTruthy();
     await screen.findByRole('link', { name: '登录' }); // 等待登录态探测完成
   });

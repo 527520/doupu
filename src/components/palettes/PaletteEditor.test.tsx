@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import PaletteEditor, { nextAutoCode, parseHexList, validateRows, type EditorRow } from './PaletteEditor';
 import { zhCN } from '@/messages/zh-CN';
 import { getBuiltinPalette } from '@/lib/palettes';
@@ -164,7 +165,10 @@ describe('PaletteEditor 导入', () => {
   it('复制自内置色板：只复制可生成色，保留真实色号且不造 C001', async () => {
     const builtin = getBuiltinPalette('漫漫');
     setup({ initialColors: [{ code: 'A', hex: '#FF0000' }, { code: 'B', hex: '#00FF00' }] });
-    fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: builtin.id } });
+    const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:new RegExp(t.copyFromBrand)}));
+    await user.type(screen.getByRole('searchbox',{name:'搜索选项'}),builtin.brand);
+    await user.click(screen.getByRole('option',{name:`${builtin.brand} · ${builtin.series}`}));
     fireEvent.click(await screen.findByRole('button', { name: t.copyConfirmAction }));
     await waitFor(() => expect(screen.getByLabelText(t.colorsCounter(builtin.engineColorCount))).toBeTruthy());
     const copiedCodes = screen
@@ -175,8 +179,11 @@ describe('PaletteEditor 导入', () => {
 
   it('复制自品牌在确认被拒时不覆盖', async () => {
     setup({ initialColors: [{ code: 'A', hex: '#FF0000' }, { code: 'B', hex: '#00FF00' }] });
-    fireEvent.change(screen.getByLabelText(t.copyFromBrand), { target: { value: 'COCO' } });
-    fireEvent.click(await screen.findByRole('button', { name: zhCN.common.cancel }));
+    const builtin=getBuiltinPalette('COCO');const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:new RegExp(t.copyFromBrand)}));
+    await user.type(screen.getByRole('searchbox',{name:'搜索选项'}),builtin.brand);
+    await user.click(screen.getByRole('option',{name:`${builtin.brand} · ${builtin.series}`}));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: zhCN.common.cancel }));
     expect(screen.getByLabelText(`${t.hex} 1`)).toBeTruthy();
     expect(screen.queryByLabelText(t.colorsCounter(291))).toBeNull();
   });

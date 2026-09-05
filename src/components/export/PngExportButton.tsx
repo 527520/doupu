@@ -5,7 +5,7 @@ import Switch from '@/components/ui/Switch';
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useId, useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
-import { contentBounds, EXPORT_CELL_PX_CHOICES } from '@/lib/export/layout';
+import { EXPORT_CELL_PX_CHOICES } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
 import { createPngArchiveBlob } from '@/lib/export/pngArchive';
 import { createPngExportPlan, largestFittingPngCellPx } from '@/lib/export/pngPlan';
@@ -51,12 +51,16 @@ export default function PngExportButton({
   const [optCellPx, setOptCellPx] = useState<number>(defaultCellPx);
   const [optCrop, setOptCrop] = useState<boolean>(defaultCrop);
   const [optLegend, setOptLegend] = useState<boolean>(defaultLegend);
-  const bounds = useMemo(() => contentBounds(pattern), [pattern]);
-  const empty = bounds === null;
+  const defaultPlan = useMemo(() => createPngExportPlan(pattern, {
+    cellPx: defaultCellPx, cropToContent: defaultCrop, includeLegend: defaultLegend,
+  }), [pattern, defaultCellPx, defaultCrop, defaultLegend]);
+  const empty = defaultPlan.kind === 'empty';
 
+  // 尚未打开的选项不逐档遍历图纸；首次生成优先提交画布与制作控件。
+  // 快捷下载仍立即使用同一规划器预检，打开选项后再计算全部合法档位。
   const fits = useMemo(
     () => new Map<number, boolean>(
-      EXPORT_CELL_PX_CHOICES.map((size) => {
+      (open ? EXPORT_CELL_PX_CHOICES : []).map((size) => {
         const plan = createPngExportPlan(pattern, {
           cellPx: size,
           cropToContent: optCrop,
@@ -65,27 +69,24 @@ export default function PngExportButton({
         return [size, plan.kind === 'single' || plan.kind === 'split'];
       }),
     ),
-    [optCrop, optLegend, pattern],
+    [open, optCrop, optLegend, pattern],
   );
   const currentPlan = useMemo(
-    () => createPngExportPlan(pattern, {
+    () => open ? createPngExportPlan(pattern, {
       cellPx: optCellPx,
       cropToContent: optCrop,
       includeLegend: optLegend,
-    }),
-    [optCellPx, optCrop, optLegend, pattern],
+    }) : defaultPlan,
+    [open, optCellPx, optCrop, optLegend, pattern, defaultPlan],
   );
   const suggestedCellPx = useMemo(
-    () => largestFittingPngCellPx(pattern, EXPORT_CELL_PX_CHOICES, {
+    () => open ? largestFittingPngCellPx(pattern, EXPORT_CELL_PX_CHOICES, {
       cropToContent: optCrop,
       includeLegend: optLegend,
-    }),
-    [optCrop, optLegend, pattern],
+    }) : null,
+    [open, optCrop, optLegend, pattern],
   );
   const currentFits = currentPlan.kind === 'single' || currentPlan.kind === 'split';
-  const defaultPlan = useMemo(() => createPngExportPlan(pattern, {
-    cellPx: defaultCellPx, cropToContent: defaultCrop, includeLegend: defaultLegend,
-  }), [pattern, defaultCellPx, defaultCrop, defaultLegend]);
   const defaultFits = defaultPlan.kind === 'single' || defaultPlan.kind === 'split';
 
   const t = zhCN.exportPng;
@@ -114,7 +115,10 @@ export default function PngExportButton({
       if (!result.ok) {
         track({ name: 'export_failed', properties: { format: 'png', errorCode: result.code } });
         if (result.code === 'EMPTY_PATTERN') setError(zhCN.export.pngEmptyError);
-        else if (result.code === 'CANVAS_TOO_LARGE') setError(zhCN.export.pngTooLargeError(suggestedCellPx));
+        else if (result.code === 'CANVAS_TOO_LARGE') setError(zhCN.export.pngTooLargeError(suggestedCellPx ?? largestFittingPngCellPx(pattern, EXPORT_CELL_PX_CHOICES, {
+          cropToContent: defaults ? defaultCrop : optCrop,
+          includeLegend: defaults ? defaultLegend : optLegend,
+        })));
         else setError(zhCN.export.pngFailed);
         return;
       }
@@ -183,7 +187,7 @@ export default function PngExportButton({
               />
             {!currentFits && (
               <p role="alert" className="text-xs text-danger">
-                {zhCN.export.pngTooLargeError(suggestedCellPx)}
+                {zhCN.export.pngTooLargeError(suggestedCellPx ?? defaultCellPx)}
               </p>
             )}
             {currentPlan.kind === 'split' && (
