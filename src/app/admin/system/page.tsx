@@ -18,7 +18,7 @@ export default async function AdminSystemPage() {
       <article><small>{t.databaseCode}</small><strong>{info.databaseMigration.id ?? t.empty}</strong><span>{info.databaseMigration.status === 'recorded' ? t.migrationRecorded : t.notRecorded}</span></article>
       <article><small>{t.backupCode}</small><strong>{t.backup}</strong><span>{t.backupDetail}</span></article>
     </section>
-    <section className="admin-panel"><h2>{t.migrationTimes}</h2><dl className="admin-evidence-list"><div><dt>{t.journalTime}</dt><dd>{date(info.databaseMigration.journalTimestamp)}</dd></div><div><dt>{t.appliedTime}</dt><dd>{t.notRecorded}</dd></div></dl><p className="notice">{t.migrationTimeHelp}</p></section>
+    <section className="admin-panel"><h2>{t.migrationTimes}</h2><dl className="admin-evidence-list"><div><dt>{t.journalTime}</dt><dd>{date(info.databaseMigration.journalTimestamp)}</dd></div><div><dt>{t.appliedTime}</dt><dd>{date(info.databaseMigration.appliedAt)}</dd></div></dl><p className="notice">{t.migrationTimeHelp}</p></section>
     <section className="admin-panel"><header><h2>{t.maintenance}</h2><span>{t.timezone}</span></header><p className="admin-help">{t.maintenanceHelp}</p>
       <div className="admin-system-tasks">{info.maintenanceTasks.map((task) => <article key={task.task}><h3><code>{task.task}</code></h3><dl className="admin-evidence-list">
         <div><dt>{t.latest}</dt><dd>{task.latest ? <><span className={`admin-run-state is-${task.latest.status}`}>{t.statuses[task.latest.status]}</span><br />{date(task.latest.startedAt)}</> : t.notRun}</dd></div>

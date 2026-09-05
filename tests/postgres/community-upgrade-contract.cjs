@@ -6,6 +6,7 @@ const path = require('node:path');
 const { Pool } = require('pg');
 const { drizzle } = require('drizzle-orm/node-postgres');
 const { migrate } = require('drizzle-orm/node-postgres/migrator');
+const { migrateWithEvidence } = require('../../db/migrate.cjs');
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required');
@@ -66,7 +67,15 @@ async function main() {
        (select to_jsonb(s) from design_shares s where id=$3) as share_row`,
     [ids.user, ids.design, ids.share],
   );
-  await migrate(db, { migrationsFolder: migrations });
+  const executionStart = new Date();
+  const upgrade = await migrateWithEvidence(pool);
+  assert.equal(upgrade.changed, true);
+  const evidence = await pool.query("select * from maintenance_runs where task='database.migrate' and status='succeeded'");
+  assert.equal(evidence.rows.length, 1);
+  assert.equal(evidence.rows[0].cursor, String(upgrade.migrationId));
+  assert.ok(evidence.rows[0].started_at >= executionStart);
+  assert.ok(evidence.rows[0].completed_at >= evidence.rows[0].started_at);
+  assert.ok(evidence.rows[0].completed_at <= new Date());
 
   const after = await pool.query(
     `select
@@ -97,7 +106,9 @@ async function main() {
     ['analytics_events', 'community_works', 'community_comments', 'official_batches'],
   );
 
-  await migrate(db, { migrationsFolder: migrations });
+  assert.equal((await migrateWithEvidence(pool)).changed, false);
+  const afterNoop = await pool.query("select * from maintenance_runs where task='database.migrate'");
+  assert.deepEqual(afterNoop.rows, evidence.rows, 'no-op invocation must not fabricate a newer migration execution');
   let journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
   assert.equal(journal.rows[0].count, 13, 'idempotent replay changed migration journal');
   const initialRules = await pool.query(
@@ -138,7 +149,7 @@ async function main() {
   journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
   assert.equal(journal.rows[0].count, 5, 'down SQL did not restore the 0004 migration journal');
 
-  await migrate(db, { migrationsFolder: migrations });
+  await migrateWithEvidence(pool);
   journal = await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations');
   assert.equal(journal.rows[0].count, 13, 're-upgrade after down SQL did not restore all migrations');
   const reupgraded = await pool.query(
@@ -151,7 +162,25 @@ async function main() {
   assert.deepEqual(reupgraded.rows[0].project, old.design_row.project);
   assert.equal(reupgraded.rows[0].analytics_events, 'analytics_events');
   assert.equal(reupgraded.rows[0].community_works, 'community_works');
-  process.stdout.write('postgres 0004 upgrade, empty-feature rollback, and re-upgrade contract passed\n');
+
+  const locker = await pool.connect();
+  try {
+    await locker.query("select pg_advisory_lock(hashtext('doupu:database.migrate'))");
+    await assert.rejects(migrateWithEvidence(pool), { code: 'MIGRATION_BUSY' });
+  } finally { await locker.query("select pg_advisory_unlock(hashtext('doupu:database.migrate'))"); locker.release(); }
+
+  const failedFolder = path.join(partial, 'failure');
+  cpSync(migrations, failedFolder, { recursive: true });
+  const failedJournal = JSON.parse(readFileSync(path.join(failedFolder, 'meta/_journal.json'), 'utf8'));
+  failedJournal.entries.push({ idx: 13, version: '7', when: failedJournal.entries.at(-1).when + 1000, tag: '0013_execution_failure_probe', breakpoints: true });
+  writeFileSync(path.join(failedFolder, 'meta/_journal.json'), JSON.stringify(failedJournal));
+  writeFileSync(path.join(failedFolder, '0013_execution_failure_probe.sql'), 'CREATE TABLE migration_evidence_rollback_probe (id int); SELECT nonexistent_column FROM users;');
+  await assert.rejects(migrateWithEvidence(pool, failedFolder), { code: 'MIGRATION_FAILED' });
+  assert.equal((await pool.query("select to_regclass('migration_evidence_rollback_probe') as value")).rows[0].value, null, 'failed migration must roll back DDL');
+  assert.equal((await pool.query('select count(*)::int as count from drizzle.__drizzle_migrations')).rows[0].count, 13);
+  const failure = (await pool.query("select status,error_code,summary from maintenance_runs where task='database.migrate' order by started_at desc limit 1")).rows[0];
+  assert.deepEqual(failure, { status: 'failed', error_code: 'MIGRATION_FAILED', summary: null });
+  process.stdout.write('postgres 0004 upgrade, empty-feature rollback, re-upgrade, execution evidence, no-op, advisory lock and failed-DDL rollback contracts passed\n');
 }
 
 main().catch((error) => {

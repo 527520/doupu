@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { createTestClient } from './testClient';
 import { adminAuditLogs, maintenanceRuns, users } from './schema';
 import { getSystemInfo, listAdminAudit, listGovernedUsers } from '@/lib/admin/queries';
 
 describe('admin query privacy and system evidence', () => {
+  it('uses only successful execution evidence matching the current migration identity', async () => {
+    const db = await createTestClient();
+    const result = await db.execute(sql`select id, hash, created_at from drizzle.__drizzle_migrations order by id desc limit 1`);
+    const row = result.rows[0] as { id: number; hash: string; created_at: string };
+    const completedAt = new Date('2026-09-05T05:00:00Z');
+    await db.insert(maintenanceRuns).values([
+      { task: 'database.migrate', status: 'succeeded', cursor: String(row.id), summary: { journalTimestamp: String(row.created_at), hash: 'wrong-hash' }, startedAt: completedAt, completedAt },
+      { task: 'database.migrate', status: 'failed', cursor: String(row.id), summary: { journalTimestamp: String(row.created_at), hash: row.hash }, startedAt: completedAt, completedAt },
+    ]);
+    expect((await getSystemInfo(db)).databaseMigration.appliedAt).toBeNull();
+    await db.insert(maintenanceRuns).values({ task: 'database.migrate', status: 'succeeded', cursor: String(row.id), summary: { journalTimestamp: String(row.created_at), hash: row.hash }, startedAt: new Date('2026-09-05T04:59:59Z'), completedAt });
+    expect((await getSystemInfo(db)).databaseMigration.appliedAt).toBe(completedAt.toISOString());
+  });
+
   it('masks account email and reports unavailable backup truthfully', async () => {
     const db = await createTestClient();
     await db.insert(users).values({ email: 'private@example.com', passwordHash: 'secret', emailVerifiedAt: new Date() });

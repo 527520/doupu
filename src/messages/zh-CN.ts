@@ -1077,7 +1077,7 @@ export const zhCN = {
       task: '任务', status: '状态', started: '开始', errorCode: '错误码',
       appCode: 'APP', journalCode: 'JOURNAL', databaseCode: 'DATABASE', backupCode: 'BACKUP', empty: '—',
       versionEvidence: '应用、数据库与备份证据', migrationRecorded: '数据库已记录的迁移序号', migrationTimes: '迁移时间证据', journalTime: '迁移文件时间', appliedTime: '数据库实际执行时间',
-      migrationTimeHelp: '现有 Drizzle 记录保存的是迁移文件时间，不是数据库实际执行时间；实际执行时间尚未接入，不能据此判断何时完成部署。',
+      migrationTimeHelp: '迁移文件时间来自 Drizzle journal。实际执行时间仅采纳迁移 CLI 为当前迁移身份记录的成功完成时间；历史缺失不倒填，重复运行不更新时间。迁移完成不等于应用部署完成。',
       notRecorded: '未记录', notRun: '尚无运行记录', timezone: 'Asia/Shanghai', maintenanceHelp: '分别显示每项任务保留记录中的最近状态、最近成功与最近失败；运行中不代表成功。',
       latest: '最近运行', lastSuccess: '最近成功完成', lastFailure: '最近失败完成', history: '运行历史', historyLimit: '最近 50 次', completed: '完成', statuses: { running: '运行中', succeeded: '成功', failed: '失败' },
     },

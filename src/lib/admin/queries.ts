@@ -73,13 +73,19 @@ export async function getSystemInfo(db: AnyDatabase) {
     const failure = runs.find((row) => row.status === 'failed');
     return { task, latest: runs[0] ? serialize(runs[0]) : null, lastSuccess: success ? serialize(success) : null, lastFailure: failure ? serialize(failure) : null };
   });
-  let databaseMigration: { id: number | null; appliedAt: null; journalTimestamp: string | null; status: 'recorded' | 'unavailable' } = { id: null, appliedAt: null, journalTimestamp: null, status: 'unavailable' };
+  let databaseMigration: { id: number | null; appliedAt: string | null; journalTimestamp: string | null; status: 'recorded' | 'unavailable' } = { id: null, appliedAt: null, journalTimestamp: null, status: 'unavailable' };
   try {
-    const result = await db.execute(sql`select id, created_at from drizzle.__drizzle_migrations order by id desc limit 1`);
-    const row = (result as unknown as { rows?: Array<{ id: number; created_at: number }> }).rows?.[0]
-      ?? (result as unknown as Array<{ id: number; created_at: number }>)[0];
+    const result = await db.execute(sql`select id, hash, created_at from drizzle.__drizzle_migrations order by created_at desc, id desc limit 1`);
+    const row = (result as unknown as { rows?: Array<{ id: number; hash: string; created_at: number }> }).rows?.[0]
+      ?? (result as unknown as Array<{ id: number; hash: string; created_at: number }>)[0];
     // Drizzle stores journalEntry.when, not wall-clock migration execution time.
-    if (row) databaseMigration = { id: Number(row.id), appliedAt: null, journalTimestamp: new Date(Number(row.created_at)).toISOString(), status: 'recorded' };
+    if (row) {
+      const [evidence] = await db.select({ completedAt: maintenanceRuns.completedAt }).from(maintenanceRuns).where(and(
+        eq(maintenanceRuns.task, 'database.migrate'), eq(maintenanceRuns.status, 'succeeded'), eq(maintenanceRuns.cursor, String(row.id)),
+        sql`${maintenanceRuns.summary}->>'journalTimestamp' = ${String(row.created_at)}`, sql`${maintenanceRuns.summary}->>'hash' = ${row.hash}`,
+      )).orderBy(desc(maintenanceRuns.completedAt), desc(maintenanceRuns.id)).limit(1);
+      databaseMigration = { id: Number(row.id), appliedAt: evidence?.completedAt?.toISOString() ?? null, journalTimestamp: new Date(Number(row.created_at)).toISOString(), status: 'recorded' };
+    }
   } catch (error) {
     const failure = error as { code?: string; cause?: { code?: string } };
     if ((failure.code ?? failure.cause?.code) !== '42P01') throw error;
