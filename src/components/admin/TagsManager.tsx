@@ -31,7 +31,7 @@ export default function TagsManager() {
   const editable = !command.locked && !queue.loading && !queue.error && !selected?.mergedIntoTagId;
   const validReason = reason.trim().length >= 3;
   const validFields = name.trim().length > 0 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
-    && order.trim() !== '' && Number.isSafeInteger(Number(order));
+    && order.trim() !== '' && Number.isInteger(Number(order)) && Number(order) >= -2147483648 && Number(order) <= 2147483647;
   const changed = creating || (selected && (name.trim() !== selected.name || slug !== selected.slug || Number(order) !== selected.sortOrder || active !== selected.active));
   const select = (tag: Tag | 'new' | null) => {
     if (command.locked) return;
@@ -45,7 +45,7 @@ export default function TagsManager() {
     if (!editable || !validReason || !validFields || !changed) return;
     const fields = { name: name.trim(), slug, sortOrder: Number(order), reason };
     await command.run(creating
-      ? { url: '/api/admin/community/tags', method: 'POST', body: fields }
+      ? { url: '/api/admin/community/tags', method: 'POST', body: { ...fields, expectedVersion: 0 } }
       : { url: `/api/admin/community/tags/${selected!.id}`, method: 'PATCH', body: { ...fields, active, expectedVersion: selected!.version } }, completed);
   };
   const merge = async () => {

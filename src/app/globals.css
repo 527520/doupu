@@ -318,6 +318,34 @@ body {
 .admin-analytics-filters label { display: grid; gap: .3rem; font-size: .75rem; color: var(--color-ink-soft); }
 .admin-analytics-filters input, .admin-analytics-filters select { min-height: 2.4rem; padding: .45rem .55rem; border: 1px solid var(--color-lilac); color: var(--color-ink); background: white; }
 .admin-analytics-filters button { align-self: end; }
+.admin-analytics-form { margin-top: 1rem; }
+.admin-analytics-filters :is(input, select) { min-width: 0; width: 100%; min-height: 44px; font-size: .875rem; }
+.admin-advanced-filters { margin-inline: 1rem; }
+.admin-advanced-filters > p { font-size: .85rem; color: var(--color-ink-soft); }
+.admin-advanced-filters .admin-analytics-filters { padding-inline: 0; }
+.admin-filter-actions { display: flex; gap: .75rem; flex-wrap: wrap; padding: 1rem; }
+.admin-chart-data { max-height: 24rem; }
+.admin-chart-data thead { position: sticky; top: 0; background: white; }
+.admin-filter-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.admin-filter-dates input { min-width: 0; max-width: 100%; }
+.admin-evidence-list { display: grid; gap: .8rem; margin-block: 1rem; }
+.admin-evidence-list > div { display: grid; grid-template-columns: minmax(6rem, .7fr) minmax(0, 1.3fr); gap: .75rem; padding-bottom: .65rem; border-bottom: 1px solid var(--color-border); }
+.admin-evidence-list dt { font-size: .8rem; color: var(--color-ink-soft); }
+.admin-evidence-list dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.admin-system-tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.25rem; }
+.admin-system-tasks > article { min-width: 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: .6rem; }
+.admin-system-page > .admin-panel { margin-top: 1rem; padding: 1rem; }
+.admin-system-page > .admin-metrics { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.admin-system-page .admin-metrics article { min-width: 0; }
+.admin-system-page .admin-metrics span { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .admin-evidence-list > div { grid-template-columns: minmax(0, 1fr); gap: .25rem; }
+}
+.admin-run-state { display: inline-block; font-weight: 700; padding: .25rem .5rem; border: 1px solid currentColor; border-radius: .3rem; }
+.admin-run-state.is-failed { color: #8b332c; }
+.admin-run-state.is-succeeded { color: #3e6145; }
+.analytics-chart circle:focus-visible { outline: none; stroke: var(--color-ink); stroke-width: 5px; fill: white; }
+.analytics-chart-axis { color: var(--color-ink-soft); fill: currentColor; font-size: 11px; }
 .admin-panel table { width: 100%; border-collapse: collapse; font-size: .8rem; }
 .admin-panel th, .admin-panel td { padding: .65rem .8rem; border-bottom: 1px solid rgb(48 41 56 / 10%); text-align: left; }
 .admin-panel th { color: var(--color-ink-soft); font-weight: 500; }
@@ -326,7 +354,8 @@ body {
 .admin-footnote { margin-top: 1rem; color: var(--color-ink-soft); font-size: .75rem; }
 .admin-stage, .admin-panel, .admin-task-queue, .admin-task-detail, .review-queue, .review-actions { min-width: 0; }
 .admin-task-layout { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 1.4fr); gap: 1rem; margin-top: 1rem; align-items: start; }
-.admin-task-detail { position: sticky; top: 1rem; }
+/* Long detail forms must not stick across the following recovery-notice row. */
+.admin-task-detail { position: static; }
 .admin-task-notice { grid-column: 1 / -1; display: grid; gap: .75rem; }
 .admin-task-notice:empty { display: none; }
 .admin-pagination, .admin-work-actions { display: flex; gap: .75rem; flex-wrap: wrap; }

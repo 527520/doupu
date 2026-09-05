@@ -322,7 +322,7 @@ export async function moderateCommunityComment(db: AnyDatabase, input: {
     await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
-    if (comment.version !== input.expectedVersion || !['pending_review', 'published'].includes(comment.status)) {
+    if (comment.version !== input.expectedVersion || !['pending_review', 'published'].includes(comment.status) || comment.status === input.decision) {
       throw new AppError('STATE_CONFLICT', '评论状态已变化');
     }
     const [updated] = await tx.update(communityComments).set({
@@ -384,7 +384,10 @@ export async function listGovernanceQueues(db: AnyDatabase) {
       version: communityComments.version, body: communityComments.body, riskCategories: communityComments.riskCategories,
       createdAt: communityComments.createdAt }).from(communityComments)
       .where(eq(communityComments.status, 'pending_review')).orderBy(communityComments.createdAt).limit(100),
-    db.select().from(communityReports).where(inArray(communityReports.status, ['open', 'accepted']))
+    db.select({ id: communityReports.id, targetType: communityReports.targetType, targetId: communityReports.targetId,
+      targetVersion: communityReports.targetVersion, status: communityReports.status, version: communityReports.version,
+      category: communityReports.category, details: communityReports.details, createdAt: communityReports.createdAt,
+    }).from(communityReports).where(inArray(communityReports.status, ['open', 'accepted']))
       .orderBy(communityReports.createdAt).limit(100),
   ]);
   return { comments, reports };

@@ -21,7 +21,8 @@ it('keeps all high risk controls tied to one explicitly selected and confirmed u
   fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
   await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
   const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH');
-  expect(writes).toHaveLength(2); expect(writes[0]).toEqual(writes[1]);
+  expect(writes).toHaveLength(2); expect(writes[0][0]).toBe(writes[1][0]);
+  expect(writes[1][1]).toMatchObject({ method: writes[0][1]?.method, body: writes[0][1]?.body, headers: writes[0][1]?.headers });
   expect(JSON.parse(String(writes[0][1]?.body))).toEqual({ accountStatus: 'suspended', expectedVersion: 4, targetConfirmation: user.userId, reason: '多次垃圾推广' });
 });
 it('offers no self-governance action and never changes an anonymized account', async () => {

@@ -161,6 +161,7 @@ describe('community work and frozen revision state machine', () => {
       reason: '人工选择本期精选', requestId: 'feature', now: new Date('2026-09-05T03:00:00Z'),
     });
     expect(work.featuredAt).toEqual(new Date('2026-09-05T03:00:00Z'));
+    await expect(moderateCommunityWork(db, { actor: moderator, workId: work.id, action: 'feature', expectedVersion: work.version, reason: '重复精选应当拒绝', requestId: 'no-op-feature' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
     work = await moderateCommunityWork(db, {
       actor: moderator, workId: work.id, action: 'lock_comments', expectedVersion: work.version,
       reason: '治理期间暂停评论', requestId: 'lock',
@@ -176,6 +177,7 @@ describe('community work and frozen revision state machine', () => {
       reason: '结束本期人工精选', requestId: 'unfeature',
     });
     expect(work.featuredAt).toBeNull();
+    await expect(moderateCommunityWork(db, { actor: moderator, workId: work.id, action: 'unfeature', expectedVersion: work.version, reason: '重复取消精选应当拒绝', requestId: 'no-op-unfeature' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
     await expect(moderateCommunityWork(db, {
       actor: moderator, workId: work.id, action: 'unlock_comments', expectedVersion: work.version,
       reason: '重复解锁应当拒绝', requestId: 'duplicate-unlock',
@@ -185,6 +187,9 @@ describe('community work and frozen revision state machine', () => {
       actor: moderator, name: '节日', slug: 'festival', sortOrder: 8,
       reason: '新增正式节日标签', requestId: 'tag-create',
     });
+    await expect(createCommunityTag(db, { actor: moderator, name: '其他节日', slug: 'festival', reason: '重复链接标识', requestId: 'duplicate-slug' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
+    await expect(createCommunityTag(db, { actor: moderator, name: '节日', slug: 'other-festival', reason: '重复标签名称', requestId: 'duplicate-name' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
+    await expect(updateCommunityTag(db, { actor: moderator, tagId: tag.id, name: '动物', expectedVersion: tag.version, reason: '重复已有名称', requestId: 'duplicate-rename' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
     const updated = await updateCommunityTag(db, {
       actor: moderator, tagId: tag.id, expectedVersion: tag.version,
       name: '节庆', slug: 'celebration', sortOrder: 3, active: false,

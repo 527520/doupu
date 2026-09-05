@@ -958,7 +958,9 @@ export const zhCN = {
   },
   communityAdmin: {
     adminTitle: '审核校样台',
+    readError: { title: '管理页面暂时无法读取', body: '当前数据未能载入，不能据此判断队列为空或系统正常。请重试；已提交操作请先核对对象状态，不要重复发起。', retry: '重新读取页面', back: '返回审核入口' },
     command: {
+      readTimeout: '读取超时，请重试。',
       failed: '操作未完成，请检查状态和理由后重试。', network: '暂时无法确认操作结果。',
       uncertain: '上次请求的结果尚未确认。输入和目标已保留，请重试同一请求，不要重复创建或切换处置。',
       retry: '重试确认上次操作', refresh: '刷新对象状态', refreshFailed: '操作已成功，但列表刷新失败。请刷新列表确认，勿重复提交。',
@@ -1074,9 +1076,15 @@ export const zhCN = {
       app: '应用版本', local: '本地', backup: '未接入', backupDetail: '容器状态未安全共享', maintenance: '维护任务',
       task: '任务', status: '状态', started: '开始', errorCode: '错误码',
       appCode: 'APP', journalCode: 'JOURNAL', databaseCode: 'DATABASE', backupCode: 'BACKUP', empty: '—',
+      versionEvidence: '应用、数据库与备份证据', migrationRecorded: '数据库已记录的迁移序号', migrationTimes: '迁移时间证据', journalTime: '迁移文件时间', appliedTime: '数据库实际执行时间',
+      migrationTimeHelp: '现有 Drizzle 记录保存的是迁移文件时间，不是数据库实际执行时间；实际执行时间尚未接入，不能据此判断何时完成部署。',
+      notRecorded: '未记录', notRun: '尚无运行记录', timezone: 'Asia/Shanghai', maintenanceHelp: '分别显示每项任务保留记录中的最近状态、最近成功与最近失败；运行中不代表成功。',
+      latest: '最近运行', lastSuccess: '最近成功完成', lastFailure: '最近失败完成', history: '运行历史', historyLimit: '最近 50 次', completed: '完成', statuses: { running: '运行中', succeeded: '成功', failed: '失败' },
     },
-    audit: { time: '时间', action: '动作', target: '目标', role: '角色', reason: '理由', request: '请求' },
+    audit: { time: '时间', action: '动作', target: '目标', role: '角色', reason: '理由', request: '请求', actor: '操作者内部 ID', anonymized: '已去身份化或未记录', select: '选择一条记录，查看操作前后状态。',
+      queue: '操作记录列表', detail: '审计详情', search: '搜索动作、目标 ID 或请求 ID', from: '开始日期', to: '结束日期', query: '查询审计', queryHelp: '每页 50 条，按时间倒序；日期按 Asia/Shanghai 筛选。支持动作名、目标 ID 与请求 ID 的部分匹配。', before: '操作前状态', after: '操作后状态', noState: '没有保留该侧的白名单状态。', empty: '—', readOnly: '审计为追加式事实，此页只读，不提供编辑或删除。' },
     governance: {
+      hideCurrentComment: '隐藏当前评论版本', manageReportedWork: '打开此作品的治理材料', caseDoesNotModerate: '案件状态与内容状态分别记录。隐藏评论或下架作品后，请填写结案理由再结案；受理或结案不会自动隐藏内容。',
       targetId: '被举报对象编号', reportedVersion: '举报时版本', contentVersion: '展示内容版本', currentVersion: '当前版本',
       contentStatus: '对象状态', workStatus: '所属作品状态', unavailable: '不可用', targetUnavailable: '对象不存在或已移除',
       contentUnavailable: '内容已删除或不可用，无法还原原文。', notPublic: '对象当前不可公开访问，可在此核查保留的治理材料。',
@@ -1132,6 +1140,7 @@ export const zhCN = {
     },
     analytics: { withdrawn: '已撤回同意并清除该访客的原始事件和身份关联。', saved: '偏好已保存。', saveFailed: '偏好保存失败，请稍后重试。', granted: '已同意', denied: '已拒绝', unset: '尚未选择', loading: '正在读取偏好…', bannerLabel: '匿名使用数据偏好', bannerTitle: '是否允许匿名使用数据？', bannerBody: '同意后，我们只记录功能类别、设备类别和匿名会话，不记录原图、图纸正文、搜索词、完整 IP 或邮箱。拒绝不会影响使用。', learnMore: '查看隐私说明与随时撤回', reject: '拒绝', grant: '同意匿名统计', settingsTitle: '匿名分析偏好', currentStatus: (status: string) => `当前状态：${status}`, agree: '同意', withdraw: '撤回并清除原始数据' },
     analyticsDashboard: {
+      invalidQuery: '部分查询参数无效或已超出保留范围，已恢复有效默认值。请核对下方日期与筛选后重新查询。', advanced: '更多筛选：设备、来源与 UTM', advancedHint: '这些组合筛选只在最近 90 天精确范围生效；长期范围会明确忽略。', reset: '重置查询', eventExample: '例如 page_viewed',
       legacyDailyUvUnavailable: '部分历史数据未保存当日跨事件去重人数，相应 UV 暂不可用；事件总量仍可查看。',
       eyebrow: 'ANALYTICS', title: '匿名分析校样', description: 'Asia/Shanghai · 精确范围最多 90 天 · 长期范围自动使用日聚合',
       start: '开始日期', end: '结束日期', eventName: '事件名', device: '设备', browser: '浏览器', os: '系统', actor: '角色类型', path: '标准化路径', referrer: '来源域名', utmSource: 'UTM source', utmMedium: 'UTM medium', utmCampaign: 'UTM campaign', utmContent: 'UTM content', dimension: '分类维度', funnel: '漏斗', apply: '查询', all: '全部',

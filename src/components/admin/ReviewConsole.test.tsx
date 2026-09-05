@@ -39,6 +39,7 @@ describe('review task flow', () => {
     await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
     const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(writes).toHaveLength(2);
-    expect(writes[0]).toEqual(writes[1]);
+    expect(writes).toHaveLength(2); expect(writes[0][0]).toBe(writes[1][0]);
+    expect(writes[1][1]).toMatchObject({ method: writes[0][1]?.method, body: writes[0][1]?.body, headers: writes[0][1]?.headers });
   });
 });

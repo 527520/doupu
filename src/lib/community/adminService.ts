@@ -15,6 +15,16 @@ import { AppError } from '@/lib/errors';
 const reasonSchema = z.string().trim().min(3).max(500);
 const tagNameSchema = z.string().trim().min(1).max(30);
 const tagSlugSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u).max(50);
+const tagOrderSchema = z.number().int().min(-2147483648).max(2147483647);
+
+function rethrowTagConflict(error: unknown): never {
+  const failure = error as { code?: string; constraint?: string; cause?: { code?: string; constraint?: string } };
+  const constraint = failure.cause ?? failure;
+  if (constraint.code === '23505' && constraint.constraint?.startsWith('community_tags_')) {
+    throw new AppError('STATE_CONFLICT', '标签名称或链接标识已存在，请修改后重试');
+  }
+  throw error;
+}
 
 function reason(value: string): string {
   const parsed = reasonSchema.safeParse(value);
@@ -99,6 +109,7 @@ export async function moderateCommunityWork(db: AnyDatabase, input: {
       changes.removedAt = null;
       changes.removedReason = null;
     } else if (input.action === 'feature' || input.action === 'unfeature') {
+      if (Boolean(work.featuredAt) === (input.action === 'feature')) throw new AppError('STATE_CONFLICT', '精选状态未变化');
       if (input.action === 'feature' && (work.lifecycleStatus !== 'active' || !work.currentPublishedRevisionId)) {
         throw new AppError('STATE_CONFLICT', '只有公开作品可以精选');
       }
@@ -138,10 +149,12 @@ export async function createCommunityTag(db: AnyDatabase, input: {
   const slug = tagSlugSchema.safeParse(input.slug);
   if (!name.success || !slug.success) throw new AppError('VALIDATION', '标签名称或 slug 无效');
   const why = reason(input.reason);
+  const sortOrder = tagOrderSchema.parse(input.sortOrder ?? 0);
   return db.transaction(async (tx) => {
     const [tag] = await tx.insert(communityTags).values({
-      name: name.data, slug: slug.data, sortOrder: input.sortOrder ?? 0,
-    }).returning();
+      name: name.data, slug: slug.data, sortOrder,
+    }).onConflictDoNothing().returning();
+    if (!tag) throw new AppError('STATE_CONFLICT', '标签名称或链接标识已存在，请修改后重试');
     await audit(tx, { actor: input.actor, action: 'community.tag_created', targetType: 'community_tag', targetId: tag.id, reason: why, requestId: input.requestId, beforeState: null, afterState: { revision: tag.version } });
     return tag;
   });
@@ -161,18 +174,19 @@ export async function updateCommunityTag(db: AnyDatabase, input: {
   const why = reason(input.reason);
   const name = input.name === undefined ? undefined : tagNameSchema.parse(input.name);
   const slug = input.slug === undefined ? undefined : tagSlugSchema.parse(input.slug);
+  const sortOrder = input.sortOrder === undefined ? undefined : tagOrderSchema.parse(input.sortOrder);
   return db.transaction(async (tx) => {
     const [tag] = await tx.select().from(communityTags).where(eq(communityTags.id, input.tagId)).for('update');
     if (!tag) throw new AppError('NOT_FOUND', '标签不存在');
     if (tag.version !== input.expectedVersion || tag.mergedIntoTagId) throw new AppError('STATE_CONFLICT', '标签状态已变化');
     const [updated] = await tx.update(communityTags).set({
-      name, slug, sortOrder: input.sortOrder, active: input.active,
+      name, slug, sortOrder, active: input.active,
       version: tag.version + 1, updatedAt: new Date(),
     }).where(and(eq(communityTags.id, tag.id), eq(communityTags.version, tag.version))).returning();
     if (!updated) throw new AppError('STATE_CONFLICT', '标签状态已变化');
     await audit(tx, { actor: input.actor, action: 'community.tag_updated', targetType: 'community_tag', targetId: tag.id, reason: why, requestId: input.requestId, beforeState: { revision: tag.version, mergedIntoTagId: tag.mergedIntoTagId }, afterState: { revision: updated.version, mergedIntoTagId: updated.mergedIntoTagId } });
     return updated;
-  });
+  }).catch(rethrowTagConflict);
 }
 
 export async function mergeCommunityTag(db: AnyDatabase, input: {

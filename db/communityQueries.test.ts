@@ -11,6 +11,7 @@ import {
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import { mergeCommunityTag } from '@/lib/community/adminService';
+import { listManagedCommunityWorks } from '@/lib/community/adminQueries';
 import {
   getPublicCommunityWork,
   listCommunityReviewQueue,
@@ -193,7 +194,9 @@ describe('public community query boundary', () => {
     await anonymizeAccount(db, { userId: authorId, requestId: 'erase-author-search' });
     for (const author of ['Alice', 'lic']) {
       expect((await listPublicCommunityWorks(db, { sort: 'latest', author })).items).toEqual([]);
+      expect((await listManagedCommunityWorks(db, { q: author })).items).toEqual([]);
     }
+    expect((await listManagedCommunityWorks(db, { q: '已注销用户' })).items).toHaveLength(26);
     const retained = await listPublicCommunityWorks(db, { sort: 'latest', author: publicAuthorId });
     expect(retained.items).toHaveLength(24);
     expect(retained.items.every((item) => item.author.displayName === '已注销用户')).toBe(true);

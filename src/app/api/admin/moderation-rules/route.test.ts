@@ -36,3 +36,12 @@ it('only admins read and change rules; missing or stale bases never replace the 
   const response = await GET(); expect(response.headers.get('cache-control')).toContain('no-store');
   expect(JSON.stringify(await response.json())).not.toContain(admin.id);
 });
+it('accepts a full legal Unicode rule set while retaining a bounded request body', async () => {
+  const [admin] = await db.insert(users).values({ email: 'large-rules@example.test', role: 'admin', emailVerifiedAt: new Date() }).returning();
+  token = (await createSession(db, admin.id)).token;
+  const largeRules = Array.from({ length: 500 }, (_, index) => ({ literal: `规则${String(index).padStart(3, '0')}${'词'.repeat(75)}`, category: 'spam', risk: 'review' }));
+  const body = { rules: largeRules, reason: '完整词表上限验证', expectedVersion: 1 };
+  expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(64 * 1024);
+  expect((await POST(request(body, 'full-rules'))).status).toBe(201);
+  expect((await POST(request({ ...body, reason: '词'.repeat(300000) }, 'too-large'))).status).toBe(413);
+});

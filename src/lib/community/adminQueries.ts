@@ -35,7 +35,10 @@ export async function listManagedCommunityWorks(db: AnyDatabase, input: unknown)
     .leftJoin(users, eq(users.id, communityWorks.authorUserId))
     .where(and(
       query.status === 'all' ? undefined : eq(communityWorks.lifecycleStatus, query.status),
-      query.q ? or(ilike(communityRevisions.title, `%${query.q}%`), ilike(communityRevisions.frozenDisplayName, `%${query.q}%`), sql`${communityWorks.id}::text = ${query.q}`) : undefined,
+      query.q ? or(ilike(communityRevisions.title, `%${query.q}%`), ilike(sql`case
+        when ${communityRevisions.authorType} = 'official' then '豆谱官方'
+        when ${users.accountStatus} = 'anonymized' then ${ANONYMIZED_DISPLAY_NAME}
+        else ${communityRevisions.frozenDisplayName} end`, `%${query.q}%`), sql`${communityWorks.id}::text = ${query.q}`) : undefined,
       cursor ? or(lt(communityWorks.createdAt, new Date(cursor.createdAt)), and(eq(communityWorks.createdAt, new Date(cursor.createdAt)), lt(communityWorks.id, cursor.id))) : undefined,
     )).orderBy(desc(communityWorks.createdAt), desc(communityWorks.id)).limit(PAGE_SIZE + 1);
   const items = rows.slice(0, PAGE_SIZE).map((row) => {

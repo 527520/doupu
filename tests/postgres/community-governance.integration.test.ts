@@ -14,6 +14,7 @@ import {
   designs,
   idempotencyRecords,
   moderationRuleSetVersions,
+  maintenanceRuns,
   users,
 } from '../../db/schema';
 import { updateUserGovernance } from '@/lib/admin/userGovernance';
@@ -23,7 +24,8 @@ import { executeIdempotently } from '@/lib/idempotency';
 import { createCommunityComment, createModerationRuleSet, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
 import { inspectManagedCommunityWork, listManagedCommunityWorks } from '@/lib/community/adminQueries';
 import { reviewCommunityRevision } from '@/lib/community/service';
-import { moderateCommunityWork } from '@/lib/community/adminService';
+import { createCommunityTag, moderateCommunityWork } from '@/lib/community/adminService';
+import { getSystemInfo, listAdminAudit } from '@/lib/admin/queries';
 import { createOfficialBatch, publishOfficialBatch, saveOfficialDraft } from '@/lib/community/officialBatch';
 import { COMMUNITY_LICENSE_VERSION, deriveCommunityPreview, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
@@ -109,6 +111,34 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL 16 community and governance concurrency', () => {
+  it('maps concurrent tag collisions and reads stable audit pages and per-task maintenance evidence', async () => {
+    const actor = await createUser('moderator');
+    const suffix = randomUUID();
+    const name = `标签${suffix.slice(0, 8)}`;
+    const tagResults = await Promise.allSettled([0, 1].map((index) => createCommunityTag(db, {
+      actor, name, slug: `pg-${suffix}`, reason: '本地并发标签碰撞验证', requestId: `${suffix}-${index}`,
+    })));
+    expect(tagResults.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(tagResults.find((result) => result.status === 'rejected')).toMatchObject({ reason: { code: 'STATE_CONFLICT' } });
+    await db.insert(adminAuditLogs).values(Array.from({ length: 55 }, (_, index) => ({
+      actorRole: 'moderator' as const, actorUserId: actor.userId, action: 'test.read', targetType: 'test', targetId: suffix,
+      reason: '本地审计分页验证', requestId: `${suffix}-audit-${index}`, createdAt: new Date('2026-09-01T01:00:00Z'),
+    })));
+    const first = await listAdminAudit(db, { q: `${suffix}-audit` });
+    const second = await listAdminAudit(db, { q: `${suffix}-audit`, cursor: first.nextCursor });
+    expect(first.items).toHaveLength(50); expect(second.items).toHaveLength(5);
+    expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(55);
+    const task = `test.${suffix}`;
+    const rows = await db.insert(maintenanceRuns).values([
+      { task, status: 'failed', startedAt: new Date('2026-08-01'), completedAt: new Date('2026-08-01T01:00:00Z'), errorCode: 'TEST_FAILURE' },
+      { task, status: 'succeeded', startedAt: new Date('2026-08-02'), completedAt: new Date('2026-08-02T01:00:00Z') },
+    ]).returning({ id: maintenanceRuns.id });
+    try {
+      const info = await getSystemInfo(db);
+      expect(info.databaseMigration).toMatchObject({ status: 'recorded', appliedAt: null });
+      expect(info.maintenanceTasks.find((item) => item.task === task)).toMatchObject({ latest: { status: 'succeeded' }, lastFailure: { errorCode: 'TEST_FAILURE' } });
+    } finally { await db.delete(maintenanceRuns).where(inArray(maintenanceRuns.id, rows.map((row) => row.id))); }
+  });
   it('rejects a competing stale rule replacement and reads managed work material without leaking private identity', async () => {
     const left = await createUser('admin');
     const right = await createUser('admin');

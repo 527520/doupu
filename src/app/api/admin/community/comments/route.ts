@@ -6,7 +6,7 @@ import { listGovernanceQueues } from '@/lib/community/interactions';
 async function get() {
   await requireApiActor('community:moderate');
   const queues = await listGovernanceQueues(getDb());
-  return okJson({ items: queues.comments });
+  return okJson({ items: queues.comments }, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export const GET = withApiErrors(get);

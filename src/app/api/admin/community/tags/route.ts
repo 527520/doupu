@@ -8,7 +8,7 @@ import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { createCommunityTag } from '@/lib/community/adminService';
 import { executeIdempotently } from '@/lib/idempotency';
 
-const schema = z.object({ name: z.string(), slug: z.string(), sortOrder: z.number().int().optional(), reason: z.string() }).strict();
+const schema = z.object({ name: z.string(), slug: z.string(), sortOrder: z.number().int().optional(), reason: z.string(), expectedVersion: z.literal(0) }).strict();
 
 async function get() {
   await requireApiActor('community:moderate');

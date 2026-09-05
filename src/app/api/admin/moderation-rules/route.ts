@@ -24,7 +24,8 @@ async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('moderation-rules:manage');
-  const body = await readJson(request, 64 * 1024);
+  // Fits 500 validated 80-character Unicode literals including JSON escaping.
+  const body = await readJson(request, 512 * 1024);
   if (!body.ok) return body.response;
   const input = schema.parse(body.data);
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();

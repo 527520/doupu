@@ -138,6 +138,7 @@ describe('community reuse, interaction and governance transactions', () => {
     const published = await moderateCommunityComment(db, { actor: moderator, commentId: risky.id, expectedVersion: risky.version,
       decision: 'published', reason: '语境复核后允许公开', requestId: 'comment-review' });
     expect(published.status).toBe('published');
+    await expect(moderateCommunityComment(db, { actor: moderator, commentId: published.id, expectedVersion: published.version, decision: 'published', reason: '重复发布应拒绝', requestId: 'duplicate-comment-review' })).rejects.toMatchObject({ code: 'STATE_CONFLICT' });
     const deleted = await deleteCommunityComment(db, { actor: user, commentId: safe.id, expectedVersion: published.version });
     expect(deleted).toMatchObject({ status: 'deleted', body: '' });
     expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].commentCount).toBe(0);

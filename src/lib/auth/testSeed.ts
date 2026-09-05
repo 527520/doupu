@@ -18,6 +18,7 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
     { email: 'e2e-admin@example.com', username: 'E2E Admin', passwordHash, role: 'admin', emailVerifiedAt: new Date() },
     { email: 'e2e-moderator@example.com', username: 'E2E Moderator', passwordHash, role: 'moderator', emailVerifiedAt: new Date() },
     { email: 'e2e-user@example.com', username: 'E2E User', passwordHash, role: 'user', emailVerifiedAt: new Date() },
+    ...['chromium', 'firefox', 'webkit'].map((browser) => ({ email: `e2e-governance-${browser}@example.com`, username: `E2E 治理目标 ${browser}`, passwordHash, role: 'user' as const, emailVerifiedAt: new Date() })),
   ]).returning();
   const admin: Actor = { userId: adminRow.id, role: 'admin', accountStatus: 'active', emailVerified: true };
   const user: Actor = { userId: userRow.id, role: 'user', accountStatus: 'active', emailVerified: true };

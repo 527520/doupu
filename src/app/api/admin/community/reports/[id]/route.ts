@@ -11,7 +11,7 @@ const schema = z.object({ decision: z.enum(['accepted', 'resolved', 'dismissed']
 
 async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   await requireApiActor('community:moderate');
-  return okJson(await inspectCommunityReport(getDb(), z.string().uuid().parse((await params).id)));
+  return okJson(await inspectCommunityReport(getDb(), z.string().uuid().parse((await params).id)), { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 async function patch(request: Request, { params }: { params: Promise<{ id: string }> }) {

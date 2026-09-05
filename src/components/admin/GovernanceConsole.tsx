@@ -69,6 +69,12 @@ export default function GovernanceConsole({ mode }: { mode: Mode }) {
     }, async () => { setReason(''); setSelectedId(null); await queue.reload(); });
   };
   const refresh = async () => { await queue.reload(); await inspection.reload(); };
+  const hideReportedComment = async () => {
+    if (!canDecide || target?.targetType !== 'comment' || target.currentVersion === null || !['pending_review', 'published'].includes(target.contentStatus ?? '')) return;
+    await command.run({ url: `/api/admin/community/comments/${target.targetId}`, method: 'PATCH',
+      body: { decision: 'hidden', expectedVersion: target.currentVersion, reason },
+    }, async () => { setReason(''); await inspection.reload(); });
+  };
   return <div className={`review-console governance-console${selected ? ' is-inspecting' : ''}`}>
     <section className="review-queue" aria-label={g.queue} tabIndex={-1} ref={queueRef}>
       <header><h2>{mode === 'comments' ? t.pendingComments : t.pendingReports}</h2><span>{queue.items.length}</span></header>
@@ -86,6 +92,7 @@ export default function GovernanceConsole({ mode }: { mode: Mode }) {
     </> : <p className="admin-empty">{g.select}</p>}</section>
     <aside className="review-actions">
       {selected && <><h2>{g.action}</h2><label>{g.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
+        {mode === 'reports' && <div className="admin-form-stack"><p className="admin-help">{g.caseDoesNotModerate}</p>{target?.targetType === 'comment' && ['pending_review', 'published'].includes(target.contentStatus ?? '') && <button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void hideReportedComment()}>{g.hideCurrentComment}</button>}{target?.targetType === 'work' && <Link href={`/admin/works?work=${target.targetId}`}>{g.manageReportedWork}</Link>}</div>}
         <div>{mode === 'comments' ? <><button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button><button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{t.actions.publish}</button></> : <><button type="button" className="btn-ghost" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected.status === 'accepted' ? <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></>}
       <AdminCommandNotice command={command} onRefresh={() => void refresh()} />
       {selected && queue.error && <div><p role="alert">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>}

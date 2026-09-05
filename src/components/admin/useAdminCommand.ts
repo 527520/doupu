@@ -20,16 +20,19 @@ export function useAdminCommand() {
     setState({ busy: true, uncertain: false, error: null, conflict: false, succeeded: false });
     let reply: unknown;
     let accepted = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(current.command.url, {
         method: current.command.method,
         headers: { 'content-type': 'application/json', 'idempotency-key': current.key },
         body: current.body,
+        signal: controller.signal,
       });
       reply = await response.json();
       if (!response.ok) {
         const failure = reply as { error?: { message?: string; code?: string } } | null;
-        const uncertain = response.status >= 500;
+        const uncertain = response.status >= 500 || response.status === 408;
         if (!uncertain) attempt.current = null;
         if (mounted.current) setState({ busy: false, uncertain, error: failure?.error?.message || t.failed, conflict: failure?.error?.code === 'STATE_CONFLICT', succeeded: false });
       } else {
@@ -40,6 +43,7 @@ export function useAdminCommand() {
     } catch {
       if (mounted.current) setState({ busy: false, uncertain: true, error: t.network, conflict: false, succeeded: false });
     } finally {
+      window.clearTimeout(timeout);
       if (!accepted) inFlight.current = false;
     }
     // Refresh is separate from the write outcome. Never replay a successful write

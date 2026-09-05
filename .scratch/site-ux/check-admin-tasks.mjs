@@ -14,7 +14,7 @@ try {
   await expect(page).toHaveURL(/\/admin\/reviews$/);
   await expect(page.locator('h1')).toHaveText('作品审核');
   const seed = await page.evaluate(async () => {
-    const reply = await fetch('/api/admin/community/tags', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'siteux-admin-visual-tag-v1' }, body: JSON.stringify({ name: '本地验证动物标签', slug: 'siteux-admin-animals', reason: '本地后台交互验收样本' }) });
+    const reply = await fetch('/api/admin/community/tags', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'siteux-admin-visual-tag-v2' }, body: JSON.stringify({ name: '本地验证动物标签', slug: 'siteux-admin-animals', reason: '本地后台交互验收样本', expectedVersion: 0 }) });
     return { status: reply.status, body: await reply.json() };
   });
   expect([200, 201]).toContain(seed.status);

@@ -16,20 +16,20 @@ import { useAdminTaskFocus } from './useAdminTaskFocus';
 
 type Action = 'remove' | 'restore' | 'feature' | 'unfeature' | 'lock_comments' | 'unlock_comments';
 
-export default function WorksManager() {
+export default function WorksManager({ initialWorkId }: { initialWorkId?: string } = {}) {
   const t = zhCN.communityAdmin.works;
   const c = zhCN.communityAdmin.command;
   const states = zhCN.communityAdmin.states;
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(initialWorkId ?? '');
   const [status, setStatus] = useState('all');
-  const [filter, setFilter] = useState({ q: '', status: 'all' });
+  const [filter, setFilter] = useState({ q: initialWorkId ?? '', status: 'all' });
   const [cursors, setCursors] = useState(['']);
   const query = new URLSearchParams(filter);
   const cursor = cursors.at(-1);
   if (cursor) query.set('cursor', cursor);
   const queue = useAdminCollection<ManagedCommunityWork>(`/api/admin/community/works?${query}`);
   const command = useAdminCommand();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialWorkId ?? null);
   const selected = queue.items.find((item) => item.id === selectedId) ?? null;
   const inspection = useAdminInspection<ManagedWorkInspection>(selected ? `/api/admin/community/works/${selected.id}` : null);
   const detail = inspection.data;

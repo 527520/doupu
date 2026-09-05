@@ -9,6 +9,8 @@ import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
 import { COMMUNITY_LICENSE_VERSION, deriveCommunityPreview } from '@/lib/community/snapshot';
 import { GET } from './[id]/route';
 import { GET as inspectRevision } from '../revisions/[id]/route';
+import { GET as listReports } from './route';
+import { GET as listComments } from '../comments/route';
 
 let token: string | undefined;
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (name: string) => name === SESSION_COOKIE_NAME && token ? { value: token } : undefined }) }));
@@ -67,6 +69,13 @@ describe('report target inspection authorization and context', () => {
     token = (await createSession(db, moderatorId)).token;
     let response = await get(report.id);
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    for (const list of [listComments, listReports]) {
+      const queueResponse = await list();
+      expect(queueResponse.headers.get('cache-control')).toContain('no-store');
+      const text = JSON.stringify(await queueResponse.json());
+      for (const field of ['reporterUserId', 'handledByUserId', 'authorUserId', 'handlingReason', authorId]) expect(text).not.toContain(field);
+    }
     expect(await response.json()).toMatchObject({ targetId: workId, reportedVersion: 1, contentVersion: 1, changed: false, snapshot, publicUrl: `/community/${workId}` });
     const [original] = await db.select().from(communityRevisions).where(eq(communityRevisions.workId, workId));
     const [replacement] = await db.insert(communityRevisions).values({
