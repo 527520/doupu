@@ -468,9 +468,28 @@ body {
 .batch-params-grid select { min-height: 2.35rem; border: 1px solid var(--color-lilac); background: white; }
 .batch-toolbar { justify-content: flex-start; flex-wrap: wrap; margin-block: 1rem; }
 .batch-items { display: grid; gap: .5rem; padding: 0; list-style: none; }
-.batch-items li { display: grid; grid-template-columns: minmax(12rem, 2fr) minmax(12rem, 1fr) 10rem auto; padding: .8rem; border-top: 1px solid var(--color-lilac); }
+.batch-items > li { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); padding: 1rem; border: 1px solid var(--color-lilac); align-items: start; }
+.batch-item-header { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.batch-item-header > strong { font-family: var(--font-sans); }
+.batch-item-fields { grid-column: 2; min-width: 0; }
+.batch-items > li:not(:has(.batch-item-preview)) .batch-item-fields { grid-column: 1 / -1; }
+.batch-item-fields > div { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.batch-item-fields input:not([type="checkbox"]) { width: 100%; min-width: 0; }
+.batch-item-fields details { margin-block: .5rem; }
+.batch-item-preview .community-preview-canvas { width: 100%; max-width: 12rem; height: auto; aspect-ratio: 1; object-fit: contain; }
+.batch-studio input[type="checkbox"] { width: 1.1rem; height: 1.1rem; padding: 0; }
+.batch-studio fieldset { border: 0; padding: 0; min-width: 0; }
+.batch-summary { display: grid; gap: .25rem; }
+.batch-history ul { display: grid; gap: .75rem; padding: 0; list-style: none; }
+.batch-history li { display: grid; gap: .25rem; overflow-wrap: anywhere; }
+.batch-inspection { width: min(56rem, 100%); }
+.batch-inspection > header { display: flex; gap: 1rem; justify-content: space-between; }
 .batch-items li > div, .batch-items label { display: grid; gap: .25rem; }
-@media (max-width: 900px) { .batch-items li { grid-template-columns: 1fr; align-items: stretch; } }
+.batch-items label.admin-checkbox { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.batch-select-files { cursor: pointer; }
+.batch-select-files:focus-within { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+.batch-select-files[data-disabled="true"] { cursor: not-allowed; color: var(--color-ink-muted); }
+@media (max-width: 700px) { .batch-items > li { grid-template-columns: minmax(0, 1fr); align-items: stretch; } .batch-item-fields { grid-column: 1; } .batch-studio > header { align-items: start; flex-direction: column; } }
 
 @media (max-width: 900px) {
   .admin-shell { padding-left: 0; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }

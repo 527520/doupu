@@ -156,6 +156,7 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await expect(page.getByText('photo-gradient-64.png')).toBeVisible();
   await expect(page.getByText('broken.png')).toBeVisible();
   const pendingItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
+  await page.getByText(/统一生成参数 ·/).click();
   await page.locator('.batch-studio > details').getByLabel('目标宽度').fill('30');
   await pendingItem.getByText('逐项参数覆盖').click();
   await pendingItem.getByLabel('目标宽度').fill('24');
@@ -164,7 +165,8 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await expect(page.getByRole('status')).toContainText('生成完成，1 项失败', { timeout: 30_000 });
   const savedItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
   const failedItem = page.locator('.batch-items li', { hasText: 'broken.png' });
-  await expect(savedItem).toContainText('已保存 · 100%');
+  await expect(savedItem).toContainText('已保存');
+  await expect(savedItem.getByRole('img')).toBeVisible();
   await expect(failedItem).toContainText('失败');
   await expect(failedItem.getByRole('button', { name: '重试' })).toBeEnabled();
   const completedBatch = await page.evaluate(async () => (await (await fetch('/api/admin/batches')).json()).items[0]);
@@ -172,15 +174,22 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   expect(completedBatch.completedAt).not.toBeNull();
 
   await savedItem.getByRole('checkbox').check();
-  await page.getByRole('button', { name: '发布已勾选草稿' }).click();
+  await page.getByRole('button', { name: /发布已勾选草稿/ }).click();
+  await page.getByRole('checkbox', { name: /我已核对所选图纸与标题/ }).check();
+  await page.getByRole('button', { name: '确认公开所选草稿' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await expect(savedItem.getByRole('checkbox')).toHaveCount(0);
   const remaining = page.locator('.batch-items li', { hasText: 'second-photo.png' });
   await expect(remaining.getByRole('checkbox')).toBeEnabled();
+  page.once('dialog', (dialog) => dialog.accept());
   await page.reload();
+  await page.getByText('恢复已保存批次（最近 50 批）').click();
+  await page.locator('.batch-history li').filter({ hasText: completedBatch.id }).getByRole('button').click();
   const restored = page.locator('.batch-items li').filter({ has: page.locator('input[value="官方作品 02"]') });
   await restored.getByRole('checkbox').check();
-  await page.getByRole('button', { name: '发布已勾选草稿' }).click();
+  await page.getByRole('button', { name: /发布已勾选草稿/ }).click();
+  await page.getByRole('checkbox', { name: /我已核对所选图纸与标题/ }).check();
+  await page.getByRole('button', { name: '确认公开所选草稿' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await expect(page.locator('.batch-items input[type="checkbox"]')).toHaveCount(0);
   await page.goto('/community');
