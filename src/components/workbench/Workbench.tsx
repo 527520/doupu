@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 工作台（T12）：步骤状态机 上传→裁剪→工作台 + 生成管线 + 编辑器/预览 + 导出 + 本地保存。
+ * 工作台（T12）：选图→整图首版→可选裁剪 + 生成管线 + 编辑器/预览 + 导出 + 本地保存。
  * 本地保存：IndexedDB（未登录可用）；自动保存 1s 防抖 + 手动保存；beforeunload 防丢失；
  * 刷新恢复最后设计；配额满/存储不可用降级提示（E39）。
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
@@ -24,7 +24,7 @@ import {
 import StepIndicator from '@/components/workbench/StepIndicator';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useAuthStatus } from '@/components/account/useAuthStatus';
-import { ImageCropper } from '@/components/crop/ImageCropper';
+import CropDialog from '@/components/crop/CropDialog';
 import GenerationParamsPanel from '@/components/params/GenerationParamsPanel';
 import PalettePicker, { type PalettePickerOption } from '@/components/palettes/PalettePicker';
 import PatternPreview from '@/components/preview/PatternPreview';
@@ -87,6 +87,7 @@ import {
   openIndexedDb,
   parseStoredProject,
   replaceGenerationSource,
+  CLEAR_GENERATION_SOURCE,
   renderThumbnail,
   type LocalGenerationSourceV1,
   type StorageAdapter,
@@ -182,11 +183,16 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   const [step, setStep] = useState<Step>('upload');
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
+  const [lastCropRect, setLastCropRect] = useState<Rect | undefined>();
   const encodedSourceRef = useRef<{ bytes: Uint8Array; type: ImageType } | null>(null);
+  const imageOperationRef = useRef(0);
+  const imageBusyRef = useRef(false);
   /** Restored projects rebind an original image without becoming a new design. */
   const rebindRestoredSourceRef = useRef(false);
-  /** 新裁剪的生成源，等待首次与设计记录原子写入。 */
-  const pendingGenerationSourceRef = useRef<ImageDataLike | null>(null);
+  /** undefined 保留、null 清除，其余与图纸原子写入；仅成功生成可进入此处。 */
+  const pendingGenerationSourceRef = useRef<ImageDataLike | null | undefined>(undefined);
+  const pendingCropRef = useRef<{ source: ImageDataLike; rect: Rect } | null>(null);
+  const cropRectsRef = useRef(new WeakMap<ImageDataLike, Rect>());
   /** 当前选中的云端自定义色板 id（null = 导入项目自带的色板或内置品牌）。 */
   const [customPaletteId, setCustomPaletteId] = useState<string | null>(null);
   /**
@@ -223,12 +229,23 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [savedNames, setSavedNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>(zhCN.workbench.decoding);
+  const clearOriginalSource = useCallback((): void => {
+    imageOperationRef.current += 1;
+    imageBusyRef.current = false;
+    setBusy(false);
+    setDecoded(null);
+    setLastCropRect(undefined);
+    encodedSourceRef.current = null;
+    pendingCropRef.current = null;
+    activeImageDecoder.clear();
+  }, [activeImageDecoder]);
   const {
     state: generationSession,
     generate: startGeneration,
     cancel: cancelGeneration,
     upload: uploadGenerationSource,
     reupload: reuploadGenerationSource,
+    replaceSource: replaceGenerationSourceForCrop,
     updateDraft: updateGenerationDraft,
     restore: restoreGeneration,
     commitManualEdit,
@@ -238,8 +255,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const source = generationSession.source;
   const sourceRef = useRef(source);
   useEffect(() => {
-    sourceRef.current = source;
-  }, [source]);
+    sourceRef.current = generationSession.committedSource;
+  }, [generationSession.committedSource]);
   const generating = generationSession.status === 'generating';
   // Pattern/statistics are projections of the session's immutable commit;
   // Workbench never mirrors a second independently mutable copy.
@@ -537,6 +554,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           if (performance.now() - genStartedAtRef.current >= 300) setShowProgress(true);
         },
         onSuccess: () => {
+          const appliedCrop = pendingCropRef.current;
+          if (appliedCrop) {
+            pendingGenerationSourceRef.current = appliedCrop.source;
+            cropRectsRef.current.set(appliedCrop.source, appliedCrop.rect);
+            setLastCropRect(appliedCrop.rect);
+            pendingCropRef.current = null;
+          }
           track({
             name: 'generation_succeeded',
             properties: {
@@ -551,65 +575,37 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         onFailure: (_error, stableDraft) => {
           track({ name: 'generation_failed', properties: { errorCode: 'GENERATION_FAILED' } });
           if (stableDraft) restoreDraftControls(stableDraft);
+          const failedCrop = pendingCropRef.current !== null;
+          clearOriginalSource();
+          if (failedCrop && !generationSession.committed) {
+            uploadGenerationSource(null, initialGenerationDraft);
+            setStep('upload');
+            setErrorMsg(t.generateFailed);
+          }
         },
         onSettled: () => { setShowProgress(false); },
       });
     },
-    [t.generateFailed, markDirty, generateFn, startGeneration, restoreDraftControls, generationDraft, palette.length],
+    [clearOriginalSource, generationSession.committed, initialGenerationDraft, uploadGenerationSource, t.generateFailed, markDirty, generateFn, startGeneration, restoreDraftControls, generationDraft, palette.length],
   );
 
   /** 取消在途生成任务：作废令牌、终止 Worker，并回滚到生成前的稳定提交态。 */
   const handleCancelGenerate = useCallback((): void => {
     const cancelled = cancelGeneration();
     if (!cancelled) return;
+    pendingCropRef.current = null;
     track({ name: 'generation_cancelled', properties: {} });
     if (cancelled.stableDraft) restoreDraftControls(cancelled.stableDraft);
     setShowProgress(false);
     if (!cancelled.hadCommit) {
-      pendingGenerationSourceRef.current = null;
+      clearOriginalSource();
+      pendingGenerationSourceRef.current = undefined;
       uploadGenerationSource(null, initialGenerationDraft);
       setStep('upload');
     }
-  }, [cancelGeneration, restoreDraftControls, uploadGenerationSource, initialGenerationDraft]);
+  }, [cancelGeneration, clearOriginalSource, restoreDraftControls, uploadGenerationSource, initialGenerationDraft]);
 
   // ---------- 上传/裁剪 ----------
-
-  const handleUpload = useCallback(
-    async ({ bytes, type }: ValidImageFile): Promise<void> => {
-      setBusy(true);
-      setBusyText(t.decoding);
-      setErrorMsg(null);
-      try {
-        // Function injection keeps the old byte-based seam for focused unit
-        // tests. Production transfers the encoded source once to the
-        // persistent decoder and retains only its opaque source handle.
-        const legacyDecode = decodeFn ?? (decodeRegionFn ? decodeImageFile : null);
-        const result = legacyDecode
-          ? await legacyDecode(bytes, type)
-          : await activeImageDecoder.load(bytes, type, () => setBusyText(t.heicConverting));
-        if (!result.ok) {
-          if (!legacyDecode) activeImageDecoder.clear();
-          setErrorMsg(zhCN.errors[result.code]);
-          return;
-        }
-        const pixels = validatePixelCount(
-          result.image.naturalWidth ?? result.image.width,
-          result.image.naturalHeight ?? result.image.height,
-        );
-        if (!pixels.ok) {
-          if (!legacyDecode) activeImageDecoder.clear();
-          setErrorMsg(zhCN.errors[pixels.code]);
-          return;
-        }
-        encodedSourceRef.current = legacyDecode ? { bytes, type } : null;
-        setDecoded(result.image);
-        setStep('crop');
-      } finally {
-        setBusy(false);
-      }
-    },
-    [activeImageDecoder, decodeFn, decodeRegionFn, t.decoding, t.heicConverting],
-  );
 
   // 首次生成完成时把焦点移到图纸区（D-1）：键盘/读屏用户直接落在结果上。
   // 只做第一次——之后每次调参都抢焦点会打断正在操作参数的用户。
@@ -619,102 +615,172 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     (mobilePatternRegionRef.current ?? patternRegionRef.current)?.focus();
   }, [doneToken]);
 
-  // 首页落图后带过来的文件（D-3）：客户端导航期间模块单例存活，取一次即清空。
-  // StrictMode 安全：dev 下 effect 双调用——第一次取走单例后 cleanup 取消 0ms 定时器，
-  // 第二次再取已是 null，交接被静默吞掉（表现为「又回到上一个设计」）。
-  // 用 ref 接住第一次取到的文件，双调用的第二次沿用同一份，定时器才真正执行。
-  const handedUploadRef = useRef<ValidImageFile | null>(null);
-  useEffect(() => {
-    handedUploadRef.current ??= takePendingUpload();
-    const handed = handedUploadRef.current;
-    if (!handed) return;
-    // 放到宏任务里执行，避免在 effect 体内同步 setState 触发级联渲染。
-    const timer = setTimeout(() => { void handleUpload(handed); }, 0);
-    return () => clearTimeout(timer);
-  }, [handleUpload]);
-
-  const handleCropConfirm = useCallback(
-    async (rect: Rect): Promise<void> => {
-      if (!decoded) return;
-      setBusy(true);
-      setBusyText(t.decoding);
-      setErrorMsg(null);
+  const applyImageCrop = useCallback(
+    async (rect: Rect, image: DecodedImage, initial: boolean, operation: number): Promise<void> => {
       let cropped: ImageDataLike;
-      try {
-        const legacyDecoder = Boolean(decodeFn || decodeRegionFn);
-        const encoded = encodedSourceRef.current;
-        if (!legacyDecoder) {
-          const result = await activeImageDecoder.region(rect, MAX_GENERATION_SOURCE_DIMENSION);
-          if (!result.ok) {
-            setErrorMsg(zhCN.errors[result.code]);
-            return;
-          }
-          cropped = result.image;
-        } else if (encoded && decodeRegionFn) {
-          const result = await decodeRegionFn(encoded.bytes, encoded.type, rect, MAX_GENERATION_SOURCE_DIMENSION);
-          if (!result.ok) {
-            setErrorMsg(zhCN.errors[result.code]);
-            return;
-          }
-          cropped = result.image;
-        } else {
-          // Unit/custom-decoder compatibility: map natural crop coordinates
-          // back to the bounded RGBA buffer supplied by the injected decoder.
-          const naturalWidth = decoded.naturalWidth ?? decoded.width;
-          const naturalHeight = decoded.naturalHeight ?? decoded.height;
-          cropped = cropImageData(decoded, {
-            x: (rect.x * decoded.width) / naturalWidth,
-            y: (rect.y * decoded.height) / naturalHeight,
-            width: (rect.width * decoded.width) / naturalWidth,
-            height: (rect.height * decoded.height) / naturalHeight,
-          }, MAX_GENERATION_SOURCE_DIMENSION);
+      const legacyDecoder = Boolean(decodeFn || decodeRegionFn);
+      const encoded = encodedSourceRef.current;
+      if (!legacyDecoder) {
+        const result = await activeImageDecoder.region(rect, MAX_GENERATION_SOURCE_DIMENSION);
+        if (imageOperationRef.current !== operation) return;
+        if (!result.ok) {
+          clearOriginalSource();
+          setStep(generationSession.committed ? 'workspace' : 'upload');
+          setErrorMsg(zhCN.errors[result.code]);
+          return;
         }
-      } finally {
-        setBusy(false);
+        cropped = result.image;
+      } else if (encoded && decodeRegionFn) {
+        const result = await decodeRegionFn(encoded.bytes, encoded.type, rect, MAX_GENERATION_SOURCE_DIMENSION);
+        if (imageOperationRef.current !== operation) return;
+        if (!result.ok) {
+          clearOriginalSource();
+          setStep(generationSession.committed ? 'workspace' : 'upload');
+          setErrorMsg(zhCN.errors[result.code]);
+          return;
+        }
+        cropped = result.image;
+      } else {
+        // Unit/custom-decoder compatibility: map natural crop coordinates
+        // back to the bounded RGBA buffer supplied by the injected decoder.
+        const naturalWidth = image.naturalWidth ?? image.width;
+        const naturalHeight = image.naturalHeight ?? image.height;
+        cropped = cropImageData(image, {
+          x: (rect.x * image.width) / naturalWidth,
+          y: (rect.y * image.height) / naturalHeight,
+          width: (rect.width * image.width) / naturalWidth,
+          height: (rect.height * image.height) / naturalHeight,
+        }, MAX_GENERATION_SOURCE_DIMENSION);
       }
+      if (imageOperationRef.current !== operation) return;
       // Keep one immutable cross-thread RGBA allocation for the entire
       // generation session; subsequent parameter changes send only params.
       cropped = prepareGenerationSource(cropped);
       const ratio = rect.width / rect.height;
-      track({
+      if (!initial) track({
         name: 'crop_completed',
         properties: { aspectBucket: Math.abs(ratio - 1) < 0.05 ? 'square' : ratio > 1 ? 'landscape' : 'portrait' },
       });
-      pendingGenerationSourceRef.current = cropped;
-      setDecoded(null);
-      encodedSourceRef.current = null;
-      activeImageDecoder.clear();
-      const rebindRestoredSource = rebindRestoredSourceRef.current;
+      pendingCropRef.current = { source: cropped, rect };
+      // 原图压缩源仍只在当前解码会话中；整图/选区缩小后的缓冲才允许本地保存。
+      const rebindRestoredSource = rebindRestoredSourceRef.current || !initial;
       if (!rebindRestoredSource) setCreatedAt(new Date().toISOString());
       const draft = { boardProfile, params, paletteSelection };
       if (rebindRestoredSource) {
-        reuploadGenerationSource(cropped, draft);
-        // 绑定生成源本身就是可持久化变更；即使随后取消或生成失败，刷新也不应再次锁定。
-        markDirty();
+        replaceGenerationSourceForCrop(cropped, draft);
       } else uploadGenerationSource(cropped, draft);
-      regenerate();
       setStep('workspace');
+      regenerate();
       rebindRestoredSourceRef.current = false;
       if (!rebindRestoredSource) {
         setCommunityOrigin(false);
         clearDesignQuery(); // 普通上传生成新设计；恢复项目的原图重绑保留原 id。
       }
     },
-    [activeImageDecoder, boardProfile, decodeFn, decodeRegionFn, decoded, markDirty, paletteSelection, params, regenerate, reuploadGenerationSource, uploadGenerationSource, t.decoding],
+    [activeImageDecoder, boardProfile, clearOriginalSource, decodeFn, decodeRegionFn, generationSession.committed, paletteSelection, params, regenerate, replaceGenerationSourceForCrop, uploadGenerationSource],
   );
 
-  const handleCropCancel = useCallback((): void => {
-    setDecoded(null);
-    encodedSourceRef.current = null;
-    activeImageDecoder.clear();
+  const handleUpload = useCallback(
+    async ({ bytes, type }: ValidImageFile): Promise<void> => {
+      if (imageBusyRef.current) return;
+      imageBusyRef.current = true;
+      const operation = ++imageOperationRef.current;
+      setBusy(true);
+      setBusyText(t.decoding);
+      setErrorMsg(null);
+      try {
+        if (rebindRestoredSourceRef.current && generationSession.committed) {
+          const allowed = await confirm({ title: t.replaceSourceTitle, message: t.replaceSourceMessage, confirmLabel: t.confirmRegenerateAction, danger: true });
+          if (imageOperationRef.current !== operation) return;
+          if (!allowed) {
+            rebindRestoredSourceRef.current = false;
+            setStep('workspace');
+            return;
+          }
+        }
+        const legacyDecode = decodeFn ?? (decodeRegionFn ? decodeImageFile : null);
+        const result = legacyDecode
+          ? await legacyDecode(bytes, type)
+          : await activeImageDecoder.load(bytes, type, () => setBusyText(t.heicConverting));
+        if (imageOperationRef.current !== operation) return;
+        if (!result.ok) {
+          clearOriginalSource();
+          setErrorMsg(zhCN.errors[result.code]);
+          return;
+        }
+        const width = result.image.naturalWidth ?? result.image.width;
+        const height = result.image.naturalHeight ?? result.image.height;
+        const pixels = validatePixelCount(width, height);
+        if (!pixels.ok) {
+          clearOriginalSource();
+          setErrorMsg(zhCN.errors[pixels.code]);
+          return;
+        }
+        encodedSourceRef.current = legacyDecode ? { bytes, type } : null;
+        setDecoded(result.image);
+        await applyImageCrop({ x: 0, y: 0, width, height }, result.image, true, operation);
+      } catch {
+        if (imageOperationRef.current !== operation) return;
+        clearOriginalSource();
+        setErrorMsg(zhCN.errors.DECODE_FAILED);
+      } finally {
+        if (imageOperationRef.current === operation) {
+          imageBusyRef.current = false;
+          setBusy(false);
+        }
+      }
+    },
+    [activeImageDecoder, applyImageCrop, clearOriginalSource, confirm, decodeFn, decodeRegionFn, generationSession.committed, t],
+  );
+
+  // StrictMode 双挂载保留交接；实际派发后立刻清除，回调更新不会重复上传。
+  const handedUploadRef = useRef<ValidImageFile | null>(null);
+  useEffect(() => {
+    handedUploadRef.current ??= takePendingUpload();
+    const handed = handedUploadRef.current;
+    if (!handed) return;
+    const timer = setTimeout(() => {
+      handedUploadRef.current = null;
+      void handleUpload(handed);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [handleUpload]);
+
+  const handleCropConfirm = useCallback(async (rect: Rect): Promise<void> => {
+    if (!decoded || imageBusyRef.current) return;
+    imageBusyRef.current = true;
+    const operation = ++imageOperationRef.current;
+    setBusy(true);
+    setBusyText(t.decoding);
     setErrorMsg(null);
-    if (rebindRestoredSourceRef.current) {
-      rebindRestoredSourceRef.current = false;
+    try {
+      if (generationSession.hasManualEdits && !(await confirm({
+        title: t.confirmRegenerateTitle,
+        message: t.confirmRegenerate,
+        confirmLabel: t.confirmRegenerateAction,
+        danger: true,
+      }))) return;
+      if (imageOperationRef.current === operation) await applyImageCrop(rect, decoded, false, operation);
+    } catch {
+      if (imageOperationRef.current !== operation) return;
+      clearOriginalSource();
+      setErrorMsg(zhCN.errors.DECODE_FAILED);
       setStep('workspace');
-    } else {
-      setStep('upload');
+    } finally {
+      if (imageOperationRef.current === operation) {
+        imageBusyRef.current = false;
+        setBusy(false);
+      }
     }
-  }, [activeImageDecoder]);
+  }, [applyImageCrop, clearOriginalSource, confirm, decoded, generationSession.hasManualEdits, t.decoding, t.confirmRegenerate, t.confirmRegenerateAction, t.confirmRegenerateTitle]);
+
+  const handleCropCancel = useCallback((): void => {
+    imageOperationRef.current += 1;
+    imageBusyRef.current = false;
+    setBusy(false);
+    setErrorMsg(null);
+    setStep('workspace');
+  }, []);
 
   // ---------- 参数/色板/编辑 ----------
 
@@ -862,6 +928,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * 没有生成源，因此参数面板保持锁定（改参数需要原图），但可以修补、换色板、导出。
    */
   const startBlank = useCallback((width: number, height: number): void => {
+    clearOriginalSource();
     const blank = createBlankPattern(width, height);
     restoreGeneration({
       boardProfile,
@@ -875,7 +942,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setStep('workspace');
     setTab('edit'); // 空白图纸的第一步一定是画，直接落在修补页签
     markDirty();
-  }, [boardProfile, markDirty, paletteSelection, params, restoreGeneration]);
+  }, [boardProfile, clearOriginalSource, markDirty, paletteSelection, params, restoreGeneration]);
 
   /**
    * 换档位（H-3）：把当前色板按档位裁成可用色子集后应用。
@@ -928,6 +995,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     const snapshot = generationSession.regenerationUndo;
     if (!snapshot || generating) return;
     const paletteIdentity = paletteIdentityUndoRef.current;
+    if (generationSession.regenerationUndoSource !== generationSession.committedSource) {
+      pendingGenerationSourceRef.current = generationSession.regenerationUndoSource;
+      setLastCropRect(generationSession.regenerationUndoSource ? cropRectsRef.current.get(generationSession.regenerationUndoSource) : undefined);
+    }
     undoRegeneration();
     if (paletteIdentity?.snapshot === snapshot) {
       setCustomPaletteId(paletteIdentity.customPaletteId);
@@ -937,7 +1008,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     paletteIdentityUndoRef.current = null;
     setRemapNotice(null);
     markDirty();
-  }, [generationSession.regenerationUndo, generating, markDirty, resolveCustomPaletteId, undoRegeneration]);
+  }, [generationSession.committedSource, generationSession.regenerationUndoSource, generationSession.regenerationUndo, generating, markDirty, resolveCustomPaletteId, undoRegeneration]);
 
   // ---------- 保存 ----------
 
@@ -978,20 +1049,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setName(project.name);
     setCreatedAt(project.createdAt);
     setCommunityOrigin(project.communityOrigin === true);
-    setDecoded(null);
-    encodedSourceRef.current = null;
-    activeImageDecoder.clear();
+    clearOriginalSource();
     setCustomPaletteId(null);
     restoreGeneration(commit);
     if (localSource) {
       const restoredSource = prepareGenerationSource(imageDataFromLocalGenerationSource(localSource));
       reuploadGenerationSource(restoredSource, commit);
     }
-    pendingGenerationSourceRef.current = null;
+    pendingGenerationSourceRef.current = undefined;
     dirtyRef.current = false;
     setSaveState('saved');
     setStep('workspace');
-  }, [activeImageDecoder, restoreGeneration, reuploadGenerationSource]);
+  }, [clearOriginalSource, restoreGeneration, reuploadGenerationSource]);
 
   const consumeSyncOutcome = useCallback(async (adapter: StorageAdapter, outcome: SyncOutcome): Promise<void> => {
       const activeId = designIdRef.current;
@@ -1017,7 +1086,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             records.filter((item) => item.id !== conflict.conflictId).map((item) => item.name),
           );
           const latestProject = { ...currentProject, name: latestName, updatedAt: new Date().toISOString() };
-          const latestSource = pendingGenerationSourceRef.current ?? sourceRef.current;
+          const latestSource = pendingGenerationSourceRef.current === undefined ? sourceRef.current : pendingGenerationSourceRef.current;
           await adapter.put({
             ...createDesignRecord(
               conflict.conflictId,
@@ -1031,12 +1100,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             syncState: 'conflict',
           }, latestSource
             ? replaceGenerationSource(createLocalGenerationSource(latestSource))
-            : undefined);
+            : CLEAR_GENERATION_SOURCE);
           if (designIdRef.current !== activeId) return;
           setActiveDesignId(conflict.conflictId);
           if (editGenRef.current === capturedEditGen) {
             if (pendingGenerationSourceRef.current === latestSource) {
-              pendingGenerationSourceRef.current = null;
+              pendingGenerationSourceRef.current = undefined;
             }
             setName(latestName);
           }
@@ -1060,7 +1129,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           // 从这一刻起 project/source/edit generation 属于 activeId 的同一快照。
           // put 在途时 UI 仍可继续编辑，所以写后必须用代际决定能否清脏。
           const capturedEditGen = editGenRef.current;
-          const capturedSource = pendingGenerationSourceRef.current ?? sourceRef.current;
+          const capturedSource = pendingGenerationSourceRef.current === undefined ? sourceRef.current : pendingGenerationSourceRef.current;
           const conflictId = newDesignId();
           const conflictProjectName = conflictName(
             t.conflictCopyName(currentProject.name),
@@ -1084,14 +1153,14 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             syncState: 'conflict',
           }, capturedSource
             ? replaceGenerationSource(createLocalGenerationSource(capturedSource))
-            : undefined);
+            : CLEAR_GENERATION_SOURCE);
           if (designIdRef.current !== activeId) return true;
 
           setActiveDesignId(conflictId);
           window.history.replaceState(null, '', `/app?id=${encodeURIComponent(conflictId)}`);
           if (editGenRef.current === capturedEditGen) {
             if (pendingGenerationSourceRef.current === capturedSource) {
-              pendingGenerationSourceRef.current = null;
+              pendingGenerationSourceRef.current = undefined;
             }
             setName(conflictProjectName);
           }
@@ -1121,7 +1190,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           setSyncNotice(t.syncCloudUpdated);
         } else {
           // 另一台设备删除了当前这份无本地改动的设计。
-          pendingGenerationSourceRef.current = null;
+          clearOriginalSource();
+          pendingGenerationSourceRef.current = undefined;
           setActiveDesignId(newDesignId());
           uploadGenerationSource(null, initialGenerationDraft);
           setStep('upload');
@@ -1136,7 +1206,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           ? 'synced'
           : 'pending',
       );
-  }, [initialGenerationDraft, loadCommittedProject, scheduleAutosave, setActiveDesignId, t, uploadGenerationSource]);
+  }, [clearOriginalSource, initialGenerationDraft, loadCommittedProject, scheduleAutosave, setActiveDesignId, t, uploadGenerationSource]);
 
   const syncCloud = useCallback(async (adapter: StorageAdapter): Promise<void> => {
     if (authStatus.kind !== 'user') return;
@@ -1197,17 +1267,17 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         if (designIdRef.current !== saveDesignId || editGenRef.current !== genBefore) {
           return 'stale';
         }
-        const shouldWriteSource = pendingSource !== null
+        const shouldWriteSource = pendingSource !== undefined
           && pendingGenerationSourceRef.current === pendingSource
           && designIdRef.current === saveDesignId;
         await adapter.put(
           createDesignRecord(saveDesignId, project, thumbnail),
           shouldWriteSource
-            ? replaceGenerationSource(createLocalGenerationSource(pendingSource))
+            ? pendingSource ? replaceGenerationSource(createLocalGenerationSource(pendingSource)) : CLEAR_GENERATION_SOURCE
             : undefined,
         );
         if (shouldWriteSource && pendingGenerationSourceRef.current === pendingSource) {
-          pendingGenerationSourceRef.current = null;
+          pendingGenerationSourceRef.current = undefined;
         }
         return 'saved';
       });
@@ -1270,7 +1340,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   // 自动保存：置脏后 1s 防抖（spec §F8）。排程在 markDirty 里完成；
   // 这里只负责保持 doSave 引用最新，并在卸载时清掉未触发的定时器。
   useEffect(() => {
-    doSaveRef.current = step === 'workspace' ? doSave : null;
+    doSaveRef.current = step !== 'upload' ? doSave : null;
   }, [doSave, step]);
 
   /**
@@ -1408,10 +1478,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   // 卸载时作废在途任务。调用方注入的图片解码器不在本组件中销毁。
   useEffect(() => {
     return () => {
+      // 即使调用方拥有解码器，也清除当前工作台所绑定的原图源；不销毁注入实例。
+      imageOperationRef.current += 1;
+      imageBusyRef.current = false;
+      encodedSourceRef.current = null;
+      activeImageDecoder.clear();
       disposeGenerateWorker();
       if (!imageDecoder) ownedImageDecoder.dispose();
     };
-  }, [imageDecoder, ownedImageDecoder]);
+  }, [activeImageDecoder, imageDecoder, ownedImageDecoder]);
 
   // ---------- 恢复最后设计 ----------
 
@@ -1420,6 +1495,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     // 第二次必须正常执行完恢复逻辑（此前 ref 守卫导致第二次直接跳过 → 打开设计后空白）。
     // 恢复本身只读 + setState，重复执行幂等。
     let cancelled = false;
+    const restoreOperation = imageOperationRef.current;
     const restore = async (): Promise<void> => {
       try {
         const adapter = storage === undefined ? await openIndexedDb() : storage;
@@ -1438,12 +1514,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         if (urlParams.get('new') === '1') return;
         const requestedId = urlParams.get('id');
         const records = await adapter.getAll();
+        if (cancelled || imageOperationRef.current !== restoreOperation) return;
         const last = requestedId ? records.find((r) => r.id === requestedId) : records[0];
         if (!last) return;
         const project = parseStoredProject(last.projectJson);
         if (!project) return;
         const localSource = await adapter.getGenerationSource(last.id);
-        if (cancelled) return;
+        if (cancelled || imageOperationRef.current !== restoreOperation) return;
         setActiveDesignId(last.id);
         setSavedNames(records.map((r) => r.name));
         loadCommittedProject(project, localSource);
@@ -1464,12 +1541,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const handleImport = useCallback(
     (project: ProjectFile): void => {
       rebindRestoredSourceRef.current = false;
-      pendingGenerationSourceRef.current = null;
+      pendingGenerationSourceRef.current = undefined;
       cancelGeneration();
       disposeGenerateWorker();
       setShowProgress(false);
-      encodedSourceRef.current = null;
-      activeImageDecoder.clear();
+      clearOriginalSource();
       setActiveDesignId(newDesignId());
       setCommunityOrigin(false);
       setName(project.name);
@@ -1492,20 +1568,18 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       setStep('workspace');
       clearDesignQuery(); // 新设计不再对应 URL ?id= 的旧设计（否则刷新会恢复错对象）
     },
-    [activeImageDecoder, cancelGeneration, markDirty, restoreGeneration, setActiveDesignId],
+    [clearOriginalSource, cancelGeneration, markDirty, restoreGeneration, setActiveDesignId],
   );
 
   const resetWorkbench = useCallback((): void => {
     rebindRestoredSourceRef.current = false;
-    pendingGenerationSourceRef.current = null;
+    pendingGenerationSourceRef.current = undefined;
     cancelGeneration();
     disposeGenerateWorker();
     setShowProgress(false);
     dirtyRef.current = false;
     setStep('upload');
-    setDecoded(null);
-    encodedSourceRef.current = null;
-    activeImageDecoder.clear();
+    clearOriginalSource();
     setErrorMsg(null);
     setActiveDesignId(newDesignId());
     setName('');
@@ -1514,7 +1588,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setCustomPaletteId(null);
     uploadGenerationSource(null, initialGenerationDraft);
     clearDesignQuery();
-  }, [activeImageDecoder, cancelGeneration, initialGenerationDraft, setActiveDesignId, uploadGenerationSource]);
+  }, [clearOriginalSource, cancelGeneration, initialGenerationDraft, setActiveDesignId, uploadGenerationSource]);
 
   /** Flush dirty state before an in-app transition. Only a failed flush asks
    * the user whether to discard the unsaved work. */
@@ -1547,17 +1621,29 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     const leave = generationSession.status === 'restored-locked'
       ? () => {
           rebindRestoredSourceRef.current = true;
-          setDecoded(null);
-          encodedSourceRef.current = null;
-          activeImageDecoder.clear();
+          clearOriginalSource();
           setErrorMsg(null);
           setStep('upload');
         }
       : resetWorkbench;
     void saveBeforeLeave(leave);
-  }, [activeImageDecoder, generationSession.status, resetWorkbench, saveBeforeLeave]);
+  }, [clearOriginalSource, generationSession.status, resetWorkbench, saveBeforeLeave]);
 
   const mobileWorkspaceOpen = mobileLayout && step === 'workspace' && tab !== 'preview';
+  const cropAction = <div className="preview-crop-action">
+    <button type="button" className="btn-outline" disabled={!decoded || busy || generating} onClick={(event) => {
+      event.currentTarget.focus();
+      setStep('crop');
+    }}>{zhCN.crop.title}</button>
+    {!decoded && <>
+      <span>{t.cropSourceMissing}</span>
+      <button type="button" className="btn-outline" disabled={busy || generating} onClick={() => void saveBeforeLeave(() => {
+        rebindRestoredSourceRef.current = true;
+        clearOriginalSource();
+        setStep('upload');
+      })}>{t.reselectOriginal}</button>
+    </>}
+  </div>;
 
   /**
    * 手机编辑/跟拼是 /app 内的一层界面状态：首次进入 push，一层内切换只 replace。
@@ -1615,7 +1701,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         subtitle={zhCN.workspace.workbenchSubtitle}
         onNavigate={handleNavigationClick}
       />
-      {step === 'workspace' && (
+      {step !== 'upload' && (
         <WorkbenchProjectBar
           context={(
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1657,7 +1743,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         />
       )}
 
-      {/* 三步位置提示（D-2）：上传/裁剪页最需要，工作台阶段也保留一行让路径可见。 */}
+      {/* 选图与图纸两步；裁剪是图纸上的可选弹窗。 */}
       <StepIndicator step={step} />
 
       {busy && <p className="text-sm text-primary-deep" role="status">{busyText}</p>}
@@ -1695,6 +1781,11 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         <>
           {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
           <UploadDropzone onValid={(file) => void handleUpload(file)} disabled={busy} />
+          {pattern && <button type="button" className="btn-outline self-start" onClick={() => {
+            clearOriginalSource();
+            rebindRestoredSourceRef.current = false;
+            setStep('workspace');
+          }}>{t.cancelSelectOriginal}</button>}
           {/*
             空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
             想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。
@@ -1743,10 +1834,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       )}
 
       {step === 'crop' && decoded && (
-        <ImageCropper image={decoded} onConfirm={handleCropConfirm} onCancel={handleCropCancel} />
+        <CropDialog image={decoded} initialRect={lastCropRect} disabled={busy} error={visibleErrorMsg} onConfirm={handleCropConfirm} onCancel={handleCropCancel} />
       )}
 
-      {step === 'workspace' && pattern && (
+      {step !== 'upload' && pattern && (
         // D-6：768–1023px（iPad 竖屏）此前只有 lg 断点，参数与导出全被挤到图纸下方，
         // 需要滚很远才能改参数。md 起就并列两栏，侧栏在该区间收窄到 260px。
         mobileLayout ? (
@@ -1768,6 +1859,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
           <section className="mobile-canvas-shell">
             <header><span className="saved-dot" />{saveState === 'dirty' ? t.unsaved : t.saved}<strong>{pattern.width} × {pattern.height}</strong></header>
+            {cropAction}
             <div className="mobile-canvas-stage">
               <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} boardSize={boardSpec.boardCols} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>
             </div>
@@ -1984,6 +2076,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 ref={patternRegionRef}
                 tabIndex={-1}
               >
+                {cropAction}
                 {/*
                   这里刻意不做「图纸淡入」动效：淡入需要重挂载才能重播，而重挂载会
                   把用户的缩放、网格/板缝/色号开关全部重置——每次调参都丢一次视图状态，

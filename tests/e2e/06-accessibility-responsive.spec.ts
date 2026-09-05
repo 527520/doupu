@@ -156,7 +156,6 @@ test('工作区项目操作栏在游客与登录态的全部目标宽度下不�
   await page.setViewportSize({ width: widths[0], height: 800 });
   await page.goto('/app');
   await uploadFile(page, PHOTO);
-  await page.getByRole('button', { name: '使用整张图片' }).click();
   let projectBar = page.getByRole('region', { name: '当前设计操作' });
   await expect(projectBar.getByLabel('设计名称')).toBeVisible({ timeout: 20_000 });
   await expect(projectBar.getByText('设计名称', { exact: true })).toBeVisible();
@@ -210,7 +209,6 @@ test('移动工作台可切换编辑、用色与导出工具', async ({ page }, 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/app');
   await uploadFile(page, PHOTO);
-  await page.getByRole('button', { name: '使用整张图片' }).click();
 
   await expect(page.getByLabel('设计名称').last()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('status').filter({ hasText: '图纸已生成' })).toBeVisible();

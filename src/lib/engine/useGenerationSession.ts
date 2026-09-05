@@ -107,6 +107,10 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     tasks.cancel();
     dispatch({ type: 'reupload', source, draft });
   }, [dispatch, tasks]);
+  const replaceSource = useCallback((source: ImageDataLike, draft: GenerationDraft): void => {
+    tasks.cancel();
+    dispatch({ type: 'replace-source', source, draft });
+  }, [dispatch, tasks]);
   const updateDraft = useCallback((draft: GenerationDraft): void => {
     dispatch({ type: 'update-draft', draft });
   }, [dispatch]);
@@ -140,6 +144,7 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     cancel,
     upload,
     reupload,
+    replaceSource,
     updateDraft,
     restore,
     commitManualEdit,

@@ -30,6 +30,35 @@ const commit = (targetWidth = 20): GenerationCommit => ({
 });
 
 describe('generationSessionReducer', () => {
+  it('failed replacement of a source-less design remains locked through remap and undo', () => {
+    const before = commit(20);
+    let state = generationSessionReducer(createGenerationSession(), { type: 'restore', commit: before });
+    state = generationSessionReducer(state, { type: 'replace-source', source, draft: before });
+    state = generationSessionReducer(state, { type: 'start', taskId: 1, draft: before });
+    state = generationSessionReducer(state, { type: 'failure', taskId: 1, error: 'failed' });
+    expect(state).toMatchObject({ status: 'restored-locked', source: null, sourceAvailable: false });
+    state = generationSessionReducer(state, { type: 'remap', ...before });
+    state = generationSessionReducer(state, { type: 'undo-regeneration' });
+    expect(state).toMatchObject({ status: 'restored-locked', source: null, sourceAvailable: false });
+  });
+  it.each(['failure', 'cancel', 'undo'] as const)('source replacement %s restores the matching previous source and pattern', (ending) => {
+    const before = commit(20);
+    const after = commit(40);
+    const nextSource = { ...source, data: new Uint8ClampedArray([0, 0, 0, 255]) };
+    let state = generationSessionReducer(createGenerationSession(), { type: 'restore', commit: before });
+    state = generationSessionReducer(state, { type: 'reupload', source, draft: before });
+    state = generationSessionReducer(state, { type: 'replace-source', source: nextSource, draft: after });
+    state = generationSessionReducer(state, { type: 'start', taskId: 1, draft: after });
+    if (ending === 'undo') {
+      state = generationSessionReducer(state, { type: 'success', taskId: 1, commit: after });
+      expect(state.source).toBe(nextSource);
+      state = generationSessionReducer(state, { type: 'undo-regeneration' });
+    } else state = generationSessionReducer(state, ending === 'failure'
+      ? { type: 'failure', taskId: 1, error: 'failed' }
+      : { type: 'cancel', taskId: 1 });
+    expect(state.source).toBe(source);
+    expect(state.committed).toBe(before);
+  });
   it('owns the draft before upload and resets a new upload without a UI mirror', () => {
     const initial = commit(20);
     const changed = commit(40);

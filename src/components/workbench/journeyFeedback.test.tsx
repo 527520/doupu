@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * 关键旅程的反馈与位置感（批次 D）：
- * D-1 生成完成必须有可感知反馈、D-2 三步指示器、D-3 首页真落区交接。
+ * D-1 生成完成必须有可感知反馈、D-2 两步主流程与可选裁剪、D-3 首页真落区交接。
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -10,14 +10,15 @@ import { zhCN } from '@/messages/zh-CN';
 import { hasPendingUpload, setPendingUpload, takePendingUpload } from '@/lib/upload/pendingUpload';
 
 describe('StepIndicator（D-2）', () => {
-  it('三步都可见，当前步带 aria-current', () => {
+  it('裁剪属于图纸阶段；两步可见且当前步带 aria-current', () => {
     render(<StepIndicator step="crop" />);
     const list = screen.getByRole('navigation', { name: zhCN.workbench.stepsAria });
     expect(list).toBeTruthy();
-    for (const label of [zhCN.workbench.stepUpload, zhCN.workbench.stepCrop, zhCN.workbench.stepWorkspace]) {
+    for (const label of [zhCN.workbench.stepUpload, zhCN.workbench.stepWorkspace]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
-    expect(screen.getByText(zhCN.workbench.stepCrop).closest('[aria-current="step"]')).toBeTruthy();
+    expect(screen.queryByText(zhCN.workbench.stepCrop)).not.toBeInTheDocument();
+    expect(screen.getByText(zhCN.workbench.stepWorkspace).closest('[aria-current="step"]')).toBeTruthy();
     expect(screen.getByText(zhCN.workbench.stepUpload).closest('[aria-current="step"]')).toBeNull();
   });
 

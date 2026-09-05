@@ -1,18 +1,13 @@
 'use client';
 
 /**
- * 工作台三步指示器（D-2）。
- *
- * `workbench.stepUpload / stepCrop / stepWorkspace` 三条文案早就写好了，却从未
- * 渲染过：用户在「上传 → 裁剪 → 工作台」之间跳转时没有任何位置感，尤其是裁剪页
- * 看不出后面还有什么。这里只做位置提示，不承担导航（回退由「重新上传」负责），
- * 因此用 ol + aria-current 表达进度，而不是做成可点击的标签页。
+ * 选图后直接进入工作台；裁剪是工作台内的可选操作，不再暗示必经第三步。
  */
 import { zhCN } from '@/messages/zh-CN';
 
 export type WorkbenchStep = 'upload' | 'crop' | 'workspace';
 
-const ORDER: WorkbenchStep[] = ['upload', 'crop', 'workspace'];
+const ORDER: WorkbenchStep[] = ['upload', 'workspace'];
 
 export default function StepIndicator({ step }: { step: WorkbenchStep }) {
   const t = zhCN.workbench;
@@ -21,7 +16,7 @@ export default function StepIndicator({ step }: { step: WorkbenchStep }) {
     crop: t.stepCrop,
     workspace: t.stepWorkspace,
   };
-  const currentIndex = ORDER.indexOf(step);
+  const currentIndex = ORDER.indexOf(step === 'crop' ? 'workspace' : step);
 
   return (
     <nav aria-label={t.stepsAria} className="step-ticket-nav">

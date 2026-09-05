@@ -103,6 +103,36 @@ class FakeDecodeWorker {
 }
 
 describe('ImageDecoder 持久 Worker 接口', () => {
+  it('clear 丢弃迟到的解码结果并关闭已经创建的 bitmap', async () => {
+    vi.stubGlobal('Worker', undefined);
+    vi.stubGlobal('OffscreenCanvas', undefined);
+    let finish!: (bitmap: FakeBitmap) => void;
+    const create = stubCreateImageBitmap(() => new Promise((resolve) => { finish = resolve; }));
+    const decoder = createImageDecoder();
+    const loading = decoder.load(pngBytes.slice(), 'png');
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    decoder.clear();
+    const close = vi.fn();
+    finish({ width: 4, height: 3, close });
+    await expect(loading).resolves.toMatchObject({ ok: false });
+    expect(close).toHaveBeenCalledOnce();
+    await expect(decoder.region({ x: 0, y: 0, width: 2, height: 2 }, 800)).resolves.toMatchObject({ ok: false });
+  });
+  it.each(['clear', 'dispose'] as const)('%s 使尚未开始的解码失效，不能重新保留原图', async (action) => {
+    vi.stubGlobal('Worker', undefined);
+    vi.stubGlobal('OffscreenCanvas', undefined);
+    const bitmap = stubCreateImageBitmap('ok');
+    const decoder = createImageDecoder();
+    const loading = decoder.load(pngBytes.slice(), 'png');
+    decoder[action]();
+    await expect(loading).resolves.toMatchObject({ ok: false });
+    await expect(decoder.region({ x: 0, y: 0, width: 2, height: 2 }, 800)).resolves.toMatchObject({ ok: false });
+    expect(bitmap).not.toHaveBeenCalled();
+    // StrictMode 清理后，同一实例仍可为下一次会话工作。
+    await expect(decoder.load(pngBytes.slice(), 'png')).resolves.toMatchObject({ ok: true });
+    decoder.dispose();
+  });
+
   it('压缩源只传输一次，后续区域解码只发送坐标', async () => {
     const workers: FakeDecodeWorker[] = [];
     vi.stubGlobal('Worker', class extends FakeDecodeWorker {

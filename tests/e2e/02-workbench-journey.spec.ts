@@ -1,6 +1,6 @@
 /**
  * E2E 核心旅程 2：工作台（spec §F1–F5、§F7）。
- * 上传 → 确认裁剪（整图）→ 参数调整 → 生成 → 悬停格信息 → 编辑 → 导出三格式 → 保存 → 刷新恢复。
+ * 上传 → 整图自动生成 → 参数调整 → 悬停格信息 → 编辑 → 导出三格式 → 保存 → 刷新恢复。
  */
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
@@ -15,7 +15,6 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   await uploadFile(page, PHOTO);
 
   // 裁剪步骤：默认全图，直接确认
-  await page.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
 
   // 工作台：生成图纸（默认宽度 100 → 100×100）
   await expect(page.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });

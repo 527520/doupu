@@ -311,11 +311,11 @@ export const zhCN = {
     modeOriginal: '原始比例',
     positionLabel: (x: number, y: number) => `选区起点：X ${x} · Y ${y}`,
     sizeLabel: (w: number, h: number) => `当前选区：${w} × ${h} 像素`,
-    confirm: '确认裁剪',
+    confirm: '确认并更新',
     cancel: '取消',
     useWholeImage: '使用整张图片',
     dragHint: '拖动选框移动，拖动四角或边框缩放，框外拖拽新建选区',
-    nudgeHint: '方向键微调 1 像素，Shift+方向键 10 像素',
+    nudgeHint: '方向键移动，Alt+方向键调整尺寸，Shift 加速至 10 像素',
     ariaRatioMode: '裁剪比例模式',
     ariaCropCanvas: '裁剪选区画布',
   },
@@ -402,7 +402,7 @@ export const zhCN = {
   },
   workbench: {
     title: '工作台',
-    /** 三步指示器标签（D-2）：故意比页面标题更短——它表达位置，不重复标题；
+    /** 工作台步骤标签（D-2）：故意比页面标题更短——它表达位置，不重复标题；
         也避免与「上传图片」「裁剪图片」这两个页面标题同名造成歧义。 */
     stepUpload: '上传',
     stepCrop: '裁剪',
@@ -470,6 +470,11 @@ export const zhCN = {
     confirmLeaveAction: '仍要离开',
     restart: '重新上传',
     sourceRequired: '本机未保存该项目的生成源。已锁定重新生成参数；如需调整，请先重新上传原图。',
+    cropSourceMissing: '当前会话没有完整原图；重新裁剪需要重新选择图片。',
+    reselectOriginal: '重新选择图片',
+    cancelSelectOriginal: '取消选图，返回原图纸',
+    replaceSourceTitle: '替换当前图纸？',
+    replaceSourceMessage: '将使用新选图片的完整范围重新生成，替换当前图纸及其中的修补。取消会保留原图纸。',
     editorHint: '编辑后将自动保存到本机',
     customPaletteLabel: '自定义色板',
     paletteLoadFailed: '自定义色板加载失败（可稍后在色板管理里重试）',
@@ -828,7 +833,7 @@ export const zhCN = {
   onboarding: {
     title: '三步上手',
     step1Title: '上传照片或像素画',
-    step1Body: '支持 JPEG / PNG / WebP / HEIC，最大 20 MB；也可上传透明底的像素画或表情包。',
+    step1Body: '选择图片后自动生成整图预览；需要调整取景时，在预览旁点击「裁剪图片」。支持 JPEG / PNG / WebP / HEIC，最大 20 MB。',
     step2Title: '调整尺寸与颜色参数',
     step2Body: '设定图纸宽度、颜色数量与抖动开关，选择你的拼豆品牌色板。',
     step3Title: '修补细节并导出图纸',
@@ -1085,7 +1090,7 @@ export const zhCN = {
       summary: '摘要', eventsCode: 'EVENTS', visitorsCode: 'VISITORS', sessionsCode: 'SESSIONS', events: '事件', rangeUv: '范围 UV', sessions: '30 分钟会话',
       trend: '事件趋势', deviceBreakdown: '分类结果', singleDimensionUv: '单维 UV', noDimension: '暂无分类数据。', dimensionCaption: '按所选维度统计的事件与访客', value: '分类值', visitors: '访客',
       trendTable: '每日事件量数据', day: '日期', funnelTitle: '同会话有序漏斗', step: '步骤', reachedSessions: '到达会话', conversion: '环节转化', exactMode: '当前为最近 90 天精确模式：提供范围 UV、组合筛选和漏斗。', aggregateMode: '当前为长期聚合模式：仅提供每日总量和单维分类趋势，不显示跨日 UV 或漏斗。', ignoredFilters: '长期范围不支持组合筛选，已自动忽略日期与事件名以外的筛选。', footnote: '超过 90 天的查询自动降为日总量与单维趋势，并明确隐藏跨日 UV 与漏斗。', emptyValue: '—',
-      funnelNames: { creation: '创作：访问到导出', communityReuse: '豆社：浏览到社区来源保存/导出', publication: '投稿：提交到发布' },
+      funnelNames: { creation: '创作：含可选裁剪的导出路径', communityReuse: '豆社：浏览到社区来源保存/导出', publication: '投稿：提交到发布' },
       dimensions: { event: '事件', device: '设备', browser: '浏览器', os: '系统', actor: '角色类型', path: '路径', referrer: '来源域名', utmSource: 'UTM source', utmMedium: 'UTM medium', utmCampaign: 'UTM campaign', utmContent: 'UTM content' },
       devices: { desktop: '桌面', mobile: '手机', tablet: '平板', other: '其他' },
       browsers: { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox', safari: 'Safari', other: '其他' },

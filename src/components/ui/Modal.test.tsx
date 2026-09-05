@@ -8,6 +8,18 @@ import Modal from './Modal';
 afterEach(() => cleanup());
 
 describe('Modal', () => {
+  it('裁剪上方的确认弹窗独占 Escape，不连带关闭底层裁剪', async () => {
+    const closeCrop = vi.fn();
+    const closeConfirm = vi.fn();
+    render(<>
+      <Modal label="裁剪" onClose={closeCrop}><button>裁剪操作</button></Modal>
+      <Modal label="覆盖确认" onClose={closeConfirm}><button>取消覆盖</button></Modal>
+    </>);
+    await userEvent.keyboard('{Escape}');
+    expect(closeConfirm).toHaveBeenCalledOnce();
+    expect(closeCrop).not.toHaveBeenCalled();
+  });
+
   it('将焦点限制在弹窗中，并在关闭后恢复到触发控件', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

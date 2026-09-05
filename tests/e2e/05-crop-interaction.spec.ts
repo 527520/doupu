@@ -12,6 +12,7 @@ const PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-wide-320x200.png');
 async function openCropper(page: import('@playwright/test').Page) {
   await page.goto('/app');
   await uploadFile(page, PHOTO);
+  await page.getByRole('button', { name: '裁剪图片', exact: true }).click();
   await page.getByRole('heading', { name: '裁剪图片' }).waitFor({ timeout: 15_000 });
 }
 
@@ -25,7 +26,7 @@ async function canvasBox(page: import('@playwright/test').Page) {
 }
 
 function sizeLabel(page: import('@playwright/test').Page) {
-  return page.locator('p', { hasText: /×/ }).first();
+  return page.getByRole('dialog', { name: '裁剪图片' }).locator('p', { hasText: /当前选区/ });
 }
 
 async function sizeOf(page: import('@playwright/test').Page): Promise<{ w: number; h: number }> {
@@ -162,14 +163,13 @@ test('点击画布后方向键移动选区，Shift 将步长提升到 10 像素'
   await expect(status).toContainText('选区起点：X 1 · Y 10');
 });
 
-test('窄屏（350px）：画布保持原图 1.6 宽高比不拉伸，且 touch-action 为 none', async ({ page }) => {
+test('窄屏（350px）：画布保持原图比例且保留浏览器双指缩放', async ({ page }) => {
   await page.setViewportSize({ width: 350, height: 700 });
   await openCropper(page);
   const canvas = page.locator('canvas[aria-label*="裁剪"]');
   // 等待画布到达稳定状态：收缩到容器宽度（< 原图 320px）且未塌缩（> 240px），
   // 避免在首帧默认尺寸/被夹宽的中间帧上取包围盒。
-  // 重构后 studio 面板窄屏内边距（页面 14×2 + 面板 18×2 + 画布槽 8×2 ≈ 80px），
-  // 350px 视口下画布约 268px。
+  // 手机全屏裁剪仅保留面板与画布槽内边距，充分利用窄屏宽度。
   await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeLessThan(320);
   await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0, { timeout: 10_000 }).toBeGreaterThan(240);
   const box = (await canvas.boundingBox())!;
@@ -178,5 +178,5 @@ test('窄屏（350px）：画布保持原图 1.6 宽高比不拉伸，且 touch-
   expect(ratio).toBeGreaterThan(1.55);
   expect(ratio).toBeLessThan(1.65);
   const touchAction = await canvas.evaluate((el) => getComputedStyle(el).touchAction);
-  expect(touchAction).toBe('none');
+  expect(touchAction).toBe('pinch-zoom');
 });

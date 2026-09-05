@@ -91,7 +91,6 @@ test('双设备同步：设备 A 保存 → 设备 B 登录后可见同一设计
   await login(pageA, email, password);
   await pageA.goto('/app');
   await pageA.getByLabel('图片文件选择器').setInputFiles(PHOTO);
-  await pageA.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
   await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
   await fillField(pageA, '设计名称', '云端同步测试设计');
   await pageA.getByRole('button', { name: /保存/ }).click();
@@ -122,7 +121,6 @@ test('删除跨设备收敛：A 删除后列表消失、刷新仍在、直链打
   await login(pageA, email, password);
   await pageA.goto('/app');
   await pageA.getByLabel('图片文件选择器').setInputFiles(PHOTO);
-  await pageA.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
   await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
   await fillField(pageA, '设计名称', '待删除设计');
   await pageA.getByRole('button', { name: /保存/ }).click();
@@ -173,7 +171,6 @@ test('越权防护：他人设计的 id 直链打不开（本地无副本 → �
   await login(pageA, accountA.email, accountA.password);
   await pageA.goto('/app');
   await pageA.getByLabel('图片文件选择器').setInputFiles(PHOTO);
-  await pageA.getByRole('button', { name: '确认裁剪' }).click({ timeout: 15_000 });
   await expect(pageA.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
   await pageA.getByRole('button', { name: /保存/ }).click();
   await expect(pageA.getByText(/已保存/).first()).toBeVisible({ timeout: 15_000 });

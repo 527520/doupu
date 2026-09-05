@@ -59,6 +59,7 @@ export function createImageDecoder(): ImageDecoder {
   let probePromise: Promise<boolean> | null = null;
   let requestId = 0;
   let sourceId = 0;
+  let generation = 0;
   let hasWorkerSource = false;
   let fallbackSource: { bytes: Uint8Array; type: ImageType } | null = null;
   const pending = new Map<number, {
@@ -106,9 +107,11 @@ export function createImageDecoder(): ImageDecoder {
         workerSupported = false;
         return false;
       }
+      let probingWorker: Worker | null = null;
       try {
-        worker = new Worker(new URL('./decode.worker.ts', import.meta.url));
-        worker.onmessage = (event: MessageEvent<ImageDecodeWorkerResponse>) => {
+        probingWorker = new Worker(new URL('./decode.worker.ts', import.meta.url));
+        worker = probingWorker;
+        probingWorker.onmessage = (event: MessageEvent<ImageDecodeWorkerResponse>) => {
           const response = event.data;
           const waiter = pending.get(response.requestId);
           if (!waiter) return;
@@ -116,16 +119,18 @@ export function createImageDecoder(): ImageDecoder {
           if (response.type === 'error') waiter.reject(new Error(response.message));
           else waiter.resolve(response);
         };
-        worker.onerror = (event) => {
+        probingWorker.onerror = (event) => {
+          if (worker !== probingWorker) return;
           failPending(new Error(event.message || 'image decoder worker failed'));
           destroyWorker();
         };
         const response = await post({ type: 'probe', requestId: ++requestId });
+        if (worker !== probingWorker) return false;
         workerSupported = response.type === 'ready';
         if (!workerSupported) destroyWorker();
         return workerSupported;
       } catch {
-        destroyWorker();
+        if (worker === probingWorker) destroyWorker();
         return false;
       }
     })();
@@ -134,21 +139,28 @@ export function createImageDecoder(): ImageDecoder {
 
   return {
     async load(bytes, type, onHeicFallback) {
+      const current = ++generation;
+      const cancelled: DecodeResult = { ok: false, code: 'DECODE_FAILED' };
       fallbackSource = null;
       hasWorkerSource = false;
-      if (!(await ensureWorker())) {
+      const supported = await ensureWorker();
+      if (current !== generation) return cancelled;
+      if (!supported) {
         fallbackSource = { bytes, type };
         let result = await decodeImageFile(bytes, type);
+        if (current !== generation) return cancelled;
         if (!result.ok && type === 'heic') {
           onHeicFallback?.();
           try {
             const converted = await convertHeicWithWasm(bytes);
+            if (current !== generation) return cancelled;
             fallbackSource = { bytes: converted, type: 'jpeg' };
             result = await decodeImageFile(converted, 'jpeg');
           } catch {
             result = { ok: false, code: 'HEIC_UNSUPPORTED' };
           }
         }
+        if (current !== generation) return cancelled;
         if (!result.ok) fallbackSource = null;
         return result;
       }
@@ -170,20 +182,25 @@ export function createImageDecoder(): ImageDecoder {
       };
       try {
         let response = await loadInWorker(bytes, type);
+        if (current !== generation) return cancelled;
         if (type === 'heic' && response && !response.result.ok && response.recoveredBytes) {
           onHeicFallback?.();
           const converted = await convertHeicWithWasm(response.recoveredBytes);
+          if (current !== generation) return cancelled;
           response = await loadInWorker(converted, 'jpeg');
         }
+        if (current !== generation) return cancelled;
         hasWorkerSource = Boolean(response?.result.ok);
         return response?.result
           ?? { ok: false, code: type === 'heic' ? 'HEIC_UNSUPPORTED' : 'DECODE_FAILED' };
       } catch {
+        if (current !== generation) return cancelled;
         destroyWorker();
         return { ok: false, code: type === 'heic' ? 'HEIC_UNSUPPORTED' : 'DECODE_FAILED' };
       }
     },
     async region(rect, maxDimension) {
+      const current = generation;
       if (hasWorkerSource && worker) {
         try {
           const response = await post({
@@ -193,16 +210,18 @@ export function createImageDecoder(): ImageDecoder {
             rect,
             maxDimension,
           });
-          return response.type === 'result' ? response.result : { ok: false, code: 'DECODE_FAILED' };
+          return current === generation && response.type === 'result' ? response.result : { ok: false, code: 'DECODE_FAILED' };
         } catch {
-          destroyWorker();
+          if (current === generation) destroyWorker();
           return { ok: false, code: 'DECODE_FAILED' };
         }
       }
       if (!fallbackSource) return { ok: false, code: 'DECODE_FAILED' };
-      return decodeImageRegion(fallbackSource.bytes, fallbackSource.type, rect, maxDimension);
+      const result = await decodeImageRegion(fallbackSource.bytes, fallbackSource.type, rect, maxDimension);
+      return current === generation ? result : { ok: false, code: 'DECODE_FAILED' };
     },
     clear() {
+      generation += 1;
       fallbackSource = null;
       hasWorkerSource = false;
       sourceId += 1;
@@ -213,6 +232,7 @@ export function createImageDecoder(): ImageDecoder {
       }
     },
     dispose() {
+      generation += 1;
       fallbackSource = null;
       hasWorkerSource = false;
       failPending(new Error('image decoder disposed'));

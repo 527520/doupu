@@ -74,6 +74,7 @@ test('EXIF 旋转 JPEG 通过真实 Workbench Worker 以同一 oriented 坐标�
     mimeType: 'image/jpeg',
     buffer: jpeg,
   });
+  await page.getByRole('button', { name: '裁剪图片', exact: true }).click();
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible();
   await expect(page.getByText('20 × 30 像素')).toBeVisible();
 
@@ -83,7 +84,7 @@ test('EXIF 旋转 JPEG 通过真实 Workbench Worker 以同一 oriented 坐标�
   expectBlue(previewColors.top);
   expectYellow(previewColors.bottom);
 
-  await page.getByRole('button', { name: '确认裁剪' }).click();
+  await page.getByRole('button', { name: '确认并更新' }).click();
   await expect(page.getByText(/共 15000 粒/).first()).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('网格线').uncheck();
   await page.getByLabel('板缝线').uncheck();

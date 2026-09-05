@@ -35,6 +35,9 @@ export interface GenerationSessionState {
   sourceAvailable: boolean;
   /** Bounded decoded source owned by the session; restored files deliberately have none. */
   source: ImageDataLike | null;
+  /** Source paired with the committed pattern; a replacement is staged until success. */
+  committedSource: ImageDataLike | null;
+  regenerationUndoSource: ImageDataLike | null;
   draft: GenerationDraft | null;
   committed: GenerationCommit | null;
   /** Draft to restore if the active task is cancelled or fails. */
@@ -54,6 +57,7 @@ export interface GenerationSessionState {
 export type GenerationSessionAction =
   | { type: 'upload'; source: ImageDataLike | null; draft: GenerationDraft }
   | { type: 'reupload'; source: ImageDataLike; draft: GenerationDraft }
+  | { type: 'replace-source'; source: ImageDataLike; draft: GenerationDraft }
   | { type: 'update-draft'; draft: GenerationDraft }
   | { type: 'start'; taskId: number; draft: GenerationDraft }
   | { type: 'progress'; taskId: number; percent: number }
@@ -80,6 +84,8 @@ export const createGenerationSession = (draft: GenerationDraft | null = null): G
   status: 'no-source',
   sourceAvailable: false,
   source: null,
+  committedSource: null,
+  regenerationUndoSource: null,
   draft,
   committed: null,
   lastStableDraft: draft,
@@ -93,7 +99,7 @@ export const createGenerationSession = (draft: GenerationDraft | null = null): G
 });
 
 const completedStatus = (state: GenerationSessionState): GenerationSessionStatus =>
-  state.committed ? 'committed' : 'ready';
+  state.committed ? (state.committedSource ? 'committed' : 'restored-locked') : 'ready';
 
 export function generationSessionReducer(
   state: GenerationSessionState,
@@ -109,11 +115,13 @@ export function generationSessionReducer(
         source: action.source,
       };
     case 'reupload':
+    case 'replace-source':
       return {
         ...state,
         status: state.committed ? 'committed' : 'ready',
         sourceAvailable: true,
         source: action.source,
+        committedSource: action.type === 'reupload' && state.committed ? action.source : state.committedSource,
         draft: action.draft,
         lastStableDraft: action.draft,
         activeTaskId: null,
@@ -152,20 +160,24 @@ export function generationSessionReducer(
         status: 'committed',
         draft: action.commit,
         committed: action.commit,
+        committedSource: state.source,
         lastStableDraft: action.commit,
         activeTaskId: null,
         progress: null,
         error: null,
         hasManualEdits: false,
-        regenerationUndo: state.hasManualEdits ? state.committed : null,
+        regenerationUndo: state.hasManualEdits || state.source !== state.committedSource ? state.committed : null,
+        regenerationUndoSource: state.committedSource,
         regenerationUndoHasManualEdits: state.hasManualEdits,
-        regenerationUndoWasRestoredLocked: false,
+        regenerationUndoWasRestoredLocked: state.committedSource === null && state.committed !== null,
       };
     case 'failure':
       if (state.status !== 'generating' || state.activeTaskId !== action.taskId) return state;
       return {
         ...state,
-        status: 'failed',
+        status: state.committed && !state.committedSource ? 'restored-locked' : 'failed',
+        source: state.committed ? state.committedSource : state.source,
+        sourceAvailable: state.committed ? state.committedSource !== null : state.sourceAvailable,
         draft: state.lastStableDraft,
         activeTaskId: null,
         progress: null,
@@ -176,6 +188,8 @@ export function generationSessionReducer(
       return {
         ...state,
         status: completedStatus(state),
+        source: state.committed ? state.committedSource : state.source,
+        sourceAvailable: state.committed ? state.committedSource !== null : state.sourceAvailable,
         draft: state.lastStableDraft,
         activeTaskId: null,
         progress: null,
@@ -186,6 +200,8 @@ export function generationSessionReducer(
         status: 'restored-locked',
         sourceAvailable: false,
         source: null,
+        committedSource: null,
+        regenerationUndoSource: null,
         draft: action.commit,
         committed: action.commit,
         lastStableDraft: action.commit,
@@ -211,6 +227,7 @@ export function generationSessionReducer(
         // The one-step snapshot predates this new manual work. Keeping it
         // actionable would let a later click silently discard the edits.
         regenerationUndo: null,
+        regenerationUndoSource: null,
         regenerationUndoHasManualEdits: false,
         regenerationUndoWasRestoredLocked: false,
       };
@@ -241,8 +258,9 @@ export function generationSessionReducer(
         },
         error: null,
         regenerationUndo: state.committed,
+        regenerationUndoSource: state.committedSource,
         regenerationUndoHasManualEdits: state.hasManualEdits,
-        regenerationUndoWasRestoredLocked: state.status === 'restored-locked',
+        regenerationUndoWasRestoredLocked: state.committedSource === null,
       };
     }
     case 'undo-regeneration':
@@ -252,10 +270,14 @@ export function generationSessionReducer(
         status: state.regenerationUndoWasRestoredLocked ? 'restored-locked' : 'committed',
         draft: state.regenerationUndo,
         committed: state.regenerationUndo,
+        source: state.regenerationUndoSource,
+        committedSource: state.regenerationUndoSource,
+        sourceAvailable: state.regenerationUndoSource !== null,
         lastStableDraft: state.regenerationUndo,
         error: null,
         hasManualEdits: state.regenerationUndoHasManualEdits,
         regenerationUndo: null,
+        regenerationUndoSource: null,
         regenerationUndoHasManualEdits: false,
         regenerationUndoWasRestoredLocked: false,
       };

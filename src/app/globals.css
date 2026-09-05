@@ -1655,7 +1655,7 @@ body {
   gap: 8px;
 }
 
-.step-ticket-nav > ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.step-ticket-nav > ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .step-ticket-nav li { position: relative; display: flex; min-width: 0; align-items: center; }
 .step-ticket { display: flex; width: 100%; min-width: 0; align-items: center; gap: 8px; border-radius: 11px; background: #f2efed; padding: 9px 11px; color: var(--color-ink-soft); font-size: 10px; font-weight: 700; }
 .step-ticket-number { display: grid; width: 21px; height: 21px; flex: 0 0 auto; place-items: center; border-radius: 7px; border: 1px solid #d8d1d4; font-family: ui-monospace, monospace; font-size: 10px; }
@@ -1676,6 +1676,28 @@ body {
 .crop-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--color-ink-soft); font-size: 11px; }
 .crop-meta > p:first-child { display: flex; flex-wrap: wrap; gap: 5px 14px; }
 .crop-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; border-top: 1px solid #e7e2df; padding-top: 16px; }
+.preview-crop-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+.preview-crop-action .btn-outline { min-height: 44px; }
+.preview-crop-action > span { flex: 1 1 180px; color: var(--color-ink-soft); font-size: 12px; }
+.crop-dialog { display: flex; flex-direction: column; min-width: 0; overflow: auto; padding: 0; background: var(--color-cream); }
+.crop-dialog .crop-studio { flex: 1; min-height: 200px; min-width: 0; border: 0; border-radius: inherit; box-shadow: none; overflow: hidden; }
+.crop-dialog .crop-studio-heading, .crop-dialog .crop-meta, .crop-dialog .crop-actions { flex-shrink: 0; }
+.crop-dialog .crop-canvas-wrap { flex: 1 1 0; min-height: 44px; overflow: hidden; }
+.crop-dialog .crop-actions > button, .crop-dialog .crop-ratio-control > button { min-height: 44px; }
+.crop-dialog .crop-actions { position: sticky; bottom: 0; background: var(--color-cream); }
+@media (max-width: 767px), (max-height: 480px) {
+  .crop-dialog { border-radius: 0; border: 0; }
+  .crop-dialog .crop-studio { gap: 8px; padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .crop-dialog .crop-studio-heading { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .crop-dialog .studio-eyebrow { display: none; }
+  .crop-dialog .crop-studio-heading h2 { font-size: 18px; }
+  .crop-dialog .crop-ratio-control button { padding-inline: 10px; font-size: 12px; }
+  .crop-dialog .crop-canvas-wrap { padding: 6px; border-radius: 10px; }
+  .crop-dialog .crop-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-top: 8px; }
+  .crop-dialog .crop-actions > button { padding: 8px 6px; font-size: 12px; }
+  .crop-dialog .crop-actions .btn-primary { grid-column: auto; grid-row: auto; }
+  .crop-dialog .crop-meta { gap: 4px; font-size: 11px; }
+}
 
 .designs-hero { display: flex; min-height: 190px; align-items: flex-end; justify-content: space-between; gap: 24px; overflow: hidden; border-radius: 22px; background: var(--color-ink); padding: 28px 30px; color: white; }
 .designs-hero .studio-eyebrow { color: #efb6c8; }

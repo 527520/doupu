@@ -29,6 +29,8 @@ export interface ImageCropperProps {
   initialRect?: Rect;
   onConfirm: (rect: Rect) => void;
   onCancel: () => void;
+  disabled?: boolean;
+  fitViewport?: boolean;
 }
 
 type RatioMode = 'free' | 'square' | 'original';
@@ -52,7 +54,7 @@ const HANDLE_VISUAL = 8;
 const EDGE_HANDLE_VISUAL = 6;
 /** 命中热区尺寸（CSS px）：鼠标 / 触屏（热区更大便于手指）。 */
 const HANDLE_HIT = 20;
-const HANDLE_HIT_TOUCH = 30;
+const HANDLE_HIT_TOUCH = 44;
 
 /** 命中检测（纯函数，供拖拽与桌面悬停光标共用）。 */
 function hitTestMode(p: { x: number; y: number }, current: Rect, hitX: number, hitY: number): DragMode {
@@ -96,18 +98,21 @@ function cursorForMode(mode: DragMode): string {
   }
 }
 
-export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageCropperProps) {
+export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled = false, fitViewport = false }: ImageCropperProps) {
   const naturalWidth = image.naturalWidth ?? image.width;
   const naturalHeight = image.naturalHeight ?? image.height;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   /** 拖拽中注册的原生监听清理函数（pointerup/cancel 或组件卸载时调用，防止遗留监听）。 */
   const dragCleanupRef = useRef<(() => void) | null>(null);
+  const dragCancelRef = useRef<(() => void) | null>(null);
+  const activePointersRef = useRef(new Set<number>());
   const [rect, setRect] = useState<Rect>(() =>
     clampCropRect(initialRect ?? { x: 0, y: 0, width: naturalWidth, height: naturalHeight }, naturalWidth, naturalHeight),
   );
   const [ratioMode, setRatioMode] = useState<RatioMode>('free');
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [containerHeight, setContainerHeight] = useState<number | null>(null);
 
   // 卸载兜底：拖拽进行中组件被移除时清理画布上的监听
   useEffect(() => {
@@ -130,19 +135,24 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
       ? el.clientWidth - (Number.parseFloat(cs.paddingLeft) || 0) - (Number.parseFloat(cs.paddingRight) || 0)
       : el.clientWidth;
     setContainerWidth(contentWidth > 0 ? Math.floor(contentWidth) : null);
+    const contentHeight = el.clientHeight - (Number.parseFloat(cs?.paddingTop ?? '') || 0) - (Number.parseFloat(cs?.paddingBottom ?? '') || 0);
+    setContainerHeight(contentHeight > 0 ? Math.floor(contentHeight) : null);
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
       setContainerWidth(w > 0 ? Math.floor(w) : null);
+      const h = entries[0]?.contentRect.height ?? 0;
+      setContainerHeight(h > 0 ? Math.floor(h) : null);
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
   const previewWidthLimit = Math.max(1, Math.min(MAX_DISPLAY_WIDTH, containerWidth ?? MAX_DISPLAY_WIDTH));
+  const previewHeightLimit = fitViewport ? Math.max(1, Math.min(MAX_DISPLAY_HEIGHT, containerHeight ?? MAX_DISPLAY_HEIGHT)) : MAX_DISPLAY_HEIGHT;
   const preview = useMemo(
-    () => buildCropPreview(image, previewWidthLimit, MAX_DISPLAY_HEIGHT),
-    [image, previewWidthLimit],
+    () => buildCropPreview(image, previewWidthLimit, previewHeightLimit),
+    [image, previewWidthLimit, previewHeightLimit],
   );
   const displayWidth = preview.width;
   const displayHeight = preview.height;
@@ -198,7 +208,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
 
     // 四角手柄（视觉 8px）+ 四边中点手柄（视觉 6px）
-    ctx.fillStyle = '#3b82f6';
+    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue('--color-primary').trim() || '#a83f68';
     for (const [hx, hy, size] of [
       [rx, ry, HANDLE_VISUAL],
       [rx + rw, ry, HANDLE_VISUAL],
@@ -257,10 +267,16 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      if (!canvas || disabled || event.button !== 0) return;
+      // 所有触点都捕获：第二根手指移出画布后抬起也必须清理，不能遗留“多指中”。
+      canvas.setPointerCapture(event.pointerId);
+      activePointersRef.current.add(event.pointerId);
+      if (activePointersRef.current.size > 1) {
+        dragCancelRef.current?.();
+        return;
+      }
       event.preventDefault();
       canvas.focus({ preventScroll: true });
-      canvas.setPointerCapture(event.pointerId);
 
       const current = clampCropRect(rect, naturalWidth, naturalHeight);
       const p = toImageCoords(event.clientX, event.clientY);
@@ -329,6 +345,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
       };
 
       const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== event.pointerId) return;
         const q = toImageCoords(ev.clientX, ev.clientY);
         setRect(clampCropRect(nextRectFor(q), naturalWidth, naturalHeight));
       };
@@ -336,11 +353,22 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
       const cleanupDragListeners = (): void => {
         canvas.removeEventListener('pointermove', onMove as unknown as EventListener);
         canvas.removeEventListener('pointerup', onUp as unknown as EventListener);
-        canvas.removeEventListener('pointercancel', onUp as unknown as EventListener);
+        canvas.removeEventListener('pointercancel', onCancelDrag as unknown as EventListener);
+        canvas.removeEventListener('lostpointercapture', onCancelDrag as unknown as EventListener);
         dragCleanupRef.current = null;
+        dragCancelRef.current = null;
+      };
+
+      const cancelDrag = (): void => {
+        setRect(drag.startRect);
+        cleanupDragListeners();
+      };
+      const onCancelDrag = (ev: PointerEvent): void => {
+        if (ev.pointerId === event.pointerId) cancelDrag();
       };
 
       const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== event.pointerId) return;
         // pointerup 位置是权威终点：以它收敛最终选区（部分浏览器会合并中间 pointermove，
         // 只依赖 move 事件可能丢掉最后一小段拖动）。
         const q = toImageCoords(ev.clientX, ev.clientY);
@@ -364,10 +392,12 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
 
       canvas.addEventListener('pointermove', onMove as unknown as EventListener);
       canvas.addEventListener('pointerup', onUp as unknown as EventListener);
-      canvas.addEventListener('pointercancel', onUp as unknown as EventListener);
+      canvas.addEventListener('pointercancel', onCancelDrag as unknown as EventListener);
+      canvas.addEventListener('lostpointercapture', onCancelDrag as unknown as EventListener);
       dragCleanupRef.current = cleanupDragListeners;
+      dragCancelRef.current = cancelDrag;
     },
-    [rect, naturalWidth, naturalHeight, ratioMode, ratioFor, toImageCoords, clampPointer, hitSize],
+    [disabled, rect, naturalWidth, naturalHeight, ratioMode, ratioFor, toImageCoords, clampPointer, hitSize],
   );
 
   /** 桌面悬停：按位置切换光标（角/边/移动/框选）。 */
@@ -390,6 +420,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
     (event: KeyboardEvent<HTMLCanvasElement>) => {
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
       if (!keys.includes(event.key)) return;
+      if (disabled) return;
       event.preventDefault();
       const step = event.shiftKey ? 10 : 1;
       const deltas: Record<string, { x: number; y: number }> = {
@@ -399,9 +430,14 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         ArrowDown: { x: 0, y: step },
       };
       const delta = deltas[event.key]!;
-      setRect((prev) => clampCropRect({ ...prev, x: prev.x + delta.x, y: prev.y + delta.y }, naturalWidth, naturalHeight));
+      setRect((prev) => clampCropRect(event.altKey
+        ? resizeEdge(prev, delta.x ? 'right' : 'bottom', {
+          x: prev.x + prev.width + delta.x,
+          y: prev.y + prev.height + delta.y,
+        }, ratioFor(ratioMode), { width: naturalWidth, height: naturalHeight })
+        : { ...prev, x: prev.x + delta.x, y: prev.y + delta.y }, naturalWidth, naturalHeight));
     },
-    [naturalWidth, naturalHeight],
+    [disabled, naturalWidth, naturalHeight, ratioFor, ratioMode],
   );
 
   const changeRatioMode = useCallback(
@@ -438,6 +474,7 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
               key={mode}
               type="button"
               aria-pressed={ratioMode === mode}
+              disabled={disabled}
               onClick={() => changeRatioMode(mode)}
               className={ratioMode === mode ? 'is-active' : undefined}
             >
@@ -454,6 +491,9 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
           aria-label={crop.ariaCropCanvas}
           aria-describedby="crop-keyboard-hint"
           onPointerDown={handlePointerDown}
+          onPointerUp={(event) => activePointersRef.current.delete(event.pointerId)}
+          onPointerCancel={(event) => activePointersRef.current.delete(event.pointerId)}
+          onLostPointerCapture={(event) => activePointersRef.current.delete(event.pointerId)}
           onPointerMove={handleHover}
           onPointerLeave={() => {
             if (canvasRef.current) canvasRef.current.style.cursor = 'crosshair';
@@ -463,10 +503,10 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
           // 容器未测出前高度用 auto：配合 max-width:100% 夹宽时按固有比例自动算高，不产生变形帧。
           width={displayWidth}
           height={displayHeight}
-          style={{ width: displayWidth, height: containerWidth === null ? 'auto' : displayHeight }}
+          style={{ width: displayWidth, height: containerWidth === null ? 'auto' : displayHeight, touchAction: 'pinch-zoom' }}
           // 注意：必须是方角（rounded-none）——全图选区的四角手柄位于画布角点，
           // 圆角会裁掉角点命中区域导致拖拽失灵（E2E 05 角点拖拽回归依赖此行为）
-          className="block touch-none select-none cursor-crosshair rounded-none outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="block select-none cursor-crosshair rounded-none outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
       </div>
 
@@ -490,12 +530,13 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel }: ImageC
         </button>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => onConfirm({ x: 0, y: 0, width: naturalWidth, height: naturalHeight })}
           className="btn-outline"
         >
           {crop.useWholeImage}
         </button>
-        <button type="button" onClick={confirm} className="btn-primary">
+        <button type="button" disabled={disabled} onClick={confirm} className="btn-primary">
           {crop.confirm}
         </button>
       </div>

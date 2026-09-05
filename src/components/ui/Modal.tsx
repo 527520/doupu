@@ -4,7 +4,7 @@
  * 通用模态弹窗：遮罩点击/Esc 关闭、自动聚焦首个控件、窄屏 max-w 保护。
  * 全站弹窗统一使用，保证键盘可达性一致。
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 interface ModalProps {
@@ -14,9 +14,10 @@ interface ModalProps {
   children: ReactNode;
   /** 面板额外样式（宽度/边框色等）。 */
   panelClassName?: string;
+  panelStyle?: CSSProperties;
 }
 
-export default function Modal({ label, onClose, children, panelClassName = '' }: ModalProps) {
+export default function Modal({ label, onClose, children, panelClassName = '', panelStyle }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [portalRoot] = useState<HTMLDivElement | null>(() => {
     if (typeof document === 'undefined') return null;
@@ -62,6 +63,8 @@ export default function Modal({ label, onClose, children, panelClassName = '' }:
   // Esc 关闭；Tab/Shift+Tab 始终在弹窗内循环。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      // 上层确认框会将当前 Portal 设为 inert；仅最上层弹窗处理键盘。
+      if (portalRoot?.hasAttribute('inert')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();
@@ -88,7 +91,7 @@ export default function Modal({ label, onClose, children, panelClassName = '' }:
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, portalRoot]);
 
   // 自动聚焦首个可聚焦控件；关闭后恢复打开弹窗前的焦点。
   useEffect(() => {
@@ -104,7 +107,7 @@ export default function Modal({ label, onClose, children, panelClassName = '' }:
 
   return createPortal(
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -115,6 +118,7 @@ export default function Modal({ label, onClose, children, panelClassName = '' }:
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
+        style={panelStyle}
         className={`w-full max-w-[calc(100vw-2rem)] rounded-2xl border border-lilac/30 bg-white p-4 shadow-soft ${panelClassName}`}
       >
         {children}

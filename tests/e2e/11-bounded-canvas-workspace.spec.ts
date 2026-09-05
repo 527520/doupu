@@ -62,7 +62,6 @@ async function importProject(page: Page, width: number, height: number, testInfo
 async function enterWorkbenchWithProject(page: Page, testInfo: TestInfo, width = 200, height = 200): Promise<void> {
   await page.goto('/app');
   await uploadFile(page, PHOTO);
-  await page.getByRole('button', { name: '使用整张图片' }).click();
   await expect(page.getByRole('status').filter({ hasText: '图纸已生成' })).toBeVisible({ timeout: 20_000 });
 
   // 移动布局把项目文件入口放在「导出」抽屉；桌面入口始终存在。

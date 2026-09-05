@@ -53,9 +53,15 @@ test('standalone production CSP permits RSC navigation and the generation Worker
   await page.getByLabel('图片文件选择器').setInputFiles(PHOTO);
   await expect(page).toHaveURL(/\/app/);
   await page.waitForFunction(() => document.documentElement.dataset.doupuHydrated === 'true');
-  await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible();
-  await page.getByRole('button', { name: '确认裁剪' }).click();
+  await expect(page.getByRole('button', { name: '裁剪图片', exact: true })).toBeEnabled();
   await expect(page.getByText(/共 \d+ 粒/).first()).toBeVisible({ timeout: 20_000 });
+
+  await page.getByRole('button', { name: '裁剪图片', exact: true }).click();
+  await page.getByLabel('裁剪选区画布').focus();
+  await page.keyboard.press('Alt+Shift+ArrowLeft');
+  await expect(page.getByRole('dialog', { name: '裁剪图片' })).toContainText('当前选区：54 × 64 像素');
+  await page.getByRole('button', { name: '确认并更新' }).click();
+  await expect(page.getByText(/共 11900 粒/).first()).toBeVisible();
 
   expect(cspErrors).toEqual([]);
 });

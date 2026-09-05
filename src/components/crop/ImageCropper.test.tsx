@@ -37,6 +37,40 @@ function makeImage(): DecodedImage {
 }
 
 describe('ImageCropper', () => {
+  it('键盘调整大小遵守比例锁定和图像边界', () => {
+    const onConfirm = vi.fn();
+    render(<ImageCropper image={makeImage()} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.modeSquare }));
+    const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas);
+    fireEvent.keyDown(canvas, { key: 'ArrowLeft', altKey: true, shiftKey: true });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.confirm }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ width: 40, height: 40 }));
+    for (let i = 0; i < 10; i += 1) fireEvent.keyDown(canvas, { key: 'ArrowRight', altKey: true, shiftKey: true });
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.confirm }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ width: 50, height: 50 }));
+  });
+  it.each(['cancel', 'second-touch'])('%s 中止触摸时还原选框，不把缩放或取消当裁剪', (ending) => {
+    const onConfirm = vi.fn();
+    const image = { data: new Uint8ClampedArray(400 * 400 * 4), width: 400, height: 400, mime: 'image/png' };
+    const rect = { x: 100, y: 100, width: 200, height: 200 };
+    render(<ImageCropper image={image} initialRect={rect} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    const canvas = screen.getByLabelText(zhCN.crop.ariaCropCanvas) as HTMLCanvasElement;
+    canvas.setPointerCapture = vi.fn();
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400));
+    fireEvent.pointerDown(canvas, { pointerId: 1, pointerType: 'touch', clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, pointerType: 'touch', clientX: 240, clientY: 240 });
+    if (ending === 'cancel') fireEvent.pointerCancel(canvas, { pointerId: 1, pointerType: 'touch', clientX: 260, clientY: 260 });
+    else {
+      fireEvent.pointerDown(canvas, { pointerId: 2, pointerType: 'touch', clientX: 260, clientY: 260 });
+      expect(canvas.setPointerCapture).toHaveBeenCalledWith(2);
+      fireEvent.pointerUp(canvas, { pointerId: 1, pointerType: 'touch', clientX: 280, clientY: 280 });
+      fireEvent.pointerUp(canvas, { pointerId: 2, pointerType: 'touch', clientX: 280, clientY: 280 });
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.crop.confirm }));
+    expect(onConfirm).toHaveBeenCalledWith(rect);
+  });
+
   it('渲染标题、初始尺寸标签与全部操作按钮', () => {
     render(<ImageCropper image={makeImage()} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText(zhCN.crop.title)).toBeTruthy();
@@ -60,7 +94,7 @@ describe('ImageCropper', () => {
     const originalClientWidth = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
     Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 284 });
     const gcs = vi.spyOn(window, 'getComputedStyle').mockImplementation(
-      () => ({ paddingLeft: '8px', paddingRight: '8px' }) as CSSStyleDeclaration,
+      () => ({ paddingLeft: '8px', paddingRight: '8px', getPropertyValue: () => '' }) as unknown as CSSStyleDeclaration,
     );
     try {
       render(<ImageCropper image={image} onConfirm={vi.fn()} onCancel={vi.fn()} />);
