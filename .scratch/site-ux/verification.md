@@ -128,3 +128,9 @@
 - 投稿/我的投稿、账号、色板返回与换色、材料/导出提示及最近任务辅助名称集中引用 zh-CN，保留原措辞与行为。TypeScript AST 扫描本次改动的所有非测试页面/组件，中文 StringLiteral/模板/JSX 文案残留为 0；注释与测试不属于界面文案。
 - 12 文件 165 项回归通过，typecheck 通过。文案引用暴露投稿读取 effect 的依赖警告，已将选择来源回调稳定化并列出依赖，不添加忽略规则；提交前再跑 lint 与投稿定向回归。
 - 最终门禁前仍需补普通投稿/我的投稿的未知响应保护（详见 review-followups），然后执行全量稳定门禁与双轴复审。
+
+## 08F 普通投稿不确定结果 — 2026-09-05
+
+- RED 两项：创建 HTTP 408 错误解锁、撤回空成功响应被当作成功。增加社区写入的 15 秒有界传输和确定拒绝分类；创建/提交/撤回确认正确目标、状态及版本后才更新界面。
+- 未知结果保留原 URL/body/key/expectedVersion，禁止切换撤回范围与关闭确认框；新 props 不改变冻结请求。确定 4xx（除 408/429）可解锁，已确认的写入不因刷新失败重放。
+- `/tmp/doupu-siteux-community-unknown-green.log`：3 文件 29 项通过；lint/typecheck/diff 检查通过。耐久 12-community-governance 在真实创建后 408、真实提交后 503、真实撤回后空 200 下验证同键恢复，Chromium/Firefox/WebKit 3 项全部通过（community-unknown-e2e.log）。全量最终门禁仍在执行。

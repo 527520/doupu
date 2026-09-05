@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.list.mockResolvedValue([{ id, name: '红色花朵', revision: 3, deleted: false }]);
   state.get.mockResolvedValue({ id, name: '红色花朵', revision: 3, project });
-  state.fetch.mockImplementation(async (url: string) => url.endsWith('/tags') ? json({ items: [] }) : json({ revisionId: 'revision', version: 1 }));
+  state.fetch.mockImplementation(async (url: string) => url.endsWith('/tags') ? json({ items: [] }) : json({ revisionId: 'revision', version: url.endsWith('/submit') ? 2 : 1, status: url.endsWith('/submit') ? 'pending_review' : 'draft' }));
   vi.stubGlobal('fetch', state.fetch);
 });
 const renderForm = (initialDesignId = id, workId?: string) => render(<CommunitySubmitForm initialDesignId={initialDesignId} displayName="小豆" workId={workId} />);
@@ -44,7 +44,7 @@ it('上下文设计不属于云端列表时明确报错，不悄悄换成其他�
 it('创建成功而提交失败时保留草稿，重试不创建另一个作品', async () => {
   let failures = 1;
   state.fetch.mockImplementation(async (url: string) => url.endsWith('/tags') ? json({ items: [] })
-    : url.endsWith('/submit') && failures-- > 0 ? json({ error: { message: '审核提交暂时失败' } }, 503) : json({ revisionId: 'revision', version: 1 }));
+    : url.endsWith('/submit') && failures-- > 0 ? json({ error: { message: '审核提交暂时失败' } }, 503) : json({ revisionId: 'revision', version: url.endsWith('/submit') ? 2 : 1, status: url.endsWith('/submit') ? 'pending_review' : 'draft' }));
   renderForm(); await confirm();
   expect(await screen.findByRole('alert')).toHaveTextContent('草稿已保留');
   fireEvent.click(screen.getByRole('button', { name: '重试提交审核' }));
@@ -53,12 +53,15 @@ it('创建成功而提交失败时保留草稿，重试不创建另一个作品'
   const submissions = state.fetch.mock.calls.filter((call) => call[0].endsWith('/submit'));
   expect(submissions[0][1].headers['idempotency-key']).toBe(submissions[1][1].headers['idempotency-key']);
 });
-it('创建响应丢失后按原请求重试，保护许可确认的图纸版本', async () => {
+it.each(['network', '408'])('创建响应丢失（%s）后按原请求重试，保护许可确认的图纸版本', async (failure) => {
   let failures = 1;
   state.fetch.mockImplementation(async (url: string) => {
     if (url.endsWith('/tags')) return json({ items: [] });
-    if (url.endsWith('/works') && failures-- > 0) throw new Error('offline');
-    return json({ revisionId: 'revision', version: 1 });
+    if (url.endsWith('/works') && failures-- > 0) {
+      if (failure === '408') return json({ error: { message: 'timeout' } }, 408);
+      throw new Error('offline');
+    }
+    return json({ revisionId: 'revision', version: url.endsWith('/submit') ? 2 : 1, status: url.endsWith('/submit') ? 'pending_review' : 'draft' });
   });
   renderForm(); await confirm(); await screen.findByRole('alert');
   expect(screen.getByLabelText('公开作品标题')).toBeDisabled();
@@ -66,7 +69,8 @@ it('创建响应丢失后按原请求重试，保护许可确认的图纸版本'
   await waitFor(() => expect(state.push).toHaveBeenCalled());
   const creations = state.fetch.mock.calls.filter((call) => call[0].endsWith('/works'));
   expect(creations).toHaveLength(2);
-  expect(creations[0][1]).toEqual(creations[1][1]);
+  expect(creations[0][1].body).toEqual(creations[1][1].body);
+  expect(creations[0][1].headers).toEqual(creations[1][1].headers);
   expect(JSON.parse(creations[0][1].body)).toMatchObject({ designId: id, expectedDesignRevision: 3 });
 });
 it('修改重提调用同一作品的新修订接口，不创建新的公开身份', async () => {

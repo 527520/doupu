@@ -7,6 +7,7 @@ import { COMMUNITY_LICENSE_VERSION, communitySnapshotFromProject, deriveCommunit
 import { createDoupuApi } from '@/lib/sync/api';
 import { ApiError, type CloudDesignFull, type CloudDesignMeta } from '@/lib/sync/clientAdapter';
 import CommunityPreviewCanvas from './CommunityPreviewCanvas';
+import { isDefiniteCommunityRejection, postCommunityCommand } from './communityCommand';
 import { track } from '@/lib/analytics/client';
 import { zhCN } from '@/messages/zh-CN';
 
@@ -19,16 +20,13 @@ interface Attempt {
   draft?: { revisionId: string; version: number };
 }
 
-async function post(url: string, key: string, payload: unknown) {
-  const response = await fetch(url, {
-    method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify(payload),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, body?.error?.code ?? 'UNKNOWN', body?.error?.message ?? zhCN.communityAdmin.submission.retryableFailure);
-  if (typeof body?.revisionId !== 'string' || !Number.isInteger(body?.version) || body.version < 1) {
+async function post(url: string, key: string, payload: object, submitted?: { revisionId: string; version: number }) {
+  const body = await postCommunityCommand(url, key, payload);
+  if (typeof body.revisionId !== 'string' || !body.revisionId || typeof body.version !== 'number' || !Number.isInteger(body.version) || body.version < 1
+    || (submitted ? body.revisionId !== submitted.revisionId || body.version !== submitted.version + 1 || body.status !== 'pending_review' : body.status !== 'draft')) {
     throw new Error(zhCN.communityAdmin.submission.unknownResult);
   }
-  return { revisionId: body.revisionId as string, version: body.version as number };
+  return { revisionId: body.revisionId, version: body.version };
 }
 
 export default function CommunitySubmitForm({ initialDesignId = '', displayName, workId }: {
@@ -110,7 +108,7 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
         setHasDraft(true);
         track({ name: 'community_submission_created', properties: {} });
       }
-      await post(`/api/community/revisions/${current.draft.revisionId}/submit`, current.submitKey, { expectedVersion: current.draft.version });
+      await post(`/api/community/revisions/${current.draft.revisionId}/submit`, current.submitKey, { expectedVersion: current.draft.version }, current.draft);
       if (!mounted.current) return;
       track({ name: 'community_submission_submitted', properties: {} });
       router.push('/community/mine');
@@ -119,9 +117,9 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
       const message = caught instanceof Error ? caught.message : t.failed;
       setError(current.draft ? t.draftKept(message) : message);
       // A definite validation rejection cannot have committed a draft; uncertain responses keep the original request.
-      if (!current.draft && caught instanceof ApiError && caught.status >= 400 && caught.status < 500 && caught.status !== 429) {
+      if (!current.draft && isDefiniteCommunityRejection(caught)) {
         attempt.current = null; setLocked(false); setAccepted(false);
-        if (caught.code === 'STATE_CONFLICT') setSource(null);
+        if (caught instanceof ApiError && caught.code === 'STATE_CONFLICT') setSource(null);
       }
     } finally {
       pending.current = false;

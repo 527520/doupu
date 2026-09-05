@@ -51,20 +51,47 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
   await page.getByLabel('公开作品标题').fill(title);
   await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
   await page.getByRole('checkbox', { name: /我确认拥有发布权/ }).check();
+  const creationRequests: Array<{ body: string | null; key: string | undefined }> = [];
+  await page.route('**/api/community/works', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    creationRequests.push({ body: route.request().postData(), key: route.request().headers()['idempotency-key'] });
+    const response = await route.fetch(); expect(response.ok()).toBe(true);
+    if (creationRequests.length === 1) await route.fulfill({ status: 408, contentType: 'application/json', body: '{"error":{"message":"模拟已提交后超时"}}' });
+    else await route.fulfill({ response });
+  });
   let failures = 1;
   await page.route('**/api/community/revisions/*/submit', async (route) => {
-    if (failures-- > 0) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: '模拟提交故障' } }) });
+    if (failures-- > 0) {
+      const response = await route.fetch(); expect(response.ok()).toBe(true);
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { message: '模拟提交故障' } }) });
+    }
     else await route.continue();
   });
   await page.getByRole('button', { name: '冻结快照并提交审核' }).click();
+  await expect(page.locator('.community-submit-form').getByRole('alert')).toContainText('模拟已提交后超时');
+  await expect(page.getByLabel('公开作品标题')).toBeDisabled();
+  await page.getByRole('button', { name: '重试原投稿' }).click();
   await expect(page.locator('.community-submit-form').getByRole('alert')).toContainText('草稿已保留');
   await page.getByRole('button', { name: '重试提交审核' }).click();
   await expect(page).toHaveURL(/\/community\/mine$/);
+  expect(creationRequests).toHaveLength(2); expect(creationRequests[1]).toEqual(creationRequests[0]);
   const item = page.locator('.community-mine-list > li').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
   await expect(item).toHaveCount(1);
+  const withdrawalRequests: Array<{ body: string | null; key: string | undefined }> = [];
+  await page.route('**/api/community/revisions/*/withdraw', async (route) => {
+    withdrawalRequests.push({ body: route.request().postData(), key: route.request().headers()['idempotency-key'] });
+    const response = await route.fetch(); expect(response.ok()).toBe(true);
+    if (withdrawalRequests.length === 1) await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    else await route.fulfill({ response });
+  });
   await item.getByRole('button', { name: '撤回本次审核' }).click();
   await page.getByRole('button', { name: '确认撤回' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('button', { name: '暂不撤回' })).toBeDisabled();
+  await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: '重试确认本次操作' }).click();
   await item.getByRole('link', { name: '修改并重新投稿' }).click();
+  expect(withdrawalRequests).toHaveLength(2); expect(withdrawalRequests[1]).toEqual(withdrawalRequests[0]);
   await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
   await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
 });

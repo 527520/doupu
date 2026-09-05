@@ -1206,6 +1206,7 @@ export const zhCN = {
       createFailed: '创建投稿失败', submitFailedDraftKept: '提交审核失败，草稿已保留', failed: '提交失败', submitting: '提交中…', submit: '冻结快照并提交审核', pageTitle: '提交豆社作品', pageSubtitle: '冻结当前云端设计，审核通过后公开', designId: '私人设计 ID', title: '公开作品标题', tags: '正式标签（最多 10 个）', license: '我确认拥有发布权，并授予豆谱展示本作品及允许站内用户创建私人副本的有限许可；不包含站外传播、商业使用或再许可。', copyright: '查看版权与申诉说明', back: '返回设计',
     },
     mineActions: {
+      unknown: '尚未确认服务器结果，请重试确认本次操作；确认前不能切换操作。', retry: '重试确认本次操作',
       requestFailed: '操作暂时失败，请重试或刷新状态。', failed: '操作失败，请重试。', refreshState: '刷新状态', submitDraft: '提交草稿审核', withdrawDraft: '撤回草稿后修改', withdrawReview: '撤回本次审核', edit: '修改并重新投稿', withdrawWork: '撤回整件作品', done: '操作已完成，正在刷新投稿状态。', refresh: '刷新', withdrawRevision: '撤回本次投稿', confirmWorkTitle: '撤回整件作品？', confirmRevisionTitle: '撤回本次投稿？',
       workImpact: '这会隐藏公开作品，并终止本次待审或草稿。已有私人副本会保留，恢复公开需要管理员复核。', revisionImpact: '只终止本次草稿或审核，原公开作品保持不变。撤回后可以从自己的设计重新投稿。', keep: '暂不撤回', withdrawing: '撤回中…', confirm: '确认撤回',
     },
