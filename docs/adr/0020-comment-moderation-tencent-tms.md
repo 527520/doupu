@@ -16,6 +16,7 @@
 4. 每次判定写 `comment_moderation_checks`：来源、建议、标签、置信度、命中词、腾讯云 RequestId、耗时、结果与依据；不保存正文（正文在评论表）。限流拒绝也留痕但不创建评论；为此拒绝/限流的错误在事务提交之后抛出。
 5. 上送内容只含评论文本、我们的记录 ID 和公开作者 ID 的不可逆哈希；不含邮箱、内部 userId 或 IP。
 6. 阈值全部走集中配置（D32）：`TMS_DAILY_BUDGET`、`TMS_CACHE_HOURS`、`TMS_TIMEOUT_MS`、`RATE_COMMENT_*`。
+8. 凭证默认沿用 COS 子账号的 API 密钥（`COS_SECRET_ID/KEY`，生产必有，同一套 CAM 密钥只需追加 `tms:TextModeration` 权限），`TMS_SECRET_ID/KEY/REGION` 仅用于单独指定；上线只需新增策略编号 `TMS_BIZ_TYPE`。曾默认沿用 SES 密钥，但 SES API 模式并非必选（可走 SMTP），且 docker compose 对未设置的变量传空字符串、`??` 回落从不生效，所以改为回落到生产必有的 COS 密钥并以 `||` 判空。
 7. 旧的 `/admin/rules` 页面、API、编辑器与 `moderation-rules:manage` 能力删除；`moderation_rule_set_versions` 表只读保留历史。
 
 ## Consequences

@@ -58,10 +58,11 @@ services:
       COS_ORIGINALS_SECRET_ID: ${COS_ORIGINALS_SECRET_ID:-${COS_SECRET_ID:-}}
       COS_ORIGINALS_SECRET_KEY: ${COS_ORIGINALS_SECRET_KEY:-${COS_SECRET_KEY:-}}
       COS_ORIGINALS_REGION: ${COS_ORIGINALS_REGION:-${COS_REGION:-}}
-      # 评论内容安全（D50，可选；未配置时评论全部进入人工待审）
+      # 评论内容安全（D50）：凭证默认沿用 COS 子账号密钥（需在 CAM 给它加 tms:TextModeration），
+      # TMS_* 可单独指定；只要填了 TMS_BIZ_TYPE 并授权即可启用，缺凭证时评论全部进入人工待审。
       TMS_ENABLED: ${TMS_ENABLED:-}
-      TMS_SECRET_ID: ${TMS_SECRET_ID:-}
-      TMS_SECRET_KEY: ${TMS_SECRET_KEY:-}
+      TMS_SECRET_ID: ${TMS_SECRET_ID:-${COS_SECRET_ID:-}}
+      TMS_SECRET_KEY: ${TMS_SECRET_KEY:-${COS_SECRET_KEY:-}}
       TMS_REGION: ${TMS_REGION:-}
       TMS_BIZ_TYPE: ${TMS_BIZ_TYPE:-}
       TMS_DAILY_BUDGET: ${TMS_DAILY_BUDGET:-}

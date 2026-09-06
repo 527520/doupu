@@ -51,10 +51,16 @@ describe('moderateTextWithTms', () => {
 });
 
 describe('resolveTmsCredentials', () => {
-  it('reuses SES credentials by default, honours explicit overrides and an off switch', () => {
+  it('reuses COS credentials by default, honours explicit overrides and an off switch', () => {
     expect(resolveTmsCredentials({})).toBeNull();
-    expect(resolveTmsCredentials({ SES_SECRET_ID: 'a', SES_SECRET_KEY: 'b' })).toEqual({ secretId: 'a', secretKey: 'b', region: 'ap-guangzhou', bizType: undefined });
+    expect(resolveTmsCredentials({ COS_SECRET_ID: 'a', COS_SECRET_KEY: 'b' })).toEqual({ secretId: 'a', secretKey: 'b', region: 'ap-guangzhou', bizType: undefined });
     expect(resolveTmsCredentials({ TMS_SECRET_ID: 'x', TMS_SECRET_KEY: 'y', TMS_REGION: 'ap-shanghai', TMS_BIZ_TYPE: 'biz' })).toEqual({ secretId: 'x', secretKey: 'y', region: 'ap-shanghai', bizType: 'biz' });
-    expect(resolveTmsCredentials({ SES_SECRET_ID: 'a', SES_SECRET_KEY: 'b', TMS_ENABLED: 'false' })).toBeNull();
+    expect(resolveTmsCredentials({ COS_SECRET_ID: 'a', COS_SECRET_KEY: 'b', TMS_ENABLED: 'false' })).toBeNull();
+  });
+
+  it('treats empty strings from docker compose as unset', () => {
+    expect(resolveTmsCredentials({ TMS_SECRET_ID: '', TMS_SECRET_KEY: '', TMS_REGION: '', TMS_BIZ_TYPE: '', COS_SECRET_ID: 'a', COS_SECRET_KEY: 'b' }))
+      .toEqual({ secretId: 'a', secretKey: 'b', region: 'ap-guangzhou', bizType: undefined });
+    expect(resolveTmsCredentials({ TMS_SECRET_ID: '', TMS_SECRET_KEY: '', COS_SECRET_ID: '', COS_SECRET_KEY: '' })).toBeNull();
   });
 });

@@ -146,10 +146,11 @@ export function createCosClient(config: CosConfig): CosClient {
  * `COS_ORIGINALS_*` 只在需要单独的桶 / 子账号 / 地域时覆盖。
  */
 export function resolveOriginalsCosConfig(env: Record<string, string | undefined> = process.env): Omit<CosConfig, 'fetcher' | 'now'> | null {
-  const secretId = env.COS_ORIGINALS_SECRET_ID ?? env.COS_SECRET_ID;
-  const secretKey = env.COS_ORIGINALS_SECRET_KEY ?? env.COS_SECRET_KEY;
-  const bucket = env.COS_ORIGINALS_BUCKET ?? env.COS_BUCKET;
-  const region = env.COS_ORIGINALS_REGION ?? env.COS_REGION;
+  // `||` 而非 `??`：docker compose 对未设置的变量传入空字符串。
+  const secretId = env.COS_ORIGINALS_SECRET_ID || env.COS_SECRET_ID;
+  const secretKey = env.COS_ORIGINALS_SECRET_KEY || env.COS_SECRET_KEY;
+  const bucket = env.COS_ORIGINALS_BUCKET || env.COS_BUCKET;
+  const region = env.COS_ORIGINALS_REGION || env.COS_REGION;
   if (!secretId || !secretKey || !bucket || !region) return null;
   return { secretId, secretKey, bucket, region };
 }

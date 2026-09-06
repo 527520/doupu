@@ -50,7 +50,7 @@ E2E 非产品问题的测试侧处理：
 
 生产部署前置（人工事项）：
 - 原图默认写入备份所用的私有桶 `COS_BUCKET` 的 `originals/` 前缀（`COS_*` 不齐全拒绝启动），`.env` 不需新增变量；到控制台确认该桶没有会命中 `originals/` 的自动删除生命周期规则——备份桶原先的「30 天自动删除」改为人工定期清理。想分桶再填可选的 `COS_ORIGINALS_BUCKET`。
-- 开通腾讯云文本内容安全并配置 `TMS_*`（含 `TMS_BIZ_TYPE`）；缺失则评论全部待审并在系统信息页告警。
+- 开通腾讯云文本内容安全；在 CAM 给 COS 子账号追加 `tms:TextModeration` 权限（凭证默认沿用 `COS_SECRET_ID/KEY`）；`.env` 只需新增 `TMS_BIZ_TYPE`。缺凭证 / 缺权限则评论全部待审并在系统信息页告警。
 - 迁移 0013–0015 expand-only。
 
 ## Issues

@@ -44,10 +44,10 @@ export function validateProductionAuthAdapters(env: Environment = process.env): 
   }
   // 作品原图桶（D49）：公开作品必须带原图，生产没有私有桶就无法投稿，启动即失败而不是投稿时才报错。
   // 默认沿用备份桶（COS_BUCKET，原图在 originals/ 前缀下），COS_ORIGINALS_BUCKET 仅用于单独分桶。
-  if (!(env.COS_ORIGINALS_BUCKET ?? env.COS_BUCKET)) {
+  if (!(env.COS_ORIGINALS_BUCKET || env.COS_BUCKET)) {
     throw new Error('community originals bucket is incomplete; missing COS_BUCKET (shared with backups) or COS_ORIGINALS_BUCKET');
   }
-  if (!(env.COS_ORIGINALS_SECRET_ID ?? env.COS_SECRET_ID) || !(env.COS_ORIGINALS_SECRET_KEY ?? env.COS_SECRET_KEY) || !(env.COS_ORIGINALS_REGION ?? env.COS_REGION)) {
+  if (!(env.COS_ORIGINALS_SECRET_ID || env.COS_SECRET_ID) || !(env.COS_ORIGINALS_SECRET_KEY || env.COS_SECRET_KEY) || !(env.COS_ORIGINALS_REGION || env.COS_REGION)) {
     throw new Error('community originals bucket is incomplete; missing COS credentials or region (COS_ORIGINALS_* or COS_*)');
   }
   return { mail };

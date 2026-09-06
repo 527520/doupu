@@ -113,11 +113,16 @@ export async function moderateTextWithTms(
   };
 }
 
+/**
+ * 凭证默认沿用 COS 子账号密钥（生产必有，同一套 CAM API 密钥可调用 TextModeration，
+ * 只需给该子账号加 `tms:TextModeration` 权限），`TMS_*` 用于单独指定。
+ * 用 `||` 而不是 `??`：docker compose 对未设置的变量传入空字符串。
+ */
 export function resolveTmsCredentials(env: Record<string, string | undefined> = process.env): TmsCredentials | null {
   if (env.TMS_ENABLED === 'false' || env.TMS_ENABLED === '0') return null;
-  const secretId = env.TMS_SECRET_ID ?? env.SES_SECRET_ID;
-  const secretKey = env.TMS_SECRET_KEY ?? env.SES_SECRET_KEY;
-  const region = env.TMS_REGION ?? 'ap-guangzhou';
+  const secretId = env.TMS_SECRET_ID || env.COS_SECRET_ID;
+  const secretKey = env.TMS_SECRET_KEY || env.COS_SECRET_KEY;
+  const region = env.TMS_REGION || 'ap-guangzhou';
   if (!secretId || !secretKey) return null;
   return { secretId, secretKey, region, bizType: env.TMS_BIZ_TYPE || undefined };
 }

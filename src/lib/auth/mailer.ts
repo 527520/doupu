@@ -109,7 +109,8 @@ export async function sendMail(
         {
           secretId: SES_SECRET_ID,
           secretKey: SES_SECRET_KEY,
-          region: process.env.SES_REGION ?? 'ap-guangzhou',
+          // compose 对未设置的变量传空字符串，用 || 保证默认地域生效
+          region: process.env.SES_REGION || 'ap-guangzhou',
           from: SES_FROM,
         },
         { to, subject, templateId, templateData: options?.sesTemplate?.templateData ?? {} },
