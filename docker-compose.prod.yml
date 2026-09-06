@@ -51,6 +51,25 @@ services:
       DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-}
       DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-}
       DB_IDLE_TIMEOUT_MS: ${DB_IDLE_TIMEOUT_MS:-}
+      # 作品原图私有桶（D49，生产必填）：默认与备份共用 COS_BUCKET（原图在 originals/ 前缀下），
+      # 需要单独分桶 / 子账号时才填 COS_ORIGINALS_*；app 只收到原图侧这一组变量。
+      # COS_BUCKET 缺失由 backup 服务的 :? 校验与 app 启动校验共同拦截。
+      COS_ORIGINALS_BUCKET: ${COS_ORIGINALS_BUCKET:-${COS_BUCKET:-}}
+      COS_ORIGINALS_SECRET_ID: ${COS_ORIGINALS_SECRET_ID:-${COS_SECRET_ID:-}}
+      COS_ORIGINALS_SECRET_KEY: ${COS_ORIGINALS_SECRET_KEY:-${COS_SECRET_KEY:-}}
+      COS_ORIGINALS_REGION: ${COS_ORIGINALS_REGION:-${COS_REGION:-}}
+      # 评论内容安全（D50，可选；未配置时评论全部进入人工待审）
+      TMS_ENABLED: ${TMS_ENABLED:-}
+      TMS_SECRET_ID: ${TMS_SECRET_ID:-}
+      TMS_SECRET_KEY: ${TMS_SECRET_KEY:-}
+      TMS_REGION: ${TMS_REGION:-}
+      TMS_BIZ_TYPE: ${TMS_BIZ_TYPE:-}
+      TMS_DAILY_BUDGET: ${TMS_DAILY_BUDGET:-}
+      TMS_CACHE_HOURS: ${TMS_CACHE_HOURS:-}
+      TMS_TIMEOUT_MS: ${TMS_TIMEOUT_MS:-}
+      RATE_COMMENT_USER_HOUR: ${RATE_COMMENT_USER_HOUR:-}
+      RATE_COMMENT_USER_DAY: ${RATE_COMMENT_USER_DAY:-}
+      RATE_COMMENT_IP_HOUR: ${RATE_COMMENT_IP_HOUR:-}
     depends_on:
       postgres:
         condition: service_healthy

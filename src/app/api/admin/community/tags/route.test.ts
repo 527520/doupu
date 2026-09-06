@@ -24,7 +24,12 @@ it('uses a zero creation version, returns definite duplicate conflicts and valid
   const duplicate = await POST(request(body, 'another-create'));
   expect(duplicate.status).toBe(409); expect(await duplicate.json()).toMatchObject({ error: { code: 'STATE_CONFLICT' } });
   expect((await POST(request({ ...body, name: '动物', slug: 'animals' }, 'another-create'))).status).toBe(201);
-  expect(await db.select().from(communityTags)).toHaveLength(2);
-  expect(await db.select().from(adminAuditLogs)).toHaveLength(2);
-  expect((await GET()).headers.get('cache-control')).toContain('no-store');
+  // slug 可省略：中文名自动派生链接标识
+  const derived = await POST(request({ name: '星星人', expectedVersion: 0, reason: body.reason }, 'derived-slug'));
+  expect(derived.status).toBe(201); expect((await derived.json()).slug).toMatch(/^t-[0-9a-f]{12}$/u);
+  expect(await db.select().from(communityTags)).toHaveLength(3);
+  expect(await db.select().from(adminAuditLogs)).toHaveLength(3);
+  const listed = await GET(new Request('http://localhost/api/admin/community/tags?q=星'));
+  expect(listed.headers.get('cache-control')).toContain('no-store');
+  expect((await listed.json()).items).toMatchObject([{ name: '星星人', workCount: 0 }]);
 });

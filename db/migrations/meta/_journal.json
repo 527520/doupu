@@ -92,6 +92,27 @@
       "when": 1788567595246,
       "tag": "0012_comment_publication_time",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788671336734,
+      "tag": "0013_work_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788676406284,
+      "tag": "0014_community_originals",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788682032323,
+      "tag": "0015_comment_moderation_checks",
+      "breakpoints": true
     }
   ]
 }

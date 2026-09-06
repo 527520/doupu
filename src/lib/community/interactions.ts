@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { and, count, desc, eq, gte, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
 import {
   adminAuditLogs,
+  commentModerationChecks,
   communityComments,
   communityLikes,
+  communityOriginals,
   communityReports,
   communityReuses,
   communityRevisions,
   communityWorks,
   designs,
-  moderationRuleSetVersions,
   users,
 } from '@/../db/schema';
 import type { Actor } from '@/lib/auth/authorization';
@@ -22,7 +23,8 @@ import { AppError } from '@/lib/errors';
 import type { ProjectFile } from '@/lib/types';
 import { assertDesignQuota, lockDesignStorage } from '@/lib/sync/designQuota';
 import { measureJsonBytes } from '@/lib/sync/revision';
-import { INITIAL_MODERATION_RULES, moderateText, moderationRulesSchema, type ModerationRule } from './moderation';
+import { moderateComment, type CommentModerationDeps } from '@/lib/moderation/commentModeration';
+import { E2E_MODERATION_DEPS, isE2eModerationEnabled } from '@/lib/moderation/e2eFake';
 import { parseCommunitySnapshot } from './snapshot';
 
 const commentBodySchema = z.string().trim().min(1).max(500);
@@ -61,34 +63,11 @@ async function commentIdentity(tx: AnyDatabase, actor: Actor) {
   return { publicAuthorId, displayName: resolvePublicDisplayName(user.username, user.email) };
 }
 
-async function activeRules(tx: AnyDatabase): Promise<ModerationRule[]> {
-  const [row] = await tx.select({ rules: moderationRuleSetVersions.rules })
-    .from(moderationRuleSetVersions).where(eq(moderationRuleSetVersions.active, true));
-  const parsed = moderationRulesSchema.safeParse(row?.rules ?? []);
-  return parsed.success ? parsed.data : [...INITIAL_MODERATION_RULES];
-}
-
-async function moderateCommentBody(
-  tx: AnyDatabase,
-  input: { userId: string; body: string; now: Date; excludeCommentId?: string },
-) {
-  const recentWhere = [
-    eq(communityComments.authorUserId, input.userId),
-    inArray(communityComments.status, ['published', 'pending_review']),
-    gte(communityComments.updatedAt, new Date(input.now.getTime() - 5 * 60 * 1000)),
-  ];
-  if (input.excludeCommentId) recentWhere.push(ne(communityComments.id, input.excludeCommentId));
-  const [rules, recent] = await Promise.all([
-    activeRules(tx),
-    tx.select({ body: communityComments.body }).from(communityComments)
-      .where(and(...recentWhere)).orderBy(desc(communityComments.updatedAt)).limit(6),
-  ]);
-  const moderation = moderateText(input.body, rules);
-  if (recent.length >= 5 || recent.some((row) => row.body.normalize('NFKC') === input.body.normalize('NFKC'))) {
-    moderation.needsReview = true;
-    if (!moderation.categories.includes('spam')) moderation.categories.push('spam');
-  }
-  return moderation;
+/** 测试与运维接缝：替换内容安全服务调用（缺省走真实腾讯云；E2E 种子环境走确定性假服务）。 */
+let moderationDeps: CommentModerationDeps | null = null;
+export function setCommentModerationDeps(deps: CommentModerationDeps): void { moderationDeps = deps; }
+function resolveModerationDeps(): CommentModerationDeps {
+  return moderationDeps ?? (isE2eModerationEnabled() ? E2E_MODERATION_DEPS : {});
 }
 
 export async function getCommunityLike(db: AnyDatabase, input: { workId: string; userId?: string }) {
@@ -161,47 +140,60 @@ export async function reuseCommunityWork(db: AnyDatabase, input: { actor: Actor;
     const [updated] = await tx.update(communityWorks).set({
       reuseCount: sql`${communityWorks.reuseCount} + 1`, updatedAt: now,
     }).where(eq(communityWorks.id, work.id)).returning();
-    return { designId, workId: work.id, revisionId: revision.id, reuseCount: updated.reuseCount };
+    // 引用者从此刻起可取回该修订的原图（D49）；客户端据此决定是否拉取并注入工作台。
+    const [original] = await tx.select({ id: communityOriginals.id }).from(communityOriginals)
+      .where(and(eq(communityOriginals.revisionId, revision.id), isNull(communityOriginals.deletedAt), isNull(communityOriginals.blockedAt))).limit(1);
+    return { designId, workId: work.id, revisionId: revision.id, reuseCount: updated.reuseCount, originalAvailable: Boolean(original) };
   });
 }
 
 export async function createCommunityComment(db: AnyDatabase, input: {
-  actor: Actor; workId: string; body: string; now?: Date;
+  actor: Actor; workId: string; body: string; now?: Date; ip?: string | null;
 }) {
   const body = commentBodySchema.safeParse(input.body);
   if (!body.success) throw new AppError('VALIDATION', '评论需为 1–500 个字符', 'body');
   const now = input.now ?? new Date();
-  return db.transaction(async (tx) => {
+  // 判定记录必须在事务提交后仍然存在：拒绝 / 限流的错误在事务外抛出。
+  const outcome = await db.transaction(async (tx) => {
     await lockActiveAccount(tx, input.actor.userId, 'community:interact');
     const work = await activeWork(tx, input.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
-    const [identity, moderation] = await Promise.all([
-      commentIdentity(tx, input.actor),
-      moderateCommentBody(tx, { userId: input.actor.userId, body: body.data, now }),
-    ]);
-    const status = moderation.needsReview ? 'pending_review' : 'published';
+    const identity = await commentIdentity(tx, input.actor);
+    const moderation = await moderateComment(tx, { userId: input.actor.userId, publicAuthorId: identity.publicAuthorId, workId: work.id, body: body.data, now, ip: input.ip }, resolveModerationDeps());
+    if (moderation.status === 'rate_limited') return { kind: 'rate_limited' as const };
+    const status = moderation.status;
+    // rejected 评论也落库：正文只在治理台可见，供复核与审计，从不公开。
     const [comment] = await tx.insert(communityComments).values({
       workId: work.id, authorUserId: input.actor.userId,
       publicAuthorId: identity.publicAuthorId, frozenDisplayName: identity.displayName,
       status, body: body.data, riskCategories: moderation.categories,
       publishedAt: status === 'published' ? now : null,
+      reviewReason: status === 'rejected' ? moderationReasonLabel(moderation.reason) : null,
       createdAt: now, updatedAt: now,
     }).returning();
+    await tx.update(commentModerationChecks).set({ commentId: comment.id }).where(eq(commentModerationChecks.id, moderation.checkId));
     if (status === 'published') {
       await tx.update(communityWorks).set({ commentCount: sql`${communityWorks.commentCount} + 1`, updatedAt: now })
         .where(eq(communityWorks.id, work.id));
     }
-    return comment;
+    return { kind: status === 'rejected' ? 'rejected' as const : 'ok' as const, comment };
   });
+  if (outcome.kind === 'rate_limited') throw new AppError('RATE_LIMITED', '评论过于频繁，请稍后再试');
+  if (outcome.kind === 'rejected') throw new AppError('COMMENT_BLOCKED', '评论包含不适宜内容，未能发布');
+  return outcome.comment;
+}
+
+function moderationReasonLabel(reason: string): string {
+  return `content-safety:${reason}`;
 }
 
 export async function editCommunityComment(db: AnyDatabase, input: {
-  actor: Actor; commentId: string; expectedVersion: number; body: string; now?: Date;
+  actor: Actor; commentId: string; expectedVersion: number; body: string; now?: Date; ip?: string | null;
 }) {
   const body = commentBodySchema.safeParse(input.body);
   if (!body.success) throw new AppError('VALIDATION', '评论需为 1–500 个字符', 'body');
   const now = input.now ?? new Date();
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     await lockActiveAccount(tx, input.actor.userId);
     await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
@@ -212,13 +204,17 @@ export async function editCommunityComment(db: AnyDatabase, input: {
     if (now.getTime() - publishedAt.getTime() > 15 * 60 * 1000) throw new AppError('FORBIDDEN', '评论只能在发布后 15 分钟内编辑');
     const work = await activeWork(tx, comment.workId, true);
     if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
-    const moderation = await moderateCommentBody(tx, {
-      userId: input.actor.userId,
-      body: body.data,
-      now,
-      excludeCommentId: comment.id,
-    });
-    const status = moderation.needsReview ? 'pending_review' : 'published';
+    const moderation = await moderateComment(tx, {
+      userId: input.actor.userId, publicAuthorId: comment.publicAuthorId, workId: work.id,
+      body: body.data, now, excludeCommentId: comment.id, ip: input.ip,
+    }, resolveModerationDeps());
+    if (moderation.status === 'rate_limited') return { kind: 'rate_limited' as const };
+    // 编辑被拦截：保留已公开的旧正文不变，只留审计；不把公开评论换成被拒内容。
+    if (moderation.status === 'rejected') {
+      await tx.update(commentModerationChecks).set({ commentId: comment.id }).where(eq(commentModerationChecks.id, moderation.checkId));
+      return { kind: 'rejected' as const };
+    }
+    const status = moderation.status;
     const [updated] = await tx.update(communityComments).set({
       body: body.data, status, riskCategories: moderation.categories,
       version: comment.version + 1, editedAt: now, updatedAt: now,
@@ -226,12 +222,16 @@ export async function editCommunityComment(db: AnyDatabase, input: {
       reviewedAt: null, reviewedByUserId: null, reviewReason: null,
     }).where(and(eq(communityComments.id, comment.id), eq(communityComments.version, comment.version))).returning();
     if (!updated) throw new AppError('STATE_CONFLICT', '评论版本已变化');
+    await tx.update(commentModerationChecks).set({ commentId: comment.id }).where(eq(commentModerationChecks.id, moderation.checkId));
     const delta = Number(status === 'published') - Number(comment.status === 'published');
     if (delta !== 0) await tx.update(communityWorks).set({
       commentCount: sql`greatest(0, ${communityWorks.commentCount} + ${delta})`, updatedAt: now,
     }).where(eq(communityWorks.id, work.id));
-    return updated;
+    return { kind: 'ok' as const, updated };
   });
+  if (outcome.kind === 'rate_limited') throw new AppError('RATE_LIMITED', '评论过于频繁，请稍后再试');
+  if (outcome.kind === 'rejected') throw new AppError('COMMENT_BLOCKED', '修改内容包含不适宜内容，未能保存');
+  return outcome.updated;
 }
 
 export async function deleteCommunityComment(db: AnyDatabase, input: {
@@ -322,7 +322,9 @@ export async function moderateCommunityComment(db: AnyDatabase, input: {
     await lockCommentWork(tx, input.commentId);
     const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
     if (!comment || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
-    if (comment.version !== input.expectedVersion || !['pending_review', 'published'].includes(comment.status) || comment.status === input.decision) {
+    // rejected（内容安全拦截）只能被人工复核后公开，不存在「隐藏被拒评论」这一步。
+    const transitionable = comment.status === 'rejected' ? input.decision === 'published' : ['pending_review', 'published'].includes(comment.status);
+    if (comment.version !== input.expectedVersion || !transitionable || comment.status === input.decision) {
       throw new AppError('STATE_CONFLICT', '评论状态已变化');
     }
     const [updated] = await tx.update(communityComments).set({
@@ -378,44 +380,38 @@ export async function handleCommunityReport(db: AnyDatabase, input: {
   });
 }
 
-export async function listGovernanceQueues(db: AnyDatabase) {
-  const [comments, reports] = await Promise.all([
+/** 治理台的评论队列：待审评论 + 最近 30 天被拦截的评论，附带最近一次内容安全判定。 */
+export async function listGovernanceQueues(db: AnyDatabase, now: Date = new Date()) {
+  const rejectedSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const [rawComments, reports] = await Promise.all([
     db.select({ id: communityComments.id, workId: communityComments.workId, status: communityComments.status,
       version: communityComments.version, body: communityComments.body, riskCategories: communityComments.riskCategories,
-      createdAt: communityComments.createdAt }).from(communityComments)
-      .where(eq(communityComments.status, 'pending_review')).orderBy(communityComments.createdAt).limit(100),
+      createdAt: communityComments.createdAt, reviewReason: communityComments.reviewReason }).from(communityComments)
+      .where(or(eq(communityComments.status, 'pending_review'), and(eq(communityComments.status, 'rejected'), gte(communityComments.createdAt, rejectedSince))))
+      .orderBy(communityComments.createdAt).limit(150),
     db.select({ id: communityReports.id, targetType: communityReports.targetType, targetId: communityReports.targetId,
       targetVersion: communityReports.targetVersion, status: communityReports.status, version: communityReports.version,
       category: communityReports.category, details: communityReports.details, createdAt: communityReports.createdAt,
     }).from(communityReports).where(inArray(communityReports.status, ['open', 'accepted']))
       .orderBy(communityReports.createdAt).limit(100),
   ]);
-  return { comments, reports };
-}
-
-export async function createModerationRuleSet(db: AnyDatabase, input: {
-  actor: Actor; rules: unknown; reason: string; requestId: string; expectedVersion: number;
-}) {
-  const rules = moderationRulesSchema.parse(input.rules);
-  const reason = reasonSchema.parse(input.reason);
-  return db.transaction(async (tx) => {
-    await lockActiveAccount(tx, input.actor.userId);
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('doupu:moderation-rules', 0))`);
-    const [current] = await tx.select({ value: count(), max: sql<number>`coalesce(max(${moderationRuleSetVersions.version}), 0)` })
-      .from(moderationRuleSetVersions);
-    if (input.expectedVersion !== Number(current.max)) throw new AppError('STATE_CONFLICT', '规则版本已变化，请重新读取当前词表后编辑');
-    await tx.update(moderationRuleSetVersions).set({ active: false }).where(eq(moderationRuleSetVersions.active, true));
-    const [created] = await tx.insert(moderationRuleSetVersions).values({
-      version: Number(current.max) + 1, rules, active: true,
-      createdByUserId: input.actor.userId, reason,
-    }).returning();
-    await tx.insert(adminAuditLogs).values({
-      actorUserId: input.actor.userId, actorRole: input.actor.role,
-      action: 'moderation.rule_set_activated', targetType: 'moderation_rule_set', targetId: created.id,
-      reason, requestId: input.requestId,
-      beforeState: sanitizeAuditState({ count: current.value }),
-      afterState: sanitizeAuditState({ revision: created.version, ruleCount: rules.length }),
-    });
-    return created;
+  const checks = rawComments.length === 0 ? [] : await db.select({
+    commentId: commentModerationChecks.commentId, provider: commentModerationChecks.provider, suggestion: commentModerationChecks.suggestion,
+    label: commentModerationChecks.label, subLabel: commentModerationChecks.subLabel, score: commentModerationChecks.score,
+    keywords: commentModerationChecks.keywords, reason: commentModerationChecks.reason, createdAt: commentModerationChecks.createdAt,
+  }).from(commentModerationChecks).where(inArray(commentModerationChecks.commentId, rawComments.map((row) => row.id)))
+    .orderBy(desc(commentModerationChecks.createdAt));
+  const latestCheck = new Map<string, typeof checks[number]>();
+  for (const check of checks) if (check.commentId && !latestCheck.has(check.commentId)) latestCheck.set(check.commentId, check);
+  const comments = rawComments.map((row) => {
+    const check = latestCheck.get(row.id);
+    return {
+      ...row,
+      moderation: check ? {
+        provider: check.provider, suggestion: check.suggestion, label: check.label, subLabel: check.subLabel, score: check.score,
+        keywords: Array.isArray(check.keywords) ? (check.keywords as string[]) : [], reason: check.reason, checkedAt: check.createdAt.toISOString(),
+      } : null,
+    };
   });
+  return { comments, reports };
 }

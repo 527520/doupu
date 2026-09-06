@@ -3,6 +3,7 @@
  * 供 /palettes 页面使用；getPaletteColors 同时是工作台接入自定义色板的接缝（T19）。
  */
 import type { CustomPaletteColor, PaletteColor } from '@/lib/types';
+import { randomId } from '@/lib/ids';
 import { availablePaletteColors } from '@/lib/palettes/availability';
 
 export interface PaletteRecord {
@@ -91,10 +92,7 @@ export function getPaletteColors(record: PaletteRecord): PaletteColor[] {
   return availablePaletteColors(record.colors);
 }
 
-/** 生成客户端 UUID（测试环境兜底）。 */
+/** 生成客户端 UUID（非安全上下文与测试环境均可用）。 */
 export function newPaletteId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId();
 }

@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { track } from '@/lib/analytics/client';
+import { randomId } from '@/lib/ids';
+import { fetchRevisionOriginal } from '@/lib/community/originalsClient';
 import { openIndexedDb, parseStoredProject } from '@/lib/storage';
+import { putPendingOriginal, rememberOriginalSource } from '@/lib/storage/pendingOriginals';
 import { createDoupuApi } from '@/lib/sync/api';
 import { ApiError, createSyncClient } from '@/lib/sync/clientAdapter';
 import { withDesignStorageLock } from '@/lib/sync/queue';
@@ -26,6 +29,15 @@ interface CommentItem {
 }
 type ReportCategory = 'harm' | 'harassment' | 'sexual' | 'spam' | 'copyright' | 'other';
 type ReportTarget = { targetType: 'work' | 'comment'; targetId: string };
+
+/** 原图交接是锦上添花：超时就放弃，不能拖住打开副本。 */
+const ORIGINAL_HANDOFF_TIMEOUT_MS = 8000;
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
 
 export default function CommunityInteractions({ workId, initialLikes, initialReuses, commentsLocked, children }: {
   workId: string; initialLikes: number; initialReuses: number; commentsLocked: boolean; children?: ReactNode;
@@ -50,6 +62,7 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
   const navigating = useRef(false);
   const reuseKey = useRef<string | null>(null);
   const createdCopy = useRef<string | null>(null);
+  const reuseSource = useRef<{ revisionId: string; available: boolean } | null>(null);
   const [copyReady, setCopyReady] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -117,10 +130,13 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
   });
   const reuse = () => run('reuse', async () => {
     if (!createdCopy.current) {
-      reuseKey.current ??= crypto.randomUUID();
+      reuseKey.current ??= randomId();
       const result = await request(`/api/community/works/${workId}/reuse`, { method: 'POST', headers: { 'idempotency-key': reuseKey.current } });
       if (typeof result.designId !== 'string' || !/^[a-f0-9-]{36}$/i.test(result.designId)) throw new Error('invalid copy id');
       createdCopy.current = result.designId;
+      if (typeof result.revisionId === 'string') {
+        reuseSource.current = { revisionId: result.revisionId, available: result.originalAvailable === true };
+      }
       if (!mounted.current) return;
       setCopyReady(true); setReuses(result.reuseCount);
       track({ name: 'community_reuse_succeeded', properties: {} });
@@ -134,6 +150,24 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
       const copy = (await storage.getAll()).find((record) => record.id === id);
       if (!copy || !parseStoredProject(copy.projectJson)) throw new Error('copy not available locally');
     });
+    // D49：引用成功后把作者原图交接给工作台，让引用者能继续裁剪、改格数和颜色数。
+    // 原图取不到只是失去再调参能力，不阻断打开副本；交接库的写入按顺序进行，避免并发建库。
+    const source = reuseSource.current;
+    if (source) {
+      let handed = false;
+      if (source.available) {
+        try {
+          const original = await withTimeout(fetchRevisionOriginal(source.revisionId), ORIGINAL_HANDOFF_TIMEOUT_MS);
+          if (original) {
+            await putPendingOriginal({ designId: id, bytes: original.bytes.buffer as ArrayBuffer, type: original.type, name: `${workId}.${original.type}`, sourceRevisionId: source.revisionId });
+            handed = true;
+          }
+        } catch {
+          // 原图缺失或超时：工作台仍可打开图纸副本，并保留「从豆社取回原图」入口。
+        }
+      }
+      if (!handed) await rememberOriginalSource(id, source.revisionId);
+    }
     if (mounted.current) { router.push(`/app?id=${encodeURIComponent(id)}&mode=edit`); navigating.current = true; }
   });
   const comment = () => run('comment', async () => {

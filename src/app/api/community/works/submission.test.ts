@@ -12,12 +12,16 @@ import { POST as revise } from './[id]/revisions/route';
 import { POST as submit } from '../revisions/[id]/submit/route';
 import { POST as withdrawRevision } from '../revisions/[id]/withdraw/route';
 import { POST as withdrawWork } from './[id]/withdraw/route';
+import { GET as readOriginal, HEAD as headOriginal, PUT as uploadOriginal } from '../revisions/[id]/original/route';
+import { createMemoryOriginalStore, setOriginalStore } from '@/lib/community/originalStore';
+import { TEST_PNG } from '@/../db/testOriginals';
 
 let token: string | undefined;
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: (name: string) => name === SESSION_COOKIE_NAME && token ? { value: token } : undefined }) }));
 let db: TestDatabase;
 let designId: string;
 let userId: string;
+let store: ReturnType<typeof createMemoryOriginalStore>;
 const request = (data: unknown, key = 'same-request') => new Request('http://localhost/api/community/works', {
   method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://localhost', host: 'localhost', 'idempotency-key': key }, body: JSON.stringify(data),
 });
@@ -25,6 +29,7 @@ const input = () => ({ designId, expectedDesignRevision: 1, title: '公开标题
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 beforeEach(async () => {
   db = await createTestClient(); setTestDb(db);
+  store = createMemoryOriginalStore(); setOriginalStore(store);
   const [user] = await db.insert(users).values({ email: 'private@example.test', username: '小豆', emailVerifiedAt: new Date() }).returning();
   userId = user.id; token = (await createSession(db, userId)).token; designId = crypto.randomUUID();
   await db.insert(designs).values({ id: designId, userId, name: '私人内容', payloadBytes: 1, project: {
@@ -34,12 +39,32 @@ beforeEach(async () => {
     pattern: { width: 1, height: 1, cells: [{ hex: '#FC3D46', code: 'F02', transparent: false }] },
   } });
 });
+const upload = (id: string, bytes: Uint8Array, contentType = 'application/octet-stream') => uploadOriginal(new Request(`http://localhost/api/community/revisions/${id}/original`, {
+  method: 'PUT', headers: { 'content-type': contentType, origin: 'http://localhost', host: 'localhost' }, body: new Blob([new Uint8Array(bytes)]),
+}), params(id));
 it('创建、提交及撤回重复请求只执行一次，幂等响应不保存快照或私人正文', async () => {
   const first = await create(request(input())); expect(first.status).toBe(201);
   const created = await first.json();
   expect(await (await create(request(input()))).json()).toEqual(created);
   expect(await db.select().from(communityWorks)).toHaveLength(1);
   expect((await create(request({ ...input(), title: '另一作品' }))).status).toBe(409);
+  // D49：没有原图提交审核被拒绝；JSON 请求体、非图片字节都不能作为原图
+  const missing = await submit(request({ expectedVersion: 1 }), params(created.revisionId));
+  expect(missing.status).toBe(409); expect(await missing.json()).toMatchObject({ error: { code: 'ORIGINAL_REQUIRED' } });
+  expect((await upload(created.revisionId, new Uint8Array(TEST_PNG), 'application/json')).status).toBe(400);
+  expect((await upload(created.revisionId, new TextEncoder().encode('not an image'))).status).toBe(400);
+  const uploaded = await upload(created.revisionId, new Uint8Array(TEST_PNG), 'image/png');
+  expect(uploaded.status).toBe(201);
+  expect(await uploaded.json()).toMatchObject({ revisionId: created.revisionId, mimeType: 'image/png', width: 1, height: 1, byteSize: TEST_PNG.length });
+  expect(store.objects.size).toBe(1);
+  // 作者可取回，未登录不可
+  const fetched = await readOriginal(new Request(`http://localhost/api/community/revisions/${created.revisionId}/original`), params(created.revisionId));
+  expect(fetched.status).toBe(200); expect(fetched.headers.get('cache-control')).toContain('no-store'); expect(fetched.headers.get('x-original-access')).toBe('author');
+  expect(Buffer.from(await fetched.arrayBuffer()).equals(TEST_PNG)).toBe(true);
+  expect((await headOriginal(new Request(`http://localhost/api/community/revisions/${created.revisionId}/original`, { method: 'HEAD' }), params(created.revisionId))).status).toBe(200);
+  const saved = token; token = undefined;
+  expect((await readOriginal(new Request(`http://localhost/api/community/revisions/${created.revisionId}/original`), params(created.revisionId))).status).toBe(404);
+  token = saved;
   const pending = await (await submit(request({ expectedVersion: 1 }), params(created.revisionId))).json();
   expect(await (await submit(request({ expectedVersion: 1 }), params(created.revisionId))).json()).toEqual(pending);
   const withdrawn = await (await withdrawRevision(request({ expectedVersion: pending.version }), params(created.revisionId))).json();
@@ -49,8 +74,12 @@ it('创建、提交及撤回重复请求只执行一次，幂等响应不保存�
   expect(await db.select().from(communityRevisions)).toHaveLength(2);
   const hidden = await (await withdrawWork(request({ expectedVersion: 1 }), params(created.workId))).json();
   expect(await (await withdrawWork(request({ expectedVersion: 1 }), params(created.workId))).json()).toEqual(hidden);
+  expect(hidden).not.toHaveProperty('purgeKeys');
   const responses = JSON.stringify((await db.select().from(idempotencyRecords)).map((item) => item.response));
   for (const secret of [userId, designId, 'private@example.test', '私人内容', '#FC3D46', 'snapshot']) expect(responses).not.toContain(secret);
+  // 撤回后原图不可取回；对象由提交后的尽力清理移除
+  await vi.waitFor(() => expect(store.objects.size).toBe(0));
+  expect((await readOriginal(new Request(`http://localhost/api/community/revisions/${created.revisionId}/original`), params(created.revisionId))).status).toBe(404);
 });
 it('版本过期、非本人设计和缺少许可都不创建作品', async () => {
   await db.update(designs).set({ revision: 2 }).where(eq(designs.id, designId));

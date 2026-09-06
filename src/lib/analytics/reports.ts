@@ -279,7 +279,7 @@ export async function queryAnalyticsFunnel(
 ) {
   const capability = assertSupportedRange(query, now);
   if (!capability.funnelAvailable) {
-    return { capability, funnel, unavailableReason: '仅最近 90 天原始事件支持同会话漏斗', steps: null };
+    return { capability, funnel, unavailableReason: '转化路径只能在最近 90 天的精确统计范围内查看。', steps: null };
   }
   const rows = await db.select({
     sessionId: analyticsEvents.sessionId,

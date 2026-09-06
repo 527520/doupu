@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import CommunityPreviewCanvas from '@/components/community/CommunityPreviewCanvas';
+import CommunityThumbnail from '@/components/community/CommunityThumbnail';
+import OriginalPreview from '@/components/community/OriginalPreview';
 import PatternPreview from '@/components/preview/PatternPreview';
 import type { CommunityPreviewV1 } from '@/lib/community/snapshot';
 import type { CommunityRevisionInspection } from '@/lib/community/queries';
@@ -56,14 +57,14 @@ export default function ReviewConsole() {
       {queue.error ? <div><p role="alert" className="notice notice-danger">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>
         : queue.loading ? <p className="admin-empty">{r.loading}</p>
         : queue.items.length === 0 ? <p className="admin-empty">{r.empty}</p>
-        : <ul>{queue.items.map((item) => <li key={item.revisionId}><button type="button" disabled={command.locked} aria-current={selected?.revisionId === item.revisionId} onClick={() => select(item.revisionId)}><CommunityPreviewCanvas preview={item.preview} label={`${item.title} ${r.preview}`} /><span><strong>{item.title}</strong><small>R{item.revisionNumber} · {item.author.displayName}</small></span></button></li>)}</ul>}
+        : <ul>{queue.items.map((item) => <li key={item.revisionId}><button type="button" disabled={command.locked} aria-current={selected?.revisionId === item.revisionId} onClick={() => select(item.revisionId)}><CommunityThumbnail revisionId={item.revisionId} width={item.width} height={item.height} label={`${item.title} ${r.preview}`} /><span><strong>{item.title}</strong><small>R{item.revisionNumber} · {item.author.displayName}</small></span></button></li>)}</ul>}
     </section>
     <section className="review-preview" aria-label={c.frozenMaterial} tabIndex={-1} ref={detailRef}>
       {selected ? <>
         <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
         <header><h2>{selected.title}</h2><p>{selected.author.displayName} · {selected.width}×{selected.height} · {selected.colorCount} {r.colorSuffix}</p></header>
         {inspection.error ? <div><p role="alert">{inspection.error}</p><button type="button" className="btn-outline" onClick={() => void inspection.reload()}>{c.reload}</button></div>
-          : detail ? <><h3>{c.frozenMaterial} · R{detail.revisionNumber}</h3><PatternPreview pattern={detail.snapshot.pattern} boardSize={getBoardProfile(detail.snapshot.boardProfile).boardCols} />
+          : detail ? <><h3>{c.frozenMaterial} · R{detail.revisionNumber}</h3><div className="review-material-pair"><PatternPreview pattern={detail.snapshot.pattern} boardSize={getBoardProfile(detail.snapshot.boardProfile).boardCols} /><OriginalPreview revisionId={detail.id} title={selected.title} /></div>
             {detail.previous && <details><summary>{c.previous} · R{detail.previous.revisionNumber}</summary><h3>{detail.previous.title}</h3><PatternPreview pattern={detail.previous.snapshot.pattern} boardSize={getBoardProfile(detail.previous.snapshot.boardProfile).boardCols} /></details>}
             {!ready && <p className="notice notice-warning">{c.stale}</p>}</>
           : <p role="status">{c.loading}</p>}

@@ -4,6 +4,7 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { createCommunityComment, listCommunityComments } from '@/lib/community/interactions';
+import { clientIp } from '@/lib/auth/rateLimit';
 import { getSessionActor } from '@/lib/auth/session';
 
 const schema = z.object({ body: z.string() }).strict();
@@ -22,7 +23,7 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
   const body = await readJson(request, 4 * 1024);
   if (!body.ok) return body.response;
   const input = schema.parse(body.data);
-  const comment = await createCommunityComment(getDb(), { actor, workId, body: input.body });
+  const comment = await createCommunityComment(getDb(), { actor, workId, body: input.body, ip: clientIp(request) });
   return okJson({ id: comment.id, status: comment.status, version: comment.version }, { status: 201 });
 }
 

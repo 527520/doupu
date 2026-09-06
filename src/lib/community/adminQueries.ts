@@ -1,7 +1,7 @@
 import { and, desc, eq, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
-import { communityRevisions, communityWorks, users } from '@/../db/schema';
+import { communityRevisions, communityTags, communityWorks, communityWorkTags, users } from '@/../db/schema';
 import { ANONYMIZED_DISPLAY_NAME } from '@/lib/identity/publicAuthor';
 import { AppError } from '@/lib/errors';
 import { communityPreviewSchema, parseCommunitySnapshot } from './snapshot';
@@ -29,6 +29,7 @@ export async function listManagedCommunityWorks(db: AnyDatabase, input: unknown)
     commentsLocked: communityWorks.commentsLocked, featuredAt: communityWorks.featuredAt,
     currentPublishedRevisionId: communityWorks.currentPublishedRevisionId,
     createdAt: communityWorks.createdAt, title: communityRevisions.title, preview: communityRevisions.preview,
+    displayRevisionId: communityRevisions.id, width: communityRevisions.width, height: communityRevisions.height,
     authorType: communityRevisions.authorType, displayName: communityRevisions.frozenDisplayName,
     accountStatus: users.accountStatus, revisionNumber: communityRevisions.revisionNumber,
   }).from(communityWorks).leftJoin(communityRevisions, eq(communityRevisions.id, displayRevision))
@@ -49,6 +50,7 @@ export async function listManagedCommunityWorks(db: AnyDatabase, input: unknown)
       featured: row.featuredAt !== null, title: row.title, revisionNumber: row.revisionNumber,
       displayName: row.authorType === 'official' ? '豆谱官方' : row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.displayName,
       preview: preview.success ? preview.data : null,
+      thumbnail: row.displayRevisionId && row.width && row.height ? { revisionId: row.displayRevisionId, width: row.width, height: row.height } : null,
     };
   });
   const last = rows[PAGE_SIZE - 1];
@@ -76,11 +78,15 @@ export async function inspectManagedCommunityWork(db: AnyDatabase, workId: strin
   }).from(communityRevisions).where(and(eq(communityRevisions.id, materialId), eq(communityRevisions.workId, workId))) : [];
   const snapshot = parseCommunitySnapshot(revision?.snapshot);
   if (revision && !snapshot) throw new AppError('STATE_CONFLICT', '作品快照不可读取');
+  const tags = await db.select({ id: communityTags.id, name: communityTags.name })
+    .from(communityWorkTags).innerJoin(communityTags, eq(communityTags.id, communityWorkTags.tagId))
+    .where(eq(communityWorkTags.workId, workId)).orderBy(communityTags.sortOrder, communityTags.name);
   return {
     id: work.id, version: work.version, lifecycleStatus: work.lifecycleStatus, commentsLocked: work.commentsLocked,
     featured: work.featuredAt !== null, isPublic: work.lifecycleStatus === 'active' && work.currentPublishedRevisionId !== null,
     canRestore: Boolean(approved), removedReason: work.removedReason,
     counts: { likes: work.likeCount, comments: work.commentCount, reuses: work.reuseCount },
+    tags,
     latestRevision: latest ?? null, material: revision && snapshot ? { ...revision, snapshot } : null,
   };
 }

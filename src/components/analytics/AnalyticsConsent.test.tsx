@@ -74,7 +74,7 @@ describe('analytics consent banner', () => {
     view.unmount();
     render(<AnalyticsConsentSettings />);
     fireEvent.click(await screen.findByRole('button', { name: '重试清除原始数据' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已撤回同意并清除'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已撤回同意，并清除'));
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(track).not.toHaveBeenCalled();
   });

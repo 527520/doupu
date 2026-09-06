@@ -1,5 +1,6 @@
 'use client';
 
+import { randomId } from '@/lib/ids';
 import { ANALYTICS_CONSENT_COOKIE } from './cookies';
 import { normalizePath, normalizeReferrerDomain } from './normalize';
 import {
@@ -177,7 +178,7 @@ const browserClient = createAnalyticsClient({
   schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
   cancelSchedule: (id) => window.clearTimeout(id),
   now: () => new Date(),
-  randomId: () => crypto.randomUUID(),
+  randomId,
 });
 
 export function track(event: AnalyticsClientEvent): void {

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, count, eq, inArray, max, sum } from 'drizzle-orm';
+import { and, count, eq, inArray, sum } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '../../db/schema';
@@ -8,20 +8,21 @@ import {
   adminAuditLogs,
   communityLikes,
   communityComments,
+  communityOriginals,
   communityReuses,
   communityRevisions,
   communityWorks,
   designs,
   idempotencyRecords,
-  moderationRuleSetVersions,
   maintenanceRuns,
   users,
 } from '../../db/schema';
+import { attachTestOriginal, TEST_PNG } from '../../db/testOriginals';
 import { updateUserGovernance } from '@/lib/admin/userGovernance';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
 import type { Actor } from '@/lib/auth/authorization';
 import { executeIdempotently } from '@/lib/idempotency';
-import { createCommunityComment, createModerationRuleSet, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
+import { createCommunityComment, getCommunityLike, reuseCommunityWork, setCommunityLike } from '@/lib/community/interactions';
 import { inspectManagedCommunityWork, listManagedCommunityWorks } from '@/lib/community/adminQueries';
 import { reviewCommunityRevision } from '@/lib/community/service';
 import { createCommunityTag, moderateCommunityWork } from '@/lib/community/adminService';
@@ -163,18 +164,9 @@ describe('PostgreSQL 16 community and governance concurrency', () => {
       expect(info.maintenanceTasks.find((item) => item.task === task)).toMatchObject({ latest: { status: 'succeeded' }, lastFailure: { errorCode: 'TEST_FAILURE' } });
     } finally { await db.delete(maintenanceRuns).where(inArray(maintenanceRuns.id, rows.map((row) => row.id))); }
   });
-  it('rejects a competing stale rule replacement and reads managed work material without leaking private identity', async () => {
+  it('reads managed work material without leaking private identity', async () => {
     const left = await createUser('admin');
     const right = await createUser('admin');
-    const [base] = await db.select({ version: max(moderationRuleSetVersions.version) }).from(moderationRuleSetVersions);
-    const results = await Promise.allSettled([left, right].map((actor) => createModerationRuleSet(db, {
-      actor, rules: [{ literal: '本地并发治理测试词', category: 'spam', risk: 'review' }], expectedVersion: base.version ?? 0,
-      reason: '本地并发完整词表替换测试', requestId: randomUUID(),
-    })));
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const failure = results.find((result) => result.status === 'rejected');
-    expect(failure).toMatchObject({ status: 'rejected', reason: { code: 'STATE_CONFLICT' } });
-    expect(await db.select().from(moderationRuleSetVersions).where(eq(moderationRuleSetVersions.active, true))).toHaveLength(1);
     const { work } = await createPublishedWork(left);
     const list = await listManagedCommunityWorks(db, { q: work.id });
     expect(list.items).toHaveLength(1); expect(JSON.stringify(list)).not.toContain('snapshot');
@@ -201,6 +193,7 @@ describe('PostgreSQL 16 community and governance concurrency', () => {
     }));
     for (const result of created) expect(result).toEqual(created[0]);
     expect(await db.select().from(communityWorks).where(eq(communityWorks.authorUserId, actor.userId))).toHaveLength(1);
+    await attachTestOriginal(db, actor, created[0].revisionId);
     const submitted = await Promise.all(Array.from({ length: 4 }, async () => {
       const result = await submitRevision(request({ expectedVersion: 1 }), { params: Promise.resolve({ id: created[0].revisionId }) });
       expect(result.status).toBe(200); return result.json();
@@ -214,6 +207,7 @@ describe('PostgreSQL 16 community and governance concurrency', () => {
     const moderator = await createUser('admin');
     const batch = await createOfficialBatch(db, { actor: publisher, itemCount: 1, defaultParams: DEFAULT_GENERATION_PARAMS, engineVersion: 'postgres-contract', reason: '并发发布下架验证', requestId: randomUUID() });
     const draft = await saveOfficialDraft(db, { actor: publisher, batchId: batch.id, title: '并发草稿', snapshot, reason: '保存并发测试草稿', requestId: randomUUID() });
+    await attachTestOriginal(db, publisher, draft.revisionId);
     let publication!: ReturnType<typeof publishOfficialBatch>;
     await db.transaction(async (tx) => {
       await tx.select().from(communityWorks).where(eq(communityWorks.id, draft.workId)).for('update');
@@ -401,6 +395,7 @@ describe('PostgreSQL 16 community and governance concurrency', () => {
       preview: deriveCommunityPreview(pattern),
       submittedAt: new Date(),
     }).returning();
+    await db.insert(communityOriginals).values({ revisionId: pending.id, workId: work.id, cosKey: `originals/${pending.id}/test.png`, mimeType: 'image/png', byteSize: TEST_PNG.length, sha256: 'test', width: 1, height: 1 });
     const reviews = await Promise.allSettled([
       reviewCommunityRevision(db, { actor: moderator, revisionId: pending.id, expectedVersion: 1,
         decision: 'published', reason: '并发审核第一次操作', requestId: randomUUID() }),

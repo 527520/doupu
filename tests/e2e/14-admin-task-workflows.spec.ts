@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_GENERATION_PARAMS } from '../../src/lib/types';
-import { fillField, selectChoice } from './helpers';
+import { fillField, selectChoice, uploadDraftOriginal } from './helpers';
 
 async function login(page: Page, next: string, email = 'e2e-admin@example.com') {
   await page.goto(`/login?next=${encodeURIComponent(next)}`);
@@ -24,19 +24,24 @@ async function fixtureWork(page: Page, title: string) {
     version: 1, engineVersion: 'e2e', boardProfile: '5mm-29', paletteSelection: { palette: { kind: 'builtin', brand: 'MARD' }, kitTier: 0 }, params: { ...DEFAULT_GENERATION_PARAMS, backgroundPrototype: null },
     pattern: { width: 1, height: 1, cells: [{ hex: '#FAF4C8', code: 'A01', transparent: false }] },
   } });
+  await uploadDraftOriginal(page, draft.revisionId);
   await post(page, `/api/admin/batches/${batch.id}/publish`, { revisionIds: [draft.revisionId], expectedVersion: batch.version, reason: '本地治理任务公开夹具' });
   return draft.workId as string;
 }
 
 test('每个后台任务页的键盘跳转都定位到主内容', async ({ page, browserName }) => {
   await login(page, '/admin/comments');
-  for (const section of ['comments', 'reports', 'tags', 'rules', 'users', 'batches']) {
+  // WebKit ships Safari's form-controls-only Tab order. macOS honours Option+Tab to
+  // include links (Playwright's page-focus.spec.ts asserts this on darwin only); the
+  // Windows/Linux ports expose no such override, so there Tab can never reach an <a>
+  // and we focus the skip link directly, still verifying activation lands on main.
+  const tabReachesLinks = browserName !== 'webkit' || process.platform === 'darwin';
+  for (const section of ['comments', 'reports', 'tags', 'users', 'batches']) {
     await page.goto(`/admin/${section}`);
     await expect(page.locator('main#main')).toHaveCount(1);
-    // macOS WebKit follows Safari's form-only Tab preference; Option+Tab
-    // traverses links (Playwright's own page-focus.spec.ts tests this behavior).
-    await page.keyboard.press(browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
     const skip = page.locator('a[href="#main"]');
+    if (tabReachesLinks) await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    else await skip.focus();
     await expect(skip).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/admin/${section}#main$`));
@@ -57,17 +62,16 @@ test('标签创建丢响应同键恢复，改名停用及具名合并可完成',
     if (loseReply) { loseReply = false; await route.fulfill({ status: 503, json: { error: { message: '本地模拟提交后丢失响应' } } }); }
     else await route.fulfill({ response });
   });
-  await page.getByRole('button', { name: '创建标签', exact: true }).click();
-  await page.getByLabel('名称', { exact: true }).fill(name);
-  await page.getByLabel('链接标识').fill(`tag-${suffix}`);
+  await page.getByRole('button', { name: '新建标签', exact: true }).click();
+  await page.getByLabel('标签名称', { exact: true }).fill(name);
   await page.getByLabel('操作理由').fill('人工核对的正式分类');
-  await page.locator('.admin-task-detail').getByRole('button', { name: '创建标签', exact: true }).click();
-  await expect(page.getByLabel('名称', { exact: true })).toBeDisabled();
+  await page.locator('.admin-task-detail').getByRole('button', { name: '新建标签', exact: true }).click();
+  await expect(page.getByLabel('标签名称', { exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '重试确认上次操作' }).click();
   await expect(page.locator('.admin-object-list button').filter({ hasText: name })).toHaveCount(1);
   expect(writes).toHaveLength(2); expect(writes[0]).toEqual(writes[1]);
   await page.locator('.admin-object-list button').filter({ hasText: name }).click();
-  await page.getByLabel('名称', { exact: true }).fill(`新${name}`);
+  await page.getByLabel('标签名称', { exact: true }).fill(`新${name}`);
   await page.getByLabel('操作理由').fill('更新名称并暂时停用');
   await page.getByRole('switch', { name: '启用', exact: true }).uncheck();
   await page.getByRole('button', { name: '保存修改' }).click();
@@ -99,40 +103,46 @@ test('人员二次确认、暂停撤销会话、恢复与角色调整可完成',
     const userId = await page.locator('.admin-facts dd').first().innerText();
     await page.getByLabel('操作理由').fill('本地验证暂停会话失效');
     await expect(page.getByRole('button', { name: '暂停账号' })).toBeDisabled();
-    await page.getByLabel('目标 userId 二次确认').fill(userId);
+    await page.getByLabel('再次输入该账号编号以确认').fill(userId);
     await page.getByRole('button', { name: '暂停账号' }).click();
     await expect(entry).toContainText('已暂停');
     expect(await targetPage.evaluate(async () => (await fetch('/api/auth/me')).status)).toBe(401);
-    await entry.click(); await page.getByLabel('操作理由').fill('验证完成恢复账号'); await page.getByLabel('目标 userId 二次确认').fill(userId);
+    await entry.click(); await page.getByLabel('操作理由').fill('验证完成恢复账号'); await page.getByLabel('再次输入该账号编号以确认').fill(userId);
     await page.getByRole('button', { name: '恢复账号' }).click(); await expect(entry).toContainText('正常');
     for (const role of ['moderator', 'user']) {
-      await entry.click(); await page.getByLabel('操作理由').fill('核对角色调整与会话撤销'); await page.getByLabel('目标 userId 二次确认').fill(userId);
-      await selectChoice(page,'调整为角色',role==='moderator'?'审核员':'用户'); await page.getByRole('button', { name: '确认调整角色' }).click();
+      await entry.click(); await page.getByLabel('操作理由').fill('核对角色调整与会话撤销'); await page.getByLabel('再次输入该账号编号以确认').fill(userId);
+      await selectChoice(page,'调整为',role==='moderator'?'审核员':'用户'); await page.getByRole('button', { name: '确认调整角色' }).click();
       await expect(entry).toContainText(role === 'moderator' ? '审核员' : '用户');
     }
   } finally { await targetContext.close(); }
 });
 
-test('规则从当前完整版本编辑，显式处理过期版本后再启用', async ({ page }, info) => {
-  await login(page, '/admin/rules');
-  await page.getByRole('button', { name: '基于当前版本编辑' }).click();
-  const word = `E2E新增词${info.project.name}`;
-  await page.getByLabel('字面词', { exact: true }).fill(word); await page.getByRole('button', { name: '加入版本' }).click();
-  await page.getByLabel('启用理由').fill('核对完整规则版本');
-  await expect(page.getByRole('button', { name: '创建并启用不可变版本' })).toBeDisabled();
-  const current = await page.evaluate(async () => { const data = await (await fetch('/api/admin/moderation-rules')).json(); return data.items.find((item: { active: boolean }) => item.active); });
-  await post(page, '/api/admin/moderation-rules', { rules: [...current.rules, { literal: `E2E并行词${info.project.name}`, category: 'spam', risk: 'review' }], expectedVersion: current.version, reason: '模拟另一个管理员先更新' });
-  await page.getByRole('checkbox', { name: /我已核对全部词条/ }).check();
-  await page.getByRole('button', { name: '创建并启用不可变版本' }).click();
-  await expect(page.locator('.admin-task-notice')).toContainText('规则版本已变化');
-  await expect(page.getByLabel('启用理由')).toHaveValue('核对完整规则版本');
-  await page.locator('.admin-task-notice').getByRole('button', { name: '刷新对象状态' }).click();
-  await page.getByRole('button', { name: '放弃当前编辑并载入最新词表' }).click();
-  await expect(page.getByRole('checkbox', { name: /我已核对全部词条/ })).not.toBeChecked();
-  await page.getByLabel('字面词', { exact: true }).fill(word); await page.getByRole('button', { name: '加入版本' }).click();
-  await page.getByLabel('启用理由').fill('重新核对完整规则版本'); await page.getByRole('checkbox', { name: /我已核对全部词条/ }).check();
-  await page.getByRole('button', { name: '创建并启用不可变版本' }).click();
-  await expect(page.locator('.admin-task-queue .admin-rule-list').first()).toContainText(word);
+test('被内容安全拦截的评论不公开但进入治理队列，可复核后公开', async ({ page, browser, baseURL }, info) => {
+  const workId = (await (await page.request.get('/api/community/works')).json()).items[0].id as string;
+  const body = `含 E2E拦截词 的评论 ${info.project.name}`;
+  const authorContext = await browser.newContext({ baseURL });
+  try {
+    const author = await authorContext.newPage();
+    // 专用账号：共用的 e2e-user 在整轮里评论过多会触发突发限流（转人工），掩盖这里要验证的拦截判定。
+    await author.goto('/login?next=/community'); await fillField(author, '邮箱', `e2e-comment-${info.project.name}@example.com`); await fillField(author, '密码', 'E2e-pass-123!');
+    await author.getByRole('button', { name: '登录', exact: true }).click(); await expect.poll(() => new URL(author.url()).pathname).toBe('/community');
+    const response = await author.evaluate(async ({ workId, body }) => {
+      const reply = await fetch(`/api/community/works/${workId}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body }) });
+      return { status: reply.status, body: await reply.json() };
+    }, { workId, body });
+    expect(response.status).toBe(422); expect(response.body.error.code).toBe('COMMENT_BLOCKED');
+    const listed = await author.evaluate(async (workId) => (await (await fetch(`/api/community/works/${workId}/comments`)).json()).items, workId);
+    expect(JSON.stringify(listed)).not.toContain('E2E拦截词');
+  } finally { await authorContext.close(); }
+  await login(page, '/admin/comments');
+  const entry = page.locator('.review-queue button').filter({ hasText: 'E2E拦截词' }).filter({ hasText: info.project.name });
+  await entry.click();
+  await expect(page.locator('.review-preview')).toContainText('已拦截');
+  await expect(page.locator('.review-preview')).toContainText('服务建议拦截');
+  await expect(page.getByRole('button', { name: '隐藏', exact: true })).toHaveCount(0);
+  await page.getByLabel('处置理由').fill('复核确认为误判');
+  await page.getByRole('button', { name: '复核后公开' }).click();
+  await expect(page.locator('.review-actions')).toContainText('操作已完成');
 });
 
 test('具名作品下架恢复与评论锁不绕过内容核查和确认', async ({ page }, info) => {
@@ -160,10 +170,10 @@ test('具名作品下架恢复与评论锁不绕过内容核查和确认', async
 
 test('审计可检索与查看状态，分析无效筛选和系统未知证据明示', async ({ page }) => {
   await login(page, '/admin/audit');
-  await page.getByLabel('搜索动作、目标 ID 或请求 ID').fill('community'); await page.getByRole('button', { name: '查询审计' }).click();
+  await page.getByLabel('搜索操作名称、对象编号或请求编号').fill('community'); await page.getByRole('button', { name: '查询' }).click();
   await page.locator('.admin-object-list button').first().click();
-  await expect(page.getByRole('heading', { name: '操作前状态' })).toBeVisible(); await expect(page.getByRole('heading', { name: '操作后状态' })).toBeVisible();
-  await page.goto('/admin/analytics?start=invalid'); await expect(page.locator('main [role=alert]')).toContainText('部分查询参数无效');
+  await expect(page.getByRole('heading', { name: '操作前', exact: true })).toBeVisible(); await expect(page.getByRole('heading', { name: '操作后', exact: true })).toBeVisible();
+  await page.goto('/admin/analytics?start=invalid'); await expect(page.locator('main [role=alert]')).toContainText('部分查询条件无效');
   await page.getByRole('link', { name: '重置查询' }).click();
   await expect(page).toHaveURL(/\/admin\/analytics$/); await expect(page.locator('main [role=alert]')).toHaveCount(0);
   await expect(page.locator('.admin-advanced-filters')).not.toHaveAttribute('open');

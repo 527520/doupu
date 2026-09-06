@@ -34,6 +34,18 @@ export async function register(): Promise<void> {
         } catch (error) {
           console.error('[cleanup] 分析维护失败（不阻塞应用）:', error);
         }
+        try {
+          // 作品原图（D49）：下架逾期删除 + 补扫已标记删除但对象尚未清除的行。
+          const { expireBlockedOriginals, purgeDeletedOriginals } = await import('@/lib/community/originals');
+          const { getOriginalStore } = await import('@/lib/community/originalStore');
+          const expired = await expireBlockedOriginals(getDb(), getOriginalStore(), new Date());
+          const swept = await purgeDeletedOriginals(getDb(), getOriginalStore());
+          if (expired.expired + swept.purged + swept.failed > 0) {
+            console.log(`[cleanup] 原图清理 逾期下架=${expired.expired} 清除=${expired.purged + swept.purged} 失败=${expired.failed + swept.failed}`);
+          }
+        } catch (error) {
+          console.error('[cleanup] 原图清理失败（不阻塞应用）:', error);
+        }
       };
       void runCleanup();
       setInterval(() => void runCleanup(), 24 * 60 * 60 * 1000);

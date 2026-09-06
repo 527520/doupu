@@ -33,12 +33,8 @@ export function isOriginAllowed(origin: string | null, request?: Request): boole
 
 /** 校验 mutating 请求；通过返回 null，否则返回错误响应。 */
 export function enforceMutatingGuard(request: Request): NextResponse | null {
-  if (!isOriginAllowed(request.headers.get('origin'), request)) {
-    return NextResponse.json(
-      { error: { code: 'FORBIDDEN', message: '请求来源不被允许' } },
-      { status: 403 },
-    );
-  }
+  const origin = enforceOriginGuard(request);
+  if (origin) return origin;
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType) {
     // 完全未声明 Content-Type：视为无请求体的变更请求（如原生 bodyless DELETE），放行。
@@ -49,6 +45,33 @@ export function enforceMutatingGuard(request: Request): NextResponse | null {
     return NextResponse.json(
       { error: { code: 'VALIDATION', message: '请求体必须为 application/json' } },
       { status: 400 },
+    );
+  }
+  return null;
+}
+
+/**
+ * 二进制上传（作品原图）只做来源校验：请求体是图片字节，类型由服务端按魔数嗅探，
+ * 因此只接受 application/octet-stream 或 image/*，其余一律拒绝。
+ */
+export function enforceBinaryUploadGuard(request: Request): NextResponse | null {
+  const origin = enforceOriginGuard(request);
+  if (origin) return origin;
+  const contentType = (request.headers.get('content-type') ?? '').toLowerCase();
+  if (!contentType.startsWith('application/octet-stream') && !contentType.startsWith('image/')) {
+    return NextResponse.json(
+      { error: { code: 'VALIDATION', message: '请求体必须为图片字节（application/octet-stream 或 image/*）' } },
+      { status: 400 },
+    );
+  }
+  return null;
+}
+
+function enforceOriginGuard(request: Request): NextResponse | null {
+  if (!isOriginAllowed(request.headers.get('origin'), request)) {
+    return NextResponse.json(
+      { error: { code: 'FORBIDDEN', message: '请求来源不被允许' } },
+      { status: 403 },
     );
   }
   return null;

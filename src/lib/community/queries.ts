@@ -14,15 +14,16 @@ import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
 import {
   communityRevisions,
-  communityRevisionTags,
   communityTags,
   communityWorks,
+  communityWorkTags,
   users,
 } from '@/../db/schema';
 import { BOARD_PROFILE_IDS } from '@/lib/boardProfiles';
 import { ANONYMIZED_DISPLAY_NAME } from '@/lib/identity/publicAuthor';
 import { AppError } from '@/lib/errors';
 import { communityPreviewSchema, parseCommunitySnapshot } from './snapshot';
+import { normalizeTagName } from './tagNames';
 
 export const COMMUNITY_PAGE_SIZE = 24;
 
@@ -124,19 +125,56 @@ function publicBaseConditions(): SQL[] {
   ];
 }
 
-async function tagsByRevision(db: AnyDatabase, revisionIds: string[]) {
-  const result = new Map<string, Array<{ id: string; name: string; slug: string }>>();
-  if (revisionIds.length === 0) return result;
+export interface CommunityTagDto { id: string; name: string; slug: string }
+
+async function tagsByWork(db: AnyDatabase, workIds: string[]) {
+  const result = new Map<string, CommunityTagDto[]>();
+  if (workIds.length === 0) return result;
   const rows = await db.select({
-    revisionId: communityRevisionTags.revisionId,
+    workId: communityWorkTags.workId,
     id: communityTags.id,
     name: communityTags.name,
     slug: communityTags.slug,
-  }).from(communityRevisionTags).innerJoin(communityTags, eq(communityTags.id, communityRevisionTags.tagId))
-    .where(inArray(communityRevisionTags.revisionId, revisionIds))
+  }).from(communityWorkTags).innerJoin(communityTags, eq(communityTags.id, communityWorkTags.tagId))
+    .where(and(inArray(communityWorkTags.workId, workIds), eq(communityTags.active, true)))
     .orderBy(communityTags.sortOrder, communityTags.name);
-  for (const row of rows) result.set(row.revisionId, [...(result.get(row.revisionId) ?? []), { id: row.id, name: row.name, slug: row.slug }]);
+  for (const row of rows) result.set(row.workId, [...(result.get(row.workId) ?? []), { id: row.id, name: row.name, slug: row.slug }]);
   return result;
+}
+
+/**
+ * 按名称解析筛选标签（大小写不敏感、沿合并链走到终点）。
+ * 也接受旧链接里的 slug，方便历史分享链接继续可用。
+ */
+function tagFilterCondition(tag: string): SQL {
+  const lowered = normalizeTagName(tag).toLocaleLowerCase('zh-CN');
+  return sql`exists (
+    with recursive resolved_tags as (
+      select id, merged_into_tag_id from ${communityTags} where lower(name) = ${lowered} or slug = ${tag}
+      union
+      select t.id, t.merged_into_tag_id from ${communityTags} t
+        join resolved_tags r on t.id = r.merged_into_tag_id
+    )
+    select 1 from ${communityWorkTags} cwt join resolved_tags r on r.id = cwt.tag_id
+    where cwt.work_id = ${communityWorks.id} and r.merged_into_tag_id is null
+  )`;
+}
+
+/** 豆社顶部的热门标签：按当前公开作品数排序。 */
+export async function listPopularCommunityTags(db: AnyDatabase, limit = 12): Promise<Array<CommunityTagDto & { count: number }>> {
+  const rows = await db.select({
+    id: communityTags.id,
+    name: communityTags.name,
+    slug: communityTags.slug,
+    count: sql<number>`count(*)::int`,
+  }).from(communityWorkTags)
+    .innerJoin(communityTags, eq(communityTags.id, communityWorkTags.tagId))
+    .innerJoin(communityWorks, eq(communityWorks.id, communityWorkTags.workId))
+    .where(and(eq(communityTags.active, true), eq(communityWorks.lifecycleStatus, 'active'), sql`${communityWorks.currentPublishedRevisionId} is not null`))
+    .groupBy(communityTags.id, communityTags.name, communityTags.slug, communityTags.sortOrder)
+    .orderBy(desc(sql`count(*)`), communityTags.sortOrder, communityTags.name)
+    .limit(limit);
+  return rows.map((row) => ({ id: row.id, name: row.name, slug: row.slug, count: Number(row.count) }));
 }
 
 export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: CommunityListQuery) {
@@ -146,7 +184,14 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
   const score = sql<number>`${communityWorks.likeCount} + ${communityWorks.commentCount} + ${communityWorks.reuseCount}`;
   const featuredRank = sql<number>`coalesce(extract(epoch from ${communityWorks.featuredAt}), 0)`;
   const conditions = publicBaseConditions();
-  if (query.q) conditions.push(ilike(communityRevisions.title, `%${query.q}%`));
+  if (query.q) {
+    // 搜索同时命中标题与已打标签名，让「海绵宝宝」既能搜到标题也能搜到分类。
+    conditions.push(or(
+      ilike(communityRevisions.title, `%${query.q}%`),
+      sql`exists (select 1 from ${communityWorkTags} cwt join ${communityTags} ct on ct.id = cwt.tag_id
+        where cwt.work_id = ${communityWorks.id} and ct.active = true and ct.name ilike ${`%${query.q}%`})`,
+    )!);
+  }
   if (query.author) conditions.push(or(
     ilike(sql`case
       when ${communityRevisions.authorType} = 'official' then '豆谱官方'
@@ -155,19 +200,8 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
     end`, `%${query.author}%`),
     ilike(communityRevisions.publicAuthorId, `%${query.author}%`),
   )!);
-  if (query.tag) {
-    // UNION 去重也使损坏的环路有限终止；历史入口沿任意长度的合并链抵达终点。
-    conditions.push(sql`exists (
-      with recursive resolved_tags as (
-        select id, merged_into_tag_id from ${communityTags} where slug = ${query.tag}
-        union
-        select t.id, t.merged_into_tag_id from ${communityTags} t
-          join resolved_tags r on t.id = r.merged_into_tag_id
-      )
-      select 1 from ${communityRevisionTags} crt join resolved_tags r on r.id = crt.tag_id
-      where crt.revision_id = ${communityRevisions.id} and r.merged_into_tag_id is null
-    )`);
-  }
+  // UNION 去重也使损坏的环路有限终止；历史入口沿任意长度的合并链抵达终点。
+  if (query.tag) conditions.push(tagFilterCondition(query.tag));
   if (query.boardProfile) conditions.push(eq(communityRevisions.boardProfile, query.boardProfile));
   if (query.palette) conditions.push(eq(communityRevisions.paletteId, query.palette));
   if (query.from) conditions.push(gte(communityRevisions.publishedAt, new Date(`${query.from}T00:00:00+08:00`)));
@@ -189,7 +223,7 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
     .orderBy(desc(primary), desc(communityRevisions.publishedAt), desc(communityWorks.id))
     .limit(COMMUNITY_PAGE_SIZE + 1);
   const visible = rows.slice(0, COMMUNITY_PAGE_SIZE);
-  const tags = await tagsByRevision(db, visible.map((row) => row.revisionId));
+  const tags = await tagsByWork(db, visible.map((row) => row.id));
   const items = visible.flatMap((row) => {
     const preview = communityPreviewSchema.safeParse(row.preview);
     if (!preview.success || !row.publishedAt) return [];
@@ -204,7 +238,7 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
       height: row.height,
       colorCount: row.colorCount,
       preview: preview.data,
-      tags: tags.get(row.revisionId) ?? [],
+      tags: tags.get(row.id) ?? [],
       counts: { likes: row.likeCount, comments: row.commentCount, reuses: row.reuseCount },
       featured: row.featuredAt !== null,
       publishedAt: row.publishedAt.toISOString(),
@@ -232,7 +266,7 @@ export async function getPublicCommunityWork(db: AnyDatabase, id: string) {
   const snapshot = parseCommunitySnapshot(row.snapshot);
   const preview = communityPreviewSchema.safeParse(row.preview);
   if (!snapshot || !preview.success) return null;
-  const tags = await tagsByRevision(db, [row.revisionId]);
+  const tags = await tagsByWork(db, [row.id]);
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -245,7 +279,7 @@ export async function getPublicCommunityWork(db: AnyDatabase, id: string) {
     colorCount: row.colorCount,
     preview: preview.data,
     snapshot,
-    tags: tags.get(row.revisionId) ?? [],
+    tags: tags.get(row.id) ?? [],
     counts: { likes: row.likeCount, comments: row.commentCount, reuses: row.reuseCount },
     featured: row.featuredAt !== null,
     publishedAt: row.publishedAt.toISOString(),
@@ -355,3 +389,32 @@ export async function inspectCommunityRevision(db: AnyDatabase, revisionId: stri
 }
 
 export type CommunityRevisionInspection = Awaited<ReturnType<typeof inspectCommunityRevision>>;
+
+/**
+ * 缩略图渲染所需的最小材料及其可见性事实。
+ * 公开条件与列表/详情一致：作品正常、修订已发布且是当前公开版本。
+ */
+export async function loadRevisionForThumbnail(db: AnyDatabase, revisionId: string) {
+  const [row] = await db.select({
+    id: communityRevisions.id,
+    workId: communityRevisions.workId,
+    status: communityRevisions.status,
+    boardProfile: communityRevisions.boardProfile,
+    snapshot: communityRevisions.snapshot,
+    authorUserId: communityWorks.authorUserId,
+    lifecycleStatus: communityWorks.lifecycleStatus,
+    currentPublishedRevisionId: communityWorks.currentPublishedRevisionId,
+  }).from(communityRevisions).innerJoin(communityWorks, eq(communityWorks.id, communityRevisions.workId))
+    .where(eq(communityRevisions.id, revisionId));
+  if (!row) return null;
+  const snapshot = parseCommunitySnapshot(row.snapshot);
+  if (!snapshot) return null;
+  return {
+    id: row.id,
+    workId: row.workId,
+    boardProfile: snapshot.boardProfile,
+    pattern: snapshot.pattern,
+    authorUserId: row.authorUserId,
+    isPublic: row.lifecycleStatus === 'active' && row.status === 'published' && row.currentPublishedRevisionId === row.id,
+  };
+}

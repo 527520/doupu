@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fillField } from './helpers';
+import { fillField, settledClick } from './helpers';
 
 const photo = readFileSync(resolve('tests/fixtures/photo-gradient-64.png'));
 const image = (name: string) => ({ name, mimeType: 'image/png', buffer: photo });
@@ -41,9 +41,9 @@ test('可视裁剪、创建与保存丢响应同键恢复、核对后发布和�
   await page.getByRole('button', { name: '开始生成' }).click();
   await expect(page.getByLabel('选择图片', { exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '重试确认上次操作' }).click();
-  const item = page.locator('.batch-items > li').first();
+  const item = page.locator('.batch-cards > li').first();
   await expect(item).toContainText('保存结果待确认');
-  await item.getByRole('button', { name: '重试确认保存' }).click();
+  await settledClick(item.getByRole('button', { name: '重试确认保存' }));
   await expect(page.locator('.batch-studio [role=status]')).toContainText('生成完成');
   await expect(item.getByRole('checkbox', { name: '发布', exact: true })).not.toBeChecked();
   await item.getByRole('button', { name: '查看完整图纸' }).click();
@@ -61,10 +61,10 @@ test('可视裁剪、创建与保存丢响应同键恢复、核对后发布和�
   for (const kind of ['create', 'draft', 'publish']) { expect(requests.get(kind)).toHaveLength(2); expect(requests.get(kind)![0]).toEqual(requests.get(kind)![1]); }
   const stored = await page.evaluate(async (id) => (await (await fetch('/api/admin/batches')).json()).items.find((entry: { id: string }) => entry.id === id), batchId);
   expect(stored.successCount).toBe(1); expect(stored.drafts).toHaveLength(1); expect(stored.drafts[0].status).toBe('published');
-  await page.reload(); await expect(page.locator('.batch-items > li')).toHaveCount(0);
+  await page.reload(); await expect(page.locator('.batch-cards > li')).toHaveCount(0);
   await page.getByText('恢复已保存批次（最近 50 批）').click();
   await page.locator('.batch-history li').filter({ hasText: batchId }).getByRole('button').click();
-  await expect(page.locator('.batch-items > li')).toHaveCount(1); await expect(page.locator('.batch-items input[type=checkbox]')).toHaveCount(0);
+  await expect(page.locator('.batch-cards > li')).toHaveCount(1); await expect(page.locator('.batch-cards input[type=checkbox]')).toHaveCount(0);
 });
 
 test('暂停只停止新派发，取消待处理项后继续不丢失正在保存的结果', async ({ page }) => {
@@ -74,12 +74,12 @@ test('暂停只停止新派发，取消待处理项后继续不丢失正在保�
   try {
     await page.getByRole('button', { name: '开始生成' }).click(); await expect.poll(() => held).toBeGreaterThan(0);
     await page.getByRole('button', { name: '暂停派发' }).click(); await expect(page.locator('.batch-summary')).toContainText('批次已暂停');
-    release(); await expect(page.locator('.batch-items > li').filter({ hasText: '保存中' })).toHaveCount(0);
-    const last = page.locator('.batch-items > li').filter({ hasText: 'pause-4.png' }); await expect(last).toContainText('待处理');
+    release(); await expect(page.locator('.batch-cards > li').filter({ hasText: '保存中' })).toHaveCount(0);
+    const last = page.locator('.batch-cards > li').filter({ hasText: 'pause-4.png' }); await expect(last).toContainText('待生成');
     await last.getByRole('button', { name: '取消此项' }).click(); await expect(last).toContainText('已取消');
     await page.getByRole('button', { name: '继续', exact: true }).click(); await expect(page.locator('.batch-summary')).toContainText('批次已完成');
-    await expect(page.locator('.batch-items input[type=checkbox]')).toHaveCount(3);
-    await last.getByRole('button', { name: '重试', exact: true }).click(); await expect(page.locator('.batch-items input[type=checkbox]')).toHaveCount(4);
+    await expect(page.locator('.batch-cards input[type=checkbox]')).toHaveCount(3);
+    await last.getByRole('button', { name: '重试', exact: true }).click(); await expect(page.locator('.batch-cards input[type=checkbox]')).toHaveCount(4);
   } finally { release(); }
 });
 
@@ -87,7 +87,7 @@ test('50 项发布清单在短视口内滚动，取消后保留选择且不发�
   await login(page);
   await page.getByLabel('选择图片', { exact: true }).setInputFiles(Array.from({ length: 50 }, (_, index) => image(`maximum-${index}.png`)));
   await smallDefault(page); await page.getByRole('button', { name: '开始生成' }).click();
-  const choices = page.locator('.batch-items input[type=checkbox]');
+  const choices = page.locator('.batch-cards input[type=checkbox]');
   await expect(choices).toHaveCount(50);
   for (const choice of await choices.all()) await choice.check();
   let publications = 0;
@@ -110,7 +110,7 @@ test('50 项发布清单在短视口内滚动，取消后保留选择且不发�
   await expect(dialog.getByRole('button', { name: '确认公开所选草稿' })).toBeEnabled();
   await dialog.getByRole('button', { name: '返回草稿' }).click();
   await expect(dialog).toHaveCount(0); await expect(opener).toBeFocused();
-  await expect(page.locator('.batch-items input[type=checkbox]:checked')).toHaveCount(50);
+  await expect(page.locator('.batch-cards input[type=checkbox]:checked')).toHaveCount(50);
   await page.setViewportSize({ width: 1440, height: 844 }); await opener.click();
   expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(576);
   await expect(dialog.getByRole('checkbox')).not.toBeChecked();
@@ -135,8 +135,8 @@ test('批次准备、裁剪、实际草稿和发布确认在五宽度下可访�
   await inspect('prepare'); await page.getByRole('button', { name: '预览并裁剪' }).click();
   await expect(page.getByRole('dialog', { name: '裁剪图片', exact: true })).toBeVisible(); await inspect('crop');
   await page.getByRole('button', { name: '确认并更新' }).click(); await page.getByRole('button', { name: '开始生成' }).click();
-  await expect(page.locator('.batch-items input[type=checkbox]')).toBeVisible(); await inspect('draft');
-  await page.locator('.batch-items input[type=checkbox]').check(); await page.getByRole('button', { name: /发布已勾选草稿/ }).click(); await inspect('confirm');
+  await expect(page.locator('.batch-cards input[type=checkbox]')).toBeVisible(); await inspect('draft');
+  await page.locator('.batch-cards input[type=checkbox]').check(); await page.getByRole('button', { name: /发布已勾选草稿/ }).click(); await inspect('confirm');
   await page.setViewportSize({ width: 350, height: 400 });
   await page.getByRole('dialog').getByRole('checkbox').check();
   await page.getByRole('button', { name: '确认公开所选草稿' }).scrollIntoViewIfNeeded();

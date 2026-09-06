@@ -3,10 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import WorksManager from './WorksManager';
 vi.mock('@/components/preview/PatternPreview', () => ({ default: () => <p>完整作品材料</p> }));
-vi.mock('@/components/community/CommunityPreviewCanvas', () => ({ default: () => <span>缩略图</span> }));
-const row = { id: 'work-one', title: '红色小猫', version: 3, lifecycleStatus: 'active', commentsLocked: false, featured: false, displayName: '豆友', preview: {} };
-const detail = { ...row, isPublic: true, canRestore: true, removedReason: null, counts: { likes: 2, comments: 0, reuses: 1 }, latestRevision: { id: 'revision-one', status: 'published', revisionNumber: 1 }, material: { id: 'revision-one', title: row.title, revisionNumber: 1, status: 'published', snapshot: { pattern: {}, boardProfile: '5mm-29' } } };
-beforeEach(() => vi.stubGlobal('fetch', vi.fn(async (url) => new Response(JSON.stringify(String(url).endsWith('/work-one') ? detail : { items: [row], nextCursor: null })))));
+vi.mock('@/components/community/CommunityThumbnail', () => ({ default: () => <span>缩略图</span> }));
+const row = { id: 'work-one', title: '红色小猫', version: 3, lifecycleStatus: 'active', commentsLocked: false, featured: false, displayName: '豆友', preview: {}, thumbnail: { revisionId: 'revision-one', width: 10, height: 10 } };
+const detail = { ...row, isPublic: true, canRestore: true, removedReason: null, counts: { likes: 2, comments: 0, reuses: 1 }, tags: [{ id: 'tag-cat', name: '小猫' }], latestRevision: { id: 'revision-one', status: 'published', revisionNumber: 1 }, material: { id: 'revision-one', title: row.title, revisionNumber: 1, status: 'published', snapshot: { pattern: {}, boardProfile: '5mm-29' } } };
+beforeEach(() => vi.stubGlobal('fetch', vi.fn(async (url) => new Response(JSON.stringify(String(url).endsWith('/work-one') ? detail : String(url).includes('/tags?q=') ? { items: [] } : { items: [row], nextCursor: null })))));
 it('inspects the frozen work and requires a second confirmation before removal', async () => {
   render(<WorksManager />);
   expect(screen.queryByRole('textbox', { name: '操作理由' })).not.toBeInTheDocument();
@@ -28,6 +28,36 @@ it('inspects the frozen work and requires a second confirmation before removal',
   expect(writes).toHaveLength(2); expect(writes[0][0]).toBe(writes[1][0]);
   expect(writes[1][1]).toMatchObject({ method: writes[0][1]?.method, body: writes[0][1]?.body, headers: writes[0][1]?.headers });
   expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({ action: 'remove', expectedVersion: 3 });
+});
+it('lets a moderator add a tag by typing and saves the full tag set without a reason', async () => {
+  render(<WorksManager />); fireEvent.click(await screen.findByRole('button', { name: /红色小猫/ }));
+  await screen.findByText('完整作品材料');
+  expect(screen.getByText('小猫')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '保存标签' })).toBeDisabled();
+  const input = screen.getByRole('combobox');
+  fireEvent.change(input, { target: { value: ' 星星人 ' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(screen.getByText('星星人')).toBeInTheDocument();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ workId: 'work-one', version: 4, tags: [] })));
+  fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
+  await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
+  const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PUT');
+  expect(writes).toHaveLength(1);
+  expect(String(writes[0][0])).toBe('/api/admin/community/works/work-one/tags');
+  expect(JSON.parse(String(writes[0][1]?.body))).toEqual({ expectedVersion: 3, tags: ['小猫', '星星人'] });
+});
+it('bulk-adds a tag to every checked work in the list', async () => {
+  render(<WorksManager />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: '选择作品 红色小猫' }));
+  const input = screen.getByRole('combobox');
+  fireEvent.change(input, { target: { value: '海绵宝宝' } });
+  fireEvent.keyDown(input, { key: ',' });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ tags: [], works: [] })));
+  fireEvent.click(screen.getByRole('button', { name: '添加到已选作品' }));
+  await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
+  const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
+  expect(writes).toHaveLength(1);
+  expect(JSON.parse(String(writes[0][1]?.body))).toEqual({ workIds: ['work-one'], tags: ['海绵宝宝'] });
 });
 it('offers restore only when an approved revision exists', async () => {
   vi.mocked(fetch).mockImplementation(async (url) => new Response(JSON.stringify(String(url).endsWith('/work-one') ? { ...detail, lifecycleStatus: 'removed', isPublic: false, canRestore: false } : { items: [{ ...row, lifecycleStatus: 'removed' }], nextCursor: null })));

@@ -3,7 +3,8 @@ import { createTestClient, type TestDatabase } from './testClient';
 import { adminAuditLogs, communityRevisions, communityWorks, officialBatches, users } from './schema';
 import type { Actor } from '@/lib/auth/authorization';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
-import { createOfficialBatch, publishOfficialBatch, saveOfficialDraft, transitionOfficialBatch } from '@/lib/community/officialBatch';
+import { createOfficialBatch, listOfficialBatches, publishOfficialBatch, saveOfficialDraft, transitionOfficialBatch } from '@/lib/community/officialBatch';
+import { attachTestOriginal } from './testOriginals';
 
 const snapshot = {
   version: 1 as const, engineVersion: '2.0.0', boardProfile: '5mm-29' as const,
@@ -28,8 +29,18 @@ describe('official browser-local batch persistence', () => {
     const second = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '官方作品 02', snapshot,
       reason: '保存成功生成结果', requestId: 'save-2' });
     const finished = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'finish', expectedVersion: batch.version, reason: '完成全部图纸生成', requestId: 'finish' });
+    // D49：官方草稿也必须先上传原图才能发布
+    await expect(publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [second.revisionId],
+      expectedVersion: finished.version, reason: '缺原图不应发布', requestId: 'publish-missing-original' })).rejects.toMatchObject({ code: 'ORIGINAL_REQUIRED' });
+    await attachTestOriginal(db, admin, first.revisionId);
+    const beforeSecond = (await listOfficialBatches(db, admin.userId))[0].drafts;
+    expect(beforeSecond.find((draft) => draft.id === first.revisionId)?.hasOriginal).toBe(true);
+    expect(beforeSecond.find((draft) => draft.id === second.revisionId)?.hasOriginal).toBe(false);
+    await attachTestOriginal(db, admin, second.revisionId);
+    expect((await listOfficialBatches(db, admin.userId))[0].drafts.every((draft) => draft.hasOriginal)).toBe(true);
     const result = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [second.revisionId],
       expectedVersion: finished.version, reason: '复核勾选作品后发布', requestId: 'publish' });
+    expect((await listOfficialBatches(db, admin.userId))[0].drafts.every((draft) => draft.hasOriginal)).toBe(true);
     expect(result.batch).toMatchObject({ status: 'completed', successCount: 2, failureCount: 0 });
     const revisions = await db.select().from(communityRevisions);
     expect(revisions.find((item) => item.id === first.revisionId)?.status).toBe('draft');
@@ -71,9 +82,11 @@ describe('official browser-local batch persistence', () => {
     const batch = await createOfficialBatch(db, { actor: admin, itemCount: 3, defaultParams: DEFAULT_GENERATION_PARAMS,
       engineVersion: '2.0.0', reason: '验证生成与发布独立', requestId: 'start' });
     const first = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '先完成作品', snapshot, reason: '保存生成结果', requestId: 'first' });
+    await attachTestOriginal(db, admin, first.revisionId);
     const result = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [first.revisionId], expectedVersion: 1, reason: '只发布先完成作品', requestId: 'publish-first' });
     expect(result.batch).toMatchObject({ status: 'running', failureCount: 0, completedAt: null });
     const second = await saveOfficialDraft(db, { actor: admin, batchId: batch.id, title: '后完成作品', snapshot, reason: '保存后续结果', requestId: 'second' });
+    await attachTestOriginal(db, admin, second.revisionId);
     const cancelled = await transitionOfficialBatch(db, { actor: admin, batchId: batch.id, action: 'cancel', expectedVersion: result.batch.version, reason: '取消未完成生成', requestId: 'cancel' });
     const remaining = await publishOfficialBatch(db, { actor: admin, batchId: batch.id, revisionIds: [second.revisionId], expectedVersion: cancelled.version, reason: '复核保留草稿并发布', requestId: 'publish-second' });
     expect(remaining.batch).toMatchObject({ status: 'cancelled', failureCount: 1, completedAt: cancelled.completedAt });

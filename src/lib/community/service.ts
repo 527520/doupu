@@ -1,11 +1,9 @@
-import { and, count, eq, inArray, max, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, max, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
 import {
   adminAuditLogs,
   communityRevisions,
-  communityRevisionTags,
-  communityTags,
   communityWorks,
   designs,
   users,
@@ -22,6 +20,7 @@ import {
   snapshotColorCount,
   snapshotPaletteIdentity,
 } from './snapshot';
+import { assertRevisionHasOriginal, inheritRevisionOriginal, markOriginalsDeleted, retireSupersededOriginal } from './originals';
 
 export const communityTitleSchema = z.string().trim().min(1).max(80);
 const reasonSchema = z.string().trim().min(3).max(500);
@@ -39,18 +38,7 @@ interface CreateRevisionInput {
   expectedDesignRevision: number;
   title: string;
   licenseVersion: string;
-  tagIds?: string[];
   now?: Date;
-}
-
-async function validatedTags(tx: AnyDatabase, tagIds: string[]): Promise<string[]> {
-  const unique = [...new Set(tagIds)];
-  if (unique.length > 10) throw new AppError('VALIDATION', '每个修订最多选择 10 个正式标签', 'tagIds');
-  if (unique.length === 0) return [];
-  const rows = await tx.select({ id: communityTags.id }).from(communityTags)
-    .where(and(inArray(communityTags.id, unique), eq(communityTags.active, true)));
-  if (rows.length !== unique.length) throw new AppError('VALIDATION', '标签不存在或已停用', 'tagIds');
-  return unique;
 }
 
 async function authorIdentity(tx: AnyDatabase, actor: Actor, now: Date) {
@@ -92,14 +80,12 @@ async function revisionPayload(tx: AnyDatabase, input: CreateRevisionInput) {
   if (!snapshot) throw new AppError('VALIDATION', '设计图纸不符合豆社发布协议');
   const identity = await authorIdentity(tx, input.actor, input.now ?? new Date());
   const palette = snapshotPaletteIdentity(snapshot);
-  const tagIds = await validatedTags(tx, input.tagIds ?? []);
   return {
     title: title.data,
     snapshot,
     preview: deriveCommunityPreview(snapshot.pattern),
     identity,
     palette,
-    tagIds,
   };
 }
 
@@ -136,9 +122,6 @@ export async function createCommunityWork(db: AnyDatabase, input: CreateRevision
       createdAt: now,
       updatedAt: now,
     }).returning();
-    if (payload.tagIds.length > 0) {
-      await tx.insert(communityRevisionTags).values(payload.tagIds.map((tagId) => ({ revisionId: revision.id, tagId })));
-    }
     return { work, revision };
   });
 }
@@ -161,6 +144,9 @@ export async function createCommunityRevision(
     const payload = await revisionPayload(tx, { ...input, now });
     const [number] = await tx.select({ value: max(communityRevisions.revisionNumber) })
       .from(communityRevisions).where(eq(communityRevisions.workId, work.id));
+    const [previous] = await tx.select({ id: communityRevisions.id }).from(communityRevisions)
+      .where(and(eq(communityRevisions.workId, work.id), inArray(communityRevisions.status, ['published', 'superseded'])))
+      .orderBy(desc(communityRevisions.revisionNumber)).limit(1);
     const [revision] = await tx.insert(communityRevisions).values({
       workId: work.id,
       revisionNumber: Number(number.value ?? 0) + 1,
@@ -183,10 +169,9 @@ export async function createCommunityRevision(
       createdAt: now,
       updatedAt: now,
     }).returning();
-    if (payload.tagIds.length > 0) {
-      await tx.insert(communityRevisionTags).values(payload.tagIds.map((tagId) => ({ revisionId: revision.id, tagId })));
-    }
-    return revision;
+    // 修改再投稿默认沿用上一版原图；作者仍可在提交前替换。
+    const inherited = previous ? await inheritRevisionOriginal(tx, { fromRevisionId: previous.id, toRevisionId: revision.id, workId: work.id, actorUserId: input.actor.userId, now }) : null;
+    return { ...revision, originalInherited: inherited !== null };
   });
 }
 
@@ -211,6 +196,7 @@ export async function submitCommunityRevision(
     if (revision.version !== input.expectedVersion || revision.status !== 'draft' || revision.lifecycleStatus !== 'active') {
       throw new AppError('STATE_CONFLICT', '修订状态已变化，请刷新后重试');
     }
+    await assertRevisionHasOriginal(tx, revision.id);
     const [updated] = await tx.update(communityRevisions).set({
       status: 'pending_review', version: revision.version + 1, submittedAt: now, updatedAt: now,
     }).where(and(eq(communityRevisions.id, revision.id), eq(communityRevisions.version, revision.version))).returning();
@@ -242,7 +228,8 @@ export async function withdrawCommunitySubmission(
     status: 'withdrawn', version: revision.version + 1, withdrawnAt: now, updatedAt: now,
   }).where(and(eq(communityRevisions.id, revision.id), eq(communityRevisions.version, revision.version))).returning();
   if (!updated) throw new AppError('STATE_CONFLICT', '修订状态已变化，请刷新后重试');
-  return updated;
+  const purgeKeys = await markOriginalsDeleted(tx, { revisionIds: [revision.id] }, now);
+  return { ...updated, purgeKeys };
   });
 }
 
@@ -264,7 +251,9 @@ export async function withdrawCommunityWork(
       lifecycleStatus: 'withdrawn', version: work.version + 1, withdrawnAt: now, updatedAt: now,
     }).where(and(eq(communityWorks.id, work.id), eq(communityWorks.version, work.version))).returning();
     if (!updated) throw new AppError('STATE_CONFLICT', '作品状态已变化，请刷新后重试');
-    return updated;
+    // 作者撤回：原图立即不可取回；对象在事务提交后清除（引用者本机副本保留）。
+    const purgeKeys = await markOriginalsDeleted(tx, { workId: work.id }, now);
+    return { ...updated, purgeKeys };
   });
 }
 
@@ -294,6 +283,8 @@ export async function reviewCommunityRevision(
     if (revision.version !== input.expectedVersion || revision.status !== 'pending_review') {
       throw new AppError('STATE_CONFLICT', '修订状态已变化，请刷新后重试');
     }
+    const purgeKeys: string[] = [];
+    if (input.decision === 'published') await assertRevisionHasOriginal(tx, revision.id);
     if (input.decision === 'published' && work.currentPublishedRevisionId) {
       await tx.update(communityRevisions).set({
         status: 'superseded',
@@ -305,7 +296,9 @@ export async function reviewCommunityRevision(
           eq(communityRevisions.status, 'published'),
           ne(communityRevisions.id, revision.id),
         ));
+      if (work.currentPublishedRevisionId !== revision.id) purgeKeys.push(...await retireSupersededOriginal(tx, work.currentPublishedRevisionId, now));
     }
+    if (input.decision === 'rejected') purgeKeys.push(...await markOriginalsDeleted(tx, { revisionIds: [revision.id] }, now));
     const [updated] = await tx.update(communityRevisions).set({
       status: input.decision,
       version: revision.version + 1,
@@ -334,6 +327,6 @@ export async function reviewCommunityRevision(
       beforeState: sanitizeAuditState({ revisionStatus: revision.status, revision: revision.version }),
       afterState: sanitizeAuditState({ revisionStatus: updated.status, revision: updated.version }),
     });
-    return updated;
+    return { ...updated, purgeKeys };
   });
 }

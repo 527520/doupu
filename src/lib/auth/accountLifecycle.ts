@@ -6,6 +6,7 @@ import {
   analyticsIdentityLinks,
   communityComments,
   communityLikes,
+  communityOriginals,
   communityReports,
   communityRevisions,
   communityReuses,
@@ -69,6 +70,11 @@ export async function anonymizeAccount(
       eq(communityWorks.authorUserId, account.id), eq(communityWorks.authorType, 'user'),
       isNull(communityWorks.currentPublishedRevisionId), eq(communityWorks.lifecycleStatus, 'active'),
     ));
+    // 注销即删原图（D49）：公开图纸以去身份形式保留，作者照片不再保留在服务器；
+    // 对象由维护任务按 deleted_at 清除。
+    await tx.update(communityOriginals).set({ deletedAt: now, uploadedByUserId: null })
+      .where(and(inArray(communityOriginals.workId, ownWorks), isNull(communityOriginals.deletedAt)));
+    await tx.update(communityOriginals).set({ uploadedByUserId: null }).where(eq(communityOriginals.uploadedByUserId, account.id));
     await tx.delete(sessions).where(eq(sessions.userId, account.id));
     await tx.delete(rateLimits).where(eq(rateLimits.key, `sync:write:${account.id}`));
     await tx.delete(emailTokens).where(eq(emailTokens.userId, account.id));

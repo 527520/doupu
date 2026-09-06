@@ -12,24 +12,26 @@ const saved = { batchId, revisionId: '00000000-0000-4000-8000-000000000002', wor
 const preview = { version: 1 as const, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] };
 const flush = async () => { for (let n = 0; n < 15; n++) await new Promise((resolve) => setTimeout(resolve, 0)); };
 const generation = (): BatchGeneration => ({ promise: Promise.resolve(structuredClone(snapshot)), cancel: vi.fn() });
+/** 原图上传（D49）在保存草稿后进行；这里默认成功，专门的用例再模拟失败。 */
+const uploadOriginal = vi.fn(async () => undefined);
 
 describe('local official batch session', () => {
   it.each([{ drafts: undefined }, { createdAt: 'invalid' }, { defaultParams: {} }, { successCount: 51 }, { drafts: [{ id: 'x' }] }])('rejects damaged stored batches without dropping a local file: %j', (invalid) => {
     const batch = { ...row('completed'), createdAt: '2026-09-01', successCount: 0, failureCount: 0, itemCount: 1, drafts: [], ...invalid };
     expect(isStoredBatch(batch)).toBe(false);
-    const session = new BatchSession({ generate: generation, concurrency: 1 }); session.selectFiles([file()]);
+    const session = new BatchSession({ generate: generation, concurrency: 1, uploadOriginal }); session.selectFiles([file()]);
     session.restore(batch as unknown as StoredBatch);
     expect(session.getSnapshot().items[0].file).not.toBeNull(); expect(session.getSnapshot().batch).toBeNull(); expect(session.getSnapshot().error).toBe(zhCN.communityAdmin.queueLoadFailed); session.dispose();
   });
   it.each([{ ...row(), id: '' }, row('paused'), row('running', 0)])('keeps malformed creation unknown: %j', async (invalid) => {
     const generate = vi.fn(generation); const fetcher = vi.fn().mockResolvedValue(response(invalid));
-    const session = new BatchSession({ fetcher, generate, concurrency: 1 }); session.selectFiles([file()]); await session.start();
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal }); session.selectFiles([file()]); await session.start();
     expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().batch).toBeNull(); expect(generate).not.toHaveBeenCalled(); session.dispose();
   });
 
   it.each([{ ...saved, revisionId: 'x' }, { ...saved, workId: '' }, { ...saved, status: 'published' }, { ...saved, batchId: crypto.randomUUID() }])('retains bytes and the frozen save on inconsistent confirmation: %j', async (invalid) => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response(invalid)).mockResolvedValueOnce(response(saved)).mockResolvedValueOnce(response(row('completed', 2)));
-    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 1 }); session.selectFiles([file()]); await session.start(); await flush();
+    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal }); session.selectFiles([file()]); await session.start(); await flush();
     const item = session.getSnapshot().items[0]; expect(item.status).toBe('save_unknown'); expect(item.file).not.toBeNull();
     await session.retryItem(item.localId); await flush();
     expect(fetcher.mock.calls[2][1].body).toBe(fetcher.mock.calls[1][1].body); expect(fetcher.mock.calls[2][1].headers).toEqual(fetcher.mock.calls[1][1].headers);
@@ -38,7 +40,7 @@ describe('local official batch session', () => {
 
   it.each([{ ...row('paused', 2), id: crypto.randomUUID() }, row('paused', 1), row('running', 2)])('does not accept a different batch/state/version for a transition: %j', async (invalid) => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(invalid)).mockResolvedValueOnce(response(row('paused', 2)));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal });
     session.restore({ ...row(), createdAt: '2026-09-01', successCount: 0, failureCount: 0, itemCount: 1, drafts: [] } as StoredBatch);
     await session.pause(); expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().batch).toMatchObject(row());
     await session.retryCommand(); expect(session.getSnapshot().batch).toMatchObject(row('paused', 2));
@@ -47,7 +49,7 @@ describe('local official batch session', () => {
 
   it.each([undefined, [], [crypto.randomUUID()], [saved.revisionId, saved.revisionId]].map((ids) => ({ ids })))('does not report publication for missing or mismatched revision confirmations: %j', async ({ ids }) => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: ids })).mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: [saved.revisionId] }));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal });
     session.restore({ ...row('completed', 4), createdAt: '2026-09-01', successCount: 1, failureCount: 0, itemCount: 1, drafts: [{ id: saved.revisionId, workId: saved.workId, title: '草稿', status: 'draft', preview }] } as StoredBatch);
     session.updateItem(session.getSnapshot().items[0].localId, { selected: true }); await session.publish();
     expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().items[0]).toMatchObject({ status: 'saved', selected: true });
@@ -59,7 +61,7 @@ describe('local official batch session', () => {
     const finishes: Array<(snapshot: CommunitySnapshotV1) => void> = [];
     const generate = vi.fn(() => ({ promise: new Promise<CommunitySnapshotV1>((done) => { finishes.push(done); }), cancel: vi.fn() }));
     const fetcher = vi.fn(async (url: string) => response(url.endsWith('/drafts') ? { ...saved, revisionId: crypto.randomUUID() } : row()));
-    const session = new BatchSession({ fetcher, generate, concurrency: 2 }); session.selectFiles([file(), file(), file()]);
+    const session = new BatchSession({ fetcher, generate, concurrency: 2, uploadOriginal }); session.selectFiles([file(), file(), file()]);
     await session.start(); await session.start(); expect(generate).toHaveBeenCalledTimes(2);
     finishes[0](snapshot); await flush(); expect(generate).toHaveBeenCalledTimes(3);
     session.dispose(); finishes[1](snapshot); finishes[2](snapshot); await flush();
@@ -67,7 +69,7 @@ describe('local official batch session', () => {
 
   it('freezes publishing selection through an uncertain reply, and releases it only after identical replay', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({}, 503)).mockResolvedValueOnce(response({ batch: row('completed', 5), publishedRevisionIds: [saved.revisionId] }));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal });
     session.restore({ ...row('completed', 4), createdAt: '2026-09-01', successCount: 1, failureCount: 0, itemCount: 1, drafts: [{ id: saved.revisionId, workId: saved.workId, title: '真实草稿', status: 'draft', preview: { version: 1, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] } }] } as StoredBatch);
     const item = session.getSnapshot().items[0]; expect(item.selected).toBe(false);
     await session.publish(); expect(fetcher).not.toHaveBeenCalled();
@@ -83,7 +85,7 @@ describe('local official batch session', () => {
   it('waits for uncertain saves before cancelling server state, then replays the save before cancelling', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response({}, 503))
       .mockResolvedValueOnce(response(saved)).mockResolvedValueOnce(response(row('cancelled', 2)));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 }); session.selectFiles([file()]); await session.start(); await flush();
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal }); session.selectFiles([file()]); await session.start(); await flush();
     await session.cancel(); expect(fetcher).toHaveBeenCalledTimes(2);
     expect(session.getSnapshot().items[0].status).toBe('save_unknown');
     await session.retryItem(session.getSnapshot().items[0].localId); await flush();
@@ -95,7 +97,7 @@ describe('local official batch session', () => {
     let rejectSave!: (value: Response) => void;
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockImplementationOnce(() => new Promise<Response>((done) => { rejectSave = done; }))
       .mockResolvedValueOnce(response(row('cancelled', 2)));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 }); session.selectFiles([file()]); await session.start(); await flush();
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal }); session.selectFiles([file()]); await session.start(); await flush();
     await session.cancel(); rejectSave(response({ error: { message: 'rejected' } }, 400)); await flush();
     expect(session.getSnapshot().batch?.status).toBe('cancelled'); expect(session.getSnapshot().items[0].status).toBe('cancelled');
     expect(session.retainedSaveCount).toBe(0);
@@ -104,7 +106,7 @@ describe('local official batch session', () => {
   it('allows explicit skip after a definite save rejection without treating it as a saved work', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response({ error: { message: 'invalid graph' } }, 400))
       .mockResolvedValueOnce(response(row('completed', 2)));
-    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 }); session.selectFiles([file()]); await session.start(); await flush();
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal }); session.selectFiles([file()]); await session.start(); await flush();
     const item = session.getSnapshot().items[0]; expect(item.status).toBe('failed'); expect(session.retainedSaveCount).toBe(1);
     session.cancelItem(item.localId); await flush(); expect(session.retainedSaveCount).toBe(0); expect(session.getSnapshot().items[0].status).toBe('cancelled');
     expect(session.getSnapshot().batch?.status).toBe('completed');
@@ -114,7 +116,7 @@ describe('local official batch session', () => {
     vi.useFakeTimers();
     try {
       const fetcher = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('timeout', 'AbortError')))));
-      const session = new BatchSession({ fetcher, generate: generation, concurrency: 1 }); session.selectFiles([file()]);
+      const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal }); session.selectFiles([file()]);
       const start = session.start(); await vi.advanceTimersByTimeAsync(15000); await start;
       expect(session.getSnapshot().uncertain).toBe(true); expect(session.getSnapshot().busy).toBe(false); session.dispose();
     } finally { vi.useRealTimers(); }
@@ -123,7 +125,7 @@ describe('local official batch session', () => {
   it('freezes unknown creation requests and blocks replacement/duplicate starts until same-key recovery', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({}, 503)).mockResolvedValueOnce(response(row()))
       .mockResolvedValueOnce(response(saved)).mockResolvedValueOnce(response(row('completed', 2)));
-    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 1 });
+    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
     session.selectFiles([file()]); await session.start();
     expect(session.getSnapshot().uncertain).toBe(true);
     session.selectFiles([file('replacement.png')]); session.setReason('changed reason'); await session.start();
@@ -140,7 +142,7 @@ describe('local official batch session', () => {
   it('retries a frozen save without regenerating, uploading filename, or automatically selecting publication', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response({}, 503))
       .mockResolvedValueOnce(response(saved)).mockResolvedValueOnce(response(row('completed', 2)));
-    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 2 });
+    const generate = vi.fn(generation); const session = new BatchSession({ fetcher, generate, concurrency: 2, uploadOriginal });
     session.selectFiles([file()]); await session.start(); await flush();
     const item = session.getSnapshot().items[0];
     expect(item.status).toBe('save_unknown'); expect(item.file).not.toBeNull();
@@ -163,7 +165,7 @@ describe('local official batch session', () => {
       const action = JSON.parse(String(init.body)).action;
       return response(row(action === 'pause' ? 'paused' : action === 'finish' ? 'completed' : 'running', action === 'pause' ? 2 : action === 'resume' ? 3 : action === 'finish' ? 4 : 1));
     });
-    const session = new BatchSession({ fetcher, generate, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
     session.selectFiles([file(), file('second.png')]); await session.start(); await session.pause();
     complete(snapshot); await flush(); expect(generate).toHaveBeenCalledTimes(1);
     expect(session.getSnapshot().items[1].status).toBe('pending');
@@ -176,7 +178,7 @@ describe('local official batch session', () => {
     const cancel = vi.fn(() => reject(new DOMException('cancel', 'AbortError')));
     const generate = vi.fn(() => ({ promise: new Promise<CommunitySnapshotV1>((_, fail) => { reject = fail; }), cancel }));
     const fetcher = vi.fn().mockResolvedValueOnce(response(row())).mockResolvedValueOnce(response(row('cancelled', 2)));
-    const session = new BatchSession({ fetcher, generate, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
     session.selectFiles([file(), file('second.png')]); const id = session.getSnapshot().items[0].localId;
     session.cancelItem(id); expect(session.getSnapshot().items[0].status).toBe('cancelled');
     await session.retryItem(id); expect(session.getSnapshot().items[0].status).toBe('pending');
@@ -195,7 +197,7 @@ describe('local official batch session', () => {
       const action = JSON.parse(String(init.body)).action;
       return response(row(action === 'finish' ? 'completed' : 'running', action ? ++version : version));
     });
-    const session = new BatchSession({ fetcher, generate, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
     session.selectFiles([file(), file('second.png')]); await session.start(); await flush();
     expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['failed', 'saved']);
     expect(session.getSnapshot().items[0].error).toBe(zhCN.communityAdmin.batch.generationFailed);
@@ -209,9 +211,75 @@ describe('local official batch session', () => {
     let resolve!: (value: CommunitySnapshotV1) => void;
     const cancel = vi.fn(); const generate = vi.fn(() => ({ promise: new Promise<CommunitySnapshotV1>((done) => { resolve = done; }), cancel }));
     const fetcher = vi.fn().mockResolvedValue(response(row()));
-    const session = new BatchSession({ fetcher, generate, concurrency: 1 });
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
     session.selectFiles([file(), file()]); await session.start(); session.dispose(); resolve(snapshot); await flush();
     expect(cancel).toHaveBeenCalledTimes(1); expect(generate).toHaveBeenCalledTimes(1); expect(fetcher).toHaveBeenCalledTimes(1);
     expect(session.getSnapshot().items).toEqual([]);
+  });
+
+  /** 跟随批次状态机的服务器桩：PATCH 按 action 推进状态与版本，草稿保存返回新修订。 */
+  const statefulFetcher = () => {
+    let current = row();
+    return vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/drafts')) return response({ ...saved, revisionId: crypto.randomUUID() });
+      if (init.method === 'PATCH') {
+        const { action } = JSON.parse(String(init.body)) as { action: string };
+        current = { ...current, version: current.version + 1, status: action === 'resume' ? 'running' : action === 'pause' ? 'paused' : action === 'finish' ? 'completed' : 'cancelled' };
+      }
+      return response(current);
+    });
+  };
+
+  it('uploads the original after the draft save, keeps the file for retry when the upload fails, and releases it on success', async () => {
+    const upload = vi.fn().mockRejectedValueOnce(new Error('存储不可用')).mockResolvedValue(undefined);
+    const fetcher = statefulFetcher();
+    const session = new BatchSession({ fetcher, generate: generation, concurrency: 1, uploadOriginal: upload });
+    session.selectFiles([file('photo.png')]); await session.start(); await flush();
+    let item = session.getSnapshot().items[0];
+    expect(item).toMatchObject({ status: 'upload_failed', hasOriginal: false });
+    expect(item.revisionId).toBeTruthy();
+    expect(item.file).not.toBeNull(); expect(item.error).toContain('存储不可用');
+    expect(upload).toHaveBeenCalledWith(item.revisionId, expect.objectContaining({ name: 'photo.png' }));
+    // 未上传原图的草稿不可勾选发布
+    session.selectAll(); expect(session.getSnapshot().items[0].selected).toBe(false);
+    await session.retryItem(item.localId); await flush();
+    item = session.getSnapshot().items[0];
+    expect(item).toMatchObject({ status: 'saved', hasOriginal: true, file: null, error: null });
+    expect(upload).toHaveBeenCalledTimes(2);
+    session.selectAll(); expect(session.getSnapshot().items[0].selected).toBe(true);
+    session.clearSelection(); expect(session.getSnapshot().items[0].selected).toBe(false);
+    session.dispose();
+  });
+
+  it('restores drafts lacking an original as upload_failed and accepts a re-selected original file', async () => {
+    const upload = vi.fn(async () => undefined);
+    const session = new BatchSession({ generate: generation, concurrency: 1, uploadOriginal: upload });
+    session.restore({ ...row('completed', 3), createdAt: '2026-09-01', successCount: 2, failureCount: 0, itemCount: 2, drafts: [
+      { id: saved.revisionId, workId: saved.workId, title: '有原图', status: 'draft', preview, hasOriginal: true },
+      { id: '00000000-0000-4000-8000-000000000009', workId: saved.workId, title: '缺原图', status: 'draft', preview, hasOriginal: false },
+    ] } as StoredBatch);
+    expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['saved', 'upload_failed']);
+    expect(session.publishableCount).toBe(1);
+    const missing = session.getSnapshot().items[1];
+    await session.retryItem(missing.localId); expect(upload).not.toHaveBeenCalled();
+    await session.attachOriginal(missing.localId, file('reselected.png'));
+    expect(upload).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000009', expect.objectContaining({ name: 'reselected.png' }));
+    expect(session.getSnapshot().items[1]).toMatchObject({ status: 'saved', hasOriginal: true });
+    session.selectAll(); expect(session.getSnapshot().items.every((item) => item.selected)).toBe(true);
+    session.dispose();
+  });
+
+  it('retries every retryable item in order with retryAllFailed', async () => {
+    let failures = 2;
+    const generate = vi.fn(() => failures-- > 0 ? { promise: Promise.reject(new Error('boom')), cancel: vi.fn() } : generation());
+    const fetcher = statefulFetcher();
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal });
+    session.selectFiles([file(), file('second.png')]); await session.start(); await flush();
+    expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['failed', 'failed']);
+    expect(session.retryableCount).toBe(2);
+    await session.retryAllFailed(); await flush();
+    expect(session.getSnapshot().items.every((item) => item.status === 'saved')).toBe(true);
+    expect(session.retryableCount).toBe(0);
+    session.dispose();
   });
 });

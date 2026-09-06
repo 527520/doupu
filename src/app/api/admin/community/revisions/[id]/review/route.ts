@@ -3,6 +3,8 @@ import { getDb } from '@/lib/auth/db';
 import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
+import { purgeOriginalsSoon } from '@/lib/community/originals';
+import { getOriginalStore } from '@/lib/community/originalStore';
 import { reviewCommunityRevision } from '@/lib/community/service';
 import { executeIdempotently } from '@/lib/idempotency';
 
@@ -26,6 +28,7 @@ async function post(request: Request, { params }: { params: Promise<{ id: string
     key: request.headers.get('idempotency-key') ?? '', request: input,
   }, (tx) => reviewCommunityRevision(tx, { actor, revisionId, requestId, ...input }));
   const revision = result.value;
+  purgeOriginalsSoon(getDb(), getOriginalStore(), revision.purgeKeys);
   return okJson({ revisionId: revision.id, status: revision.status, version: revision.version });
 }
 

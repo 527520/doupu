@@ -10,8 +10,9 @@ import { useAdminCollection } from './useAdminCollection';
 import { useAdminCommand } from './useAdminCommand';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
 
-interface Tag { id: string; name: string; slug: string; sortOrder: number; active: boolean; mergedIntoTagId: string | null; version: number }
+interface Tag { id: string; name: string; slug: string; sortOrder: number; active: boolean; mergedIntoTagId: string | null; version: number; workCount?: number }
 
+/** 标签维护台：改名、排序、停用与合并。日常打标在作品管理里直接输入名称完成。 */
 export default function TagsManager() {
   const t = zhCN.communityAdmin.tags;
   const c = zhCN.communityAdmin.command;
@@ -23,7 +24,6 @@ export default function TagsManager() {
   const inspecting = creating || selected !== null;
   const { queueRef, detailRef } = useAdminTaskFocus(inspecting ? selectedId : null);
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
   const [order, setOrder] = useState('0');
   const [active, setActive] = useState(true);
   const [reason, setReason] = useState('');
@@ -32,20 +32,20 @@ export default function TagsManager() {
   const target = queue.items.find((tag) => tag.id === mergeTarget && tag.active && !tag.mergedIntoTagId);
   const editable = !command.locked && !queue.loading && !queue.error && !selected?.mergedIntoTagId;
   const validReason = reason.trim().length >= 3;
-  const validFields = name.trim().length > 0 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+  const validFields = name.trim().length > 0 && name.trim().length <= 30
     && order.trim() !== '' && Number.isInteger(Number(order)) && Number(order) >= -2147483648 && Number(order) <= 2147483647;
-  const changed = creating || (selected && (name.trim() !== selected.name || slug !== selected.slug || Number(order) !== selected.sortOrder || active !== selected.active));
+  const changed = creating || (selected && (name.trim() !== selected.name || Number(order) !== selected.sortOrder || active !== selected.active));
   const select = (tag: Tag | 'new' | null) => {
     if (command.locked) return;
     const item = typeof tag === 'object' ? tag : null;
     setSelectedId(tag === 'new' ? 'new' : item?.id ?? null);
-    setName(item?.name ?? ''); setSlug(item?.slug ?? ''); setOrder(String(item?.sortOrder ?? 0));
+    setName(item?.name ?? ''); setOrder(String(item?.sortOrder ?? 0));
     setActive(item?.active ?? true); setReason(''); setMergeTarget(''); setMergeConfirmed(false); command.resetNotice();
   };
   const completed = async () => { setSelectedId(null); setReason(''); await queue.reload(); };
   const save = async () => {
     if (!editable || !validReason || !validFields || !changed) return;
-    const fields = { name: name.trim(), slug, sortOrder: Number(order), reason };
+    const fields = { name: name.trim(), sortOrder: Number(order), reason };
     await command.run(creating
       ? { url: '/api/admin/community/tags', method: 'POST', body: { ...fields, expectedVersion: 0 } }
       : { url: `/api/admin/community/tags/${selected!.id}`, method: 'PATCH', body: { ...fields, active, expectedVersion: selected!.version } }, completed);
@@ -58,9 +58,10 @@ export default function TagsManager() {
   return <div className={`admin-task-layout${inspecting ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
       <header><h2>{t.title}</h2><button type="button" className="btn-outline" disabled={command.locked || queue.loading || Boolean(queue.error)} onClick={() => select('new')}>{t.create}</button></header>
+      <p className="admin-help" style={{ padding: '0 1rem .75rem' }}>{t.quickHelp}</p>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>
         <ul className="admin-object-list">{queue.items.map((tag) => <li key={tag.id}><button type="button" disabled={command.locked} aria-current={selected?.id === tag.id} onClick={() => select(tag)}>
-          <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? t.mergedState : tag.active ? t.enabled : t.disabled} · {t.sort} {tag.sortOrder}</span>
+          <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? t.mergedState : tag.active ? t.enabled : t.disabled} · {t.usage(tag.workCount ?? 0)} · {t.sort} {tag.sortOrder}</span>
         </button></li>)}</ul>
       </AdminQueueState>
     </section>
@@ -70,9 +71,8 @@ export default function TagsManager() {
         <h2>{creating ? t.createTitle : selected!.name}</h2>
         {selected?.mergedIntoTagId ? <p>{t.mergedTo} {queue.items.find((tag) => tag.id === selected.mergedIntoTagId)?.name ?? selected.mergedIntoTagId}</p> : <>
           <label>{t.name}<input value={name} maxLength={30} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
-          <label>{t.slug}<input value={slug} maxLength={50} disabled={!editable} onChange={(event) => setSlug(event.target.value)} aria-describedby="tag-slug-help" /></label>
-          <p id="tag-slug-help" className="admin-help">{t.slugHelp}</p>
-          <label>{t.sort}<input type="number" step="1" value={order} disabled={!editable} onChange={(event) => setOrder(event.target.value)} /></label>
+          <label>{t.sort}<input type="number" step="1" value={order} disabled={!editable} onChange={(event) => setOrder(event.target.value)} aria-describedby="tag-sort-help" /></label>
+          <p id="tag-sort-help" className="admin-help">{t.slugHelp}</p>
           {!creating && <Switch label={t.enabled} checked={active} disabled={!editable} onChange={setActive} />}
           <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
           <button type="button" className="btn-primary" disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</button>

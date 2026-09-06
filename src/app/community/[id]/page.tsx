@@ -7,7 +7,10 @@ import { CommunityDetailImpression } from '@/components/community/CommunityImpre
 import CommunityInteractions from '@/components/community/CommunityInteractions';
 import { getDb } from '@/lib/auth/db';
 import { getPublicCommunityWork } from '@/lib/community/queries';
+import { communityTagHref } from '@/lib/community/tagHref';
+import { communityThumbnailUrl } from '@/lib/community/thumbnailUrl';
 import { getBoardProfile } from '@/lib/boardProfiles';
+import { thumbnailPixelSize } from '@/lib/render/thumbnailSize';
 import { zhCN } from '@/messages/zh-CN';
 
 async function load(id: string) {
@@ -18,7 +21,16 @@ async function load(id: string) {
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const work = await load((await params).id);
   if (!work) return { title: zhCN.communityAdmin.communityMissing, robots: { index: false, follow: false } };
-  return { title: work.title, description: zhCN.communityAdmin.detail.metadataDescription(work.author.displayName, work.width, work.height), openGraph: { title: work.title, description: zhCN.communityAdmin.detail.openGraphDescription(work.author.displayName) } };
+  const image = thumbnailPixelSize(work.width, work.height);
+  return {
+    title: work.title,
+    description: zhCN.communityAdmin.detail.metadataDescription(work.author.displayName, work.width, work.height),
+    openGraph: {
+      title: work.title,
+      description: zhCN.communityAdmin.detail.openGraphDescription(work.author.displayName),
+      images: [{ url: communityThumbnailUrl(work.revisionId), width: image.width, height: image.height, alt: work.title }],
+    },
+  };
 }
 
 export default async function CommunityDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
@@ -41,7 +53,7 @@ export default async function CommunityDetailPage({ params, searchParams }: { pa
           <aside className="community-proof-meta">
             <dl><div><dt>{t.size}</dt><dd>{work.width} × {work.height}</dd></div><div><dt>{t.colors}</dt><dd>{t.colorValue(work.colorCount)}</dd></div><div><dt>{t.boardProfile}</dt><dd>{getBoardProfile(work.snapshot.boardProfile).displayName}</dd></div></dl>
             <div className="community-color-band large">{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
-            <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={`/community?tag=${tag.slug}`}>{tag.name}</Link>)}</div>
+            <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={communityTagHref(tag.name)}>{tag.name}</Link>)}</div>
             <p className="community-license-note">{t.license}</p>
             <details><summary>{t.technicalDetails}</summary><dl><div><dt>{t.engineVersion}</dt><dd>{work.snapshot.engineVersion}</dd></div></dl></details>
           </aside>

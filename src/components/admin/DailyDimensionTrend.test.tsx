@@ -10,12 +10,12 @@ it('shows the selected category by actual date with accessible daily data, not c
     { day: '2026-05-02', value: 'mobile', events: 12, uniqueVisitors: null },
     { day: '2026-05-01', value: 'desktop', events: 8, uniqueVisitors: 5 },
   ]} />);
-  expect(screen.getByRole('img', { name: '2026-05-01：8 次事件' })).toBeVisible();
+  expect(screen.getByRole('img', { name: '2026-05-01：8 次' })).toBeVisible();
   const user=userEvent.setup();
-  await user.click(screen.getByRole('button',{name:/分类值/}));
+  await user.click(screen.getByRole('button',{name:/分类/}));
   await user.click(screen.getByRole('option',{name:'mobile'}));
-  expect(screen.queryByRole('img', { name: '2026-05-01：8 次事件' })).not.toBeInTheDocument();
-  expect(screen.getByRole('img', { name: '2026-05-02：12 次事件' })).toHaveAttribute('tabindex', '0');
+  expect(screen.queryByRole('img', { name: '2026-05-01：8 次' })).not.toBeInTheDocument();
+  expect(screen.getByRole('img', { name: '2026-05-02：12 次' })).toHaveAttribute('tabindex', '0');
   expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(3);
-  expect(screen.getByText(/部分历史数据未保存/)).toBeVisible();
+  expect(screen.getByText(/没有保存当日访客数/)).toBeVisible();
 });

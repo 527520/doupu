@@ -41,6 +41,8 @@ export const communityCommentStatusEnum = pgEnum('community_comment_status', [
   'published',
   'hidden',
   'deleted',
+  // D50：被内容安全服务判定 Block 的评论。从未公开，只在评论治理台可见，供复核与审计。
+  'rejected',
 ]);
 export const communityReportTargetEnum = pgEnum('community_report_target', ['work', 'comment']);
 export const communityReportStatusEnum = pgEnum('community_report_status', ['open', 'accepted', 'resolved', 'dismissed']);
@@ -367,6 +369,7 @@ export const communityTags = pgTable(
   ],
 );
 
+/** @deprecated 标签自 D51 起挂在作品上（community_work_tags）；本表停写，仅保留历史行。 */
 export const communityRevisionTags = pgTable(
   'community_revision_tags',
   {
@@ -377,6 +380,59 @@ export const communityRevisionTags = pgTable(
   (table) => [
     uniqueIndex('community_revision_tags_unique').on(table.revisionId, table.tagId),
     index('community_revision_tags_tag_idx').on(table.tagId, table.revisionId),
+  ],
+);
+
+/**
+ * 作品级标签（D51）：由审核员/管理员在作品管理中打标，跟随作品身份而非某一修订，
+ * 这样重新投稿的新版本不会丢掉已打的分类。
+ */
+export const communityWorkTags = pgTable(
+  'community_work_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'cascade' }),
+    tagId: uuid('tag_id').notNull().references(() => communityTags.id, { onDelete: 'restrict' }),
+    assignedByUserId: uuid('assigned_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('community_work_tags_unique').on(table.workId, table.tagId),
+    index('community_work_tags_tag_idx').on(table.tagId, table.workId),
+  ],
+);
+
+/**
+ * 作品原图（D49）：公开作品必须附带的原始照片，存于私有 COS 桶，行只记录对象键与摘要。
+ * 同一对象可被多条修订行共享（修改再投稿沿用上一版原图），删除对象前按 cos_key 计数。
+ * blocked_at：管理员下架后先封禁访问，30 天未恢复由维护任务删除对象并置 deleted_at。
+ */
+export const communityOriginals = pgTable(
+  'community_originals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    revisionId: uuid('revision_id').notNull().references(() => communityRevisions.id, { onDelete: 'cascade' }),
+    workId: uuid('work_id').notNull().references(() => communityWorks.id, { onDelete: 'cascade' }),
+    cosKey: text('cos_key').notNull(),
+    mimeType: text('mime_type').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    sha256: text('sha256').notNull(),
+    width: integer('width'),
+    height: integer('height'),
+    uploadedByUserId: uuid('uploaded_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    blockedAt: timestamp('blocked_at', { withTimezone: true }),
+    /** 业务上已删除（不再可取回）；对象本身可能稍后才被清除。 */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** 对象已从 COS 移除（或确认无其它行引用后跳过）。 */
+    purgedAt: timestamp('purged_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('community_originals_revision_unique').on(table.revisionId),
+    index('community_originals_work_idx').on(table.workId),
+    index('community_originals_key_idx').on(table.cosKey),
+    index('community_originals_blocked_idx').on(table.blockedAt).where(sql`${table.deletedAt} is null and ${table.blockedAt} is not null`),
+    index('community_originals_purge_idx').on(table.deletedAt).where(sql`${table.deletedAt} is not null and ${table.purgedAt} is null`),
   ],
 );
 
@@ -505,6 +561,40 @@ export const communityReports = pgTable(
   ],
 );
 
+/**
+ * 评论审核判定记录（D50）：每一次审核决定都留痕，不保存评论正文（正文在 community_comments）。
+ * provider = tencent-tms（真实调用）| cached（同文哈希命中缓存）| local（结构检查 / 限流 / 预算，未调用）| unavailable（服务失败兜底）。
+ */
+export const commentModerationChecks = pgTable(
+  'comment_moderation_checks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    commentId: uuid('comment_id').references(() => communityComments.id, { onDelete: 'set null' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    workId: uuid('work_id').references(() => communityWorks.id, { onDelete: 'set null' }),
+    textHash: text('text_hash').notNull(),
+    textLength: integer('text_length').notNull(),
+    provider: text('provider').notNull(),
+    suggestion: text('suggestion'),
+    label: text('label'),
+    subLabel: text('sub_label'),
+    score: integer('score'),
+    keywords: jsonb('keywords'),
+    tmsRequestId: text('tms_request_id'),
+    latencyMs: integer('latency_ms'),
+    outcome: text('outcome').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('comment_moderation_checks_created_idx').on(table.createdAt.desc()),
+    index('comment_moderation_checks_user_idx').on(table.userId, table.createdAt.desc()),
+    index('comment_moderation_checks_hash_idx').on(table.textHash, table.createdAt.desc()),
+    index('comment_moderation_checks_comment_idx').on(table.commentId),
+  ],
+);
+
+/** @deprecated D50 起评论审核改由腾讯云文本内容安全承担；本表停写，仅保留历史版本。 */
 export const moderationRuleSetVersions = pgTable(
   'moderation_rule_set_versions',
   {
@@ -585,8 +675,10 @@ export type AnalyticsDailyRollup = typeof analyticsDailyRollups.$inferSelect;
 export type CommunityWork = typeof communityWorks.$inferSelect;
 export type CommunityRevision = typeof communityRevisions.$inferSelect;
 export type CommunityTag = typeof communityTags.$inferSelect;
+export type CommunityOriginal = typeof communityOriginals.$inferSelect;
 export type OfficialBatch = typeof officialBatches.$inferSelect;
 export type CommunityComment = typeof communityComments.$inferSelect;
+export type CommentModerationCheck = typeof commentModerationChecks.$inferSelect;
 export type CommunityReport = typeof communityReports.$inferSelect;
 export type ModerationRuleSetVersion = typeof moderationRuleSetVersions.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

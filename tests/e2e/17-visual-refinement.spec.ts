@@ -2,7 +2,7 @@ import { expect, test, type Locator } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fillField, selectChoice, waitHydrated } from './helpers';
+import { attachSubmissionOriginal, fillField, selectChoice, uploadDraftOriginal, waitHydrated } from './helpers';
 
 const widths=[350,390,768,1280,1440];
 const output=(name:string)=>resolve('.scratch/site-visual-refinement/evidence',name);
@@ -25,6 +25,7 @@ test('合法的长英文公开标题不裁切，减少动态效果取消卡片�
   const title=`${info.project.name}${'HandmadeFlowers'.repeat(5)}`.slice(0,80);
   const batch=await post('/api/admin/batches',{itemCount:1,defaultParams:source.snapshot.params,engineVersion:source.snapshot.engineVersion,reason:'本地长标题排版验证'});
   const draft=await post(`/api/admin/batches/${batch.id}/drafts`,{title,snapshot:source.snapshot,reason:'本地长标题排版验证'});
+  await uploadDraftOriginal(page,draft.revisionId);
   await post(`/api/admin/batches/${batch.id}/publish`,{revisionIds:[draft.revisionId],expectedVersion:batch.version,reason:'本地长标题排版验证'});
   await page.goto(`/community?q=${title}`);
   const card=page.locator('.community-card').filter({has:page.getByRole('heading',{name:title,exact:true})});
@@ -66,8 +67,9 @@ test('后台待审、批次和人员队列五宽度排版与无障碍',async({pa
     await author.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(author.url()).pathname).toBe('/community/submit');
     await selectChoice(author,'选择云端设计','E2E 私人设计');
     await author.getByLabel('公开作品标题').fill(title);
-    await author.getByRole('checkbox',{name:/我确认拥有发布权/}).check();
-    await author.getByRole('button',{name:'冻结快照并提交审核'}).click();
+    await author.getByRole('checkbox',{name:/合法发布权/}).check();
+    await attachSubmissionOriginal(author, resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png'));
+    await author.getByRole('button',{name:'提交审核'}).click();
     await expect.poll(()=>new URL(author.url()).pathname).toBe('/community/mine');
   }finally{await authorContext.close();}
   await page.goto('/login?next=/admin/reviews');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
@@ -162,7 +164,7 @@ test('长选项搜索、键盘取消、减少动态效果与200%布局放大',as
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.goto('/login?next=/admin/analytics');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/analytics');
-  await expect(page.getByRole('heading',{name:'匿名分析校样',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'使用统计',exact:true})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:output(`admin-${info.project.name}.png`),fullPage:true});
   await page.goto('/palettes');
@@ -210,5 +212,5 @@ test('多色续作、长标题，以及加载失败后的重试状态',async({pa
   await page.screenshot({path:output(`recent-detail-${info.project.name}.png`),fullPage:false});
   await page.unroute('**/api/community/works?sort=*');
   await page.locator('.home-community').getByRole('button',{name:'重试',exact:true}).click();
-  await expect(page.locator('.home-community canvas').first()).toBeVisible();
+  await expect(page.locator('.home-community img.community-thumbnail').first()).toBeVisible();
 });

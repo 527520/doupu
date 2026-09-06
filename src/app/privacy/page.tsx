@@ -18,13 +18,13 @@ export default function PrivacyPage() {
             <p>{t.heroBody}</p>
           </div>
         </section>
-        <AnalyticsConsentSettings />
-        <div className="info-card-grid">
-          <section className="info-card"><h2>{t.collectedTitle}</h2><p>{t.collectedBody}</p></section>
-          <section className="info-card"><h2>{t.excludedTitle}</h2><p>{t.excludedBody}</p></section>
-          <section className="info-card"><h2>{t.retentionTitle}</h2><p>{t.retentionBody}</p></section>
-          <section className="info-card"><h2>{t.withdrawalTitle}</h2><p>{t.withdrawalBody}</p></section>
-        </div>
+        <section className="community-narrow prose-policy" aria-label={t.title}>
+          {t.sections.map((section) => <section key={section.title}><h2>{section.title}</h2><p>{section.body}</p></section>)}
+        </section>
+        <section className="community-narrow" aria-label={t.analyticsSettingsTitle}>
+          <h2 className="prose-policy-heading">{t.analyticsSettingsTitle}</h2>
+          <AnalyticsConsentSettings />
+        </section>
       </div>
     </main>
   );

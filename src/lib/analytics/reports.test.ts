@@ -87,7 +87,7 @@ describe('analytics reports', () => {
       values: [{ value: 'mobile', events: 13, uniqueVisitors: null, dailyUniqueVisitorsSum: null }],
     });
     await expect(queryAnalyticsFunnel(db, query, 'creation', NOW)).resolves.toMatchObject({
-      unavailableReason: '仅最近 90 天原始事件支持同会话漏斗',
+      unavailableReason: '转化路径只能在最近 90 天的精确统计范围内查看。',
       steps: null,
     });
     await expect(queryAnalyticsSummary(db, { start: '2024-09-05', end: '2024-09-05' }, NOW)).resolves.toMatchObject({ capability: { mode: 'aggregate' }, totals: { events: 0 } });

@@ -13,7 +13,23 @@ import AdminCommandNotice from './AdminCommandNotice';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
 
 type Mode = 'comments' | 'reports';
-interface Item { id: string; workId?: string; targetType?: string; targetId?: string; status: string; version: number; body?: string; category?: string; riskCategories?: string[]; details?: string | null }
+interface ModerationCheck { provider: string; suggestion: string | null; label: string | null; subLabel: string | null; score: number | null; keywords: string[]; reason: string; checkedAt: string }
+interface Item { id: string; workId?: string; targetType?: string; targetId?: string; status: string; version: number; body?: string; category?: string; riskCategories?: string[]; details?: string | null; moderation?: ModerationCheck | null }
+
+/** 内容安全判定摘要：来源、建议、标签、置信度、命中词，全部映射成中文。 */
+function ModerationVerdict({ check }: { check: ModerationCheck }) {
+  const m = zhCN.communityAdmin.moderationCheck;
+  const label = (value: string | null) => (value ? m.labels[value as keyof typeof m.labels] ?? value : m.none);
+  return <dl className="admin-facts moderation-verdict">
+    <div><dt>{m.provider}</dt><dd>{m.providers[check.provider as keyof typeof m.providers] ?? check.provider}</dd></div>
+    <div><dt>{m.suggestion}</dt><dd>{check.suggestion ? m.suggestions[check.suggestion as keyof typeof m.suggestions] ?? check.suggestion : m.none}</dd></div>
+    <div><dt>{m.label}</dt><dd>{label(check.label)}{check.subLabel ? ` · ${check.subLabel}` : ''}</dd></div>
+    {check.score !== null && <div><dt>{m.score}</dt><dd>{check.score}</dd></div>}
+    {check.keywords.length > 0 && <div><dt>{m.keywords}</dt><dd>{check.keywords.join('、')}</dd></div>}
+    <div><dt>{m.reason}</dt><dd>{m.reasons[check.reason as keyof typeof m.reasons] ?? check.reason}</dd></div>
+    <div><dt>{m.checkedAt}</dt><dd>{new Date(check.checkedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</dd></div>
+  </dl>;
+}
 
 function ReportMaterial({ target }: { target: ReportTargetInspection }) {
   const { governance: g, states } = zhCN.communityAdmin;
@@ -88,12 +104,14 @@ export default function GovernanceConsole({ mode }: { mode: Mode }) {
       <span className="studio-eyebrow">{g.caseMaterial}</span><h2>{mode === 'comments' ? t.commentPlainText : t.reportFacts}</h2>
       <p className="governance-body">{selected.body || selected.details || t.noDetails}</p>
       <dl><div><dt>{g.status}</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>{g.risk}</dt><dd>{selected.riskCategories?.map(riskLabel).join(g.separator) || (selected.category ? riskLabel(selected.category) : t.unmarked)}</dd></div></dl>
+      {mode === 'comments' && (selected.moderation ? <ModerationVerdict check={selected.moderation} /> : <p className="admin-help">{t.moderationCheck.missing}</p>)}
+      {mode === 'comments' && selected.status === 'rejected' && <p className="notice notice-warning">{t.moderationCheck.rejectedHelp}</p>}
       {mode === 'reports' && (target ? <ReportMaterial target={target} /> : inspection.error ? <div><p role="alert">{inspection.error}</p><button type="button" className="btn-outline" onClick={() => void inspection.reload()}>{c.reload}</button></div> : <p role="status">{g.loadingTarget}</p>)}
     </> : <p className="admin-empty">{g.select}</p>}</section>
     <aside className="review-actions">
       {selected && <><h2>{g.action}</h2><label>{g.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
         {mode === 'reports' && <div className="admin-form-stack"><p className="admin-help">{g.caseDoesNotModerate}</p>{target?.targetType === 'comment' && ['pending_review', 'published'].includes(target.contentStatus ?? '') && <button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void hideReportedComment()}>{g.hideCurrentComment}</button>}{target?.targetType === 'work' && <Link href={`/admin/works?work=${target.targetId}`}>{g.manageReportedWork}</Link>}</div>}
-        <div>{mode === 'comments' ? <><button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button><button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{t.actions.publish}</button></> : <><button type="button" className="btn-ghost" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected.status === 'accepted' ? <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></>}
+        <div>{mode === 'comments' ? <>{selected.status !== 'rejected' && <button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button>}<button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{selected.status === 'rejected' ? t.actions.publishRejected : t.actions.publish}</button></> : <><button type="button" className="btn-ghost" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected.status === 'accepted' ? <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></>}
       <AdminCommandNotice command={command} onRefresh={() => void refresh()} />
       {selected && queue.error && <div><p role="alert">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>}
     </aside>

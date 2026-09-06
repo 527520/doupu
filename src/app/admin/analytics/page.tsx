@@ -15,6 +15,14 @@ import { zhCN } from '@/messages/zh-CN';
 
 import TrendChart from '@/components/admin/AnalyticsTrendChart';
 import DailyDimensionTrend from '@/components/admin/DailyDimensionTrend';
+
+type Dashboard = typeof zhCN.communityAdmin.analyticsDashboard;
+/** 分类值尽量映射成中文（设备 / 浏览器 / 系统 / 身份 / 事件名）；路径与域名等原样展示。 */
+function dimensionValueLabel(t: Dashboard, dimension: string, value: string): string {
+  const maps: Record<string, Record<string, string>> = { device: t.devices, browser: t.browsers, os: t.systems, actor: t.actors, event: t.steps };
+  return maps[dimension]?.[value] ?? value;
+}
+
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<DashboardSearchParams> }) {
   const actor = await getSessionActor();
   if (!authorize(actor, 'analytics:read')) forbidden();
@@ -51,14 +59,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     {summary.capability.mode === 'aggregate' && <p className="notice">{t.rollupFreshness}{'partialDay' in trend && trend.partialDay ? t.partialDay(trend.partialDay) : ''}</p>}
     {filtersIgnored && <p className="notice notice-warning">{t.ignoredFilters}</p>}
     <section className="admin-metrics" aria-label={t.summary}>
-      <article><small>{t.eventsCode}</small><strong>{summary.totals.events.toLocaleString('zh-CN')}</strong><span>{t.events}</span></article>
-      <article><small>{t.visitorsCode}</small><strong>{summary.totals.uniqueVisitors?.toLocaleString('zh-CN') ?? t.emptyValue}</strong><span>{t.rangeUv}</span></article>
-      <article><small>{t.sessionsCode}</small><strong>{summary.totals.sessions?.toLocaleString('zh-CN') ?? t.emptyValue}</strong><span>{t.sessions}</span></article>
+      <article><small>{t.eventsCode}</small><strong>{summary.totals.events.toLocaleString('zh-CN')}</strong><span>{t.eventsHelp}</span></article>
+      <article><small>{t.visitorsCode}</small><strong>{summary.totals.uniqueVisitors?.toLocaleString('zh-CN') ?? t.emptyValue}</strong><span>{t.visitorsHelp}</span></article>
+      <article><small>{t.sessionsCode}</small><strong>{summary.totals.sessions?.toLocaleString('zh-CN') ?? t.emptyValue}</strong><span>{t.sessionsHelp}</span></article>
     </section>
     <section className="admin-proof-grid">
       <article className="admin-panel"><header><h2>{t.trend}</h2><span>{query.start} — {query.end}</span></header><TrendChart points={trend.points.map((point) => ({ day: point.day, events: point.events, uniqueVisitors: point.uniqueVisitors }))} /></article>
-      <article className="admin-panel"><header><h2>{t.deviceBreakdown}</h2><span>{t.singleDimensionUv}</span></header>{breakdown.values.length === 0 ? <div className="admin-empty">{t.noDimension}</div> : <table><caption className="sr-only">{t.dimensionCaption}</caption><thead><tr><th>{t.value}</th><th>{t.events}</th><th>{t.visitors}</th></tr></thead><tbody>{breakdown.values.map((row) => <tr key={row.value}><td>{row.value}</td><td>{row.events}</td><td>{row.uniqueVisitors ?? t.emptyValue}</td></tr>)}</tbody></table>}</article>
-      <article className="admin-panel"><header><h2>{t.funnelTitle}</h2><span>{t.funnelNames[funnel]}</span></header>{funnelResult.steps ? <table><thead><tr><th>{t.step}</th><th>{t.reachedSessions}</th><th>{t.conversion}</th></tr></thead><tbody>{funnelResult.steps.map((step) => <tr key={step.name}><td>{t.steps[step.name as keyof typeof t.steps]}</td><td>{step.sessions}</td><td>{step.conversionFromPrevious === null ? t.emptyValue : `${Math.round(step.conversionFromPrevious * 100)}%`}</td></tr>)}</tbody></table> : <p className="admin-empty">{funnelResult.unavailableReason}</p>}</article>
+      <article className="admin-panel"><header><h2>{t.deviceBreakdown}</h2><span>{t.dimensions[dimension as keyof typeof t.dimensions] ?? t.singleDimensionUv}</span></header>{breakdown.values.length === 0 ? <div className="admin-empty">{t.noDimension}</div> : <table><caption className="sr-only">{t.dimensionCaption}</caption><thead><tr><th>{t.value}</th><th>{t.events}</th><th>{t.visitors}</th></tr></thead><tbody>{breakdown.values.map((row) => <tr key={row.value}><td>{dimensionValueLabel(t, dimension, row.value)}</td><td>{row.events}</td><td>{row.uniqueVisitors ?? t.emptyValue}</td></tr>)}</tbody></table>}</article>
+      <article className="admin-panel"><header><h2>{t.funnelTitle}</h2><span>{t.funnelNames[funnel]}</span></header><p className="admin-help">{t.funnelHelp}</p>{funnelResult.steps ? <table><thead><tr><th>{t.step}</th><th>{t.reachedSessions}</th><th>{t.conversion}</th></tr></thead><tbody>{funnelResult.steps.map((step) => <tr key={step.name}><td>{t.steps[step.name as keyof typeof t.steps]}</td><td>{step.sessions}</td><td>{step.conversionFromPrevious === null ? t.emptyValue : `${Math.round(step.conversionFromPrevious * 100)}%`}</td></tr>)}</tbody></table> : <p className="admin-empty">{funnelResult.unavailableReason}</p>}</article>
     </section>
     {breakdown.points && <article className="admin-panel"><DailyDimensionTrend points={breakdown.points} /></article>}
     <p className="admin-footnote">{t.footnote}</p>

@@ -82,6 +82,21 @@ export interface SiteConfig extends PublicConfig {
     connectionTimeoutMs: number;
     idleTimeoutMs: number;
   };
+  /** 评论审核（D50）：反刷闸门与腾讯云文本内容安全的成本护栏。 */
+  moderation: {
+    /** 每个账号每小时最多发表 / 修改评论次数 */
+    commentsPerUserPerHour: number;
+    /** 每个账号每天最多发表 / 修改评论次数 */
+    commentsPerUserPerDay: number;
+    /** 每个 IP 每小时最多发表评论次数（未知 IP 不计） */
+    commentsPerIpPerHour: number;
+    /** 全站每天最多调用内容安全接口次数；超出后新评论一律进待审 */
+    tmsDailyBudget: number;
+    /** 同文哈希结果缓存小时数；命中缓存不再计费 */
+    tmsCacheHours: number;
+    /** 单次调用超时毫秒 */
+    tmsTimeoutMs: number;
+  };
 }
 
 /** 默认值即历史行为：未配置任何环境变量时，站点行为与优化前完全一致。 */
@@ -104,6 +119,14 @@ const DEFAULTS: SiteConfig = {
     statementTimeoutMs: 15_000,
     connectionTimeoutMs: 5_000,
     idleTimeoutMs: 30_000,
+  },
+  moderation: {
+    commentsPerUserPerHour: 20,
+    commentsPerUserPerDay: 80,
+    commentsPerIpPerHour: 60,
+    tmsDailyBudget: 2000,
+    tmsCacheHours: 24 * 7,
+    tmsTimeoutMs: 3000,
   },
 };
 
@@ -165,6 +188,14 @@ function compute(): SiteConfig {
       statementTimeoutMs: readInt('DB_STATEMENT_TIMEOUT_MS', DEFAULTS.database.statementTimeoutMs, 0, 600_000),
       connectionTimeoutMs: readInt('DB_CONNECTION_TIMEOUT_MS', DEFAULTS.database.connectionTimeoutMs, 0, 60_000),
       idleTimeoutMs: readInt('DB_IDLE_TIMEOUT_MS', DEFAULTS.database.idleTimeoutMs, 0, 600_000),
+    },
+    moderation: {
+      commentsPerUserPerHour: readInt('RATE_COMMENT_USER_HOUR', DEFAULTS.moderation.commentsPerUserPerHour, 1),
+      commentsPerUserPerDay: readInt('RATE_COMMENT_USER_DAY', DEFAULTS.moderation.commentsPerUserPerDay, 1),
+      commentsPerIpPerHour: readInt('RATE_COMMENT_IP_HOUR', DEFAULTS.moderation.commentsPerIpPerHour, 1),
+      tmsDailyBudget: readInt('TMS_DAILY_BUDGET', DEFAULTS.moderation.tmsDailyBudget, 0),
+      tmsCacheHours: readInt('TMS_CACHE_HOURS', DEFAULTS.moderation.tmsCacheHours, 0, 24 * 90),
+      tmsTimeoutMs: readInt('TMS_TIMEOUT_MS', DEFAULTS.moderation.tmsTimeoutMs, 500, 30_000),
     },
   };
 }

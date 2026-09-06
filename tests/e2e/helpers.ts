@@ -4,7 +4,7 @@
  * - 抗水合竞态的填充/上传助手（WebKit 等慢浏览器上 React 挂载可能晚于首次交互）。
  */
 import { readFileSync } from 'node:fs';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3100';
 
@@ -94,6 +94,45 @@ export async function typeSpin(page: Page, name: string, value: string): Promise
     await input.pressSequentially(value);
     expect(await input.inputValue()).toBe(value);
   }).toPass({ timeout: 15_000 });
+}
+
+/**
+ * 投稿页原图步骤（D49）：公开作品必须附带原图并同意上传条款。
+ * 没有从工作台交接原图时，投稿页要求重新选择文件。
+ */
+export async function attachSubmissionOriginal(page: Page, filePath: string): Promise<void> {
+  await waitHydrated(page);
+  await page.locator('.submission-original input[type="file"]').setInputFiles(filePath);
+  await expect(page.locator('.submission-original-card')).toBeVisible();
+  await page.getByRole('checkbox', { name: /同意将上述原图上传/ }).check();
+}
+
+/**
+ * 长页面里滚动后再点击：WebKit 在滚动 + 指针刚移入后的一两帧内，事件命中测试仍用旧布局，
+ * mousedown 会落到祖先元素，click 因此派发给共同祖先而不是按钮（React onClick 不触发）。
+ * 先悬停并等两帧让合成层提交，再按下；真人操作的指针到达和按下之间天然有这段间隔。
+ */
+export async function settledClick(locator: Locator): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
+  await locator.hover();
+  await locator.page().evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+  await locator.click();
+}
+
+/** 1×1 PNG：夹具用最小合法原图，避免 E2E 依赖真实照片文件。 */
+export const TINY_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAgAB/wdYqHkAAAAASUVORK5CYII=';
+
+/**
+ * 通过 API 夹具创建的官方草稿没有原图，发布会被 ORIGINAL_REQUIRED 拒绝（D49）。
+ * 在已登录页面上下文里上传最小 PNG，走真实的同源校验与会话。
+ */
+export async function uploadDraftOriginal(page: Page, revisionId: string): Promise<void> {
+  const result = await page.evaluate(async ({ revisionId, base64 }) => {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+    const response = await fetch(`/api/community/revisions/${revisionId}/original`, { method: 'PUT', headers: { 'content-type': 'image/png' }, body: bytes });
+    return { status: response.status, body: await response.text() };
+  }, { revisionId, base64: TINY_PNG_BASE64 });
+  expect(result.status, result.body).toBe(201);
 }
 
 /** 抗水合上传：先等水合完成再 setInputFiles，并断言出现响应。 */

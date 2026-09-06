@@ -6,7 +6,12 @@ import type { Actor } from './authorization';
 import { DEFAULT_GENERATION_PARAMS, type ProjectFile } from '@/lib/types';
 import { COMMUNITY_LICENSE_VERSION } from '@/lib/community/snapshot';
 import { createCommunityRevision, createCommunityWork, reviewCommunityRevision, submitCommunityRevision } from '@/lib/community/service';
-import { createCommunityComment, createModerationRuleSet, reportCommunityTarget } from '@/lib/community/interactions';
+import { createCommunityComment, reportCommunityTarget, setCommentModerationDeps } from '@/lib/community/interactions';
+import { storeRevisionOriginal } from '@/lib/community/originals';
+import { getOriginalStore } from '@/lib/community/originalStore';
+import { E2E_MODERATION_DEPS } from '@/lib/moderation/e2eFake';
+
+const SEED_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAgAB/wdYqHkAAAAASUVORK5CYII=', 'base64');
 
 /** Non-production startup fixture. It is deliberately not reachable over HTTP. */
 export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
@@ -19,6 +24,8 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
     { email: 'e2e-moderator@example.com', username: 'E2E Moderator', passwordHash, role: 'moderator', emailVerifiedAt: new Date() },
     { email: 'e2e-user@example.com', username: 'E2E User', passwordHash, role: 'user', emailVerifiedAt: new Date() },
     ...['chromium', 'firefox', 'webkit'].map((browser) => ({ email: `e2e-governance-${browser}@example.com`, username: `E2E 治理目标 ${browser}`, passwordHash, role: 'user' as const, emailVerifiedAt: new Date() })),
+    // 评论审核用例专用账号：共用账号在整轮 E2E 里评论过多，会触发真实的突发限流（5 分钟内 ≥5 条转人工），掩盖拦截判定。
+    ...['chromium', 'firefox', 'webkit'].map((browser) => ({ email: `e2e-comment-${browser}@example.com`, username: `E2E 评论样本 ${browser}`, passwordHash, role: 'user' as const, emailVerifiedAt: new Date() })),
   ]).returning();
   const admin: Actor = { userId: adminRow.id, role: 'admin', accountStatus: 'active', emailVerified: true };
   const user: Actor = { userId: userRow.id, role: 'user', accountStatus: 'active', emailVerified: true };
@@ -46,11 +53,15 @@ export async function seedE2eGovernance(db: AnyDatabase): Promise<void> {
   };
   await db.insert(designs).values({ id: designId, userId: user.userId, name: project.name, project, payloadBytes: JSON.stringify(project).length });
   const created = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: 'E2E 已公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+  // D49：公开作品必须附带原图；E2E 样本用一张 1×1 PNG 走真实存储路径（开发环境为本机目录）。
+  await storeRevisionOriginal(db, getOriginalStore(), { actor: user, revisionId: created.revision.id, bytes: new Uint8Array(SEED_PNG) });
   const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
   await reviewCommunityRevision(db, { actor: admin, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: 'E2E 启动期公开样本', requestId: 'e2e-seed-publish' });
   const replacement = await createCommunityRevision(db, { actor: user, workId: created.work.id, designId, expectedDesignRevision: 1, title: 'E2E 待审修改版', licenseVersion: COMMUNITY_LICENSE_VERSION });
   await submitCommunityRevision(db, { actor: user, revisionId: replacement.id, expectedVersion: replacement.version });
-  await createModerationRuleSet(db, { actor: admin, expectedVersion: 1, rules: [{ literal: 'E2E风险词', category: 'spam', risk: 'review' }], reason: 'E2E 启动期规则', requestId: 'e2e-seed-rules' });
+  // D50：E2E 不访问腾讯云。假服务由 DOUPU_E2E_SEED 在 interactions 模块内自行启用（见 e2eFake.ts）；
+  // 这里显式设置只是让种子进程自身的模块实例也走同一套判定。
+  setCommentModerationDeps(E2E_MODERATION_DEPS);
   await createCommunityComment(db, { actor: user, workId: created.work.id, body: '包含 E2E风险词 的评论' });
   for (const browser of ['chromium', 'firefox', 'webkit']) {
     await createCommunityComment(db, { actor: user, workId: created.work.id, body: `E2E 可删除旧评论 ${browser}`, now: new Date(Date.now() - 30 * 60 * 1000) });

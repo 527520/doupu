@@ -3,9 +3,9 @@ import { eq } from 'drizzle-orm';
 import { createTestClient, type TestDatabase } from './testClient';
 import {
   communityRevisions,
-  communityRevisionTags,
   communityTags,
   communityWorks,
+  communityWorkTags,
   users,
 } from './schema';
 import { DEFAULT_GENERATION_PARAMS } from '@/lib/types';
@@ -16,6 +16,7 @@ import {
   getPublicCommunityWork,
   listCommunityReviewQueue,
   listOwnCommunityWorks,
+  listPopularCommunityTags,
   listPublicCommunityWorks,
   parseCommunityListUrl,
 } from '@/lib/community/queries';
@@ -108,7 +109,7 @@ describe('public community query boundary', () => {
       }).returning();
       await db.update(communityWorks).set({ currentPublishedRevisionId: revision.id })
         .where(eq(communityWorks.id, work.id));
-      await db.insert(communityRevisionTags).values({ revisionId: revision.id, tagId: resolved.id });
+      await db.insert(communityWorkTags).values({ workId: work.id, tagId: resolved.id });
       workIds.push(work.id);
     }
 
@@ -155,6 +156,12 @@ describe('public community query boundary', () => {
       .rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(listPublicCommunityWorks(db, { sort: 'latest', tag: 'missing' }))
       .resolves.toMatchObject({ items: [] });
+    // 标签筛选以名称为主键（大小写与前后空白不敏感），也兼容旧链接里的 slug
+    expect((await listPublicCommunityWorks(db, { sort: 'latest', tag: ' 宠物 ' })).items).toHaveLength(24);
+    expect((await listPublicCommunityWorks(db, { sort: 'latest', tag: '旧宠物' })).items).toHaveLength(24);
+    // 搜索词同时匹配标签名
+    expect((await listPublicCommunityWorks(db, { sort: 'latest', q: '宠物' })).items).toHaveLength(24);
+    expect(await listPopularCommunityTags(db)).toEqual([{ id: resolvedTagId, name: '宠物', slug: 'pets', count: 25 }]);
   });
 
   it('paginates deterministically and returns the frozen detail only while public', async () => {

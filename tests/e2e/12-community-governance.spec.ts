@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fillField } from './helpers';
+import { attachSubmissionOriginal, fillField } from './helpers';
 
 const BATCH_PHOTO = resolve(process.cwd(), 'tests/fixtures/photo-gradient-64.png');
 
@@ -38,7 +38,7 @@ test('已验证用户引用独立副本并发布评论', async ({ page }, testIn
   await expect(page.getByRole('tab', { name: '编辑', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByLabel('设计名称')).toHaveValue(/（引用）$/);
   await page.goto(originalWorkUrl);
-  await page.getByLabel('发表评论').fill(`E2E ${testInfo.project.name} 普通评论`);
+  await fillField(page, '发表评论', `E2E ${testInfo.project.name} 普通评论`);
   await page.getByRole('button', { name: '发布评论' }).click();
   await expect(page.getByText(/评论已发布|审核通过后公开/)).toBeVisible();
 });
@@ -50,8 +50,11 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
   await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
   const title = `E2E ${testInfo.project.name} 投稿恢复`;
   await page.getByLabel('公开作品标题').fill(title);
-  await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
-  await page.getByRole('checkbox', { name: /我确认拥有发布权/ }).check();
+  await expect(page.getByRole('checkbox', { name: /合法发布权/ })).not.toBeChecked();
+  await page.getByRole('checkbox', { name: /合法发布权/ }).check();
+  // D49：公开作品必须附带原图
+  await expect(page.getByRole('button', { name: '提交审核' })).toBeDisabled();
+  await attachSubmissionOriginal(page, BATCH_PHOTO);
   const creationRequests: Array<{ body: string | null; key: string | undefined }> = [];
   await page.route('**/api/community/works', async (route) => {
     if (route.request().method() !== 'POST') return route.continue();
@@ -68,7 +71,7 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
     }
     else await route.continue();
   });
-  await page.getByRole('button', { name: '冻结快照并提交审核' }).click();
+  await page.getByRole('button', { name: '提交审核' }).click();
   await expect(page.locator('.community-submit-form').getByRole('alert')).toContainText('模拟已提交后超时');
   await expect(page.getByLabel('公开作品标题')).toBeDisabled();
   await page.getByRole('button', { name: '重试原投稿' }).click();
@@ -94,7 +97,7 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
   await item.getByRole('link', { name: '修改并重新投稿' }).click();
   expect(withdrawalRequests).toHaveLength(2); expect(withdrawalRequests[1]).toEqual(withdrawalRequests[0]);
   await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
-  await expect(page.getByRole('checkbox', { name: /我确认拥有发布权/ })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /合法发布权/ })).not.toBeChecked();
 });
 
 test('评论删除独立于编辑窗口，待审评论只对本人显示', async ({ page }, testInfo) => {
@@ -143,13 +146,13 @@ test('moderator 只能进入治理模块，管理员模块不出现在导航', a
     await page.getByText('E2E 待审修改版').first().click();
     await page.getByLabel('审核理由').fill('E2E 人工审核通过修改版');
     await page.getByRole('button', { name: '批准发布' }).click();
-    await expect(page.getByText('队列已清空。')).toBeVisible();
+    await expect(page.getByText('暂无等待审核的投稿。')).toBeVisible();
   }
   await page.goto('/admin/users');
   await expect(page.getByRole('heading', { name: '这里需要更高权限' })).toBeVisible();
 });
 
-test('admin 可读取人员、规则、审计和系统证据', async ({ page }) => {
+test('admin 可读取人员、审计和系统证据；规则页已退役', async ({ page }) => {
   await login(page, 'e2e-admin@example.com', '/admin/users');
   await expect(page.getByRole('heading', { name: '人员管理' })).toBeVisible();
   await expect(page.getByText('E2E Admin').first()).toBeVisible();
@@ -157,29 +160,29 @@ test('admin 可读取人员、规则、审计和系统证据', async ({ page }) 
   const people = await page.evaluate(async () => (await fetch('/api/admin/users')).json());
   expect(people.items.find((item: { username: string }) => item.username === 'E2E Admin')).toMatchObject({ maskedEmail: 'e***n@example.com' });
   expect(JSON.stringify(people)).not.toContain('e2e-admin@example.com');
-  await page.goto('/admin/rules');
-  await expect(page.getByRole('heading', { name: '审核规则' })).toBeVisible();
+  expect((await page.request.get('/admin/rules')).status()).toBe(404);
   await page.goto('/admin/audit');
-  await expect(page.getByRole('heading', { name: '审计记录' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '操作记录', exact: true })).toBeVisible();
   await page.goto('/admin/system');
   await expect(page.getByText('未接入').first()).toBeVisible();
-  await expect(page.getByText('0012_comment_publication_time')).toBeVisible();
+  await expect(page.getByText('评论内容安全服务（腾讯云）')).toBeVisible();
+  await expect(page.getByText('0015_comment_moderation_checks')).toBeVisible();
 });
 
 test('分析后台在精确与长期聚合范围间明确切换能力', async ({ page }) => {
   await login(page, 'e2e-admin@example.com', '/admin/analytics');
   await page.goto(`/admin/analytics?start=${dateOffset(-10)}&end=${dateOffset(0)}&device=desktop&actor=user&dimension=device&funnel=communityReuse`);
-  await expect(page.getByRole('heading', { name: '匿名分析校样' })).toBeVisible();
-  await expect(page.getByText('当前为最近 90 天精确模式：提供范围 UV、组合筛选和漏斗。')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '使用统计' })).toBeVisible();
+  await expect(page.getByText('当前为精确统计（最近 90 天）：可查看去重访客数、组合筛选和转化路径。')).toBeVisible();
   await expect(page.locator('select[name="device"]')).toHaveValue('desktop');
   await expect(page.locator('select[name="actor"]')).toHaveValue('user');
   await expect(page.locator('select[name="funnel"]')).toHaveValue('communityReuse');
   await expect(page.getByRole('table')).toHaveCount(1);
 
   await page.goto(`/admin/analytics?start=${dateOffset(-140)}&end=${dateOffset(0)}&device=desktop&dimension=device&funnel=communityReuse`);
-  await expect(page.getByText('当前为长期聚合模式：仅提供每日总量和单维分类趋势，不显示跨日 UV 或漏斗。')).toBeVisible();
-  await expect(page.getByText('长期范围不支持组合筛选，已自动忽略日期与事件名以外的筛选。')).toBeVisible();
-  await expect(page.getByText('仅最近 90 天原始事件支持同会话漏斗')).toBeVisible();
+  await expect(page.getByText('当前为长期趋势（按日汇总）：只提供每日总量和单一分类趋势，不显示跨日去重访客数和转化路径。')).toBeVisible();
+  await expect(page.getByText('长期范围不支持组合筛选，已忽略日期和事件名称以外的筛选条件。')).toBeVisible();
+  await expect(page.getByText('转化路径只能在最近 90 天的精确统计范围内查看。')).toBeVisible();
 });
 
 test('官方批次允许单项失败、保留成功草稿并只发布勾选项', async ({ page }) => {
@@ -191,7 +194,7 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   ]);
   await expect(page.getByText('photo-gradient-64.png')).toBeVisible();
   await expect(page.getByText('broken.png')).toBeVisible();
-  const pendingItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
+  const pendingItem = page.locator('.batch-cards li', { hasText: 'photo-gradient-64.png' });
   await page.getByText(/统一生成参数 ·/).click();
   await page.locator('.batch-studio > details').getByLabel('目标宽度').fill('30');
   await pendingItem.getByText('逐项参数覆盖').click();
@@ -199,8 +202,8 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
 
   await page.getByRole('button', { name: '开始生成' }).click();
   await expect(page.getByRole('status')).toContainText('生成完成，1 项失败', { timeout: 30_000 });
-  const savedItem = page.locator('.batch-items li', { hasText: 'photo-gradient-64.png' });
-  const failedItem = page.locator('.batch-items li', { hasText: 'broken.png' });
+  const savedItem = page.locator('.batch-cards li', { hasText: 'photo-gradient-64.png' });
+  const failedItem = page.locator('.batch-cards li', { hasText: 'broken.png' });
   await expect(savedItem).toContainText('已保存');
   await expect(savedItem.getByRole('img')).toBeVisible();
   await expect(failedItem).toContainText('失败');
@@ -215,19 +218,19 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await page.getByRole('button', { name: '确认公开所选草稿' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await expect(savedItem.getByRole('checkbox')).toHaveCount(0);
-  const remaining = page.locator('.batch-items li', { hasText: 'second-photo.png' });
+  const remaining = page.locator('.batch-cards li', { hasText: 'second-photo.png' });
   await expect(remaining.getByRole('checkbox')).toBeEnabled();
   page.once('dialog', (dialog) => dialog.accept());
   await page.reload();
   await page.getByText('恢复已保存批次（最近 50 批）').click();
   await page.locator('.batch-history li').filter({ hasText: completedBatch.id }).getByRole('button').click();
-  const restored = page.locator('.batch-items li').filter({ has: page.locator('input[value="官方作品 02"]') });
+  const restored = page.locator('.batch-cards li').filter({ has: page.locator('input[value="官方作品 02"]') });
   await restored.getByRole('checkbox').check();
   await page.getByRole('button', { name: /发布已勾选草稿/ }).click();
   await page.getByRole('checkbox', { name: /我已核对所选图纸与标题/ }).check();
   await page.getByRole('button', { name: '确认公开所选草稿' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
-  await expect(page.locator('.batch-items input[type="checkbox"]')).toHaveCount(0);
+  await expect(page.locator('.batch-cards input[type="checkbox"]')).toHaveCount(0);
   await page.goto('/community');
   await expect(page.getByRole('heading', { name: '官方作品 01' }).first()).toBeVisible();
   const detail = await page.evaluate(async () => {

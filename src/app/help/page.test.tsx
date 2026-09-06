@@ -43,8 +43,9 @@ describe('关于页', () => {
     const sourceLink = screen.getByText('源码仓库');
     expect(sourceLink.getAttribute('href')).toBe('https://github.com/527520/doupu');
     expect(screen.getByRole('heading', { name: '隐私政策' })).toBeTruthy();
-    expect(screen.getByText(/原图只在浏览器中处理，不上传服务器/)).toBeTruthy();
-    expect(screen.getByText(/保留匿名化的公开作品、引用事实及必要治理记录/)).toBeTruthy();
+    expect(screen.getByText(/私人设计的原图仅在浏览器内处理/)).toBeTruthy();
+    expect(screen.getByText(/公开作品的原图在取得您同意后存入私有对象存储/)).toBeTruthy();
+    expect(screen.getByText(/公开作品、引用事实及必要治理记录以去除身份信息的形式保留/)).toBeTruthy();
   });
 
   it('包含作者信息（wuqian 与 GitHub 主页链接）', () => {

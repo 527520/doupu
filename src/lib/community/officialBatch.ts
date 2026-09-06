@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AnyDatabase } from '@/../db/client';
-import { adminAuditLogs, communityRevisions, communityWorks, officialBatches } from '@/../db/schema';
+import { adminAuditLogs, communityOriginals, communityRevisions, communityWorks, officialBatches } from '@/../db/schema';
 import type { Actor } from '@/lib/auth/authorization';
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
@@ -130,6 +130,12 @@ export async function publishOfficialBatch(db: AnyDatabase, input: {
       eq(communityRevisions.authorType, 'official'), inArray(communityRevisions.id, revisionIds),
     )).orderBy(communityRevisions.id).for('update');
     if (drafts.length !== revisionIds.length) throw new AppError('STATE_CONFLICT', '所选草稿包含无效或已发布项目');
+    // 官方作品同样受 D49 约束：没有原图的草稿不能公开。
+    const originals = await tx.select({ revisionId: communityOriginals.revisionId }).from(communityOriginals)
+      .where(and(inArray(communityOriginals.revisionId, revisionIds), isNull(communityOriginals.deletedAt)));
+    const withOriginal = new Set(originals.map((row) => row.revisionId));
+    const missing = drafts.filter((draft) => !withOriginal.has(draft.id));
+    if (missing.length > 0) throw new AppError('ORIGINAL_REQUIRED', `有 ${missing.length} 个草稿尚未上传原图，请先重试上传`);
     for (const draft of drafts) {
       await tx.update(communityRevisions).set({
         status: 'published', version: draft.version + 1, reviewedAt: now,
@@ -162,13 +168,15 @@ export async function listOfficialBatches(db: AnyDatabase, actorUserId: string) 
     title: communityRevisions.title, status: communityRevisions.status,
     preview: communityRevisions.preview, width: communityRevisions.width, height: communityRevisions.height,
   }).from(communityRevisions).where(inArray(communityRevisions.officialBatchId, batches.map((batch) => batch.id)));
+  const withOriginal = revisions.length === 0 ? new Set<string>() : new Set((await db.select({ revisionId: communityOriginals.revisionId }).from(communityOriginals)
+    .where(and(inArray(communityOriginals.revisionId, revisions.map((revision) => revision.id)), isNull(communityOriginals.deletedAt)))).map((row) => row.revisionId));
   return batches.map((batch) => ({
     ...batch, defaultParams: batch.defaultParams,
     startedAt: batch.startedAt?.toISOString() ?? null, completedAt: batch.completedAt?.toISOString() ?? null,
     createdAt: batch.createdAt.toISOString(), updatedAt: batch.updatedAt.toISOString(),
     drafts: revisions.filter((revision) => revision.officialBatchId === batch.id).flatMap((revision) => {
       const preview = communityPreviewSchema.safeParse(revision.preview);
-      return preview.success ? [{ ...revision, preview: preview.data }] : [];
+      return preview.success ? [{ ...revision, hasOriginal: withOriginal.has(revision.id), preview: preview.data }] : [];
     }),
   }));
 }

@@ -74,6 +74,33 @@ describe('E2E dev server lifecycle', () => {
     expect(calls).toEqual([{ command: 'taskkill', args: ['/pid', '42', '/T', '/F'] }]);
   });
 
+  it('treats a non-zero taskkill status as advisory when the port is released', async () => {
+    const runtime: ProcessRuntime = {
+      platform: 'win32',
+      spawnSync: () => ({ status: 255, error: undefined }),
+      kill() {
+        throw new Error('Windows must not use POSIX kill');
+      },
+    };
+
+    await expect(stopProcessTree(42, 65_535, runtime, 100)).resolves.toBeUndefined();
+  });
+
+  it('reports the taskkill status when the port stays open on Windows', async () => {
+    const { child, port } = await spawnHttpServer();
+    const runtime: ProcessRuntime = {
+      platform: 'win32',
+      spawnSync: () => ({ status: 255, error: undefined }),
+      kill() {
+        throw new Error('Windows must not use POSIX kill');
+      },
+    };
+
+    await expect(stopProcessTree(child.pid!, port, runtime, 50)).rejects.toThrow(/exit 255.*仍在监听/);
+
+    child.kill('SIGKILL');
+  });
+
   it.runIf(process.platform !== 'win32')('escalates to SIGKILL when graceful shutdown cannot release the port', async () => {
     const { child, port } = await spawnHttpServer(true);
 

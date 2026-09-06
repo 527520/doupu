@@ -3,9 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import HomeCommunityShelf from './HomeCommunityShelf';
 
-vi.mock('./CommunityPreviewCanvas', () => ({ default: () => <canvas /> }));
+vi.mock('./CommunityThumbnail', () => ({ default: () => <canvas /> }));
 afterEach(() => vi.unstubAllGlobals());
-const work = (id: string, featured: boolean) => ({ id, title: id, featured, width: 1, height: 1, author: { displayName: '豆友' }, preview: { version: 1, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] } });
+const work = (id: string, featured: boolean) => ({ id, revisionId: `${id}-revision`, title: id, featured, width: 1, height: 1, author: { displayName: '豆友' }, preview: { version: 1, width: 1, height: 1, originalWidth: 1, originalHeight: 1, cells: ['#FFFFFF'], colorBand: ['#FFFFFF'] } });
 
 describe('home community data states', () => {
   it('treats an incomplete preview as a retryable read failure, not an empty shelf or a render crash', async () => {

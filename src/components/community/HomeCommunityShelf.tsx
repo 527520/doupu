@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { communityPreviewSchema } from '@/lib/community/snapshot';
-import CommunityPreviewCanvas from './CommunityPreviewCanvas';
+import CommunityThumbnail from './CommunityThumbnail';
 import { zhCN } from '@/messages/zh-CN';
 
 const shelfResponse = z.object({ items: z.array(z.object({
-  id: z.string().min(1), title: z.string(), featured: z.boolean(),
+  id: z.string().min(1), revisionId: z.string().min(1), title: z.string(), featured: z.boolean(),
   width: z.number().int().min(1).max(200), height: z.number().int().min(1).max(200),
   author: z.object({ displayName: z.string() }), preview: communityPreviewSchema,
 })).max(24) });
@@ -36,7 +36,7 @@ export default function HomeCommunityShelf() {
       }).catch(() => { if (!cancelled) setError(true); }).finally(() => window.clearTimeout(timeout));
     return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
   }, [attempt]);
-  const cards = (items: ShelfWork[]) => <ul>{items.map((work) => <li key={work.id}><Link href={`/community/${work.id}`}><CommunityPreviewCanvas preview={work.preview} label={t.preview(work.title)} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>;
+  const cards = (items: ShelfWork[]) => <ul>{items.map((work) => <li key={work.id}><Link href={`/community/${work.id}`}><CommunityThumbnail revisionId={work.revisionId} width={work.width} height={work.height} label={t.preview(work.title)} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>;
   return (
     <section className="home-community">
       <header><div><span className="studio-eyebrow">{state?.featured.length ? t.featured : t.latest}</span><h2>{state?.featured.length ? t.featuredProofs : t.latestProofs}</h2></div><Link href="/community" className="btn-outline btn-sm">{t.open}</Link></header>

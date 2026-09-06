@@ -1,3 +1,4 @@
+import { randomId } from '@/lib/ids';
 import { conflictName } from '@/lib/project/parse';
 import {
   CLEAR_GENERATION_SOURCE,
@@ -170,8 +171,7 @@ function upsertOutcomeCloud(outcome: SyncOutcome, remote: CloudDesignFull): void
 }
 
 function defaultNewId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  return `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return randomId();
 }
 
 async function listAllDesigns(api: CloudApi): Promise<CloudDesignMeta[]> {

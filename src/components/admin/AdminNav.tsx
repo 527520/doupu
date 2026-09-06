@@ -15,7 +15,6 @@ const modules = [
   ['/admin/analytics', zhCN.communityAdmin.nav.analytics, 'admin'],
   ['/admin/batches', zhCN.communityAdmin.nav.batches, 'admin'],
   ['/admin/users', zhCN.communityAdmin.nav.users, 'admin'],
-  ['/admin/rules', zhCN.communityAdmin.nav.rules, 'admin'],
   ['/admin/audit', zhCN.communityAdmin.nav.audit, 'admin'],
   ['/admin/system', zhCN.communityAdmin.nav.system, 'admin'],
 ] as const;

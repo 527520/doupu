@@ -3,23 +3,30 @@ import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 import { generationParamsSchema } from '@/lib/schemas';
 import { batchGenerationFailureMessage, validateOfficialBatchFiles } from '@/lib/community/batchClient';
 import { communityPreviewSchema, deriveCommunityPreview, type CommunityPreviewV1, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
+import { uploadRevisionOriginal } from '@/lib/community/originalsClient';
 import { track } from '@/lib/analytics/client';
+import { randomId } from '@/lib/ids';
 import { zhCN } from '@/messages/zh-CN';
 import { z } from 'zod';
 
 export interface BatchCrop { x: number; y: number; width: number; height: number }
 export interface BatchGeneration { promise: Promise<CommunitySnapshotV1>; cancel: () => void }
-export type BatchItemStatus = 'pending' | 'running' | 'saving' | 'save_unknown' | 'saved' | 'published' | 'failed' | 'cancelled' | 'unavailable';
+/**
+ * 生成 → 保存草稿 → 上传原图（D49）→ 可发布。
+ * upload_failed：草稿已保存但原图未上传；有本地文件可直接重试，没有则需重新选择原图。
+ */
+export type BatchItemStatus = 'pending' | 'running' | 'saving' | 'save_unknown' | 'uploading' | 'upload_failed' | 'saved' | 'published' | 'failed' | 'cancelled' | 'unavailable';
 export interface BatchItem {
   localId: string; file: File | null; localName: string; title: string; crop: BatchCrop | null;
   paramsOverride: Partial<GenerationParams>; status: BatchItemStatus; progress: number;
   error: string | null; revisionId: string | null; workId: string | null; selected: boolean; preview: CommunityPreviewV1 | null;
+  hasOriginal: boolean;
 }
 export interface BatchRow { id: string; version: number; status: 'running' | 'paused' | 'completed' | 'cancelled'; failureCount?: number }
 export interface StoredBatch extends BatchRow {
   createdAt: string; itemCount: number; successCount: number; failureCount: number;
   defaultParams?: unknown;
-  drafts: Array<{ id: string; workId: string; title: string; status: string; preview: CommunityPreviewV1 }>;
+  drafts: Array<{ id: string; workId: string; title: string; status: string; preview: CommunityPreviewV1; hasOriginal?: boolean }>;
 }
 interface State {
   items: BatchItem[]; batch: BatchRow | null; defaults: GenerationParams; reason: string;
@@ -30,8 +37,16 @@ interface Attempt { url: string; method: 'POST' | 'PATCH'; body: string; key: st
 interface Command extends Attempt { name: string; accept: (body: unknown) => void }
 interface Dependencies {
   generate: (input: { file: File; crop: BatchCrop | null; params: GenerationParams }, onProgress: (value: number) => void) => BatchGeneration;
+  /** 上传官方草稿原图（D49）；缺省走 /api/community/revisions/:id/original。 */
+  uploadOriginal?: (revisionId: string, file: File) => Promise<void>;
   concurrency: 1 | 2; fetcher?: (url: string, init: RequestInit) => Promise<Response>;
 }
+async function defaultUploadOriginal(revisionId: string, file: File): Promise<void> {
+  await uploadRevisionOriginal(revisionId, new Uint8Array(await file.arrayBuffer()));
+}
+const BATCH_ITEM_STATUSES: readonly BatchItemStatus[] = ['pending', 'running', 'saving', 'save_unknown', 'uploading', 'upload_failed', 'saved', 'published', 'failed', 'cancelled', 'unavailable'];
+export const RETRYABLE_STATUSES: readonly BatchItemStatus[] = ['failed', 'cancelled', 'save_unknown', 'upload_failed'];
+export function isBatchItemStatus(value: string): value is BatchItemStatus { return (BATCH_ITEM_STATUSES as readonly string[]).includes(value); }
 const t = zhCN.communityAdmin.batch;
 const uuid = z.uuid();
 const isUuid = (value: unknown): value is string => uuid.safeParse(value).success;
@@ -46,10 +61,17 @@ const storedBatchSchema = z.object({
   itemCount: z.number().int().min(1).max(50), successCount: z.number().int().min(0).max(50), failureCount: z.number().int().min(0).max(50),
   defaultParams: generationParamsSchema.optional(),
   drafts: z.array(z.object({ id: uuid, workId: uuid, title: z.string().min(1).max(80),
-    status: z.enum(['draft', 'pending_review', 'published', 'rejected', 'withdrawn', 'superseded']), preview: communityPreviewSchema })).max(50),
+    status: z.enum(['draft', 'pending_review', 'published', 'rejected', 'withdrawn', 'superseded']), preview: communityPreviewSchema, hasOriginal: z.boolean().optional() })).max(50),
 }).refine((batch) => batch.successCount <= batch.itemCount && batch.failureCount <= batch.itemCount
   && batch.drafts.length <= batch.itemCount && new Set(batch.drafts.map((draft) => draft.id)).size === batch.drafts.length);
 export const isStoredBatch = (value: unknown): value is StoredBatch => storedBatchSchema.safeParse(value).success;
+/** 服务器草稿状态 → 本地项状态：草稿缺原图时进入 upload_failed，提示补选原图后才可发布。 */
+function draftStatus(draft: StoredBatch['drafts'][number]): Pick<BatchItem, 'status' | 'hasOriginal' | 'error'> {
+  const hasOriginal = draft.hasOriginal !== false;
+  if (draft.status === 'published') return { status: 'published', hasOriginal, error: null };
+  if (draft.status !== 'draft') return { status: 'unavailable', hasOriginal, error: null };
+  return hasOriginal ? { status: 'saved', hasOriginal: true, error: null } : { status: 'upload_failed', hasOriginal: false, error: t.originalMissing };
+}
 
 /** One in-memory file set. Scheduling and immutable write attempts outlive React renders,
  * but never this page. Server state is recovered only through explicitly chosen history. */
@@ -71,7 +93,7 @@ export class BatchSession {
   get replaceable() { return !this.locked && !this.processing && !this.saves.size && this.state.mode !== 'running'; }
   private emit(change: Partial<State>) { if (this.disposed) return; this.state = { ...this.state, ...change }; this.listeners.forEach((listener) => listener()); }
   private patch(id: string, change: Partial<BatchItem>) { this.emit({ items: this.state.items.map((item) => item.localId === id ? { ...item, ...change } : item) }); }
-  private makeAttempt(url: string, method: Attempt['method'], body: object): Attempt { return { url, method, body: JSON.stringify(body), key: crypto.randomUUID() }; }
+  private makeAttempt(url: string, method: Attempt['method'], body: object): Attempt { return { url, method, body: JSON.stringify(body), key: randomId() }; }
   private async request(attempt: Attempt): Promise<{ ok: true; body: unknown } | { ok: false; uncertain: boolean; conflict: boolean; message: string }> {
     const controller = new AbortController(); this.controllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -112,13 +134,24 @@ export class BatchSession {
   selectFiles(files: File[]) {
     if (!this.replaceable) return;
     const error = validateOfficialBatchFiles(files); if (error) { this.emit({ error }); return; }
-    this.emit({ batch: null, mode: 'idle', conflict: false, error: null, notice: t.localOnly, items: files.map((file, index) => ({ localId: crypto.randomUUID(), file, localName: file.name, title: t.defaultTitle(index + 1), crop: null, paramsOverride: {}, status: 'pending', progress: 0, error: null, revisionId: null, workId: null, selected: false, preview: null })) });
+    this.emit({ batch: null, mode: 'idle', conflict: false, error: null, notice: t.localOnly, items: files.map((file, index) => ({ localId: randomId(), file, localName: file.name, title: t.defaultTitle(index + 1), crop: null, paramsOverride: {}, status: 'pending', progress: 0, error: null, revisionId: null, workId: null, selected: false, preview: null, hasOriginal: false })) });
   }
   updateItem(id: string, change: Partial<Pick<BatchItem, 'title' | 'crop' | 'paramsOverride' | 'selected'>>) {
     if (this.locked) return;
     if (Object.keys(change).some((key) => key !== 'selected') && this.state.batch) return;
     this.patch(id, change);
   }
+  /** 一键全选：只勾选真正可发布（已保存且带原图）的草稿。 */
+  selectAll() {
+    if (this.locked) return;
+    this.emit({ items: this.state.items.map((item) => item.status === 'saved' ? { ...item, selected: true } : item) });
+  }
+  clearSelection() {
+    if (this.locked) return;
+    this.emit({ items: this.state.items.map((item) => item.selected ? { ...item, selected: false } : item) });
+  }
+  get publishableCount() { return this.state.items.filter((item) => item.status === 'saved').length; }
+  get retryableCount() { return this.state.items.filter((item) => RETRYABLE_STATUSES.includes(item.status) && (item.file || this.saves.has(item.localId))).length; }
   async start() {
     if (this.state.batch || this.locked || !this.state.items.some((item) => item.status === 'pending')) return;
     if (this.state.reason.trim().length < 3 || this.state.reason.trim().length > 500 || !generationParamsSchema.safeParse(this.state.defaults).success
@@ -168,8 +201,10 @@ export class BatchSession {
     const result = await this.request(attempt); if (this.disposed) return;
     const body = result.ok ? result.body as { batchId?: unknown; revisionId?: unknown; workId?: unknown; status?: unknown } | null : null;
     if (result.ok && body?.batchId === this.state.batch?.id && body?.status === 'draft' && isUuid(body?.revisionId) && isUuid(body?.workId)) {
-      this.saves.delete(id); this.patch(id, { status: 'saved', file: null, revisionId: body.revisionId, workId: body.workId, selected: false, error: null });
+      this.saves.delete(id);
+      this.patch(id, { status: 'uploading', revisionId: body.revisionId, workId: body.workId, selected: false, error: null });
       track({ name: 'official_batch_item_succeeded', properties: {} });
+      await this.upload(id);
     } else {
       const uncertain = result.ok || result.uncertain;
       const cancelled = !uncertain && this.state.mode === 'cancelled';
@@ -177,6 +212,33 @@ export class BatchSession {
       this.patch(id, { status: cancelled ? 'cancelled' : uncertain ? 'save_unknown' : 'failed', error: cancelled ? null : result.ok ? t.actionFailed : result.message });
       if (!cancelled && !result.ok && result.conflict) this.emit({ conflict: true, mode: 'paused' });
     }
+  }
+  /**
+   * 草稿保存后上传原图（D49）。原图只保留到上传成功；失败保留本地文件以便重试，
+   * 已保存的草稿不会因为上传失败而丢失。
+   */
+  private async upload(id: string) {
+    const item = this.state.items.find((entry) => entry.localId === id);
+    if (!item || !item.revisionId) return;
+    if (!item.file) { this.patch(id, { status: 'upload_failed', error: t.originalMissing }); return; }
+    this.patch(id, { status: 'uploading', error: null });
+    try {
+      await (this.deps.uploadOriginal ?? defaultUploadOriginal)(item.revisionId, item.file);
+      if (this.disposed) return;
+      this.patch(id, { status: 'saved', file: null, hasOriginal: true, error: null });
+    } catch (error) {
+      if (this.disposed) return;
+      this.patch(id, { status: 'upload_failed', error: error instanceof Error && error.message ? t.originalUploadFailed(error.message) : t.originalUploadFailed(t.actionFailed) });
+    }
+  }
+  /** 恢复的历史草稿没有本地文件：允许管理员重新选择原图补传。 */
+  async attachOriginal(id: string, file: File) {
+    if (this.locked) return;
+    const item = this.state.items.find((entry) => entry.localId === id);
+    if (!item || !item.revisionId || !['upload_failed', 'saved'].includes(item.status) || item.hasOriginal && item.status === 'saved') return;
+    const error = validateOfficialBatchFiles([file]); if (error) { this.patch(id, { error }); return; }
+    this.patch(id, { file, localName: file.name });
+    await this.upload(id);
   }
   cancelItem(id: string) {
     const item = this.state.items.find((entry) => entry.localId === id);
@@ -216,9 +278,30 @@ export class BatchSession {
     if (this.locked || this.processing || this.saves.size || this.state.conflict || this.state.items.some((item) => item.status === 'pending') || !this.state.batch || !['running', 'paused'].includes(this.state.batch.status)) return;
     await this.transition('finish');
   }
+  /**
+   * 重试全部可重试项。保存确认与原图上传逐项串行（各占一个并发槽）；
+   * 需要重新生成的项目一次性回到待生成，再统一恢复派发。
+   */
+  async retryAllFailed() {
+    if (this.locked || this.processing || this.state.conflict || this.disposed) return;
+    const items = this.state.items.filter((item) => RETRYABLE_STATUSES.includes(item.status));
+    for (const item of items.filter((entry) => entry.status === 'upload_failed' || this.saves.has(entry.localId))) {
+      if (this.locked || this.disposed) return;
+      await this.retryItem(item.localId);
+    }
+    const regenerate = items.filter((entry) => entry.status !== 'upload_failed' && !this.saves.has(entry.localId) && entry.file);
+    if (regenerate.length === 0) return;
+    regenerate.forEach((entry) => this.patch(entry.localId, { status: 'pending', error: null, preview: null }));
+    if (this.state.batch) await this.resume();
+  }
   async retryItem(id: string) {
     if (this.locked || this.processing || this.state.conflict) return;
-    const item = this.state.items.find((entry) => entry.localId === id); if (!item || !['failed', 'cancelled', 'save_unknown'].includes(item.status)) return;
+    const item = this.state.items.find((entry) => entry.localId === id); if (!item || !RETRYABLE_STATUSES.includes(item.status)) return;
+    if (item.status === 'upload_failed') {
+      if (!item.file) return; // 需要通过 attachOriginal 重新选择原图
+      this.active.set(id, { cancel: () => undefined });
+      await this.upload(id); this.active.delete(id); this.emit({}); this.pump(); return;
+    }
     if (!this.state.batch) { if (item.file) this.patch(id, { status: 'pending', error: null }); return; }
     const attempt = this.saves.get(id);
     if (attempt) {
@@ -250,14 +333,14 @@ export class BatchSession {
     if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.queueLoadFailed }); return; }
     if (!this.replaceable) return;
     const parsedDefaults = generationParamsSchema.safeParse(batch.defaultParams);
-    this.emit({ batch, defaults: parsedDefaults.success ? parsedDefaults.data : { ...DEFAULT_GENERATION_PARAMS }, mode: 'paused', error: null, conflict: false, notice: t.restored, items: batch.drafts.map((draft, index) => ({ localId: `restored:${draft.id}`, file: null, localName: t.restoredDraft(index + 1), title: draft.title, crop: null, paramsOverride: {}, status: draft.status === 'draft' ? 'saved' : draft.status === 'published' ? 'published' : 'unavailable', progress: 100, error: null, revisionId: draft.id, workId: draft.workId, selected: false, preview: draft.preview })) });
+    this.emit({ batch, defaults: parsedDefaults.success ? parsedDefaults.data : { ...DEFAULT_GENERATION_PARAMS }, mode: 'paused', error: null, conflict: false, notice: t.restored, items: batch.drafts.map((draft, index) => ({ localId: `restored:${draft.id}`, file: null, localName: t.restoredDraft(index + 1), title: draft.title, crop: null, paramsOverride: {}, ...draftStatus(draft), progress: 100, revisionId: draft.id, workId: draft.workId, selected: false, preview: draft.preview })) });
   }
   refreshState(batch: StoredBatch) {
     if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.command.refreshFailed }); return; }
     if (this.locked || this.processing || batch.id !== this.state.batch?.id || batch.version < this.state.batch.version) return;
     this.emit({ batch, mode: 'paused', conflict: false, error: null, notice: t.refreshed, items: this.state.items.map((item) => {
       const draft = batch.drafts.find((entry) => entry.id === item.revisionId);
-      return draft ? { ...item, selected: false, status: draft.status === 'draft' ? 'saved' : draft.status === 'published' ? 'published' : 'unavailable' } : { ...item, selected: false };
+      return draft ? { ...item, selected: false, ...draftStatus(draft) } : { ...item, selected: false };
     }) });
   }
   dispose() {

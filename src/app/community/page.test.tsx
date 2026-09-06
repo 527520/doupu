@@ -6,8 +6,8 @@ import CommunityPage from './page';
 vi.mock('@/lib/auth/db', () => ({ getDb: () => ({}) }));
 vi.mock('@/components/layout/SiteHeader', () => ({ default: () => <header /> }));
 vi.mock('@/components/community/CommunityImpression', () => ({ CommunityListImpression: () => null }));
-const query = vi.hoisted(() => ({ list: vi.fn() }));
-vi.mock('@/lib/community/queries', async (original) => ({ ...(await original<object>()), listPublicCommunityWorks: query.list }));
+const query = vi.hoisted(() => ({ list: vi.fn(), tags: vi.fn(async () => [{ id: 'tag-1', name: '花朵', slug: 'flowers', count: 3 }]) }));
+vi.mock('@/lib/community/queries', async (original) => ({ ...(await original<object>()), listPublicCommunityWorks: query.list, listPopularCommunityTags: query.tags }));
 
 it('豆社下一页保留所有有效筛选，重设筛选不带旧游标', async () => {
   query.list.mockResolvedValue({ items: [], nextCursor: 'next/cursor+value' });
@@ -17,6 +17,15 @@ it('豆社下一页保留所有有效筛选，重设筛选不带旧游标', asyn
   const form = document.querySelector('form')!;
   expect(new FormData(form).get('cursor')).toBeNull();
   expect(new FormData(form).get('author')).toBe('作者');
+  // 标签栏：当前标签可一键取消（保留其他筛选），热门标签按名称筛选
+  const clearTag = new URL(screen.getByRole('link', { name: '取消标签筛选 花朵' }).getAttribute('href')!, 'http://local');
+  expect(clearTag.searchParams.has('tag')).toBe(false); expect(clearTag.searchParams.get('author')).toBe('作者');
+});
+
+it('热门标签以名称为筛选键展示在筛选栏下方', async () => {
+  query.list.mockResolvedValue({ items: [], nextCursor: null });
+  render(await CommunityPage({ searchParams: Promise.resolve({}) }));
+  expect(screen.getByRole('link', { name: /花朵/ })).toHaveAttribute('href', '/community?tag=%E8%8A%B1%E6%9C%B5');
 });
 
 it('没有筛选结果时提供清除筛选，不把失败搜索说成社区没有作品', async () => {

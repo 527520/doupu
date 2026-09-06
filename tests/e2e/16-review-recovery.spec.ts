@@ -35,24 +35,28 @@ test('损坏的批次历史不能替换已选择的本地图片，重读后可�
   await page.getByText('恢复已保存批次（最近 50 批）').click();
   const history = page.locator('.batch-history');
   await expect(history.getByRole('alert')).toContainText('队列加载失败');
-  await expect(page.locator('.batch-items > li')).toHaveCount(1);
+  await expect(page.locator('.batch-cards > li')).toHaveCount(1);
   await expect(history.locator('li button')).toHaveCount(0);
   await page.unroute('**/api/admin/batches');
   await history.getByRole('button', { name: '重新读取' }).click();
   await expect(history.getByRole('alert')).toHaveCount(0);
-  await expect(page.locator('.batch-items > li')).toHaveCount(1);
+  await expect(page.locator('.batch-cards > li')).toHaveCount(1);
 });
 
 test('首页精选与最新同时可见，五宽度无横向溢出且可访问', async ({ page }, info) => {
   test.skip(info.project.name !== 'chromium');
-  const work = (id: string, featured: boolean) => ({ id, title: featured ? '人工选中的旧作品' : '今天公开的新作品', featured, width: 2, height: 2, author: { displayName: '本地视觉夹具' }, preview: { version: 1, width: 2, height: 2, originalWidth: 2, originalHeight: 2, cells: ['#FAF4C8', '#F4C6D7', '#F4C6D7', '#FAF4C8'], colorBand: ['#FAF4C8', '#F4C6D7'] } });
+  const work = (id: string, featured: boolean) => ({ id, revisionId: id.replace(/1$/u, '9').replace(/2$/u, '8'), title: featured ? '人工选中的旧作品' : '今天公开的新作品', featured, width: 2, height: 2, author: { displayName: '本地视觉夹具' }, preview: { version: 1, width: 2, height: 2, originalWidth: 2, originalHeight: 2, cells: ['#FAF4C8', '#F4C6D7', '#F4C6D7', '#FAF4C8'], colorBand: ['#FAF4C8', '#F4C6D7'] } });
   await page.route('**/api/community/works?sort=*', async (route) => {
     const featured = route.request().url().endsWith('featured');
     await route.fulfill({ json: { items: [work(featured ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002', featured)] } });
   });
+  // 夹具修订不存在于数据库；用一张 1×1 PNG 代替缩略图，避免断图影响无障碍与截图。
+  await page.route('**/api/community/revisions/*/thumbnail', async (route) => {
+    await route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAgAB/wdYqHkAAAAASUVORK5CYII=', 'base64') });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: '拒绝', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '本期作品校样' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '本期精选作品' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '最近公开作品' })).toBeVisible();
   for (const width of [350, 390, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 844 });

@@ -129,7 +129,7 @@ test('long-range production analytics includes live consented data and accessibl
     const end = toShanghaiDay(now); const start = toShanghaiDay(new Date(now.getTime() - 180 * 86400000));
     await page.goto(`/admin/analytics?start=${start}&end=${end}&eventName=page_viewed&dimension=device`);
     await expect(page.getByText(/为尚未结束的上海日期/)).toBeVisible();
-    const daily = page.getByRole('region', { name: '逐日分类趋势' });
+    const daily = page.getByRole('region', { name: '按分类查看每日趋势' });
     await daily.getByRole('button',{name:/分类值/}).click();
     await page.getByRole('option',{name:'desktop',exact:true}).click();
     await expect(daily.getByRole('table')).toContainText(end);

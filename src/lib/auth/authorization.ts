@@ -10,7 +10,6 @@ export type Capability =
   | 'analytics:read'
   | 'official:manage'
   | 'users:manage'
-  | 'moderation-rules:manage'
   | 'audit:read'
   | 'system:read';
 
@@ -30,7 +29,6 @@ const ROLE_CAPABILITIES: Record<UserRole, ReadonlySet<Capability>> = {
     'analytics:read',
     'official:manage',
     'users:manage',
-    'moderation-rules:manage',
     'audit:read',
     'system:read',
   ]),

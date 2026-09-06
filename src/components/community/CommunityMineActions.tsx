@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRef, useState } from 'react';
 import Modal from '@/components/ui/Modal';
 import { track } from '@/lib/analytics/client';
+import { randomId } from '@/lib/ids';
 import { zhCN } from '@/messages/zh-CN';
 import { isDefiniteCommunityRejection, postCommunityCommand } from './communityCommand';
 const t = zhCN.communityAdmin.mineActions;
@@ -28,7 +29,7 @@ export default function CommunityMineActions({ workId, version, hasPublished, re
     if (pending.current || completed.current || (attempt.current && attempt.current.action !== action) || (action !== 'withdraw_work' && !revision)) return;
     pending.current = true; setBusy(true); setError(null);
     const current = attempt.current ?? {
-      action, key: crypto.randomUUID(), targetId: action === 'withdraw_work' ? workId : revision!.id,
+      action, key: randomId(), targetId: action === 'withdraw_work' ? workId : revision!.id,
       url: action === 'withdraw_work' ? `/api/community/works/${workId}/withdraw`
         : `/api/community/revisions/${revision!.id}/${action === 'submit' ? 'submit' : 'withdraw'}`,
       payload: { expectedVersion: action === 'withdraw_work' ? version : revision!.version },

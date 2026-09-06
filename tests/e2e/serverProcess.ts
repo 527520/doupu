@@ -65,7 +65,17 @@ export async function stopProcessTree(
   if (runtime.platform === 'win32') {
     const result = runtime.spawnSync('taskkill', ['/pid', String(pid), '/T', '/F']);
     if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`taskkill 终止 E2E server 失败（exit ${result.status}）`);
+    // taskkill /T 枚举后逐个终止；Turbopack 池工作进程会在父进程被杀时自行退出，
+    // 随后对它的终止报「无运行实例」并让整体退出码非零（实测 255），但进程树已清空。
+    // 因此退出码只作诊断，端口是否释放才是成败依据。
+    if (result.status !== 0) {
+      try {
+        await waitForPortClosed(port, timeoutMs);
+        return;
+      } catch (error) {
+        throw new Error(`taskkill 终止 E2E server 失败（exit ${result.status}）：${(error as Error).message}`);
+      }
+    }
   } else {
     try {
       runtime.kill(-pid, 'SIGTERM');

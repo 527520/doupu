@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReviewConsole from './ReviewConsole';
 vi.mock('@/components/preview/PatternPreview', () => ({ default: () => <p>完整图纸预览</p> }));
-vi.mock('@/components/community/CommunityPreviewCanvas', () => ({ default: () => <span>缩略图</span> }));
+vi.mock('@/components/community/CommunityThumbnail', () => ({ default: () => <span>缩略图</span> }));
 const row = { revisionId: 'revision-one', workId: 'work-one', revisionNumber: 2, title: '待审小猫', version: 1, width: 100, height: 100, colorCount: 2, boardProfile: '5mm-29', submittedAt: null, author: { displayName: '豆友' }, preview: { colorBand: ['#ffffff'] } };
 describe('review task flow', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn(async (url) => new Response(JSON.stringify(String(url).endsWith('/revision-one') ? { id: row.revisionId, version: 1, lifecycleStatus: 'active', status: 'pending_review', snapshot: { boardProfile: '5mm-29', pattern: {} }, previous: null } : { items: [row] })))));

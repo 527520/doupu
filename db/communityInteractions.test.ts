@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { createTestClient, type TestDatabase } from './testClient';
 import {
   adminAuditLogs,
+  commentModerationChecks,
   communityComments,
   communityLikes,
   communityReports,
@@ -19,7 +20,6 @@ import { COMMUNITY_LICENSE_VERSION } from '@/lib/community/snapshot';
 import { createCommunityRevision, createCommunityWork, reviewCommunityRevision, submitCommunityRevision } from '@/lib/community/service';
 import {
   createCommunityComment,
-  createModerationRuleSet,
   deleteCommunityComment,
   editCommunityComment,
   handleCommunityReport,
@@ -27,11 +27,22 @@ import {
   moderateCommunityComment,
   reportCommunityTarget,
   reuseCommunityWork,
+  setCommentModerationDeps,
   setCommunityLike,
   getCommunityLike,
 } from '@/lib/community/interactions';
+import type { TmsVerdict } from '@/lib/moderation/tencentTms';
+import { summarizeModerationToday } from '@/lib/moderation/commentModeration';
+import { vi } from 'vitest';
+
+/** 确定性的假内容安全服务：含「去死」「伤害词」→ 建议复核；含「拦截词」→ 拦截；其余放行。 */
+const fakeModerate = vi.fn(async (_creds: unknown, request: { content: string }): Promise<TmsVerdict> => {
+  const suggestion = request.content.includes('拦截词') ? 'Block' : /去死|伤害词/u.test(request.content) ? 'Review' : 'Pass';
+  return { suggestion, label: suggestion === 'Pass' ? 'Normal' : suggestion === 'Block' ? 'Ad' : 'Abuse', subLabel: null, score: suggestion === 'Pass' ? 0 : 90, keywords: [], requestId: `fake-${fakeModerate.mock.calls.length}`, latencyMs: 1 };
+});
 import { executeIdempotently } from '@/lib/idempotency';
 import { anonymizeAccount } from '@/lib/auth/accountLifecycle';
+import { attachTestOriginal } from './testOriginals';
 import { LIMITS } from '@/lib/appInfo';
 import { listCommunityReviewQueue } from '@/lib/community/queries';
 
@@ -75,10 +86,13 @@ describe('community reuse, interaction and governance transactions', () => {
     designId = crypto.randomUUID();
     await db.insert(designs).values({ id: designId, userId: author.id, name: 'private', project: project(), payloadBytes: 1 });
     const created = await createCommunityWork(db, { actor: user, designId, expectedDesignRevision: 1, title: '公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+    await attachTestOriginal(db, user, created.revision.id);
     const pending = await submitCommunityRevision(db, { actor: user, revisionId: created.revision.id, expectedVersion: 1 });
     await reviewCommunityRevision(db, { actor: moderator, revisionId: pending.id, expectedVersion: pending.version,
       decision: 'published', reason: '审核内容完整安全', requestId: 'publish' });
     workId = created.work.id;
+    fakeModerate.mockClear();
+    setCommentModerationDeps({ credentials: { secretId: 'test', secretKey: 'test', region: 'ap-guangzhou' }, moderate: fakeModerate });
   });
 
   it('keeps like counters exact and creates one independent idempotent reuse', async () => {
@@ -127,8 +141,6 @@ describe('community reuse, interaction and governance transactions', () => {
   });
 
   it('re-reviews risky edits, enforces edit window and maintains published count', async () => {
-    await createModerationRuleSet(db, { actor: { ...moderator, role: 'admin' }, expectedVersion: 1,
-      rules: [{ literal: '伤害词', category: 'harm', risk: 'review' }], reason: '启用伤害治理字面词', requestId: 'rules' });
     const safe = await createCommunityComment(db, { actor: user, workId, body: '普通评论', now: new Date('2026-09-05T01:00:00Z') });
     expect(safe.status).toBe('published');
     const risky = await editCommunityComment(db, { actor: user, commentId: safe.id, expectedVersion: 1,
@@ -173,10 +185,57 @@ describe('community reuse, interaction and governance transactions', () => {
     })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('rejects an empty moderation rule-set version', async () => {
-    await expect(createModerationRuleSet(db, {
-      actor: { ...moderator, role: 'admin' }, expectedVersion: 0, rules: [], reason: '不允许关闭全部治理词表', requestId: 'empty-rules',
-    })).rejects.toBeDefined();
+  it('records every content-safety decision, keeps blocked comments for moderators only, and reuses cached verdicts', async () => {
+    const now = new Date('2026-09-05T02:00:00Z');
+    await expect(createCommunityComment(db, { actor: user, workId, body: '这里有拦截词', now })).rejects.toMatchObject({ code: 'COMMENT_BLOCKED' });
+    const [blocked] = await db.select().from(communityComments).where(eq(communityComments.status, 'rejected'));
+    expect(blocked).toMatchObject({ body: '这里有拦截词', riskCategories: ['spam'], reviewReason: 'content-safety:tms_block' });
+    expect((await listCommunityComments(db, workId, user.userId)).some((item) => item.id === blocked.id)).toBe(false);
+    expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].commentCount).toBe(0);
+    const checks = await db.select().from(commentModerationChecks);
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({ commentId: blocked.id, userId: user.userId, workId, provider: 'tencent-tms', suggestion: 'Block', label: 'Ad', outcome: 'rejected', reason: 'tms_block', textLength: '这里有拦截词'.length });
+    expect(checks[0].tmsRequestId).toMatch(/^fake-/u);
+    expect(JSON.stringify(checks)).not.toContain('这里有拦截词');
+
+    // 同文命中缓存：不再调用服务，判定一致
+    const calls = fakeModerate.mock.calls.length;
+    const [other] = await db.insert(users).values({ email: 'other@example.com', username: 'Other', passwordHash: 'hash', emailVerifiedAt: new Date() }).returning();
+    const otherActor: Actor = { userId: other.id, role: 'user', accountStatus: 'active', emailVerified: true };
+    await expect(createCommunityComment(db, { actor: otherActor, workId, body: ' 这里有拦截词 ', now: new Date('2026-09-05T02:01:00Z') })).rejects.toMatchObject({ code: 'COMMENT_BLOCKED' });
+    expect(fakeModerate.mock.calls.length).toBe(calls);
+    expect((await db.select().from(commentModerationChecks)).map((row) => row.provider).sort()).toEqual(['cached', 'tencent-tms']);
+
+    // 复核建议进待审并标记来源；本地结构特征不调用服务
+    const review = await createCommunityComment(db, { actor: user, workId, body: '请去死', now: new Date('2026-09-05T02:02:00Z') });
+    expect(review).toMatchObject({ status: 'pending_review', riskCategories: ['harassment'] });
+    const links = await createCommunityComment(db, { actor: user, workId, body: '看 https://a.example 和 https://b.example', now: new Date('2026-09-05T02:03:00Z') });
+    expect(links).toMatchObject({ status: 'pending_review', riskCategories: ['spam'] });
+    const summary = await summarizeModerationToday(db, new Date('2026-09-05T02:04:00Z'));
+    expect(summary).toMatchObject({ calls: 2, cached: 1, local: 1, rejected: 2, pendingReview: 2, enabled: expect.any(Boolean) });
+  });
+
+  it('falls back to human review when the content-safety service is unavailable or over budget', async () => {
+    setCommentModerationDeps({ credentials: null });
+    const disabled = await createCommunityComment(db, { actor: user, workId, body: '服务未配置时的评论', now: new Date('2026-09-05T02:10:00Z') });
+    expect(disabled.status).toBe('pending_review');
+    setCommentModerationDeps({ credentials: { secretId: 't', secretKey: 't', region: 'r' }, moderate: async () => { throw new Error('boom'); } });
+    const failed = await createCommunityComment(db, { actor: user, workId, body: '服务失败时的评论', now: new Date('2026-09-05T02:11:00Z') });
+    expect(failed.status).toBe('pending_review');
+    const checks = await db.select().from(commentModerationChecks);
+    expect(checks.map((row) => row.reason).sort()).toEqual(['provider_disabled', 'provider_error']);
+    expect(checks.every((row) => row.provider === 'unavailable')).toBe(true);
+  });
+
+  it('rejects comment floods before spending any moderation call', async () => {
+    const now = new Date('2026-09-05T02:20:00Z');
+    for (let index = 0; index < 20; index += 1) {
+      await createCommunityComment(db, { actor: user, workId, body: `第 ${index} 条不同评论 ${'。'.repeat(index % 3)}`, now: new Date(now.getTime() + index * 61_000) });
+    }
+    await expect(createCommunityComment(db, { actor: user, workId, body: '第二十一条评论', now: new Date(now.getTime() + 21 * 61_000) })).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    const limited = (await db.select().from(commentModerationChecks)).filter((row) => row.reason === 'rate_limited');
+    expect(limited).toHaveLength(1);
+    expect(limited[0]).toMatchObject({ provider: 'local', outcome: 'rate_limited', commentId: null });
   });
 
   it('lets authors delete expired, pending and hidden comments without exposing private comments to others', async () => {

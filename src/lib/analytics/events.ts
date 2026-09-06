@@ -46,6 +46,7 @@ const eventSchemas = [
   }).strict() }).strict(),
   z.object({ name: z.literal('community_detail_viewed'), properties: empty }).strict(),
   z.object({ name: z.literal('community_submission_created'), properties: empty }).strict(),
+  z.object({ name: z.literal('community_original_uploaded'), properties: empty }).strict(),
   z.object({ name: z.literal('community_submission_submitted'), properties: empty }).strict(),
   z.object({ name: z.literal('community_submission_withdrawn'), properties: empty }).strict(),
   z.object({ name: z.literal('community_reviewed'), properties: z.object({

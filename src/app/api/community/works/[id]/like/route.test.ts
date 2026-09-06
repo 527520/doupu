@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestClient, type TestDatabase } from '@/../db/testClient';
+import { attachTestOriginal } from '@/../db/testOriginals';
 import { communityWorks, users, designs } from '@/../db/schema';
 import { setTestDb } from '@/lib/auth/db';
 import { createSession } from '@/lib/auth/session';
@@ -29,6 +30,7 @@ beforeEach(async () => {
     pattern: { width: 1, height: 1, cells: [{ hex: '#FC3D46', code: 'F02', transparent: false }] },
   } });
   const work = await createCommunityWork(db, { actor, designId, expectedDesignRevision: 1, title: '测试公开作品', licenseVersion: COMMUNITY_LICENSE_VERSION });
+  await attachTestOriginal(db, actor, work.revision.id);
   const pending = await submitCommunityRevision(db, { actor, revisionId: work.revision.id, expectedVersion: 1 });
   await reviewCommunityRevision(db, { actor, revisionId: pending.id, expectedVersion: pending.version, decision: 'published', reason: '测试正常公开状态', requestId: 'test' });
   workId = work.work.id;

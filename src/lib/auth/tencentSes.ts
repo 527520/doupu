@@ -4,7 +4,7 @@
  * 安全：TC3-HMAC-SHA256 签名——SecretKey 仅在本机做 HMAC 派生，绝不随请求传输；
  * 错误只上抛「错误码 + 官方 Message」，不包含任何凭证信息。
  */
-import { createHash, createHmac } from 'node:crypto';
+import { buildTc3Request } from '@/lib/tencent/sign';
 
 export const SES_SERVICE = 'ses';
 export const SES_HOST = 'ses.tencentcloudapi.com';
@@ -32,14 +32,6 @@ export interface SesTemplateMail {
   templateData: Record<string, string>;
 }
 
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data, 'utf8').digest('hex');
-}
-
-function hmacSha256(key: string | Buffer, data: string): Buffer {
-  return createHmac('sha256', key).update(data, 'utf8').digest();
-}
-
 /**
  * TC3-HMAC-SHA256 签名核心（可注入时间，便于用官方示例向量单测）。
  * 返回可直接 fetch 的请求对象；Host 头不显式设置——fetch 会自动生成，
@@ -65,47 +57,10 @@ export function buildSesSendRequest(
       TemplateData: JSON.stringify(mail.templateData),
     },
   });
-
-  const timestamp = Math.floor(now.getTime() / 1000);
-  const date = now.toISOString().slice(0, 10);
-
-  const canonicalRequest = [
-    'POST',
-    '/',
-    '',
-    'content-type:application/json; charset=utf-8',
-    `host:${SES_HOST}`,
-    '',
-    'content-type;host',
-    sha256Hex(payload),
-  ].join('\n');
-
-  const stringToSign = [
-    'TC3-HMAC-SHA256',
-    String(timestamp),
-    `${date}/${SES_SERVICE}/tc3_request`,
-    sha256Hex(canonicalRequest),
-  ].join('\n');
-
-  const secretDate = hmacSha256(`TC3${creds.secretKey}`, date);
-  const secretService = hmacSha256(secretDate, SES_SERVICE);
-  const secretSigning = hmacSha256(secretService, 'tc3_request');
-  const signature = hmacSha256(secretSigning, stringToSign).toString('hex');
-
-  return {
-    url: `https://${SES_HOST}`,
-    headers: {
-      Authorization:
-        `TC3-HMAC-SHA256 Credential=${creds.secretId}/${date}/${SES_SERVICE}/tc3_request, ` +
-        `SignedHeaders=content-type;host, Signature=${signature}`,
-      'Content-Type': 'application/json; charset=utf-8',
-      'X-TC-Action': SES_ACTION,
-      'X-TC-Version': SES_VERSION,
-      'X-TC-Timestamp': String(timestamp),
-      'X-TC-Region': creds.region,
-    },
-    body: payload,
-  };
+  return buildTc3Request({
+    service: SES_SERVICE, host: SES_HOST, action: SES_ACTION, version: SES_VERSION,
+    region: creds.region, secretId: creds.secretId, secretKey: creds.secretKey, payload, now,
+  });
 }
 
 interface SesResponseBody {

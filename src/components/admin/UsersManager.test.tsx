@@ -11,12 +11,12 @@ it('keeps all high risk controls tied to one explicitly selected and confirmed u
   fireEvent.click(await screen.findByRole('button', { name: /小豆/ }));
   fireEvent.change(screen.getByRole('textbox', { name: '操作理由' }), { target: { value: '多次垃圾推广' } });
   expect(screen.getByRole('button', { name: '暂停账号' })).toBeDisabled();
-  fireEvent.change(screen.getByRole('textbox', { name: '目标 userId 二次确认' }), { target: { value: user.userId } });
+  fireEvent.change(screen.getByRole('textbox', { name: '再次输入该账号编号以确认' }), { target: { value: user.userId } });
   vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
   fireEvent.click(screen.getByRole('button', { name: '暂停账号' }));
   await screen.findByRole('button', { name: '重试确认上次操作' });
   expect(screen.getByRole('textbox', { name: '操作理由' })).toHaveValue('多次垃圾推广');
-  expect(screen.getByRole('textbox', { name: '目标 userId 二次确认' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: '再次输入该账号编号以确认' })).toBeDisabled();
   vi.mocked(fetch).mockResolvedValueOnce(new Response('{}'));
   fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
   await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
@@ -28,6 +28,6 @@ it('keeps all high risk controls tied to one explicitly selected and confirmed u
 it('offers no self-governance action and never changes an anonymized account', async () => {
   render(<UsersManager currentUserId={user.userId} />);
   fireEvent.click(await screen.findByRole('button', { name: /小豆/ }));
-  expect(screen.getByText('这是当前登录账号，不能修改自己的角色或暂停自己。')).toBeInTheDocument();
+  expect(screen.getByText('这是你当前登录的账号，不能修改自己的角色或暂停自己。')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: '暂停账号' })).not.toBeInTheDocument();
 });

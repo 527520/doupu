@@ -18,6 +18,9 @@ import Icon from '@/components/ui/Icon';
 import ShoppingListPanel from '@/components/export/ShoppingListPanel';
 import StitchView from '@/components/stitch/StitchView';
 import ShareButton from '@/components/share/ShareButton';
+import PublishToCommunityButton from '@/components/community/PublishToCommunityButton';
+import { canFetchRevisionOriginal, fetchRevisionOriginal } from '@/lib/community/originalsClient';
+import { lookupOriginalSource, takePendingOriginal, type PendingOriginal } from '@/lib/storage/pendingOriginals';
 import {
   createStitchProgress,
   isProgressCompatible,
@@ -187,6 +190,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [decoded, setDecoded] = useState<DecodedImage | null>(null);
   const [lastCropRect, setLastCropRect] = useState<Rect | undefined>();
   const encodedSourceRef = useRef<{ bytes: Uint8Array; type: ImageType } | null>(null);
+  /**
+   * 当前会话原图的编码字节副本（D49）。解码器会接管并转移原字节，这里保留一份
+   * 只为「公开到豆社」时交给投稿页上传；随 clearOriginalSource 一同释放，永不入库。
+   */
+  const retainedOriginalRef = useRef<{ bytes: Uint8Array; type: ImageType; name: string } | null>(null);
+  /** 豆社引用来源：可从服务器取回原图时，restored-locked 提示多一个「从豆社取回原图」入口。 */
+  const [communitySourceProbe, setCommunitySource] = useState<{ revisionId: string; designId: string } | null>(null);
   const imageOperationRef = useRef(0);
   const imageBusyRef = useRef(false);
   /** Restored projects rebind an original image without becoming a new design. */
@@ -240,6 +250,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setDecoded(null);
     setLastCropRect(undefined);
     encodedSourceRef.current = null;
+    retainedOriginalRef.current = null;
     pendingCropRef.current = null;
     activeImageDecoder.clear();
   }, [activeImageDecoder]);
@@ -688,7 +699,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   );
 
   const handleUpload = useCallback(
-    async ({ bytes, type }: ValidImageFile): Promise<void> => {
+    async ({ bytes, type, name }: ValidImageFile): Promise<void> => {
       if (imageBusyRef.current) return;
       imageBusyRef.current = true;
       const operation = ++imageOperationRef.current;
@@ -705,6 +716,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             return;
           }
         }
+        // 解码器会转移字节，先留一份副本供「公开到豆社」上传原图。
+        retainedOriginalRef.current = { bytes: bytes.slice(), type, name };
         const legacyDecode = decodeFn ?? (decodeRegionFn ? decodeImageFile : null);
         const result = legacyDecode
           ? await legacyDecode(bytes, type)
@@ -1069,6 +1082,65 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     setSaveState('saved');
     setStep('workspace');
   }, [clearOriginalSource, restoreGeneration, reuploadGenerationSource]);
+
+  /**
+   * 把交接过来的完整原图绑定到刚恢复的设计（D49：引用者取回作者原图）。
+   * 只绑定、不重新生成：作者的手工修补保持原样，之后裁剪 / 改格数 / 改颜色数才会基于原图重算。
+   * 成功后 800px 生成源随下一次保存落入本地库，刷新后仍可调参。
+   */
+  const bindOriginalToDesign = useCallback(async (original: { bytes: Uint8Array; type: ImageType; name: string }, project: ProjectFile): Promise<boolean> => {
+    if (imageBusyRef.current) return false;
+    imageBusyRef.current = true;
+    const operation = ++imageOperationRef.current;
+    setBusy(true);
+    setBusyText(t.decoding);
+    try {
+      const retained = { bytes: original.bytes.slice(), type: original.type, name: original.name };
+      const legacyDecode = decodeFn ?? (decodeRegionFn ? decodeImageFile : null);
+      const result = legacyDecode
+        ? await legacyDecode(original.bytes, original.type)
+        : await activeImageDecoder.load(original.bytes, original.type, () => setBusyText(t.heicConverting));
+      if (imageOperationRef.current !== operation) return false;
+      if (!result.ok) { setErrorMsg(zhCN.errors[result.code]); return false; }
+      const width = result.image.naturalWidth ?? result.image.width;
+      const height = result.image.naturalHeight ?? result.image.height;
+      if (!validatePixelCount(width, height).ok) { setErrorMsg(zhCN.errors.TOO_MANY_PIXELS); return false; }
+      const rect: Rect = { x: 0, y: 0, width, height };
+      let bounded: ImageDataLike;
+      if (!legacyDecode) {
+        const region = await activeImageDecoder.region(rect, MAX_GENERATION_SOURCE_DIMENSION);
+        if (imageOperationRef.current !== operation) return false;
+        if (!region.ok) { setErrorMsg(zhCN.errors[region.code]); return false; }
+        bounded = region.image;
+      } else if (decodeRegionFn) {
+        const region = await decodeRegionFn(retained.bytes, retained.type, rect, MAX_GENERATION_SOURCE_DIMENSION);
+        if (imageOperationRef.current !== operation) return false;
+        if (!region.ok) { setErrorMsg(zhCN.errors[region.code]); return false; }
+        bounded = region.image;
+      } else {
+        bounded = cropImageData(result.image, { x: 0, y: 0, width: result.image.width, height: result.image.height }, MAX_GENERATION_SOURCE_DIMENSION);
+      }
+      const source = prepareGenerationSource(bounded);
+      encodedSourceRef.current = legacyDecode ? { bytes: retained.bytes, type: retained.type } : null;
+      retainedOriginalRef.current = retained;
+      setDecoded(result.image);
+      cropRectsRef.current.set(source, rect);
+      setLastCropRect(rect);
+      reuploadGenerationSource(source, { boardProfile: project.boardProfile, params: project.params, paletteSelection: project.paletteSelection });
+      pendingGenerationSourceRef.current = source;
+      setErrorMsg(null);
+      markDirty();
+      return true;
+    } catch {
+      if (imageOperationRef.current === operation) setErrorMsg(zhCN.errors.DECODE_FAILED);
+      return false;
+    } finally {
+      if (imageOperationRef.current === operation) {
+        imageBusyRef.current = false;
+        setBusy(false);
+      }
+    }
+  }, [activeImageDecoder, decodeFn, decodeRegionFn, markDirty, reuploadGenerationSource, t.decoding, t.heicConverting]);
 
   const consumeSyncOutcome = useCallback(async (adapter: StorageAdapter, outcome: SyncOutcome): Promise<void> => {
       const activeId = designIdRef.current;
@@ -1540,6 +1612,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         setActiveDesignId(last.id);
         setSavedNames(records.map((r) => r.name));
         loadCommittedProject(project, localSource);
+        // D49：豆社引用刚交接过来的作者原图 → 绑定到这份副本（不重新生成）。
+        const handedOriginal: PendingOriginal | null = await takePendingOriginal(last.id).catch(() => null);
+        if (cancelled) return;
+        if (handedOriginal) {
+          await bindOriginalToDesign({ bytes: new Uint8Array(handedOriginal.bytes), type: handedOriginal.type, name: handedOriginal.name }, project);
+          if (cancelled) return;
+        }
         const requestedPalette = urlParams.get('palette');
         if (requestedId && requestedPalette && requestedPalette.length <= 200) {
           setPaletteIntent({ designId: requestedId, value: requestedPalette });
@@ -1556,7 +1635,39 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     return () => {
       cancelled = true;
     };
-  }, [loadCommittedProject, setActiveDesignId, storage, t.designNotLocal, t.designUnreadable]);
+  }, [bindOriginalToDesign, loadCommittedProject, setActiveDesignId, storage, t.designNotLocal, t.designUnreadable]);
+
+  // 豆社引用来源：设计切换时探测服务器是否仍保留原图（作者撤回 / 注销后即不可取回）。
+  // 探测结果按设计 ID 记录，切换设计后旧结果自然失效，不需要在 effect 里同步清空。
+  useEffect(() => {
+    if (!communityOrigin || authStatus.kind !== 'user') return;
+    let cancelled = false;
+    void (async () => {
+      const revisionId = await lookupOriginalSource(designId);
+      if (cancelled || !revisionId) return;
+      const available = await canFetchRevisionOriginal(revisionId);
+      if (!cancelled && available) setCommunitySource({ revisionId, designId });
+    })();
+    return () => { cancelled = true; };
+  }, [authStatus.kind, communityOrigin, designId]);
+  const communitySource = communitySourceProbe?.designId === designId && communityOrigin ? communitySourceProbe : null;
+
+  const fetchCommunityOriginal = useCallback(async (): Promise<void> => {
+    const project = buildProjectRef.current();
+    if (!communitySource || !project) return;
+    setErrorMsg(null);
+    setBusy(true);
+    setBusyText(t.fetchingCommunityOriginal);
+    try {
+      const original = await fetchRevisionOriginal(communitySource.revisionId);
+      if (!original) { setCommunitySource(null); setErrorMsg(t.communityOriginalGone); return; }
+      await bindOriginalToDesign({ bytes: original.bytes, type: original.type, name: `${communitySource.revisionId}.${original.type}` }, project);
+    } catch {
+      setErrorMsg(t.communityOriginalFailed);
+    } finally {
+      setBusy(false);
+    }
+  }, [bindOriginalToDesign, communitySource, t.communityOriginalFailed, t.communityOriginalGone, t.fetchingCommunityOriginal]);
 
   // ---------- 导入 ----------
 
@@ -1659,6 +1770,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   }); };
   const sourceAdjustment = generationSession.status === 'restored-locked' && <div className="source-adjustment-note">
     <p>{t.sourceRequired}</p>{!cropRecoveryOpen && <button type="button" className="btn-outline" onClick={requestOriginal}>{t.reselectOriginal}</button>}
+    {communitySource && !cropRecoveryOpen && <button type="button" className="btn-primary" disabled={busy} onClick={() => void fetchCommunityOriginal()}>{t.fetchCommunityOriginal}</button>}
   </div>;
   const paletteLibraryHref = `/palettes?designId=${encodeURIComponent(designId)}`;
   const paletteLibraryLink = <Link href={paletteLibraryHref} className="link-soft text-sm" onClick={(event) => handleNavigationClick(event, paletteLibraryHref)}>{t.paletteLibrary}</Link>;
@@ -1690,6 +1802,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     {!decoded && cropRecoveryOpen && <>
       <span>{t.cropSourceMissing}</span>
       <button type="button" className="btn-outline" disabled={busy || generating} onClick={requestOriginal}>{t.reselectOriginal}</button>
+      {communitySource && <button type="button" className="btn-primary" disabled={busy || generating} onClick={() => void fetchCommunityOriginal()}>{t.fetchCommunityOriginal}</button>}
     </>}
   </div>;
 
@@ -1957,6 +2070,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   onBeforeShare={prepareShare}
                   disabled={authStatus.kind !== 'user' || generating}
                   disabledReason={generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
+                />
+                <PublishToCommunityButton
+                  designId={designId}
+                  onBeforePublish={prepareShare}
+                  getOriginal={() => retainedOriginalRef.current}
+                  disabled={authStatus.kind !== 'user' || generating || communityOrigin}
+                  disabledReason={communityOrigin ? zhCN.publish.communityOriginBlocked : generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
                 />
               </div>
             )}
@@ -2257,6 +2377,14 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   onBeforeShare={prepareShare}
                   disabled={authStatus.kind !== 'user' || generating}
                   disabledReason={generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
+                />
+                {/* 公开到豆社（D49）：带上当前会话原图去投稿页；引用来的副本不能再次公开 */}
+                <PublishToCommunityButton
+                  designId={designId}
+                  onBeforePublish={prepareShare}
+                  getOriginal={() => retainedOriginalRef.current}
+                  disabled={authStatus.kind !== 'user' || generating || communityOrigin}
+                  disabledReason={communityOrigin ? zhCN.publish.communityOriginBlocked : generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
                 />
               </div></div>
             )}

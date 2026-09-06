@@ -5,8 +5,8 @@ import TagsManager from './TagsManager';
 import userEvent from '@testing-library/user-event';
 
 const tags = [
-  { id: 'source', name: '小猫', slug: 'cats', sortOrder: 0, active: true, mergedIntoTagId: null, version: 2 },
-  { id: 'target', name: '动物', slug: 'animals', sortOrder: 1, active: true, mergedIntoTagId: null, version: 1 },
+  { id: 'source', name: '小猫', slug: 'cats', sortOrder: 0, active: true, mergedIntoTagId: null, version: 2, workCount: 3 },
+  { id: 'target', name: '动物', slug: 'animals', sortOrder: 1, active: true, mergedIntoTagId: null, version: 1, workCount: 5 },
 ];
 beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: tags })))));
 it('requires selecting a tag and explicitly confirms the named merge target', async () => {

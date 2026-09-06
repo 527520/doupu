@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { randomId } from '@/lib/ids';
 import { zhCN } from '@/messages/zh-CN';
 
-interface Command { url: string; method: 'POST' | 'PATCH'; body: object }
+interface Command { url: string; method: 'POST' | 'PATCH' | 'PUT'; body: object }
 interface Attempt { command: Command; body: string; key: string; success: (body: unknown) => void | Promise<void> }
 
 export function useAdminCommand() {
@@ -59,7 +60,7 @@ export function useAdminCommand() {
   };
   const run = async <T = unknown>(command: Command, success: (body: T) => void | Promise<void>): Promise<void> => {
     if (inFlight.current || attempt.current) return;
-    const current = { command, body: JSON.stringify(command.body), key: crypto.randomUUID(), success: (body: unknown) => success(body as T) };
+    const current = { command, body: JSON.stringify(command.body), key: randomId(), success: (body: unknown) => success(body as T) };
     attempt.current = current;
     await execute(current);
   };

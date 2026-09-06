@@ -7,6 +7,7 @@ import { parseProjectFileValue } from '@/lib/schemas';
 import { conflictName } from '@/lib/project/parse';
 import { drawPattern } from '@/lib/render/draw';
 import { LIMITS } from '@/lib/appInfo';
+import { randomId } from '@/lib/ids';
 import type { ImageDataLike } from '@/lib/engine/types';
 import { parseStitchProgress, type StitchProgress } from '@/lib/progress/stitchProgress';
 import type { Pattern, ProjectFile } from '@/lib/types';
@@ -366,10 +367,7 @@ export function createDesignRecord(
 }
 
 export function newDesignId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomId();
 }
 
 /** 判定 StorageError/配额类异常。 */
