@@ -100,7 +100,7 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
   await expect(page.getByRole('checkbox', { name: /合法发布权/ })).not.toBeChecked();
 });
 
-test('评论删除独立于编辑窗口，待审评论只对本人显示', async ({ page }, testInfo) => {
+test('评论只能删除不能编辑，待审评论只对本人显示', async ({ page }, testInfo) => {
   await login(page, 'e2e-user@example.com');
   // Earlier browser projects publish other E2E works into this shared fixture
   // database. Select the seeded work, not whichever matching title sorts first.

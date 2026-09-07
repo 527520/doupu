@@ -435,14 +435,12 @@ body {
 .community-comment-list time { color: var(--color-ink-soft); font-size: .8125rem; }
 .community-comment-actions { display: flex; gap: .7rem; }
 .community-comment-actions button { color: var(--color-primary); font-size: .8125rem; }
-.community-inline-edit { display: grid; gap: .5rem; grid-template-columns: 1fr auto auto; }
-.community-inline-edit textarea { min-height: 5rem; grid-column: 1 / -1; padding: .6rem; border: 1px solid var(--color-lilac); }
 .community-report-form { display: grid; gap: 16px; }
 .community-report-form label { display: grid; gap: 6px; font-size: 14px; }
 .community-report-form select, .community-report-form textarea { min-width: 0; width: 100%; padding: 10px; border: 1px solid var(--color-lilac); border-radius: 8px; }
 .community-report-form textarea { min-height: 100px; }
 .community-report-form > div:last-child { display: flex; justify-content: flex-end; gap: 12px; }
-.community-comment-actions button, .community-inline-edit button { min-height: 44px; }
+.community-comment-actions button { min-height: 44px; }
 .governance-body { padding: 1rem; border-radius: 1rem; background: var(--color-cream); }
 .governance-console .review-queue button { min-height: 4.5rem; }
 .admin-form-stack { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: .75rem; padding: 1rem; }

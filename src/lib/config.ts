@@ -84,9 +84,9 @@ export interface SiteConfig extends PublicConfig {
   };
   /** 评论审核（D50）：反刷闸门与腾讯云文本内容安全的成本护栏。 */
   moderation: {
-    /** 每个账号每小时最多发表 / 修改评论次数 */
+    /** 每个账号每小时最多发表评论次数 */
     commentsPerUserPerHour: number;
-    /** 每个账号每天最多发表 / 修改评论次数 */
+    /** 每个账号每天最多发表评论次数 */
     commentsPerUserPerDay: number;
     /** 每个 IP 每小时最多发表评论次数（未知 IP 不计） */
     commentsPerIpPerHour: number;

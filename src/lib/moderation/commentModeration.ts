@@ -8,7 +8,7 @@
  * 判定结果：published 直发 | pending_review 人工复核 | rejected 拒绝（评论以 rejected 状态留档）。
  */
 import { createHash } from 'node:crypto';
-import { and, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { AnyDatabase } from '@/../db/client';
 import { commentModerationChecks, communityComments } from '@/../db/schema';
 import { checkRateLimit, hourlyWindowStart } from '@/lib/auth/rateLimit';
@@ -36,8 +36,6 @@ export interface CommentModerationInput {
   workId: string;
   body: string;
   now: Date;
-  /** 编辑评论时排除自身，避免把自己上一版当作重复。 */
-  excludeCommentId?: string;
   /** 客户端 IP（可选）；未知时不做 IP 限流。 */
   ip?: string | null;
 }
@@ -128,14 +126,12 @@ export async function moderateComment(tx: AnyDatabase, input: CommentModerationI
   // 2. 本地结构检查与突发 / 重复：不花钱就能判定的先判定。
   const structure = localStructureFlags(input.body);
   if (structure.length > 0) return finish('pending_review', ['spam'], 'local', 'local_structure');
-  const recentWhere = [
-    eq(communityComments.authorUserId, input.userId),
-    inArray(communityComments.status, ['published', 'pending_review', 'rejected']),
-    gte(communityComments.updatedAt, new Date(input.now.getTime() - 5 * 60 * 1000)),
-  ];
-  if (input.excludeCommentId) recentWhere.push(ne(communityComments.id, input.excludeCommentId));
   const recent = await tx.select({ body: communityComments.body }).from(communityComments)
-    .where(and(...recentWhere)).orderBy(desc(communityComments.updatedAt)).limit(6);
+    .where(and(
+      eq(communityComments.authorUserId, input.userId),
+      inArray(communityComments.status, ['published', 'pending_review', 'rejected']),
+      gte(communityComments.updatedAt, new Date(input.now.getTime() - 5 * 60 * 1000)),
+    )).orderBy(desc(communityComments.updatedAt)).limit(6);
   const normalized = normalizeCommentText(input.body);
   if (recent.some((row) => normalizeCommentText(row.body) === normalized)) return finish('pending_review', ['spam'], 'local', 'duplicate');
   if (recent.length >= 5) return finish('pending_review', ['spam'], 'local', 'burst');

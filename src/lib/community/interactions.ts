@@ -187,53 +187,6 @@ function moderationReasonLabel(reason: string): string {
   return `content-safety:${reason}`;
 }
 
-export async function editCommunityComment(db: AnyDatabase, input: {
-  actor: Actor; commentId: string; expectedVersion: number; body: string; now?: Date; ip?: string | null;
-}) {
-  const body = commentBodySchema.safeParse(input.body);
-  if (!body.success) throw new AppError('VALIDATION', '评论需为 1–500 个字符', 'body');
-  const now = input.now ?? new Date();
-  const outcome = await db.transaction(async (tx) => {
-    await lockActiveAccount(tx, input.actor.userId);
-    await lockCommentWork(tx, input.commentId);
-    const [comment] = await tx.select().from(communityComments).where(eq(communityComments.id, input.commentId)).for('update');
-    if (!comment || comment.authorUserId !== input.actor.userId || comment.status === 'deleted') throw new AppError('NOT_FOUND', '评论不存在');
-    if (comment.version !== input.expectedVersion) throw new AppError('STATE_CONFLICT', '评论版本已变化');
-    if (comment.status !== 'published') throw new AppError('FORBIDDEN', '评论只能在发布后编辑');
-    const publishedAt = comment.publishedAt ?? comment.reviewedAt ?? comment.createdAt;
-    if (now.getTime() - publishedAt.getTime() > 15 * 60 * 1000) throw new AppError('FORBIDDEN', '评论只能在发布后 15 分钟内编辑');
-    const work = await activeWork(tx, comment.workId, true);
-    if (work.commentsLocked) throw new AppError('COMMENTS_LOCKED', '作品评论已锁定');
-    const moderation = await moderateComment(tx, {
-      userId: input.actor.userId, publicAuthorId: comment.publicAuthorId, workId: work.id,
-      body: body.data, now, excludeCommentId: comment.id, ip: input.ip,
-    }, resolveModerationDeps());
-    if (moderation.status === 'rate_limited') return { kind: 'rate_limited' as const };
-    // 编辑被拦截：保留已公开的旧正文不变，只留审计；不把公开评论换成被拒内容。
-    if (moderation.status === 'rejected') {
-      await tx.update(commentModerationChecks).set({ commentId: comment.id }).where(eq(commentModerationChecks.id, moderation.checkId));
-      return { kind: 'rejected' as const };
-    }
-    const status = moderation.status;
-    const [updated] = await tx.update(communityComments).set({
-      body: body.data, status, riskCategories: moderation.categories,
-      version: comment.version + 1, editedAt: now, updatedAt: now,
-      publishedAt: status === 'published' ? publishedAt : null,
-      reviewedAt: null, reviewedByUserId: null, reviewReason: null,
-    }).where(and(eq(communityComments.id, comment.id), eq(communityComments.version, comment.version))).returning();
-    if (!updated) throw new AppError('STATE_CONFLICT', '评论版本已变化');
-    await tx.update(commentModerationChecks).set({ commentId: comment.id }).where(eq(commentModerationChecks.id, moderation.checkId));
-    const delta = Number(status === 'published') - Number(comment.status === 'published');
-    if (delta !== 0) await tx.update(communityWorks).set({
-      commentCount: sql`greatest(0, ${communityWorks.commentCount} + ${delta})`, updatedAt: now,
-    }).where(eq(communityWorks.id, work.id));
-    return { kind: 'ok' as const, updated };
-  });
-  if (outcome.kind === 'rate_limited') throw new AppError('RATE_LIMITED', '评论过于频繁，请稍后再试');
-  if (outcome.kind === 'rejected') throw new AppError('COMMENT_BLOCKED', '修改内容包含不适宜内容，未能保存');
-  return outcome.updated;
-}
-
 export async function deleteCommunityComment(db: AnyDatabase, input: {
   actor: Actor; commentId: string; expectedVersion: number; now?: Date;
 }) {
@@ -256,15 +209,13 @@ export async function deleteCommunityComment(db: AnyDatabase, input: {
 }
 
 export async function listCommunityComments(db: AnyDatabase, workId: string, viewerUserId?: string) {
-  const work = await activeWork(db, workId);
+  await activeWork(db, workId);
   const rows = await db.select({
     id: communityComments.id, publicAuthorId: communityComments.publicAuthorId,
     authorUserId: communityComments.authorUserId,
     frozenDisplayName: communityComments.frozenDisplayName, accountStatus: users.accountStatus,
     body: communityComments.body, version: communityComments.version, status: communityComments.status,
-    createdAt: communityComments.createdAt, reviewedAt: communityComments.reviewedAt,
-    publishedAt: communityComments.publishedAt,
-    editedAt: communityComments.editedAt,
+    createdAt: communityComments.createdAt,
   }).from(communityComments).leftJoin(users, eq(users.id, communityComments.authorUserId))
     .where(and(eq(communityComments.workId, workId), or(
       eq(communityComments.status, 'published'),
@@ -275,10 +226,8 @@ export async function listCommunityComments(db: AnyDatabase, workId: string, vie
     id: row.id,
     author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
     body: row.body, version: row.version, status: row.status,
-    createdAt: row.createdAt.toISOString(), editedAt: row.editedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
     deletable: row.authorUserId === viewerUserId,
-    editable: row.authorUserId === viewerUserId && row.status === 'published' && !work.commentsLocked
-      && Date.now() - (row.publishedAt ?? row.reviewedAt ?? row.createdAt).getTime() <= 15 * 60 * 1000,
   }));
 }
 

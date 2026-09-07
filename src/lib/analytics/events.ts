@@ -60,9 +60,6 @@ const eventSchemas = [
   z.object({ name: z.literal('community_comment_created'), properties: z.object({
     moderationState: z.enum(['published', 'pending_review']),
   }).strict() }).strict(),
-  z.object({ name: z.literal('community_comment_edited'), properties: z.object({
-    moderationState: z.enum(['published', 'pending_review']),
-  }).strict() }).strict(),
   z.object({ name: z.literal('community_report_created'), properties: z.object({
     targetType: z.enum(['work', 'comment']),
     reasonCategory: z.enum(['harassment', 'sexual', 'explicit_harm', 'spam', 'copyright', 'other']),

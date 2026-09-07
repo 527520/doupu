@@ -22,8 +22,6 @@ interface CommentItem {
   body: string;
   version: number;
   createdAt: string;
-  editedAt: string | null;
-  editable: boolean;
   deletable: boolean;
   status: 'published' | 'pending_review' | 'hidden';
 }
@@ -64,8 +62,6 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
   const createdCopy = useRef<string | null>(null);
   const reuseSource = useRef<{ revisionId: string; available: boolean } | null>(null);
   const [copyReady, setCopyReady] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingBody, setEditingBody] = useState('');
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [category, setCategory] = useState<ReportCategory>('other');
   const [details, setDetails] = useState('');
@@ -177,14 +173,6 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
     setBody(''); setMessage({ text: result.status === 'pending_review' ? t.pending : t.published, error: false });
     await loadComments();
   });
-  const editComment = (item: CommentItem) => run('edit', async () => {
-    const result = await request(`/api/community/comments/${item.id}`, { method: 'PATCH', body: JSON.stringify({ body: editingBody, expectedVersion: item.version }) });
-    if (!mounted.current) return;
-    track({ name: 'community_comment_edited', properties: { moderationState: result.status } });
-    setEditingId(null); setEditingBody('');
-    setMessage({ text: result.status === 'pending_review' ? t.editPending : t.updated, error: false });
-    await loadComments();
-  });
   const deleteComment = (item: CommentItem) => run('delete', async () => {
     await request(`/api/community/comments/${item.id}`, { method: 'DELETE', body: JSON.stringify({ expectedVersion: item.version }) });
     if (!mounted.current) return;
@@ -232,9 +220,8 @@ export default function CommunityInteractions({ workId, initialLikes, initialReu
         {comments.map((item) => <li key={item.id} id={`comment-${item.id}`}>
           <header><strong>{item.author.displayName}</strong><time dateTime={item.createdAt}>{new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(new Date(item.createdAt))}</time></header>
           {item.status !== 'published' && <small>{zhCN.communityAdmin.states.comment[item.status]}</small>}
-          {editingId === item.id ? <div className="community-inline-edit"><textarea aria-label={t.edit} maxLength={500} disabled={pending !== null || locked} value={editingBody} onChange={(event) => setEditingBody(event.target.value)} /><button type="button" disabled={pending !== null || locked || !editingBody.trim()} onClick={() => void editComment(item)}>{t.saveEdit}</button><button type="button" disabled={pending !== null} onClick={() => setEditingId(null)}>{t.cancelEdit}</button></div> : <p>{item.body}</p>}
+          <p>{item.body}</p>
           <div className="community-comment-actions">
-            {item.editable && !locked && <button type="button" disabled={pending !== null} onClick={() => { setEditingId(item.id); setEditingBody(item.body); }}>{t.edit}</button>}
             {item.deletable && <button type="button" disabled={pending !== null} onClick={() => void deleteComment(item)}>{t.delete}</button>}
             {item.status === 'published' && <button type="button" disabled={pending !== null} onClick={() => beginReport({ targetType: 'comment', targetId: item.id })}>{t.report}</button>}
           </div>
