@@ -13,8 +13,12 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/admin\/batches$/); await expect(page.locator('h1')).toBeVisible();
 }
 async function smallDefault(page: Page) {
-  await page.getByText(/统一生成参数 ·/).click();
-  await page.locator('.batch-studio > details').getByLabel('目标宽度').fill('20');
+  // 统一参数是样式化折叠（按钮 + aria-expanded）；数字输入在失焦时提交。
+  const params = page.getByRole('button', { name: /统一生成参数 ·/ });
+  if ((await params.getAttribute('aria-expanded')) !== 'true') await params.click();
+  const width = page.getByRole('textbox', { name: '目标宽度' });
+  await width.fill('20'); await width.blur();
+  await expect(params).toContainText('20 格宽');
 }
 
 test('可视裁剪、创建与保存丢响应同键恢复、核对后发布和主动历史恢复', async ({ page }, info) => {

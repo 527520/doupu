@@ -5,12 +5,14 @@ import { adminAuditLogs, communityOriginals, communityRevisions, communityWorks,
 import type { Actor } from '@/lib/auth/authorization';
 import { sanitizeAuditState } from '@/lib/admin/audit';
 import { AppError } from '@/lib/errors';
-import { generationParamsSchema } from '@/lib/schemas';
+import { compatibleBoardProfilesForPalette } from '@/lib/boardProfiles';
+import { officialBatchDefaultsSchema } from './batchDefaults';
 import { communityPreviewSchema, communitySnapshotSchema, COMMUNITY_LICENSE_VERSION, deriveCommunityPreview, snapshotColorCount, snapshotPaletteIdentity } from './snapshot';
 
 const reasonSchema = z.string().trim().min(3).max(500);
 const titleSchema = z.string().trim().min(1).max(80);
-export const officialBatchDefaultParamsSchema = generationParamsSchema;
+/** 生成参数 + 可选制作规格（底板 / 色板 / 套装档位）。 */
+export const officialBatchDefaultParamsSchema = officialBatchDefaultsSchema;
 
 export async function createOfficialBatch(db: AnyDatabase, input: {
   actor: Actor; itemCount: number; defaultParams: unknown; engineVersion: string; reason: string; requestId: string; now?: Date;
@@ -43,6 +45,9 @@ export async function saveOfficialDraft(db: AnyDatabase, input: {
   const title = titleSchema.safeParse(input.title);
   const snapshot = communitySnapshotSchema.safeParse(input.snapshot);
   if (!title.success || !snapshot.success) throw new AppError('VALIDATION', '官方草稿标题或图纸无效');
+  if (!compatibleBoardProfilesForPalette(snapshot.data.paletteSelection.palette).some((profile) => profile.id === snapshot.data.boardProfile)) {
+    throw new AppError('VALIDATION', '官方草稿的制作规格与色板不兼容', 'snapshot');
+  }
   const reason = reasonSchema.parse(input.reason);
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {

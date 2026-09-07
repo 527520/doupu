@@ -1,6 +1,7 @@
 import { ENGINE_VERSION } from '@/lib/appInfo';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 import { generationParamsSchema } from '@/lib/schemas';
+import { DEFAULT_OFFICIAL_BATCH_SPEC, isValidOfficialBatchSpec, mergeOfficialBatchDefaults, officialBatchDefaultsSchema, splitOfficialBatchDefaults, type OfficialBatchSpec } from '@/lib/community/batchDefaults';
 import { batchGenerationFailureMessage, validateOfficialBatchFiles } from '@/lib/community/batchClient';
 import { communityPreviewSchema, deriveCommunityPreview, type CommunityPreviewV1, type CommunitySnapshotV1 } from '@/lib/community/snapshot';
 import { uploadRevisionOriginal } from '@/lib/community/originalsClient';
@@ -29,14 +30,14 @@ export interface StoredBatch extends BatchRow {
   drafts: Array<{ id: string; workId: string; title: string; status: string; preview: CommunityPreviewV1; hasOriginal?: boolean }>;
 }
 interface State {
-  items: BatchItem[]; batch: BatchRow | null; defaults: GenerationParams; reason: string;
+  items: BatchItem[]; batch: BatchRow | null; defaults: GenerationParams; spec: OfficialBatchSpec; reason: string;
   mode: 'idle' | 'running' | 'paused' | 'cancelled'; busy: boolean; uncertain: boolean; conflict: boolean;
   command: string | null; error: string | null; notice: string | null;
 }
 interface Attempt { url: string; method: 'POST' | 'PATCH'; body: string; key: string }
 interface Command extends Attempt { name: string; accept: (body: unknown) => void }
 interface Dependencies {
-  generate: (input: { file: File; crop: BatchCrop | null; params: GenerationParams }, onProgress: (value: number) => void) => BatchGeneration;
+  generate: (input: { file: File; crop: BatchCrop | null; params: GenerationParams; spec: OfficialBatchSpec }, onProgress: (value: number) => void) => BatchGeneration;
   /** 上传官方草稿原图（D49）；缺省走 /api/community/revisions/:id/original。 */
   uploadOriginal?: (revisionId: string, file: File) => Promise<void>;
   concurrency: 1 | 2; fetcher?: (url: string, init: RequestInit) => Promise<Response>;
@@ -59,7 +60,7 @@ const storedBatchSchema = z.object({
   id: uuid, version: z.number().int().positive(), status: z.enum(['running', 'paused', 'completed', 'cancelled']),
   createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value))),
   itemCount: z.number().int().min(1).max(50), successCount: z.number().int().min(0).max(50), failureCount: z.number().int().min(0).max(50),
-  defaultParams: generationParamsSchema.optional(),
+  defaultParams: officialBatchDefaultsSchema.optional(),
   drafts: z.array(z.object({ id: uuid, workId: uuid, title: z.string().min(1).max(80),
     status: z.enum(['draft', 'pending_review', 'published', 'rejected', 'withdrawn', 'superseded']), preview: communityPreviewSchema, hasOriginal: z.boolean().optional() })).max(50),
 }).refine((batch) => batch.successCount <= batch.itemCount && batch.failureCount <= batch.itemCount
@@ -76,7 +77,7 @@ function draftStatus(draft: StoredBatch['drafts'][number]): Pick<BatchItem, 'sta
 /** One in-memory file set. Scheduling and immutable write attempts outlive React renders,
  * but never this page. Server state is recovered only through explicitly chosen history. */
 export class BatchSession {
-  private state: State = { items: [], batch: null, defaults: { ...DEFAULT_GENERATION_PARAMS }, reason: t.defaultReason, mode: 'idle', busy: false, uncertain: false, conflict: false, command: null, error: null, notice: null };
+  private state: State = { items: [], batch: null, defaults: { ...DEFAULT_GENERATION_PARAMS }, spec: { ...DEFAULT_OFFICIAL_BATCH_SPEC }, reason: t.defaultReason, mode: 'idle', busy: false, uncertain: false, conflict: false, command: null, error: null, notice: null };
   private listeners = new Set<() => void>();
   private active = new Map<string, { cancel: () => void }>();
   private saves = new Map<string, Attempt>();
@@ -130,6 +131,8 @@ export class BatchSession {
   }
   retryCommand = async () => { if (this.attempt) await this.execute(this.attempt); };
   setDefaults(value: GenerationParams) { if (!this.state.batch && !this.locked) this.emit({ defaults: value }); }
+  /** 制作规格只在开始前可改；色板换了就顺带校正不兼容的底板与档位。 */
+  setSpec(value: OfficialBatchSpec) { if (!this.state.batch && !this.locked) this.emit({ spec: value }); }
   setReason(reason: string) { if (!this.state.batch && !this.locked) this.emit({ reason }); }
   selectFiles(files: File[]) {
     if (!this.replaceable) return;
@@ -154,11 +157,11 @@ export class BatchSession {
   get retryableCount() { return this.state.items.filter((item) => RETRYABLE_STATUSES.includes(item.status) && (item.file || this.saves.has(item.localId))).length; }
   async start() {
     if (this.state.batch || this.locked || !this.state.items.some((item) => item.status === 'pending')) return;
-    if (this.state.reason.trim().length < 3 || this.state.reason.trim().length > 500 || !generationParamsSchema.safeParse(this.state.defaults).success
+    if (this.state.reason.trim().length < 3 || this.state.reason.trim().length > 500 || !generationParamsSchema.safeParse(this.state.defaults).success || !isValidOfficialBatchSpec(this.state.spec)
       || this.state.items.some((item) => !item.title.trim() || item.title.trim().length > 80 || !generationParamsSchema.safeParse({ ...this.state.defaults, ...item.paramsOverride }).success)) {
       this.emit({ error: t.invalidConfiguration }); return;
     }
-    await this.command('create', '/api/admin/batches', 'POST', { itemCount: this.state.items.length, defaultParams: this.state.defaults, engineVersion: ENGINE_VERSION, reason: this.state.reason }, (body) => {
+    await this.command('create', '/api/admin/batches', 'POST', { itemCount: this.state.items.length, defaultParams: mergeOfficialBatchDefaults(this.state.defaults, this.state.spec), engineVersion: ENGINE_VERSION, reason: this.state.reason }, (body) => {
       if (!isBatch(body) || body.version !== 1 || body.status !== 'running') throw new Error();
       this.emit({ batch: body, mode: 'running', notice: null });
       track({ name: 'official_batch_started', properties: { itemCountBucket: countBucket(this.state.items.length) } });
@@ -178,7 +181,7 @@ export class BatchSession {
   private async process(item: BatchItem) {
     try {
       if (!item.file) throw new Error(t.generationFailed);
-      const task = this.deps.generate({ file: item.file, crop: item.crop, params: { ...this.state.defaults, ...item.paramsOverride } }, (progress) => this.patch(item.localId, { progress }));
+      const task = this.deps.generate({ file: item.file, crop: item.crop, params: { ...this.state.defaults, ...item.paramsOverride }, spec: this.state.spec }, (progress) => this.patch(item.localId, { progress }));
       this.active.set(item.localId, task);
       const snapshot = await task.promise;
       if (this.disposed || this.state.items.find((entry) => entry.localId === item.localId)?.status === 'cancelled') return;
@@ -332,8 +335,9 @@ export class BatchSession {
   restore(batch: StoredBatch) {
     if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.queueLoadFailed }); return; }
     if (!this.replaceable) return;
-    const parsedDefaults = generationParamsSchema.safeParse(batch.defaultParams);
-    this.emit({ batch, defaults: parsedDefaults.success ? parsedDefaults.data : { ...DEFAULT_GENERATION_PARAMS }, mode: 'paused', error: null, conflict: false, notice: t.restored, items: batch.drafts.map((draft, index) => ({ localId: `restored:${draft.id}`, file: null, localName: t.restoredDraft(index + 1), title: draft.title, crop: null, paramsOverride: {}, ...draftStatus(draft), progress: 100, revisionId: draft.id, workId: draft.workId, selected: false, preview: draft.preview })) });
+    const parsedDefaults = officialBatchDefaultsSchema.safeParse(batch.defaultParams);
+    const restored = parsedDefaults.success ? splitOfficialBatchDefaults(parsedDefaults.data) : { params: { ...DEFAULT_GENERATION_PARAMS }, spec: { ...DEFAULT_OFFICIAL_BATCH_SPEC } };
+    this.emit({ batch, defaults: restored.params, spec: restored.spec, mode: 'paused', error: null, conflict: false, notice: t.restored, items: batch.drafts.map((draft, index) => ({ localId: `restored:${draft.id}`, file: null, localName: t.restoredDraft(index + 1), title: draft.title, crop: null, paramsOverride: {}, ...draftStatus(draft), progress: 100, revisionId: draft.id, workId: draft.workId, selected: false, preview: draft.preview })) });
   }
   refreshState(batch: StoredBatch) {
     if (!isStoredBatch(batch)) { this.emit({ error: zhCN.communityAdmin.command.refreshFailed }); return; }
