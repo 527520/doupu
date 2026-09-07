@@ -6,6 +6,11 @@ import { useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import AdminCommandNotice from './AdminCommandNotice';
 import AdminQueueState from './AdminQueueState';
+import { ReasonPanel } from './AdminPrimitives';
+import Button from '@/components/ui/Button';
+import Disclosure from '@/components/ui/Disclosure';
+import NumberField from '@/components/ui/NumberField';
+import Badge from '@/components/ui/Badge';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminCommand } from './useAdminCommand';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
@@ -57,31 +62,31 @@ export default function TagsManager() {
   };
   return <div className={`admin-task-layout${inspecting ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
-      <header><h2>{t.title}</h2><button type="button" className="btn-outline" disabled={command.locked || queue.loading || Boolean(queue.error)} onClick={() => select('new')}>{t.create}</button></header>
-      <p className="admin-help" style={{ padding: '0 1rem .75rem' }}>{t.quickHelp}</p>
+      <header><h2>{t.title}</h2><Button variant="primary" size="sm" icon="plus" disabled={command.locked || queue.loading || Boolean(queue.error)} onClick={() => select('new')}>{t.create}</Button></header>
+      <p className="admin-help admin-queue-help">{t.quickHelp}</p>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>
         <ul className="admin-object-list">{queue.items.map((tag) => <li key={tag.id}><button type="button" disabled={command.locked} aria-current={selected?.id === tag.id} onClick={() => select(tag)}>
-          <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? t.mergedState : tag.active ? t.enabled : t.disabled} · {t.usage(tag.workCount ?? 0)} · {t.sort} {tag.sortOrder}</span>
+          <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? <Badge tone="neutral">{t.mergedState}</Badge> : <Badge tone={tag.active ? 'ok' : 'warn'}>{tag.active ? t.enabled : t.disabled}</Badge>}<small>{t.usage(tag.workCount ?? 0)} · {t.sort} {tag.sortOrder}</small></span>
         </button></li>)}</ul>
       </AdminQueueState>
     </section>
     <section className="admin-panel admin-task-detail" tabIndex={-1} ref={detailRef} aria-label={t.action}>
       {inspecting ? <div className="admin-form-stack">
-        <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
+        <Button variant="quiet" size="sm" icon="chevron-left" className="admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</Button>
         <h2>{creating ? t.createTitle : selected!.name}</h2>
         {selected?.mergedIntoTagId ? <p>{t.mergedTo} {queue.items.find((tag) => tag.id === selected.mergedIntoTagId)?.name ?? selected.mergedIntoTagId}</p> : <>
           <label>{t.name}<input value={name} maxLength={30} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
-          <label>{t.sort}<input type="number" step="1" value={order} disabled={!editable} onChange={(event) => setOrder(event.target.value)} aria-describedby="tag-sort-help" /></label>
-          <p id="tag-sort-help" className="admin-help">{t.slugHelp}</p>
+          <NumberField label={t.sort} value={order.trim() === '' ? undefined : Number(order)} disabled={!editable} onValueChange={(value) => setOrder(value === undefined ? '' : String(value))} description={t.slugHelp} />
           {!creating && <Switch label={t.enabled} checked={active} disabled={!editable} onChange={setActive} />}
-          <label>{t.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
-          <button type="button" className="btn-primary" disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</button>
-          {selected && <details><summary>{t.merge}</summary><div className="admin-form-stack">
-            <p>{t.mergeHelp}</p>
+          <ReasonPanel reason={reason} onReasonChange={setReason} disabled={command.locked}>
+            <Button variant="primary" icon={creating ? 'plus' : 'check'} disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</Button>
+          </ReasonPanel>
+          {selected && <Disclosure compact icon="copy" summary={t.merge}><div className="admin-form-stack" style={{ padding: 0 }}>
+            <p className="admin-help">{t.mergeHelp}</p>
             <ResponsiveSelect label={t.mergeTarget} value={mergeTarget} disabled={!editable} onValueChange={value=>{setMergeTarget(value);setMergeConfirmed(false);}} options={[{value:'',label:t.chooseTarget},...queue.items.filter(tag=>tag.id!==selected.id&&tag.active&&!tag.mergedIntoTagId).map(tag=>({value:tag.id,label:tag.name}))]} />
             {target && <label className="admin-check"><input type="checkbox" checked={mergeConfirmed} disabled={!editable} onChange={(event) => setMergeConfirmed(event.target.checked)} />{t.confirmMerge(selected.name, target.name)}</label>}
-            <button type="button" className="btn-danger-outline" disabled={!editable || !target || !mergeConfirmed || !validReason} onClick={() => void merge()}>{t.mergeSubmit}</button>
-          </div></details>}
+            <Button variant="danger" icon="copy" disabled={!editable || !target || !mergeConfirmed || !validReason} onClick={() => void merge()}>{t.mergeSubmit}</Button>
+          </div></Disclosure>}
         </>}
       </div> : <p className="admin-empty">{c.select}</p>}
     </section>

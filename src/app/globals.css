@@ -404,6 +404,15 @@ body {
 .admin-panel summary { cursor: pointer; padding-block: .65rem; }
 .admin-mobile-menu { display: none; }
 .admin-back-to-queue { align-self: start; margin-bottom: .5rem; }
+.admin-queue-help { padding: .6rem 1rem 0; }
+.admin-badges { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; color: var(--color-ink-soft); font-size: 13px; }
+.admin-avatar { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 999px; background: var(--color-lilac-soft); color: var(--color-lilac-deep); font-size: 14px; font-weight: 700; }
+.users-task-layout .admin-object-list button { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: .7rem; }
+.users-task-layout .admin-object-list .admin-avatar { grid-row: span 2; }
+.users-task-layout .admin-object-list strong, .users-task-layout .admin-object-list > li > button > span { grid-column: 2; }
+.admin-confirmation-field { display: grid; gap: .3rem; color: var(--color-ink-soft); font-size: 13px; }
+.admin-confirmation-field input { min-height: 44px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; color: var(--color-ink); font-family: ui-monospace, monospace; font-size: 14px; }
+.admin-batch-count { margin-left: .5rem; color: var(--color-ink-soft); font-weight: 400; }
 /* 筛选条与理由区（AdminPrimitives） */
 .admin-filter-bar { display: grid; gap: .75rem; padding: 1rem; border-bottom: 1px solid var(--color-cream-deep); }
 .admin-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .75rem; }
@@ -466,13 +475,23 @@ body {
 .review-actions > label { display: flex; flex-direction: column; gap: .35rem; padding: .85rem 1rem; color: var(--color-ink-soft); font-size: 13px; }
 .review-actions textarea { min-height: 8rem; resize: vertical; padding: .65rem .8rem; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-ink); font-size: 15px; line-height: 1.6; }
 .review-actions .notice { margin: 0 1rem; }
-.review-actions > div { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .85rem 1rem; }
+.review-actions > div:not(.admin-reason-panel):not(.admin-form-stack) { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; padding: .85rem 1rem; }
+.review-actions .admin-reason-actions { display: grid; grid-template-columns: 1fr 1fr; }
+.review-actions .admin-reason-actions > :only-child, .review-actions .admin-reason-actions > :nth-child(3) { grid-column: 1 / -1; }
 .review-actions > .notice { display: block; }
 .review-actions .notice button { margin-top: .5rem; width: 100%; }
 .review-actions .admin-reason-panel { margin: .85rem 1rem; }
 .review-console.is-inspecting .review-preview { justify-content: start; }
 .review-preview :is(h2, h3), .review-actions, .review-queue { overflow-wrap: anywhere; }
 .governance-console .review-queue button { grid-template-columns: minmax(0, 1fr); }
+.governance-facts { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); margin: 1rem 0; }
+.moderation-verdict { margin: 1rem 0; padding: .9rem 1rem; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-cream); grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+.report-material { display: grid; gap: .75rem; margin-top: 1rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: 12px; }
+.report-material h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.report-material dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .6rem; margin: 0; }
+.report-material dt { color: var(--color-ink-soft); font-size: 12.5px; }
+.report-material dd { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.review-preview header span, .review-preview header .studio-eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 700; letter-spacing: .12em; }
 @media (min-width: 901px) and (max-width: 1200px) {
   .review-console { grid-template-columns: 13rem minmax(0, 1fr); }
   .review-queue { grid-row: 1 / 3; }

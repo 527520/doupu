@@ -11,6 +11,9 @@ import { useAdminInspection } from './useAdminInspection';
 import { useAdminCommand } from './useAdminCommand';
 import AdminCommandNotice from './AdminCommandNotice';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
+import { AdminEmpty, ReasonPanel, StatusBadge } from './AdminPrimitives';
+import Button from '@/components/ui/Button';
+import Notice from '@/components/ui/Notice';
 
 type Mode = 'comments' | 'reports';
 interface ModerationCheck { provider: string; suggestion: string | null; label: string | null; subLabel: string | null; score: number | null; keywords: string[]; reason: string; checkedAt: string }
@@ -46,11 +49,11 @@ function ReportMaterial({ target }: { target: ReportTargetInspection }) {
       <div><dt>{g.contentStatus}</dt><dd>{status ?? g.targetUnavailable}</dd></div>
       {target.workStatus && <div><dt>{g.workStatus}</dt><dd>{states.work[target.workStatus]}</dd></div>}
     </dl>
-    {target.changed && <p className="notice notice-warning">{target.targetType === 'work' ? g.workChanged : g.commentChanged}</p>}
+    {target.changed && <Notice kind="warning">{target.targetType === 'work' ? g.workChanged : g.commentChanged}</Notice>}
     {target.snapshot && <PatternPreview pattern={target.snapshot.pattern} boardSize={getBoardProfile(target.snapshot.boardProfile).boardCols} />}
     {target.body !== null && <p className="governance-body">{target.body}</p>}
     {!target.snapshot && target.body === null && <p>{g.contentUnavailable}</p>}
-    {target.publicUrl ? <Link href={target.publicUrl}>{g.openCurrentTarget}</Link> : <p>{g.notPublic}</p>}
+    {target.publicUrl ? <Link href={target.publicUrl} className="btn-outline btn-sm">{g.openCurrentTarget}</Link> : <p className="admin-help">{g.notPublic}</p>}
   </div>;
 }
 
@@ -94,26 +97,38 @@ export default function GovernanceConsole({ mode }: { mode: Mode }) {
   return <div className={`review-console governance-console${selected ? ' is-inspecting' : ''}`}>
     <section className="review-queue" aria-label={g.queue} tabIndex={-1} ref={queueRef}>
       <header><h2>{mode === 'comments' ? t.pendingComments : t.pendingReports}</h2><span>{queue.items.length}</span></header>
-      {queue.error ? <div><p role="alert" className="notice notice-danger">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>
+      {queue.error ? <div className="admin-form-stack"><Notice kind="danger">{queue.error}</Notice><Button variant="secondary" icon="refresh" onClick={() => void queue.reload()}>{c.reload}</Button></div>
         : queue.loading ? <p role="status" className="admin-empty">{c.loading}</p>
-          : queue.items.length === 0 ? <p className="admin-empty">{g.empty}</p>
+          : queue.items.length === 0 ? <AdminEmpty icon="check" title={g.empty} />
             : <ul>{queue.items.map((item) => <li key={item.id}><button type="button" disabled={command.locked} aria-current={selected?.id === item.id} onClick={() => select(item.id)}><span><strong>{item.body?.slice(0, 24) || `${states.target[item.targetType as keyof typeof states.target] ?? item.targetType} / ${item.category ? riskLabel(item.category) : t.unmarked}`}</strong><small>{statusLabel(item.status)} · v{item.version}</small></span></button></li>)}</ul>}
     </section>
     <section className="review-preview" aria-label={g.caseMaterial} tabIndex={-1} ref={detailRef}>{selected ? <>
-      <button type="button" className="btn-outline admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</button>
-      <span className="studio-eyebrow">{g.caseMaterial}</span><h2>{mode === 'comments' ? t.commentPlainText : t.reportFacts}</h2>
+      <Button variant="quiet" size="sm" icon="chevron-left" className="admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</Button>
+      <header><span>{g.caseMaterial}</span><h2>{mode === 'comments' ? t.commentPlainText : t.reportFacts}</h2></header>
       <p className="governance-body">{selected.body || selected.details || t.noDetails}</p>
-      <dl><div><dt>{g.status}</dt><dd>{statusLabel(selected.status)}</dd></div><div><dt>{g.risk}</dt><dd>{selected.riskCategories?.map(riskLabel).join(g.separator) || (selected.category ? riskLabel(selected.category) : t.unmarked)}</dd></div></dl>
+      <dl className="admin-facts governance-facts"><div><dt>{g.status}</dt><dd><StatusBadge kind={mode === 'comments' ? 'comment' : 'report'} value={selected.status} /></dd></div><div><dt>{g.risk}</dt><dd>{selected.riskCategories?.map(riskLabel).join(g.separator) || (selected.category ? riskLabel(selected.category) : t.unmarked)}</dd></div></dl>
       {mode === 'comments' && (selected.moderation ? <ModerationVerdict check={selected.moderation} /> : <p className="admin-help">{t.moderationCheck.missing}</p>)}
-      {mode === 'comments' && selected.status === 'rejected' && <p className="notice notice-warning">{t.moderationCheck.rejectedHelp}</p>}
-      {mode === 'reports' && (target ? <ReportMaterial target={target} /> : inspection.error ? <div><p role="alert">{inspection.error}</p><button type="button" className="btn-outline" onClick={() => void inspection.reload()}>{c.reload}</button></div> : <p role="status">{g.loadingTarget}</p>)}
-    </> : <p className="admin-empty">{g.select}</p>}</section>
+      {mode === 'comments' && selected.status === 'rejected' && <Notice kind="warning">{t.moderationCheck.rejectedHelp}</Notice>}
+      {mode === 'reports' && (target ? <ReportMaterial target={target} /> : inspection.error ? <div className="admin-form-stack"><Notice kind="danger">{inspection.error}</Notice><Button variant="secondary" icon="refresh" onClick={() => void inspection.reload()}>{c.reload}</Button></div> : <p role="status" className="admin-empty">{g.loadingTarget}</p>)}
+    </> : <AdminEmpty icon="eye" title={g.select} />}</section>
     <aside className="review-actions">
-      {selected && <><h2>{g.action}</h2><label>{g.reason}<textarea value={reason} maxLength={500} disabled={command.locked} onChange={(event) => setReason(event.target.value)} /></label>
-        {mode === 'reports' && <div className="admin-form-stack"><p className="admin-help">{g.caseDoesNotModerate}</p>{target?.targetType === 'comment' && ['pending_review', 'published'].includes(target.contentStatus ?? '') && <button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void hideReportedComment()}>{g.hideCurrentComment}</button>}{target?.targetType === 'work' && <Link href={`/admin/works?work=${target.targetId}`}>{g.manageReportedWork}</Link>}</div>}
-        <div>{mode === 'comments' ? <>{selected.status !== 'rejected' && <button type="button" className="btn-danger-outline" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</button>}<button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('published')}>{selected.status === 'rejected' ? t.actions.publishRejected : t.actions.publish}</button></> : <><button type="button" className="btn-quiet" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</button>{selected.status === 'accepted' ? <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</button> : <button type="button" className="btn-primary" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</button>}</>}</div></>}
+      {selected && <><h2>{g.action}</h2>
+        <ReasonPanel label={g.reason} reason={reason} onReasonChange={setReason} disabled={command.locked}
+          hint={mode === 'reports' ? g.caseDoesNotModerate : undefined}>
+          {mode === 'reports' && target?.targetType === 'comment' && ['pending_review', 'published'].includes(target.contentStatus ?? '') && <Button variant="danger" icon="eye" disabled={!canDecide} onClick={() => void hideReportedComment()}>{g.hideCurrentComment}</Button>}
+          {mode === 'reports' && target?.targetType === 'work' && <Link href={`/admin/works?work=${target.targetId}`} className="btn-outline">{g.manageReportedWork}</Link>}
+          {mode === 'comments' ? <>
+            {selected.status !== 'rejected' && <Button variant="danger" icon="eye" disabled={!canDecide} onClick={() => void decide('hidden')}>{t.actions.hide}</Button>}
+            <Button variant="primary" icon="check" disabled={!canDecide} onClick={() => void decide('published')}>{selected.status === 'rejected' ? t.actions.publishRejected : t.actions.publish}</Button>
+          </> : <>
+            <Button variant="quiet" icon="close" disabled={!canDecide} onClick={() => void decide('dismissed')}>{t.actions.dismiss}</Button>
+            {selected.status === 'accepted'
+              ? <Button variant="primary" icon="check" disabled={!canDecide} onClick={() => void decide('resolved')}>{t.actions.resolve}</Button>
+              : <Button variant="primary" icon="inbox" disabled={!canDecide} onClick={() => void decide('accepted')}>{t.actions.accept}</Button>}
+          </>}
+        </ReasonPanel></>}
       <AdminCommandNotice command={command} onRefresh={() => void refresh()} />
-      {selected && queue.error && <div><p role="alert">{queue.error}</p><button type="button" className="btn-outline" onClick={() => void queue.reload()}>{c.reload}</button></div>}
+      {selected && queue.error && <div className="admin-form-stack"><Notice kind="danger">{queue.error}</Notice><Button variant="secondary" icon="refresh" onClick={() => void queue.reload()}>{c.reload}</Button></div>}
     </aside>
   </div>;
 }

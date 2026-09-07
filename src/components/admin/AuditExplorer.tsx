@@ -4,7 +4,9 @@ import { useState } from 'react';
 import type { AdminAuditEntry } from '@/lib/admin/queries';
 import { zhCN } from '@/messages/zh-CN';
 import DatePicker from '@/components/ui/DatePicker';
+import Button from '@/components/ui/Button';
 import AdminQueueState from './AdminQueueState';
+import { FilterBar, Pagination } from './AdminPrimitives';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
 
@@ -47,17 +49,17 @@ export default function AuditExplorer() {
   return <div className={`admin-task-layout${selected ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" ref={queueRef} tabIndex={-1} aria-label={t.queue}>
       <header><h2>{t.queue}</h2><span>{zhCN.communityAdmin.works.page(cursors.length)}</span></header>
-      <p className="admin-help">{t.queryHelp}</p>
-      <form className="admin-form-stack" onSubmit={(event) => { event.preventDefault(); move(['']); setFilter({ ...fields }); if (JSON.stringify(fields) === JSON.stringify(filter) && cursors.length === 1) void queue.reload(); }}>
+      <FilterBar submitLabel={t.query} disabled={queue.loading || Boolean(fields.from && fields.to && fields.from > fields.to)} onSubmit={(event) => { event.preventDefault(); move(['']); setFilter({ ...fields }); if (JSON.stringify(fields) === JSON.stringify(filter) && cursors.length === 1) void queue.reload(); }}>
         <label>{t.search}<input value={fields.q} maxLength={120} onChange={(event) => setFields({ ...fields, q: event.target.value })} /></label>
-        <div className="admin-filter-dates"><DatePicker label={t.from} value={fields.from} max={fields.to || undefined} onValueChange={(from) => setFields({ ...fields, from })} /><DatePicker label={t.to} value={fields.to} min={fields.from || undefined} onValueChange={(to) => setFields({ ...fields, to })} /></div>
-        <button type="submit" className="btn-outline" disabled={queue.loading || Boolean(fields.from && fields.to && fields.from > fields.to)}>{t.query}</button>
-      </form>
+        <DatePicker label={t.from} value={fields.from} max={fields.to || undefined} onValueChange={(from) => setFields({ ...fields, from })} />
+        <DatePicker label={t.to} value={fields.to} min={fields.from || undefined} onValueChange={(to) => setFields({ ...fields, to })} />
+      </FilterBar>
+      <p className="admin-help admin-queue-help">{t.queryHelp}</p>
       <AdminQueueState {...queue} empty={queue.items.length === 0}><ul className="admin-object-list">{queue.items.map((item) => <li key={item.id}><button type="button" aria-current={selectedId === item.id} onClick={() => setSelectedId(item.id)}><strong>{actionLabel(item.action)}</strong><span>{formatDate(item.createdAt)} · {zhCN.communityAdmin.states.role[item.actorRole]} · {targetLabel(item.targetType)}</span><small className="mono-id">{item.targetId}</small></button></li>)}</ul></AdminQueueState>
-      <div className="admin-pagination"><button type="button" className="btn-outline" disabled={queue.loading || cursors.length === 1} onClick={() => move(cursors.slice(0, -1))}>{zhCN.communityAdmin.works.previous}</button><button type="button" className="btn-outline" disabled={queue.loading || !queue.nextCursor} onClick={() => move([...cursors, queue.nextCursor!])}>{zhCN.communityAdmin.works.next}</button></div>
+      <Pagination page={cursors.length} hasPrevious={cursors.length > 1} hasNext={Boolean(queue.nextCursor)} disabled={queue.loading} onPrevious={() => move(cursors.slice(0, -1))} onNext={() => move([...cursors, queue.nextCursor!])} />
     </section>
     <section className="admin-panel admin-task-detail" ref={detailRef} tabIndex={-1} aria-label={t.detail}>
-      {selected ? <div className="admin-form-stack"><button type="button" className="btn-outline admin-back-to-queue" onClick={() => setSelectedId(null)}>{c.back}</button><h2>{t.detail}</h2>
+      {selected ? <div className="admin-form-stack"><Button variant="quiet" size="sm" icon="chevron-left" className="admin-back-to-queue" onClick={() => setSelectedId(null)}>{c.back}</Button><h2>{t.detail}</h2>
         <dl className="admin-evidence-list">
           <div><dt>{t.time}</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>{t.action}</dt><dd>{actionLabel(selected.action)}<br /><code>{selected.action}</code></dd></div>
           <div><dt>{t.target}</dt><dd>{targetLabel(selected.targetType)}<br /><code>{selected.targetId}</code></dd></div><div><dt>{t.role}</dt><dd>{zhCN.communityAdmin.states.role[selected.actorRole]}</dd></div>
