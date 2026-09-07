@@ -9,10 +9,11 @@ import { getSessionActor } from '@/lib/auth/session';
 
 const schema = z.object({ body: z.string() }).strict();
 
-async function get(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function get(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const workId = z.string().uuid().parse((await params).id);
   const actor = await getSessionActor({ renew: true });
-  return okJson({ items: await listCommunityComments(getDb(), workId, actor?.userId) });
+  const cursor = new URL(request.url).searchParams.get('cursor');
+  return okJson(await listCommunityComments(getDb(), workId, actor?.userId, { cursor }));
 }
 
 async function post(request: Request, { params }: { params: Promise<{ id: string }> }) {

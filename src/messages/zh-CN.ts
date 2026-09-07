@@ -1084,7 +1084,7 @@ export const zhCN = {
       openGraphDescription: (author: string) => `${author} 的豆社作品`,
       publication: (author: string, date: string) => `作者 ${author} · 发布于 ${date}`,
       featured: '人工精选', size: '尺寸', colors: '用色', colorValue: (count: number) => `${count} 种`,
-      boardProfile: '制作规格', engineVersion: '引擎版本',
+      boardProfile: '制作规格', engineVersion: '引擎版本', revisionId: '图纸修订编号', specTitle: '制作信息', patternStage: '图纸', colorBand: '用色色带',
       license: '本作品按豆社有限平台许可展示。引用功能只会创建你的私人副本，不授予站外传播、商业使用或再许可权。',
       likeCount: (count: number) => `${count} 赞`, commentCount: (count: number) => `${count} 评论`, reuseCount: (count: number) => `${count} 次引用`,
     },
@@ -1297,7 +1297,8 @@ export const zhCN = {
       likeLoadFailed: '暂时无法读取点赞状态。', loadingComments: '正在加载讨论…', commentsFailed: '讨论加载失败，已有输入仍保留。', noComments: '还没有讨论，欢迎分享制作心得。',
       reportTitle: '举报内容', reportCategory: '举报类别', reportDetails: '补充说明（选填，最多 500 字）', submitReport: '提交举报',
       categories: { harm: '明确伤害', harassment: '骚扰', sexual: '色情', spam: '垃圾推广', copyright: '版权', other: '其他规则问题' },
-      actionFailed: '操作失败，请稍后重试', genericFailed: '操作失败', reuseFailed: '引用失败', reuseCreated: (id: string) => `私人副本已创建：${id}。可前往“我的设计”继续编辑。`, pending: '评论已提交，审核通过后公开。', published: '评论已发布。', commentFailed: '评论失败', reported: '举报已进入治理队列。', reportFailed: '举报失败', deleted: '评论已删除。', deleteFailed: '删除失败', commentReported: '评论举报已进入治理队列。', locked: '评论已锁定', commentPlaceholder: '最多 500 字；链接仅作为纯文本展示', eyebrow: '互动', title: '引用与讨论', counts: (likes: number, reuses: number) => `${likes} 赞 · ${reuses} 次引用`, like: '点赞', unlike: '取消赞', reuse: '用这张制作', reportWork: '举报作品', myDesigns: '我的设计', comment: '发表评论', publishComment: '发布评论', delete: '删除', report: '举报' },
+      actionFailed: '操作失败，请稍后重试', genericFailed: '操作失败', reuseFailed: '引用失败', reuseCreated: (id: string) => `私人副本已创建：${id}。可前往“我的设计”继续编辑。`, pending: '评论已提交，审核通过后公开。', published: '评论已发布。', commentFailed: '评论失败', reported: '举报已进入治理队列。', reportFailed: '举报失败', deleted: '评论已删除。', deleteFailed: '删除失败', commentReported: '评论举报已进入治理队列。', locked: '评论已锁定', commentPlaceholder: '最多 500 字；链接仅作为纯文本展示', eyebrow: '互动', title: '引用与讨论', discussion: '讨论', counts: (likes: number, reuses: number) => `${likes} 赞 · ${reuses} 次引用`, like: '点赞', unlike: '取消赞', reuse: '用这张制作', loginToReuse: '登录后用这张制作', reportWork: '举报作品', myDesigns: '我的设计', copyrightNotice: '版权与申诉说明', comment: '发表评论', publishComment: '发布评论', delete: '删除', report: '举报',
+      deleteConfirmTitle: '删除这条评论？', deleteConfirmBody: '删除后不能恢复，也不会保留在讨论里。', lockedHint: '作者或审核员已锁定这件作品的讨论，暂时不能发表新评论。', loginToComment: '登录后即可参与讨论。' },
     mine: { withdrawing: '撤回中…', withdraw: '撤回作品' },
     submission: {
       retryableFailure: '暂时无法提交，请重试。', unknownResult: '未能确认服务器结果，请重试原投稿。', sourceInvalid: '此设计暂时无法投稿，请返回设计检查图纸并同步。', previewFailed: '预览加载失败，请重试。', optionsFailed: '投稿选项加载失败，请重新载入。', sourceUnavailable: '这张设计未同步、已删除或不属于当前账号。请返回设计同步，或重新选择。', loadFailed: '云端设计或投稿选项加载失败，请重新载入。',

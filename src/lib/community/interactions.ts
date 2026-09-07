@@ -208,8 +208,42 @@ export async function deleteCommunityComment(db: AnyDatabase, input: {
   });
 }
 
-export async function listCommunityComments(db: AnyDatabase, workId: string, viewerUserId?: string) {
+export const COMMENT_PAGE_SIZE = 30;
+
+interface CommentCursor { createdAt: string; id: string }
+
+export function encodeCommentCursor(cursor: CommentCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+export function decodeCommentCursor(value: string | undefined | null): CommentCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<CommentCursor>;
+    if (typeof parsed.createdAt !== 'string' || Number.isNaN(Date.parse(parsed.createdAt)) || typeof parsed.id !== 'string' || !/^[0-9a-f-]{36}$/iu.test(parsed.id)) return null;
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 评论按发表时间升序游标分页（此前固定 100 条且无分页，第 101 条起对所有人不可见）。
+ * 本人未公开的评论（待审 / 隐藏）只对本人可见。
+ */
+export async function listCommunityComments(db: AnyDatabase, workId: string, viewerUserId?: string, page: { cursor?: string | null; limit?: number } = {}) {
   await activeWork(db, workId);
+  const cursor = decodeCommentCursor(page.cursor);
+  if (page.cursor && !cursor) throw new AppError('VALIDATION', '分页游标无效', 'cursor');
+  const limit = Math.min(Math.max(page.limit ?? COMMENT_PAGE_SIZE, 1), 100);
+  const visibility = or(
+    eq(communityComments.status, 'published'),
+    viewerUserId ? and(eq(communityComments.authorUserId, viewerUserId), inArray(communityComments.status, ['pending_review', 'hidden'])) : undefined,
+  );
+  const after = cursor ? or(
+    sql`${communityComments.createdAt} > ${new Date(cursor.createdAt)}`,
+    and(eq(communityComments.createdAt, new Date(cursor.createdAt)), sql`${communityComments.id} > ${cursor.id}::uuid`),
+  ) : undefined;
   const rows = await db.select({
     id: communityComments.id, publicAuthorId: communityComments.publicAuthorId,
     authorUserId: communityComments.authorUserId,
@@ -217,18 +251,20 @@ export async function listCommunityComments(db: AnyDatabase, workId: string, vie
     body: communityComments.body, version: communityComments.version, status: communityComments.status,
     createdAt: communityComments.createdAt,
   }).from(communityComments).leftJoin(users, eq(users.id, communityComments.authorUserId))
-    .where(and(eq(communityComments.workId, workId), or(
-      eq(communityComments.status, 'published'),
-      viewerUserId ? and(eq(communityComments.authorUserId, viewerUserId), inArray(communityComments.status, ['pending_review', 'hidden'])) : undefined,
-    )))
-    .orderBy(communityComments.createdAt).limit(100);
-  return rows.map((row) => ({
-    id: row.id,
-    author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
-    body: row.body, version: row.version, status: row.status,
-    createdAt: row.createdAt.toISOString(),
-    deletable: row.authorUserId === viewerUserId,
-  }));
+    .where(and(eq(communityComments.workId, workId), visibility, after))
+    .orderBy(communityComments.createdAt, communityComments.id).limit(limit + 1);
+  const visible = rows.slice(0, limit);
+  const last = visible.at(-1);
+  return {
+    items: visible.map((row) => ({
+      id: row.id,
+      author: { publicAuthorId: row.publicAuthorId, displayName: row.accountStatus === 'anonymized' ? ANONYMIZED_DISPLAY_NAME : row.frozenDisplayName },
+      body: row.body, version: row.version, status: row.status,
+      createdAt: row.createdAt.toISOString(),
+      deletable: row.authorUserId === viewerUserId,
+    })),
+    nextCursor: rows.length > limit && last ? encodeCommentCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null,
+  };
 }
 
 export async function reportCommunityTarget(db: AnyDatabase, input: {

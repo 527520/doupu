@@ -158,7 +158,7 @@ describe('community reuse, interaction and governance transactions', () => {
     await expect(createCommunityComment(db, { actor: user, workId, body: '这里有拦截词', now })).rejects.toMatchObject({ code: 'COMMENT_BLOCKED' });
     const [blocked] = await db.select().from(communityComments).where(eq(communityComments.status, 'rejected'));
     expect(blocked).toMatchObject({ body: '这里有拦截词', riskCategories: ['spam'], reviewReason: 'content-safety:tms_block' });
-    expect((await listCommunityComments(db, workId, user.userId)).some((item) => item.id === blocked.id)).toBe(false);
+    expect((await listCommunityComments(db, workId, user.userId)).items.some((item) => item.id === blocked.id)).toBe(false);
     expect((await db.select().from(communityWorks).where(eq(communityWorks.id, workId)))[0].commentCount).toBe(0);
     const checks = await db.select().from(commentModerationChecks);
     expect(checks).toHaveLength(1);
@@ -211,19 +211,33 @@ describe('community reuse, interaction and governance transactions', () => {
     const pending = await createCommunityComment(db, { actor: user, workId, body: '请去死' });
     const foreign = await createCommunityComment(db, { actor: moderator, workId, body: '他人的正常评论' });
     const foreignPending = await createCommunityComment(db, { actor: moderator, workId, body: '请去死' });
-    const own = await listCommunityComments(db, workId, user.userId);
+    const own = (await listCommunityComments(db, workId, user.userId)).items;
     expect(own.find((item) => item.id === expired.id)).toMatchObject({ deletable: true });
     expect(own.find((item) => item.id === pending.id)).toMatchObject({ status: 'pending_review', deletable: true });
     expect(own.find((item) => item.id === foreign.id)).toMatchObject({ deletable: false });
     expect(own.every((item) => !('editable' in item))).toBe(true);
     expect(own.some((item) => item.id === foreignPending.id)).toBe(false);
-    expect((await listCommunityComments(db, workId)).some((item) => item.id === pending.id)).toBe(false);
+    expect((await listCommunityComments(db, workId)).items.some((item) => item.id === pending.id)).toBe(false);
     const hidden = await moderateCommunityComment(db, { actor: moderator, commentId: pending.id,
       expectedVersion: pending.version, decision: 'hidden', reason: '隐藏明确伤害评论', requestId: 'hide-own-pending' });
-    expect((await listCommunityComments(db, workId, user.userId)).find((item) => item.id === hidden.id)).toMatchObject({ status: 'hidden', deletable: true });
+    expect((await listCommunityComments(db, workId, user.userId)).items.find((item) => item.id === hidden.id)).toMatchObject({ status: 'hidden', deletable: true });
     await deleteCommunityComment(db, { actor: user, commentId: expired.id, expectedVersion: expired.version });
     await deleteCommunityComment(db, { actor: user, commentId: hidden.id, expectedVersion: hidden.version });
-    expect((await listCommunityComments(db, workId, user.userId)).map((item) => item.id)).toEqual([foreign.id]);
+    expect((await listCommunityComments(db, workId, user.userId)).items.map((item) => item.id)).toEqual([foreign.id]);
+  });
+
+  it('pages comments by creation cursor so the 31st comment is still reachable', async () => {
+    const base = Date.parse('2026-09-06T00:00:00Z');
+    for (let index = 0; index < 33; index += 1) {
+      await createCommunityComment(db, { actor: index % 2 ? user : moderator, workId, body: `第 ${index} 条讨论 ${'，'.repeat(index % 4)}`, now: new Date(base + index * 90_000) });
+    }
+    const first = await listCommunityComments(db, workId);
+    expect(first.items).toHaveLength(30);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await listCommunityComments(db, workId, undefined, { cursor: first.nextCursor });
+    expect(second.items.map((item) => item.body)).toEqual(['第 30 条讨论 ，，', '第 31 条讨论 ，，，', '第 32 条讨论']);
+    expect(second.nextCursor).toBeNull();
+    await expect(listCommunityComments(db, workId, undefined, { cursor: 'not-a-cursor' })).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
   it('deduplicates reports by current target version and enforces the case state machine', async () => {

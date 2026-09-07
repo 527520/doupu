@@ -112,11 +112,14 @@ test('评论只能删除不能编辑，待审评论只对本人显示', async ({
   const expired = page.locator('.community-comment-list li', { hasText: `E2E 可删除旧评论 ${testInfo.project.name}` });
   await expect(expired).toBeVisible();
   await expect(expired.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0);
+  // 删除需二次确认：弹窗里的实心危险按钮才真正发请求。
   await expired.getByRole('button', { name: '删除', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click();
   await expect(expired).toHaveCount(0);
   const pending = page.locator('.community-comment-list li', { hasText: `E2E风险词 待审删除 ${testInfo.project.name}` });
   await expect(pending).toContainText('待审核');
   await pending.getByRole('button', { name: '删除', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click();
   await expect(pending).toHaveCount(0);
   const foreign = page.locator('.community-comment-list li', { hasText: 'E2E 被举报评论' });
   await expect(foreign).toBeVisible();

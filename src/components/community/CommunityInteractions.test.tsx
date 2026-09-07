@@ -86,11 +86,11 @@ it('未登录时保留作品上下文，登录后不自动执行引用', async (
   expect(state.push).not.toHaveBeenCalled();
 });
 
-it('举报收进次级菜单，只有确认分类后才提交', async () => {
+it('举报是一枚低调的旗子图标按钮，只有确认分类后才提交', async () => {
   renderWork();
-  expect(screen.queryByRole('button', { name: '举报作品' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '作品更多操作' }));
-  fireEvent.click(screen.getByRole('button', { name: '举报作品' }));
+  const flag = screen.getByRole('button', { name: '举报作品' });
+  expect(flag.className).toContain('btn-bead');
+  fireEvent.click(flag);
   expect(state.fetch.mock.calls.filter((call) => call[0] === '/api/community/reports')).toHaveLength(0);
   const user=userEvent.setup();await user.click(screen.getByLabelText('举报类别'));
   await user.click(screen.getByRole('option',{name:'版权'}));
@@ -136,4 +136,35 @@ it('离开作品后迟到的引用响应不下载图纸也不强行导航', asyn
   await new Promise((done) => setTimeout(done, 0));
   expect(state.pull).not.toHaveBeenCalled();
   expect(state.push).not.toHaveBeenCalled();
+});
+
+it('删除自己的评论需要二次确认，取消不会发出请求', async () => {
+  const normal = state.fetch.getMockImplementation()!;
+  state.fetch.mockImplementation((url, init) => url.endsWith('/comments') && !init?.method
+    ? Promise.resolve(json({ items: [{ id: 'c1', author: { publicAuthorId: 'p', displayName: '我' }, body: '自己的评论', version: 1, createdAt: '2026-09-05T00:00:00Z', deletable: true, status: 'published' }], nextCursor: null }))
+    : normal(url, init));
+  renderWork();
+  fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(dialog.querySelector('.btn-quiet') as HTMLElement);
+  expect(state.fetch.mock.calls.filter((call) => call[1]?.method === 'DELETE')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '删除' }));
+  fireEvent.click((await screen.findByRole('dialog')).querySelector('.btn-danger') as HTMLElement);
+  await waitFor(() => expect(state.fetch.mock.calls.filter((call) => call[1]?.method === 'DELETE')).toHaveLength(1));
+});
+
+it('讨论按游标分页，「加载更多」追加而不是替换', async () => {
+  const normal = state.fetch.getMockImplementation()!;
+  const item = (id: string) => ({ id, author: { publicAuthorId: 'p', displayName: '甲' }, body: `评论 ${id}`, version: 1, createdAt: '2026-09-05T00:00:00Z', deletable: false, status: 'published' });
+  state.fetch.mockImplementation((url, init) => {
+    if (url.includes('/comments?cursor=next')) return Promise.resolve(json({ items: [item('b')], nextCursor: null }));
+    if (url.endsWith('/comments') && !init?.method) return Promise.resolve(json({ items: [item('a')], nextCursor: 'next' }));
+    return normal(url, init);
+  });
+  renderWork();
+  expect(await screen.findByText('评论 a')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(await screen.findByText('评论 b')).toBeVisible();
+  expect(screen.getByText('评论 a')).toBeVisible();
+  expect(screen.queryByRole('button', { name: '加载更多' })).not.toBeInTheDocument();
 });

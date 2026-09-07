@@ -3,9 +3,13 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import SiteHeader from '@/components/layout/SiteHeader';
 import PatternPreview from '@/components/preview/PatternPreview';
+import Badge from '@/components/ui/Badge';
+import Disclosure from '@/components/ui/Disclosure';
+import Icon from '@/components/ui/Icon';
 import { CommunityDetailImpression } from '@/components/community/CommunityImpression';
-import CommunityInteractions from '@/components/community/CommunityInteractions';
+import { WorkActions, WorkComments } from '@/components/community/CommunityInteractions';
 import { getDb } from '@/lib/auth/db';
+import { getSessionActor } from '@/lib/auth/session';
 import { getPublicCommunityWork } from '@/lib/community/queries';
 import { communityTagHref } from '@/lib/community/tagHref';
 import { communityThumbnailUrl } from '@/lib/community/thumbnailUrl';
@@ -34,31 +38,43 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 export default async function CommunityDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
-  const work = await load((await params).id);
+  const [work, actor] = await Promise.all([load((await params).id), getSessionActor()]);
   if (!work) notFound();
   const t = zhCN.communityAdmin.detail;
   const candidate = (await searchParams)?.returnTo;
   const returnTo = typeof candidate === 'string' && candidate.length <= 2000 && candidate.startsWith('/community?') && !/[\\\r\n]/u.test(candidate) ? candidate : '/community';
   const publishedAt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long', timeZone: 'Asia/Shanghai' }).format(new Date(work.publishedAt));
+  const board = getBoardProfile(work.snapshot.boardProfile);
+  const canInteract = Boolean(actor);
   return (
     <main id="main" className="workspace-page">
       <SiteHeader title={t.headerTitle} currentPath="/community" />
       <CommunityDetailImpression />
       <div className="workspace-content community-detail">
-        <Link className="link-soft" href={returnTo}>{t.backToList}</Link>
-        <header className="community-detail-header"><div><h2>{work.title}</h2><p>{t.publication(work.author.displayName, publishedAt)}</p></div>{work.featured && <span className="community-featured">{t.featured}</span>}</header>
+        <Link className="community-back" href={returnTo}><Icon name="chevron-left" size={16} />{t.backToList}</Link>
+        <header className="community-detail-header">
+          <div className="community-detail-title">
+            <h2>{work.title}</h2>
+            <p>{t.publication(work.author.displayName, publishedAt)}{work.featured && <Badge tone="featured" className="community-featured">{t.featured}</Badge>}</p>
+          </div>
+          <WorkActions key={work.id} workId={work.id} initialLikes={work.counts.likes} initialReuses={work.counts.reuses} canInteract={canInteract} />
+        </header>
         <div className="community-detail-layout">
-          <section className="community-pattern"><PatternPreview pattern={work.snapshot.pattern} boardSize={getBoardProfile(work.snapshot.boardProfile).boardCols} /></section>
-          <CommunityInteractions key={work.id} workId={work.id} initialLikes={work.counts.likes} initialReuses={work.counts.reuses} commentsLocked={work.commentsLocked}>
-          <aside className="community-proof-meta">
-            <dl><div><dt>{t.size}</dt><dd>{work.width} × {work.height}</dd></div><div><dt>{t.colors}</dt><dd>{t.colorValue(work.colorCount)}</dd></div><div><dt>{t.boardProfile}</dt><dd>{getBoardProfile(work.snapshot.boardProfile).displayName}</dd></div></dl>
-            <div className="community-color-band large">{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
-            <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={communityTagHref(tag.name)}>{tag.name}</Link>)}</div>
-            <p className="community-license-note">{t.license}</p>
-            <details><summary>{t.technicalDetails}</summary><dl><div><dt>{t.engineVersion}</dt><dd>{work.snapshot.engineVersion}</dd></div></dl></details>
+          <section className="community-pattern" aria-label={t.patternStage}><PatternPreview pattern={work.snapshot.pattern} boardSize={board.boardCols} /></section>
+          <aside className="community-spec-card" aria-labelledby="community-spec-title">
+            <h2 id="community-spec-title">{t.specTitle}</h2>
+            <dl className="community-spec-grid">
+              <div><dt>{t.size}</dt><dd>{work.width} × {work.height}</dd></div>
+              <div><dt>{t.colors}</dt><dd>{t.colorValue(work.colorCount)}</dd></div>
+              <div><dt>{t.boardProfile}</dt><dd>{board.displayName}</dd></div>
+            </dl>
+            <div className="community-color-band large" aria-label={t.colorBand}>{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
+            {work.tags.length > 0 && <div className="community-tags">{work.tags.map((tag) => <Link key={tag.id} href={communityTagHref(tag.name)} className="community-tag-chip"><Icon name="tag" size={13} />{tag.name}</Link>)}</div>}
+            <p className="community-license-note"><Icon name="shield" size={15} /><span>{t.license}</span></p>
+            <Disclosure compact summary={t.technicalDetails}><dl className="community-spec-facts"><div><dt>{t.engineVersion}</dt><dd>{work.snapshot.engineVersion}</dd></div><div><dt>{t.revisionId}</dt><dd>{work.revisionId}</dd></div></dl></Disclosure>
           </aside>
-          </CommunityInteractions>
         </div>
+        <WorkComments key={`${work.id}-comments`} workId={work.id} commentsLocked={work.commentsLocked} canInteract={canInteract} />
       </div>
     </main>
   );
