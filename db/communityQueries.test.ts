@@ -176,6 +176,13 @@ describe('public community query boundary', () => {
     const detail = await getPublicCommunityWork(db, workIds[0]);
     expect(detail).toMatchObject({ commentsLocked: true, snapshot, preview: deriveCommunityPreview(pattern) });
     expect(JSON.stringify(detail)).not.toContain(authorId);
+    // 匿名访客（ADR-0021）：拿不到完整图纸网格与色板 JSON，但统计、色带与引擎版本照常。
+    const anonymous = await getPublicCommunityWork(db, workIds[0], { includeSnapshot: false });
+    expect(anonymous).toMatchObject({ snapshot: null, engineVersion: snapshot.engineVersion, width: pattern.width, height: pattern.height });
+    expect(JSON.stringify(anonymous)).not.toContain('"paletteSelection"');
+    // 游标经过签名：伪造的明文 base64 游标不再被接受。
+    await expect(listPublicCommunityWorks(db, { sort: 'latest', cursor: Buffer.from(JSON.stringify({ sort: 'latest', primary: '2026-01-01T00:00:00.000Z', publishedAt: '2026-01-01T00:00:00.000Z', id: workIds[0] })).toString('base64url') }))
+      .rejects.toMatchObject({ code: 'VALIDATION' });
     await db.update(communityWorks).set({ lifecycleStatus: 'withdrawn' }).where(eq(communityWorks.id, workIds[0]));
     await expect(getPublicCommunityWork(db, workIds[0])).resolves.toBeNull();
   });

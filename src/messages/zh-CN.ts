@@ -1086,6 +1086,7 @@ export const zhCN = {
       publication: (author: string, date: string) => `作者 ${author} · 发布于 ${date}`,
       featured: '人工精选', size: '尺寸', colors: '用色', colorValue: (count: number) => `${count} 种`,
       boardProfile: '制作规格', engineVersion: '引擎版本', revisionId: '图纸修订编号', specTitle: '制作信息', patternStage: '图纸', colorBand: '用色色带',
+      staticPatternAlt: (title: string) => `${title} 的图纸预览（带格线与板缝）`, loginForCodes: '登录后可查看每一格的色号、缩放图纸，并用这张图纸开始制作。',
       license: '本作品按豆社有限平台许可展示。引用功能只会创建你的私人副本，不授予站外传播、商业使用或再许可权。',
       likeCount: (count: number) => `${count} 赞`, commentCount: (count: number) => `${count} 评论`, reuseCount: (count: number) => `${count} 次引用`,
     },

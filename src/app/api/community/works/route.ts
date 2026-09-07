@@ -7,6 +7,7 @@ import { createCommunityWork } from '@/lib/community/service';
 import { listPublicCommunityWorks, parseCommunityListUrl } from '@/lib/community/queries';
 import { executeIdempotently } from '@/lib/idempotency';
 import type { AnyDatabase } from '@/../db/client';
+import { enforceCommunityWriteLimit, enforcePublicReadLimit } from '@/lib/security/publicRateLimit';
 
 const createSchema = z.object({
   designId: z.string().uuid(),
@@ -16,6 +17,7 @@ const createSchema = z.object({
 }).strict();
 
 async function get(request: Request) {
+  await enforcePublicReadLimit(getDb(), request, 'works');
   return okJson(await listPublicCommunityWorks(getDb(), parseCommunityListUrl(request.url)), {
     headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
   });
@@ -25,6 +27,7 @@ async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const body = await readJson(request, 32 * 1024);
   if (!body.ok) return body.response;
   const input = createSchema.parse(body.data);

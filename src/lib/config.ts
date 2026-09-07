@@ -72,6 +72,18 @@ export interface SiteConfig extends PublicConfig {
     backupAlertRateLimit: number;
     /** 匿名分析摄取每个短期 IP HMAC 键每小时上限 */
     analyticsRateLimit: number;
+    /** 豆社公开读接口（列表 / 详情 / 评论 / 缩略图渲染）每 IP 每小时上限 */
+    publicReadRateLimit: number;
+    /** 豆社公开 HTML 页面（列表 / 详情 / sitemap）每 IP 每分钟上限（进程内计数） */
+    publicPageRatePerMinute: number;
+    /** 豆社写操作（点赞 / 举报 / 引用 / 投稿 / 原图上传 / 删评）每账号每小时上限 */
+    communityWriteRateLimit: number;
+    /** 豆社写操作每 IP 每小时上限 */
+    communityWriteIpRateLimit: number;
+    /** sitemap 只列最近 N 天更新的作品 */
+    sitemapRecentDays: number;
+    /** sitemap 每页作品数 */
+    sitemapPageSize: number;
     sessionTtlSeconds: number;
     maxBodyBytes: number;
   };
@@ -111,6 +123,12 @@ const DEFAULTS: SiteConfig = {
     syncWriteRateLimit: 600,
     backupAlertRateLimit: 60,
     analyticsRateLimit: 300,
+    publicReadRateLimit: 1200,
+    publicPageRatePerMinute: 120,
+    communityWriteRateLimit: 120,
+    communityWriteIpRateLimit: 300,
+    sitemapRecentDays: 180,
+    sitemapPageSize: 500,
     sessionTtlSeconds: 30 * 24 * 60 * 60,
     maxBodyBytes: 64 * 1024,
   },
@@ -180,6 +198,12 @@ function compute(): SiteConfig {
       syncWriteRateLimit: readInt('RATE_SYNC_WRITE', DEFAULTS.security.syncWriteRateLimit, 1),
       backupAlertRateLimit: readInt('RATE_BACKUP_ALERT', DEFAULTS.security.backupAlertRateLimit, 1),
       analyticsRateLimit: readInt('RATE_ANALYTICS', DEFAULTS.security.analyticsRateLimit, 1),
+      publicReadRateLimit: readInt('RATE_PUBLIC_READ_IP_HOUR', DEFAULTS.security.publicReadRateLimit, 1),
+      publicPageRatePerMinute: readInt('RATE_PUBLIC_PAGE_IP_MINUTE', DEFAULTS.security.publicPageRatePerMinute, 1),
+      communityWriteRateLimit: readInt('RATE_COMMUNITY_WRITE_USER_HOUR', DEFAULTS.security.communityWriteRateLimit, 1),
+      communityWriteIpRateLimit: readInt('RATE_COMMUNITY_WRITE_IP_HOUR', DEFAULTS.security.communityWriteIpRateLimit, 1),
+      sitemapRecentDays: readInt('SITEMAP_RECENT_DAYS', DEFAULTS.security.sitemapRecentDays, 1, 3650),
+      sitemapPageSize: readInt('SITEMAP_PAGE_SIZE', DEFAULTS.security.sitemapPageSize, 10, 5000),
       sessionTtlSeconds: readInt('SESSION_TTL_SECONDS', DEFAULTS.security.sessionTtlSeconds, 60),
       maxBodyBytes: readInt('MAX_BODY_BYTES', DEFAULTS.security.maxBodyBytes, 1024),
     },

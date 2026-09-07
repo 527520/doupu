@@ -6,6 +6,7 @@ import { ZodError } from 'zod';
 import { AppError, type ApiErrorBody } from '@/lib/errors';
 import { zodErrorsToStrings } from '@/lib/schemas';
 import { config } from '@/lib/config';
+import { retryAfterSeconds } from '@/lib/auth/rateLimit';
 
 export type JsonResult = { ok: true; data: unknown } | { ok: false; response: NextResponse };
 
@@ -80,7 +81,10 @@ export function apiError(error: unknown, requestId: string = crypto.randomUUID()
   if (error instanceof AppError) {
     const body: ApiErrorBody = { error: { code: error.code, message: error.message }, requestId };
     if (error.field) body.error.field = error.field;
-    return NextResponse.json(body, { status: error.status, headers: { 'x-request-id': requestId } });
+    const headers: Record<string, string> = { 'x-request-id': requestId };
+    // 限流一律小时窗口：告诉客户端窗口何时重置，而不是让它盲目重试。
+    if (error.code === 'RATE_LIMITED') headers['Retry-After'] = String(retryAfterSeconds());
+    return NextResponse.json(body, { status: error.status, headers });
   }
   if (error instanceof ZodError) {
     const messages = zodErrorsToStrings(error);

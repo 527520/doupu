@@ -13,6 +13,12 @@ export function hourlyWindowStart(now: Date = new Date()): Date {
   return new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS);
 }
 
+/** 距当前小时窗口结束的秒数，用于 429 的 Retry-After。 */
+export function retryAfterSeconds(now: Date = new Date()): number {
+  const windowEnd = hourlyWindowStart(now).getTime() + WINDOW_MS;
+  return Math.max(1, Math.ceil((windowEnd - now.getTime()) / 1000));
+}
+
 /** 构造限流 key：路由 + IP（+ 邮箱，防跨账号与跨 IP 枚举）。 */
 export function rateLimitKey(route: string, ip: string, email = ''): string {
   return `auth:${route}:${ip}:${email.trim().toLowerCase()}`;

@@ -7,7 +7,7 @@
 import type { Pattern } from '@/lib/types';
 import { boardSeamPositions } from './layout';
 import { encodeRgbPng, type RgbImage } from './png';
-import { thumbnailCellSize } from './thumbnailSize';
+import { thumbnailCellSize, type ThumbnailSize } from './thumbnailSize';
 
 export interface ThumbnailOptions {
   boardSize: number;
@@ -15,6 +15,8 @@ export interface ThumbnailOptions {
   background?: string;
   /** 背景外部格颜色。 */
   externalColor?: string;
+  /** default：列表缩略图（长边 720）；large：详情页匿名大图（长边 1440）。 */
+  size?: ThumbnailSize;
 }
 
 const DEFAULTS = { background: '#F5F1EB', externalColor: '#D1D5DB' } as const;
@@ -29,7 +31,7 @@ function parseHex(hex: string): [number, number, number] {
 
 /** 光栅化图纸；返回紧密 RGB 图像。 */
 export function rasterizePattern(pattern: Pattern, options: ThumbnailOptions): RgbImage {
-  const cellPx = thumbnailCellSize(pattern.width, pattern.height);
+  const cellPx = thumbnailCellSize(pattern.width, pattern.height, options.size ?? 'default');
   const width = pattern.width * cellPx;
   const height = pattern.height * cellPx;
   const data = new Uint8Array(width * height * 3);

@@ -26,6 +26,7 @@ import { measureJsonBytes } from '@/lib/sync/revision';
 import { moderateComment, type CommentModerationDeps } from '@/lib/moderation/commentModeration';
 import { E2E_MODERATION_DEPS, isE2eModerationEnabled } from '@/lib/moderation/e2eFake';
 import { parseCommunitySnapshot } from './snapshot';
+import { signCursor, verifyCursor } from '@/lib/security/cursor';
 
 const commentBodySchema = z.string().trim().min(1).max(500);
 const reasonSchema = z.string().trim().min(3).max(500);
@@ -213,18 +214,14 @@ export const COMMENT_PAGE_SIZE = 30;
 interface CommentCursor { createdAt: string; id: string }
 
 export function encodeCommentCursor(cursor: CommentCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+  return signCursor(cursor);
 }
 
 export function decodeCommentCursor(value: string | undefined | null): CommentCursor | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<CommentCursor>;
-    if (typeof parsed.createdAt !== 'string' || Number.isNaN(Date.parse(parsed.createdAt)) || typeof parsed.id !== 'string' || !/^[0-9a-f-]{36}$/iu.test(parsed.id)) return null;
-    return { createdAt: parsed.createdAt, id: parsed.id };
-  } catch {
-    return null;
-  }
+  const parsed = verifyCursor(value) as Partial<CommentCursor> | null;
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (typeof parsed.createdAt !== 'string' || Number.isNaN(Date.parse(parsed.createdAt)) || typeof parsed.id !== 'string' || !/^[0-9a-f-]{36}$/iu.test(parsed.id)) return null;
+  return { createdAt: parsed.createdAt, id: parsed.id };
 }
 
 /**
@@ -282,9 +279,11 @@ export async function reportCommunityTarget(db: AnyDatabase, input: {
       if (!revision) throw new AppError('NOT_FOUND', '作品不存在');
       targetVersion = revision.revisionNumber;
     } else {
-      const [comment] = await tx.select({ version: communityComments.version, status: communityComments.status })
+      const [comment] = await tx.select({ version: communityComments.version, status: communityComments.status, workId: communityComments.workId })
         .from(communityComments).where(eq(communityComments.id, input.targetId));
       if (!comment || comment.status !== 'published') throw new AppError('NOT_FOUND', '评论不存在');
+      // 评论所属作品已下架 / 撤回时评论本身也不可见，不应再进入举报队列。
+      await activeWork(tx, comment.workId);
       targetVersion = comment.version;
     }
     const created = await tx.insert(communityReports).values({

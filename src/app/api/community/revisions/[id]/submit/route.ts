@@ -6,11 +6,13 @@ import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { submitCommunityRevision } from '@/lib/community/service';
 import { executeIdempotently } from '@/lib/idempotency';
 import type { AnyDatabase } from '@/../db/client';
+import { enforceCommunityWriteLimit } from '@/lib/security/publicRateLimit';
 
 async function post(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const revisionId = z.string().uuid().parse((await params).id);
   const body = await readJson(request, 4 * 1024);
   if (!body.ok) return body.response;

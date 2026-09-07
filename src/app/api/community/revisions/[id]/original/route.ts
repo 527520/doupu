@@ -8,6 +8,7 @@ import { getSessionActor } from '@/lib/auth/session';
 import { readRevisionOriginal, resolveOriginalAccess, storeRevisionOriginal } from '@/lib/community/originals';
 import { getOriginalStore } from '@/lib/community/originalStore';
 import { AppError } from '@/lib/errors';
+import { enforceCommunityWriteLimit } from '@/lib/security/publicRateLimit';
 
 const idSchema = z.uuid();
 
@@ -19,6 +20,7 @@ async function put(request: Request, { params }: { params: Promise<{ id: string 
   const guard = enforceBinaryUploadGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const revisionId = idSchema.parse((await params).id);
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (declared > LIMITS.maxFileBytes) throw new AppError('PAYLOAD_TOO_LARGE', '原图超过 20 MB 上限');

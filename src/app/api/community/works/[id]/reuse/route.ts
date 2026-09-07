@@ -5,11 +5,13 @@ import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, withApiErrors } from '@/lib/auth/http';
 import { reuseCommunityWork } from '@/lib/community/interactions';
 import { executeIdempotently } from '@/lib/idempotency';
+import { enforceCommunityWriteLimit } from '@/lib/security/publicRateLimit';
 
 async function post(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const workId = z.string().uuid().parse((await params).id);
   const result = await executeIdempotently(getDb(), {
     actorUserId: actor.userId, capability: 'community:interact', scope: `community.reuse:${workId}`,

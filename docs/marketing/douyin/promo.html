@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>豆谱抖音推广视频</title>
+  <style>
+    @font-face {
+      font-family: "DouPu Sans";
+      src: url("../../../public/fonts/NotoSansCJKsc-Regular.otf") format("opentype");
+      font-display: swap;
+    }
+
+    :root {
+      --ink: #342b3d;
+      --muted: #786f7d;
+      --rose: #b43f6d;
+      --rose-soft: #f3dbe5;
+      --lavender: #80749a;
+      --mint: #bfd9ca;
+      --cream: #faf6f1;
+      --paper: #fffdfb;
+      --gold: #d0933e;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 1080px;
+      height: 1920px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--cream);
+      color: var(--ink);
+      font-family: "DouPu Sans", sans-serif;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: absolute;
+      width: 760px;
+      height: 760px;
+      border-radius: 50%;
+      filter: blur(110px);
+      opacity: 0.42;
+      pointer-events: none;
+    }
+
+    body::before {
+      left: -300px;
+      top: -260px;
+      background: #f3cbdc;
+    }
+
+    body::after {
+      right: -360px;
+      bottom: -300px;
+      background: #d6cbea;
+    }
+
+    .grain {
+      position: absolute;
+      inset: 0;
+      opacity: 0.08;
+      background-image: radial-gradient(#5f5369 0.6px, transparent 0.6px);
+      background-size: 14px 14px;
+      pointer-events: none;
+      z-index: 30;
+    }
+
+    .scene {
+      position: absolute;
+      inset: 0;
+      padding: 126px 92px 170px;
+      opacity: 0;
+      z-index: 1;
+    }
+
+    .play .scene { animation-duration: 15s; animation-fill-mode: both; animation-timing-function: ease-in-out; }
+    .play .scene-1 { animation-name: scene1; }
+    .play .scene-2 { animation-name: scene2; }
+    .play .scene-3 { animation-name: scene3; }
+    .play .scene-4 { animation-name: scene4; }
+    .play .scene-5 { animation-name: scene5; }
+
+    @keyframes scene1 {
+      0%, 13% { opacity: 1; transform: scale(1); }
+      17%, 100% { opacity: 0; transform: scale(1.035); }
+    }
+
+    @keyframes scene2 {
+      0%, 13% { opacity: 0; transform: translateY(55px); }
+      17%, 31% { opacity: 1; transform: translateY(0); }
+      35%, 100% { opacity: 0; transform: translateY(-45px); }
+    }
+
+    @keyframes scene3 {
+      0%, 31% { opacity: 0; transform: translateY(55px); }
+      35%, 51% { opacity: 1; transform: translateY(0); }
+      56%, 100% { opacity: 0; transform: translateY(-45px); }
+    }
+
+    @keyframes scene4 {
+      0%, 52% { opacity: 0; transform: translateY(55px); }
+      56%, 71% { opacity: 1; transform: translateY(0); }
+      76%, 100% { opacity: 0; transform: translateY(-45px); }
+    }
+
+    @keyframes scene5 {
+      0%, 72% { opacity: 0; transform: scale(0.965); }
+      77%, 100% { opacity: 1; transform: scale(1); }
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      padding: 13px 24px;
+      border: 2px solid rgba(180, 63, 109, 0.18);
+      border-radius: 999px;
+      color: var(--rose);
+      background: rgba(255, 253, 251, 0.8);
+      font-size: 29px;
+      letter-spacing: 2px;
+      box-shadow: 0 15px 45px rgba(70, 50, 72, 0.08);
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: var(--rose);
+      box-shadow: 0 0 0 10px rgba(180, 63, 109, 0.11);
+    }
+
+    h1,
+    h2,
+    p { margin: 0; }
+
+    h1 {
+      margin-top: 54px;
+      font-size: 96px;
+      line-height: 1.16;
+      letter-spacing: -5px;
+      font-weight: 700;
+    }
+
+    h1 .accent,
+    h2 .accent { color: var(--rose); }
+
+    h2 {
+      margin-top: 38px;
+      font-size: 75px;
+      line-height: 1.18;
+      letter-spacing: -3px;
+      font-weight: 700;
+    }
+
+    .lede {
+      margin-top: 26px;
+      max-width: 850px;
+      color: var(--muted);
+      font-size: 34px;
+      line-height: 1.55;
+    }
+
+    .bead-field {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .bead {
+      position: absolute;
+      width: 86px;
+      height: 86px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: inset -10px -13px 20px rgba(60, 35, 45, 0.16), 0 20px 36px rgba(62, 45, 64, 0.12);
+    }
+
+    .bead::after {
+      content: "";
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      left: 27px;
+      top: 27px;
+      border-radius: 50%;
+      background: var(--cream);
+      box-shadow: inset 3px 5px 9px rgba(57, 43, 62, 0.2);
+    }
+
+    .b1 { color: #c85b85; left: 76px; top: 1170px; transform: rotate(18deg); }
+    .b2 { color: #83bfa5; right: 82px; top: 340px; transform: scale(0.72); }
+    .b3 { color: #9a8ab2; right: 110px; bottom: 260px; transform: scale(1.15); }
+    .b4 { color: #dea04f; left: 112px; bottom: 150px; transform: scale(0.65); }
+
+    .hook-card {
+      position: absolute;
+      left: 92px;
+      right: 92px;
+      top: 820px;
+      height: 690px;
+      border-radius: 54px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 46px 100px rgba(65, 45, 65, 0.18);
+      transform: rotate(-1.5deg);
+    }
+
+    .hook-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 10%;
+      transform: scale(1.02);
+    }
+
+    .play .hook-card { animation: floatCard 2.2s ease-in-out both; }
+
+    @keyframes floatCard {
+      from { transform: translateY(80px) rotate(-3deg) scale(0.95); opacity: 0; }
+      to { transform: translateY(0) rotate(-1.5deg) scale(1); opacity: 1; }
+    }
+
+    .screen-card {
+      position: relative;
+      width: 896px;
+      margin-top: 70px;
+      padding: 18px;
+      border-radius: 50px;
+      background: rgba(255,255,255,0.9);
+      box-shadow: 0 50px 100px rgba(60, 42, 63, 0.18), 0 0 0 2px rgba(91, 74, 101, 0.08);
+      overflow: hidden;
+    }
+
+    .screen-card::before {
+      content: "";
+      display: block;
+      position: absolute;
+      left: 50%;
+      top: 7px;
+      width: 100px;
+      height: 11px;
+      border-radius: 99px;
+      background: #d9d1dc;
+      transform: translateX(-50%);
+      z-index: 2;
+    }
+
+    .screen-card img {
+      display: block;
+      width: 100%;
+      border-radius: 34px;
+    }
+
+    .play .scene-2 .screen-card img { animation: imageDrift 3.1s ease-out both; }
+    .play .scene-3 .screen-card img { animation: imageZoom 3.2s ease-out both; }
+    .play .scene-4 .screen-card img { animation: imagePan 3.2s ease-out both; }
+
+    @keyframes imageDrift {
+      from { transform: scale(1.05) translateY(10px); }
+      to { transform: scale(1.01) translateY(-5px); }
+    }
+
+    @keyframes imageZoom {
+      from { transform: scale(1.01); }
+      to { transform: scale(1.075) translate(-20px, 16px); }
+    }
+
+    @keyframes imagePan {
+      from { transform: scale(1.04) translateX(8px); }
+      to { transform: scale(1.085) translateX(-20px); }
+    }
+
+    .floating-note {
+      position: absolute;
+      right: 46px;
+      bottom: 40px;
+      padding: 20px 28px;
+      border-radius: 26px;
+      background: rgba(52, 43, 61, 0.94);
+      color: white;
+      font-size: 29px;
+      box-shadow: 0 20px 55px rgba(43, 33, 48, 0.25);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 32px;
+    }
+
+    .chip {
+      padding: 17px 26px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.85);
+      color: var(--ink);
+      font-size: 27px;
+      box-shadow: 0 14px 34px rgba(63, 47, 65, 0.1);
+    }
+
+    .chip strong { color: var(--rose); font-weight: 700; }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 18px;
+      margin-top: 36px;
+    }
+
+    .spec {
+      padding: 24px 18px;
+      border-radius: 28px;
+      background: rgba(255, 253, 251, 0.88);
+      text-align: center;
+      box-shadow: 0 15px 40px rgba(63, 47, 65, 0.09);
+    }
+
+    .spec strong {
+      display: block;
+      color: var(--rose);
+      font-size: 30px;
+    }
+
+    .spec span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 22px;
+    }
+
+    .scene-5 {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding-bottom: 260px;
+    }
+
+    .logo-mark {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      border-radius: 46px;
+      background: var(--ink);
+      box-shadow: 0 35px 80px rgba(57, 43, 64, 0.22);
+      transform: rotate(-3deg);
+    }
+
+    .logo-mark span {
+      position: absolute;
+      left: 33px;
+      width: 114px;
+      height: 29px;
+      border-radius: 30px;
+      transform: rotate(-27deg);
+    }
+
+    .logo-mark span:nth-child(1) { top: 44px; background: #f0a1bd; }
+    .logo-mark span:nth-child(2) { top: 76px; background: #a294bd; }
+    .logo-mark span:nth-child(3) { top: 108px; background: #e0a44c; }
+
+    .brand-name {
+      margin-top: 50px;
+      font-size: 103px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    .brand-name small {
+      display: block;
+      margin-top: 8px;
+      color: var(--lavender);
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: 10px;
+    }
+
+    .cta-line {
+      margin-top: 50px;
+      color: var(--rose);
+      font-size: 51px;
+      font-weight: 700;
+    }
+
+    .url {
+      margin-top: 58px;
+      padding: 25px 58px 29px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      font-size: 53px;
+      letter-spacing: 3px;
+      box-shadow: 0 25px 65px rgba(53, 41, 60, 0.22);
+    }
+
+    .subcta {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 28px;
+    }
+
+    .rainbow {
+      position: relative;
+      width: 260px;
+      height: 72px;
+      margin-top: 38px;
+    }
+
+    .rainbow::before,
+    .rainbow::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 8px;
+      border-radius: 50%;
+      transform: rotate(3deg);
+    }
+
+    .rainbow::before { top: 14px; background: #e88cb1; }
+    .rainbow::after { top: 35px; left: 25px; right: 25px; background: #b4a7cf; }
+
+    .progress {
+      position: absolute;
+      left: 72px;
+      right: 72px;
+      bottom: 78px;
+      height: 10px;
+      border-radius: 99px;
+      overflow: hidden;
+      background: rgba(52, 43, 61, 0.09);
+      z-index: 40;
+    }
+
+    .progress::after {
+      content: "";
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--rose), #9a82b0, var(--gold));
+      transform-origin: left center;
+      transform: scaleX(0);
+    }
+
+    .play .progress::after { animation: progress 15s linear both; }
+
+    @keyframes progress { to { transform: scaleX(1); } }
+  </style>
+</head>
+<body>
+  <div class="bead-field" aria-hidden="true">
+    <i class="bead b1"></i>
+    <i class="bead b2"></i>
+    <i class="bead b3"></i>
+    <i class="bead b4"></i>
+  </div>
+
+  <section class="scene scene-1">
+    <span class="eyebrow">拼豆人的做图神器</span>
+    <h1>做拼豆，<br />最麻烦的<br />居然是<span class="accent">做图纸</span>？</h1>
+    <p class="lede">找颜色、标色号、数豆子……还没开始拼，耐心先用完了。</p>
+    <div class="hook-card">
+      <img src="file:///Users/wuqian/Pictures/doupu-cover-2026-09-01-v2.png" alt="照片转拼豆图纸" />
+    </div>
+  </section>
+
+  <section class="scene scene-2">
+    <span class="eyebrow">第一步</span>
+    <h2>上传一张<span class="accent">照片</span></h2>
+    <p class="lede">照片、插画、透明底 PNG 都可以，裁剪后直接开始。</p>
+    <div class="screen-card">
+      <img src="file:///Users/wuqian/Pictures/doupu-home-current.png" alt="豆谱开始创作页" />
+      <div class="floating-note">🔒 原图只在本机处理</div>
+    </div>
+    <div class="chips">
+      <span class="chip">无需安装</span>
+      <span class="chip">浏览器打开就能用</span>
+    </div>
+  </section>
+
+  <section class="scene scene-3">
+    <span class="eyebrow">第二步</span>
+    <h2>马上得到<span class="accent">可拼图纸</span></h2>
+    <p class="lede">尺寸、颜色数量和抖动都能自己调，生成后还能逐格修补。</p>
+    <div class="chips">
+      <span class="chip"><strong>✓</strong> 调尺寸</span>
+      <span class="chip"><strong>✓</strong> 选色数</span>
+      <span class="chip"><strong>✓</strong> 逐格修补</span>
+    </div>
+    <div class="screen-card">
+      <img src="file:///Users/wuqian/Pictures/doupu-workbench-current.png" alt="豆谱工作台" />
+    </div>
+  </section>
+
+  <section class="scene scene-4">
+    <span class="eyebrow">真实色号匹配</span>
+    <h2><span class="accent">13 套</span>内置色板</h2>
+    <p class="lede">还支持自定义色板、PNG、打印版 PDF 和每色用量清单。</p>
+    <div class="screen-card">
+      <img src="file:///Users/wuqian/Pictures/doupu-palettes-current.png" alt="豆谱色板管理" />
+    </div>
+    <div class="spec-grid">
+      <div class="spec"><strong>5mm</strong><span>29×29</span></div>
+      <div class="spec"><strong>2.6mm</strong><span>50×50</span></div>
+      <div class="spec"><strong>2.6mm</strong><span>52×52</span></div>
+    </div>
+  </section>
+
+  <section class="scene scene-5">
+    <div class="logo-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="brand-name">豆谱<small>DOUPU STUDIO</small></div>
+    <div class="cta-line">照片秒变拼豆图纸</div>
+    <div class="rainbow" aria-hidden="true"></div>
+    <div class="url">doupu.fun</div>
+    <div class="subcta">免费 · 开源 · 无广告</div>
+  </section>
+
+  <div class="grain"></div>
+  <div class="progress"></div>
+</body>
+</html>

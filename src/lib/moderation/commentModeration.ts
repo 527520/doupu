@@ -66,8 +66,9 @@ const health: ProviderHealth = { lastErrorAt: null, lastErrorCode: null, consecu
 export function getModerationProviderHealth(): Readonly<ProviderHealth> { return { ...health }; }
 export function resetModerationProviderHealth(): void { health.lastErrorAt = null; health.lastErrorCode = null; health.consecutiveFailures = 0; health.lastSuccessAt = null; }
 
+/** 归一化：NFKC、剥离零宽 / 格式字符（Cf，防「重复」与同文缓存被零宽字符绕过）、折叠空白、中文小写。 */
 export function normalizeCommentText(body: string): string {
-  return body.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase('zh-CN');
+  return body.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\s+/gu, ' ').trim().toLocaleLowerCase('zh-CN');
 }
 
 export function commentTextHash(body: string): string {

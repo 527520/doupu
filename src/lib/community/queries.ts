@@ -11,6 +11,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { z } from 'zod';
+import { signCursor, verifyCursor } from '@/lib/security/cursor';
 import type { AnyDatabase } from '@/../db/client';
 import {
   communityRevisions,
@@ -59,17 +60,15 @@ export function parseCommunityListUrl(url: string): CommunityListQuery {
 }
 
 function encodeCursor(cursor: CommunityCursor): string {
-  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+  return signCursor(cursor);
 }
 
+/** 游标必须由服务端签发（ADR-0021）；篡改、损坏或排序不一致都视为无效。 */
 function decodeCursor(value: string | undefined, sort: CommunityListQuery['sort']): CommunityCursor | null {
-  if (!value) return null;
-  try {
-    const parsed = cursorSchema.safeParse(JSON.parse(Buffer.from(value, 'base64url').toString('utf8')));
-    return parsed.success && parsed.data.sort === sort ? parsed.data : null;
-  } catch {
-    return null;
-  }
+  const payload = verifyCursor(value);
+  if (payload === null) return null;
+  const parsed = cursorSchema.safeParse(payload);
+  return parsed.success && parsed.data.sort === sort ? parsed.data : null;
 }
 
 export interface PublicAuthorDto {
@@ -256,8 +255,13 @@ export async function listPublicCommunityWorks(db: AnyDatabase, queryInput: Comm
   };
 }
 
-export async function getPublicCommunityWork(db: AnyDatabase, id: string) {
-  const [row] = await db.select({ ...publicSelection, snapshot: communityRevisions.snapshot })
+/**
+ * 公开作品详情。`includeSnapshot=false`（匿名访客）时不返回完整图纸网格与色板 JSON——匿名只看
+ * 服务端渲染的大图与统计；色号网格、交互查看器和「用这张制作」需要登录（ADR-0021）。
+ */
+export async function getPublicCommunityWork(db: AnyDatabase, id: string, options: { includeSnapshot?: boolean } = {}) {
+  const includeSnapshot = options.includeSnapshot ?? true;
+  const [row] = await db.select({ ...publicSelection, engineVersion: communityRevisions.engineVersion, snapshot: communityRevisions.snapshot })
     .from(communityWorks)
     .innerJoin(communityRevisions, eq(communityRevisions.workId, communityWorks.id))
     .leftJoin(users, eq(users.id, communityWorks.authorUserId))
@@ -278,7 +282,8 @@ export async function getPublicCommunityWork(db: AnyDatabase, id: string) {
     height: row.height,
     colorCount: row.colorCount,
     preview: preview.data,
-    snapshot,
+    engineVersion: row.engineVersion,
+    snapshot: includeSnapshot ? snapshot : null,
     tags: tags.get(row.id) ?? [],
     counts: { likes: row.likeCount, comments: row.commentCount, reuses: row.reuseCount },
     featured: row.featuredAt !== null,

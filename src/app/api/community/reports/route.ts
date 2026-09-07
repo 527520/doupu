@@ -4,6 +4,7 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { reportCategorySchema, reportCommunityTarget } from '@/lib/community/interactions';
+import { enforceCommunityWriteLimit } from '@/lib/security/publicRateLimit';
 
 const schema = z.object({
   targetType: z.enum(['work', 'comment']), targetId: z.string().uuid(),
@@ -14,6 +15,7 @@ async function post(request: Request) {
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const body = await readJson(request, 4 * 1024);
   if (!body.ok) return body.response;
   const report = await reportCommunityTarget(getDb(), { actor, ...schema.parse(body.data) });

@@ -4,6 +4,7 @@ import { requireApiActor } from '@/lib/auth/dal';
 import { enforceMutatingGuard } from '@/lib/auth/guard';
 import { okJson, readJson, withApiErrors } from '@/lib/auth/http';
 import { deleteCommunityComment } from '@/lib/community/interactions';
+import { enforceCommunityWriteLimit } from '@/lib/security/publicRateLimit';
 
 // 评论只能发表与删除：编辑能力已在 site-ui-overhaul 05 移除（ADR-0022）。
 const deleteSchema = z.object({ expectedVersion: z.number().int().positive() }).strict();
@@ -12,6 +13,7 @@ async function remove(request: Request, { params }: { params: Promise<{ id: stri
   const guard = enforceMutatingGuard(request);
   if (guard) return guard;
   const actor = await requireApiActor('community:interact');
+  await enforceCommunityWriteLimit(getDb(), { userId: actor.userId, request });
   const commentId = z.string().uuid().parse((await params).id);
   const body = await readJson(request, 1024);
   if (!body.ok) return body.response;
