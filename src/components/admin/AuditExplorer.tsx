@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { AdminAuditEntry } from '@/lib/admin/queries';
 import { zhCN } from '@/messages/zh-CN';
+import DatePicker from '@/components/ui/DatePicker';
 import AdminQueueState from './AdminQueueState';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminTaskFocus } from './useAdminTaskFocus';
@@ -49,7 +50,7 @@ export default function AuditExplorer() {
       <p className="admin-help">{t.queryHelp}</p>
       <form className="admin-form-stack" onSubmit={(event) => { event.preventDefault(); move(['']); setFilter({ ...fields }); if (JSON.stringify(fields) === JSON.stringify(filter) && cursors.length === 1) void queue.reload(); }}>
         <label>{t.search}<input value={fields.q} maxLength={120} onChange={(event) => setFields({ ...fields, q: event.target.value })} /></label>
-        <div className="admin-filter-dates"><label>{t.from}<input type="date" value={fields.from} max={fields.to || undefined} onChange={(event) => setFields({ ...fields, from: event.target.value })} /></label><label>{t.to}<input type="date" value={fields.to} min={fields.from || undefined} onChange={(event) => setFields({ ...fields, to: event.target.value })} /></label></div>
+        <div className="admin-filter-dates"><DatePicker label={t.from} value={fields.from} max={fields.to || undefined} onValueChange={(from) => setFields({ ...fields, from })} /><DatePicker label={t.to} value={fields.to} min={fields.from || undefined} onValueChange={(to) => setFields({ ...fields, to })} /></div>
         <button type="submit" className="btn-outline" disabled={queue.loading || Boolean(fields.from && fields.to && fields.from > fields.to)}>{t.query}</button>
       </form>
       <AdminQueueState {...queue} empty={queue.items.length === 0}><ul className="admin-object-list">{queue.items.map((item) => <li key={item.id}><button type="button" aria-current={selectedId === item.id} onClick={() => setSelectedId(item.id)}><strong>{actionLabel(item.action)}</strong><span>{formatDate(item.createdAt)} · {zhCN.communityAdmin.states.role[item.actorRole]} · {targetLabel(item.targetType)}</span><small className="mono-id">{item.targetId}</small></button></li>)}</ul></AdminQueueState>

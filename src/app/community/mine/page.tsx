@@ -4,6 +4,7 @@ import Link from 'next/link';
 import SiteHeader from '@/components/layout/SiteHeader';
 import CommunityThumbnail from '@/components/community/CommunityThumbnail';
 import CommunityMineActions from '@/components/community/CommunityMineActions';
+import Disclosure from '@/components/ui/Disclosure';
 import { getSessionActor } from '@/lib/auth/session';
 import { getDb } from '@/lib/auth/db';
 import { listOwnCommunityWorks } from '@/lib/community/queries';
@@ -33,7 +34,7 @@ export default async function CommunityMinePage() {
         </div></div> : <p role="alert">{t.previewFailed}</p>}
         {active && latest && <CommunityMineActions key={`${work.id}-${work.version}-${latest.id}-${latest.version}`} workId={work.id} version={work.version} revision={latest} hasPublished={Boolean(work.currentPublishedRevisionId)} />}
         <footer>{active && work.currentPublishedRevisionId && <Link className="btn-outline btn-sm" href={`/community/${work.id}`}>{t.publicPage}</Link>}{!active && <Link className="link-soft" href="/community/copyright">{t.copyright}</Link>}</footer>
-        {work.revisions.length > 1 && <details className="community-mine-history"><summary>{t.history(work.revisions.length - 1)}</summary><div className="community-mine-revisions">{work.revisions.slice(1).map((revision) => <article key={revision.id}><CommunityThumbnail revisionId={revision.id} width={revision.preview.originalWidth} height={revision.preview.originalHeight} label={t.preview(revision.title)} /><div><strong>{revision.title} · {states.revision[revision.status]}</strong><p>{revision.reviewReason ?? nextStep[revision.status]}</p></div></article>)}</div></details>}
+        {work.revisions.length > 1 && <Disclosure className="community-mine-history is-flat" icon="clock" summary={t.history(work.revisions.length - 1)}><div className="community-mine-revisions">{work.revisions.slice(1).map((revision) => <article key={revision.id}><CommunityThumbnail revisionId={revision.id} width={revision.preview.originalWidth} height={revision.preview.originalHeight} label={t.preview(revision.title)} /><div><strong>{revision.title} · {states.revision[revision.status]}</strong><p>{revision.reviewReason ?? nextStep[revision.status]}</p></div></article>)}</div></Disclosure>}
       </li>;
     })}</ul>}
   </div></main>;

@@ -9,6 +9,9 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import ColorBand from '@/components/palettes/ColorBand';
+import Disclosure from '@/components/ui/Disclosure';
+import Icon from '@/components/ui/Icon';
+import NumberField from '@/components/ui/NumberField';
 import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
 import {
@@ -64,10 +67,10 @@ export default function ShoppingListPanel({ stats, designName, width, height, ex
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex items-center justify-between gap-2 text-left font-medium text-ink"
+        className="shopping-toggle"
       >
         <span>{t.title}</span>
-        <span className="text-xs text-ink-soft">{open ? t.hide : t.show}</span>
+        <span className="shopping-toggle-state">{open ? t.hide : t.show}<Icon name="chevron-down" size={16} className={open ? 'is-open' : undefined} /></span>
       </button>
       <p className="text-xs text-ink-soft">{validPack ? t.summary(list.total, list.colors, list.packs, list.beadsPerPack) : t.totals(list.total, list.colors)}</p>
       <div className="flex items-center gap-2">
@@ -78,20 +81,10 @@ export default function ShoppingListPanel({ stats, designName, width, height, ex
 
       {open && (
         <>
-          <details className="shopping-pack-options"><summary>{t.packOptions(validPack ? perPack : '—')}</summary><label className="flex items-center gap-2 text-xs text-ink-soft">
-            {t.beadsPerPack}
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step={1}
-              value={packText}
-              onChange={(event) => { setPackText(event.target.value); setCopied('idle'); }}
-              className="w-20 input-compact px-1 py-0.5 text-xs"
-              aria-label={t.beadsPerPack}
-            />
-          </label>
-          <p className="text-xs text-ink-soft">{t.packHint}</p></details>
+          <Disclosure className="shopping-pack-options" compact icon="settings" summary={t.packOptions(validPack ? perPack : '—')}>
+            <NumberField compact label={t.beadsPerPack} value={packText === '' ? undefined : Number(packText)} min={1} step={1}
+              onValueChange={(value) => { setPackText(value === undefined ? '' : String(value)); setCopied('idle'); }} description={t.packHint} />
+          </Disclosure>
           {!validPack && <p role="alert" className="text-xs text-danger">{t.invalidPack}</p>}
 
           <ul tabIndex={0} aria-label={t.listAria} className="shopping-material-list flex max-h-56 flex-col gap-1 overflow-auto pr-1">

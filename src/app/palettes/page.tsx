@@ -16,6 +16,7 @@ import PaletteEditor from '@/components/palettes/PaletteEditor';
 import PaletteSwatches from '@/components/palettes/PaletteSwatches';
 import Modal from '@/components/ui/Modal';
 import IconButton from '@/components/ui/IconButton';
+import Disclosure from '@/components/ui/Disclosure';
 import Notice from '@/components/ui/Notice';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import SiteHeader from '@/components/layout/SiteHeader';
@@ -302,7 +303,7 @@ export default function PalettesPage() {
                           </dl>
                           <PaletteSwatches name={palette.label} colors={palette.colors} />
                           {renderPaletteLink(`builtin:${palette.id}`)}
-                          <details className="palette-source-details"><summary>{t.sources}</summary><dl className="palette-card-meta">
+                          <Disclosure className="palette-source-details" compact icon="info" summary={t.sources}><dl className="palette-card-meta">
                             <div>
                               <dt>{t.sourceQuality}</dt>
                               <dd>
@@ -315,7 +316,7 @@ export default function PalettesPage() {
                               <dt>{t.exclusions}</dt>
                               <dd>{describeExclusions(palette.exclusions)}</dd>
                             </div>
-                          </dl></details>
+                          </dl></Disclosure>
                         </li>
                       );
                     })}

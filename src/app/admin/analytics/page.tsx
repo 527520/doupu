@@ -1,5 +1,7 @@
 import { forbidden } from 'next/navigation';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import DateRangePicker from '@/components/ui/DateRangePicker';
+import Disclosure from '@/components/ui/Disclosure';
 import Link from 'next/link';
 import { getDb } from '@/lib/auth/db';
 import { authorize } from '@/lib/auth/authorization';
@@ -43,16 +45,16 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     {invalid && <p role="alert" className="notice notice-warning">{t.invalidQuery}</p>}
     <form className="admin-panel admin-analytics-form" method="get">
       <div className="admin-analytics-filters">
-        <label>{t.start}<input type="date" name="start" defaultValue={requested.start} /></label><label>{t.end}<input type="date" name="end" defaultValue={requested.end} /></label>
+        <DateRangePicker label={t.range} startName="start" endName="end" startLabel={t.start} endLabel={t.end} defaultValue={{ start: requested.start ?? '', end: requested.end ?? '' }} className="admin-analytics-range" />
         <label>{t.eventName}<input name="eventName" maxLength={80} defaultValue={requested.eventName ?? ''} placeholder={t.eventExample} /></label>
         <ResponsiveSelect label={t.dimension} name="dimension" defaultValue={dimension} options={dimensions.map(([value,label])=>({value,label}))} />
         <ResponsiveSelect label={t.funnel} name="funnel" defaultValue={funnel} options={funnelNames.map(([value,label])=>({value,label}))} />
       </div>
-      <details className="admin-advanced-filters" open={DASHBOARD_COMBINATION_FILTERS.some((key) => requested[key] !== undefined)}><summary>{t.advanced}</summary><p>{t.advancedHint}</p><div className="admin-analytics-filters">
+      <Disclosure className="admin-advanced-filters is-flat" icon="filter" summary={t.advanced} defaultExpanded={DASHBOARD_COMBINATION_FILTERS.some((key) => requested[key] !== undefined)}><p className="admin-help">{t.advancedHint}</p><div className="admin-analytics-filters">
         {select('device', t.device, t.devices)}{select('browser', t.browser, t.browsers)}{select('os', t.os, t.systems)}{select('actor', t.actor, t.actors)}
         <label>{t.path}<input name="path" maxLength={200} defaultValue={requested.path ?? ''} /></label><label>{t.referrer}<input name="referrer" maxLength={253} defaultValue={requested.referrer ?? ''} /></label>
         <label>{t.utmSource}<input name="utmSource" maxLength={100} defaultValue={requested.utmSource ?? ''} /></label><label>{t.utmMedium}<input name="utmMedium" maxLength={100} defaultValue={requested.utmMedium ?? ''} /></label><label>{t.utmCampaign}<input name="utmCampaign" maxLength={100} defaultValue={requested.utmCampaign ?? ''} /></label><label>{t.utmContent}<input name="utmContent" maxLength={100} defaultValue={requested.utmContent ?? ''} /></label>
-      </div></details>
+      </div></Disclosure>
       <div className="admin-filter-actions"><button className="btn-primary" type="submit">{t.apply}</button><Link className="btn-outline" href="/admin/analytics">{t.reset}</Link></div>
     </form>
     <p className="notice">{summary.capability.mode === 'exact' ? t.exactMode : t.aggregateMode}</p>

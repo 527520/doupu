@@ -27,9 +27,13 @@ describe('ShoppingListPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('每包颗数无效时解释原因并禁止复制误导清单', () => {
+  it('每包颗数清空时解释原因并禁止复制误导清单', () => {
     render(<ShoppingListPanel stats={stats} designName="小熊" width={50} height={40} expanded />);
-    fireEvent.change(screen.getByLabelText(zhCN.shopping.beadsPerPack), { target: { value: '0' } });
+    // 数字输入在失焦时提交；最小值 1 由步进器保证，所以「无效」只剩留空一种情形。
+    fireEvent.click(screen.getByRole('button', { name: /包装换算设置/ }));
+    const field = screen.getByRole('textbox', { name: new RegExp(zhCN.shopping.beadsPerPack) });
+    fireEvent.change(field, { target: { value: '' } });
+    fireEvent.blur(field);
     expect(screen.getByRole('alert')).toHaveTextContent('正整数');
     expect(screen.getByRole('button', { name: zhCN.shopping.copy })).toBeDisabled();
   });
@@ -48,7 +52,10 @@ describe('ShoppingListPanel', () => {
   it('改每包颗数会重算包数', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: new RegExp(zhCN.shopping.title) }));
-    fireEvent.change(screen.getByLabelText(zhCN.shopping.beadsPerPack), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: /包装换算设置/ }));
+    const field = screen.getByRole('textbox', { name: new RegExp(zhCN.shopping.beadsPerPack) });
+    fireEvent.change(field, { target: { value: '500' } });
+    fireEvent.blur(field);
     // 1200 / 500 → 3 包，800 / 500 → 2 包
     expect(screen.getByText(zhCN.shopping.summary(2000, 2, 5, 500))).toBeTruthy();
   });

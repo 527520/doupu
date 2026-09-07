@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import ColorBand from './ColorBand';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import Disclosure from '@/components/ui/Disclosure';
 
 export interface PalettePickerOption {
   /** 稳定色板选择值；只作为表单值，不进入可见主文案。 */
@@ -107,10 +108,9 @@ export default function PalettePicker({
             <span>{zhCN.params.paletteApplicable(displayedSelection.boardProfiles.join('、'))}</span>
           </div>
           {displayedSelection.technicalVersion && (
-            <details className="palette-picker-technical">
-              <summary>{zhCN.params.paletteDataVersion}</summary>
+            <Disclosure className="palette-picker-technical" compact summary={zhCN.params.paletteDataVersion}>
               <p>{displayedSelection.technicalVersion}</p>
-            </details>
+            </Disclosure>
           )}
         </section>
       )}
