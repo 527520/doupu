@@ -1,7 +1,7 @@
 # 全站 UI 重构与豆社反爬
 
-Status: ready-for-agent
-Completion: in-progress
+Status: ready-for-human
+Completion: complete
 Baseline: 105beea
 
 ## 背景与目标
@@ -31,6 +31,10 @@ Baseline: 105beea
 ## 门禁
 
 `npm run typecheck`、`npm run lint`、`npm run test`、`npm run test:e2e`（三浏览器）、axe 零违规、350/390/768/1280/1440 五宽度无横向溢出、`npm run build`。不降断言、不加跳过。附前后截图对照于 `verification.md`。
+
+## Outcome
+
+全部 10 张 issue 完成并全量自测通过（结果见 [verification.md](verification.md)）：lint / typecheck / build 全绿；单元 + 集成 1540 通过；E2E 三浏览器 Chromium 87 / Firefox 78 / WebKit 80 通过、0 失败；五宽度无横向溢出；axe 零 serious/critical 违规。决策记入 CONTEXT.md D53–D56，新增 ADR-0021（豆社节流与分级）与 ADR-0022（评论不可编辑）。
 
 ## Issues
 

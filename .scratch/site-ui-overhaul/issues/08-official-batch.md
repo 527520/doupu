@@ -1,7 +1,7 @@
 # 08 官方批量重做
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 
@@ -21,3 +21,9 @@ Completion: not-started
 ## 验收
 
 - E2E `15` 四个用例通过；单测 `batchSession`/`OfficialBatchStudio` 通过；恢复历史批次时卡片显示带格线缩略图。
+
+## 交付备注
+
+- 选图入口全程是同一个 `label.batch-select-files + input`：选图阶段是钉板落区里的主按钮，之后收成顶部一行摘要；E2E 与单测对该 input 的引用因此稳定。
+- 卡片 `memo` 化 + 覆盖参数编辑器按需挂载：50 项批次此前每次进度更新重画全部卡片，E2E「50 项发布清单」曾在 15s 内只完成 38–44 项，修复后 15.3s 全部完成。
+- 生成期间卡片用本地派生预览，批次停下后再换服务端带格线缩略图，避免 50 张 PNG 渲染与草稿保存抢同一个 dev 服务器。

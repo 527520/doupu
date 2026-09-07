@@ -253,8 +253,7 @@ export default function OfficialBatchStudio() {
     <label className={`${step === 'select' ? 'btn-primary' : 'btn-outline btn-sm'} batch-select-files`} data-disabled={!session.replaceable}><Icon name={step === 'select' ? 'upload' : 'refresh'} size={step === 'select' ? 18 : 14} />{t.selectFiles}<input className="sr-only" type="file" disabled={!session.replaceable} accept="image/*,.heic,.heif" multiple onChange={(event) => { if (event.target.files?.length) choose({ files: [...event.target.files] }); event.target.value = ''; }} /></label>
   </div>;
   const historyList = <div className="batch-history">
-    <div className="batch-history-head"><h3>{t.history}</h3><Button variant="quiet" size="xs" icon="refresh" disabled={history.loading} onClick={() => void history.reload()}>{c.reload}</Button></div>
-    <p className="admin-help">{t.localOnly}</p>
+    <div className="batch-history-head"><p className="admin-help">{t.localOnly}</p><Button variant="quiet" size="xs" icon="refresh" disabled={history.loading} onClick={() => void history.reload()}>{c.reload}</Button></div>
     {history.error ? <Notice kind="danger">{history.error}</Notice> : history.loading ? <p role="status" className="admin-help">{c.loading}</p> : history.items.length === 0 ? <p className="admin-help">{t.noHistory}</p> : <ul>{history.items.map((entry) => <li key={entry.id}>
       <Button variant="secondary" size="sm" icon="clock" disabled={!session.replaceable} onClick={() => choose({ batch: entry })}>{t.historyEntry(new Date(entry.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }), entry.successCount, entry.itemCount)} · {t.batchStatus[entry.status]}</Button>
       <small className="mono-id">{t.batchId} {entry.id}</small>
@@ -268,7 +267,7 @@ export default function OfficialBatchStudio() {
     {step === 'select' && <div className="batch-stage-select">
       <p className="admin-help">{t.privacy}</p>
       <section className="admin-panel batch-panel" aria-label={t.spec}><header><h2>{t.spec}</h2><span>{specSummary(state.spec)}</span></header><div className="batch-panel-body"><SpecPicker spec={state.spec} onChange={(spec) => session.setSpec(spec)} disabled={!editable} /></div></section>
-      <section className="admin-panel batch-panel" aria-label={t.history}>{historyList}</section>
+      <section className="admin-panel batch-panel" aria-label={t.history}><header><h2>{t.history}</h2></header>{historyList}</section>
     </div>}
     {step !== 'select' && <>
       <section className="admin-panel batch-panel batch-config" aria-label={t.configureTitle}>

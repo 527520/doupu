@@ -1,7 +1,7 @@
 # 09 反爬与限流
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 

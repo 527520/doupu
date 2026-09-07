@@ -40,7 +40,9 @@ test('合法的长英文公开标题不裁切，减少动态效果取消卡片�
   const upload=page.getByRole('button',{name:'选择图片文件'});await upload.hover();await page.mouse.down();await expectNoMotionTransform(upload);await page.mouse.up();
   await page.mouse.move(0,0);await upload.dispatchEvent('dragenter');
   await expect(upload).toHaveClass(/is-dragging/);
-  await expect(upload).toHaveCSS('background-color','rgb(150, 48, 79)');
+  // 钉板落区：拖入时底色只是轻微变粉，钉阵与描边变莓果色，不再整块实心。
+  await expect(upload).toHaveCSS('background-color','rgb(255, 247, 249)');
+  await expect(upload).toHaveCSS('border-top-color','rgb(185, 62, 98)');
   expect((await new AxeBuilder({page}).include('.upload-dropzone-primary').analyze()).violations).toEqual([]);
   await expectNoMotionTransform(upload);await upload.dispatchEvent('dragleave');
 });

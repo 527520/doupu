@@ -1,7 +1,7 @@
 # 02 表单控件补齐
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 
@@ -19,3 +19,8 @@ Completion: not-started
 
 - 单测：日期选择/清除/键盘/表单重置；NumberField 边界；Disclosure 展开与 aria。
 - 现有 E2E（`13`、`17` 等对筛选表单的 `getByLabel`）继续通过。
+
+## 交付备注
+
+- 工作台 `GenerationParamsPanel` 的数字输入保留原生 `type=number`（E2E 与真机手感依赖即时提交），本轮只迁移官方批量、采购清单与标签排序处的数字输入；后续若替换需连带调整 E2E `fillField` 的提交时机。
+- `Disclosure` 在未水合 / 无 JS 时渲染原生 `<details>`，GET 筛选降级用例因此保持通过。

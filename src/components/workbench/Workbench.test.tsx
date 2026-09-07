@@ -1459,9 +1459,9 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 
     await chooseValue(zhCN.params.brand, '优肯 Artkal');
     expect(selectPaletteSeries().value).toBe('builtin:pcd:artkal-c-197-official@178dafbc9e77d3de556550dbd058270200129186');
-    const technicalDetails = screen.getByText(zhCN.params.paletteDataVersion).closest('details');
-    expect(technicalDetails?.open).toBe(false);
-    expect(technicalDetails?.textContent).toContain('178dafbc9e77d3de556550dbd058270200129186');
+    const technicalToggle = screen.getByRole('button', { name: new RegExp(zhCN.params.paletteDataVersion) });
+    expect(technicalToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(technicalToggle.closest('.disclosure')?.textContent).toContain('178dafbc9e77d3de556550dbd058270200129186');
 
     const profile = selectField(zhCN.params.boardProfile);
     await waitFor(() => expect(profile.value).toBe('2.6mm-50'));

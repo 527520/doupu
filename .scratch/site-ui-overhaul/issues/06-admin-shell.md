@@ -1,7 +1,7 @@
 # 06 后台外壳与共享组件
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 

@@ -64,9 +64,9 @@ describe('PalettePicker', () => {
     expect(screen.getByText('收录 291 色')).toBeTruthy();
     expect(screen.getByText('可生成 291 色')).toBeTruthy();
     expect(screen.getByText('适用 5mm / 29×29')).toBeTruthy();
-    const technicalDetails = screen.getByText('数据版本').closest('details');
-    expect(technicalDetails).not.toBeNull();
-    expect(technicalDetails?.open).toBe(false);
+    // 数据版本收在样式化折叠里：触发器是带 aria-expanded 的按钮，默认收起。
+    const technicalToggle = screen.getByRole('button', { name: /数据版本/ });
+    expect(technicalToggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('切换品牌只提交该品牌的一个稳定系列值', async () => {

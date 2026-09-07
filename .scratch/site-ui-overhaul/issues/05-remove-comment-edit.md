@@ -1,7 +1,7 @@
 # 05 删除评论编辑能力
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 

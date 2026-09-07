@@ -1,7 +1,7 @@
 # 10 验证与收尾
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 范围
 

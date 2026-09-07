@@ -198,10 +198,13 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await expect(page.getByText('photo-gradient-64.png')).toBeVisible();
   await expect(page.getByText('broken.png')).toBeVisible();
   const pendingItem = page.locator('.batch-cards li', { hasText: 'photo-gradient-64.png' });
-  await page.getByText(/统一生成参数 ·/).click();
-  await page.locator('.batch-studio > details').getByLabel('目标宽度').fill('30');
-  await pendingItem.getByText('逐项参数覆盖').click();
-  await pendingItem.getByLabel('目标宽度').fill('24');
+  // 统一参数是样式化折叠（按钮 + aria-expanded），数字输入失焦提交；逐项覆盖按需展开。
+  const params = page.getByRole('button', { name: /统一生成参数 ·/ });
+  if ((await params.getAttribute('aria-expanded')) !== 'true') await params.click();
+  const width = page.getByRole('textbox', { name: '目标宽度' }); await width.fill('30'); await width.blur();
+  await expect(params).toContainText('30 格宽');
+  await pendingItem.getByRole('button', { name: /逐项参数覆盖/ }).click();
+  const itemWidth = pendingItem.getByRole('textbox', { name: '目标宽度' }); await itemWidth.fill('24'); await itemWidth.blur();
 
   await page.getByRole('button', { name: '开始生成' }).click();
   await expect(page.getByRole('status')).toContainText('生成完成，1 项失败', { timeout: 30_000 });

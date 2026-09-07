@@ -1,7 +1,7 @@
 # 04 豆社详情页
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 

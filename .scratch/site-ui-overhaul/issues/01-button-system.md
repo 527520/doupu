@@ -1,7 +1,7 @@
 # 01 设计基础与按钮体系
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 

@@ -1246,7 +1246,7 @@ body {
 .upload-dropzone.upload-dropzone-primary.is-dragging { border-style: solid; border-color: var(--color-primary); color: var(--color-ink); }
 .upload-dropzone.upload-dropzone-primary .upload-dropzone-icon { width: 46px; height: 46px; border-radius: 999px; color: var(--color-primary); box-shadow: 0 6px 18px rgb(41 38 51 / 10%); }
 .upload-dropzone.upload-dropzone-primary.is-dragging .upload-dropzone-icon { background: var(--color-primary); color: #fff; }
-.upload-dropzone-cta { pointer-events: none; }
+.upload-dropzone-cta { pointer-events: none; max-width: 100%; white-space: normal; text-align: center; }
 .upload-dropzone.upload-dropzone-primary:hover:not(.is-disabled) .upload-dropzone-cta { background: var(--color-primary-deep); }
 .upload-dropzone.upload-dropzone-primary:active:not(.is-disabled) .upload-dropzone-cta { transform: scale(.985); }
 .upload-dropzone.upload-dropzone-primary small { margin: 0; color: var(--color-ink-soft); font-size: 13px; }
@@ -2674,7 +2674,10 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
 .disclosure-summary { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .disclosure-meta { flex: 0 1 auto; min-width: 0; color: var(--color-ink-soft); font-size: 13px; font-weight: 400; text-align: right; overflow-wrap: anywhere; }
 .disclosure-chevron { flex: 0 0 auto; color: var(--color-ink-soft); transition: transform 220ms var(--ease-gentle); }
-.disclosure[data-expanded] .disclosure-chevron { transform: rotate(180deg); }
+.disclosure[data-expanded] .disclosure-chevron, .disclosure.is-native[open] .disclosure-chevron { transform: rotate(180deg); }
+.disclosure.is-native summary { list-style: none; cursor: pointer; }
+.disclosure.is-native summary::-webkit-details-marker { display: none; }
+.disclosure.is-native[open] .disclosure-trigger { border-bottom: 1px solid var(--color-cream-deep); border-end-start-radius: 0; border-end-end-radius: 0; }
 .disclosure[data-expanded] .disclosure-trigger { border-bottom: 1px solid var(--color-cream-deep); border-end-start-radius: 0; border-end-end-radius: 0; }
 .disclosure-panel { overflow: hidden; }
 .disclosure-body { padding: .9rem; }

@@ -1,7 +1,7 @@
 # 03 首页 hero
 
-Status: ready-for-agent
-Completion: not-started
+Status: ready-for-human
+Completion: complete
 
 ## 目标
 
