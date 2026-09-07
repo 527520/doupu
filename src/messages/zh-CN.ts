@@ -357,6 +357,7 @@ export const zhCN = {
     selectFile: '选择图片文件',
     inputLabel: '图片文件选择器',
     dragActive: '松开以添加图片',
+    dropAlso: '也可以把图片直接拖到这块板上',
     formatHint: '支持 JPEG / PNG / WebP / HEIC，最大 20 MB',
   },
   crop: {

@@ -5,6 +5,7 @@ import OnboardingGuide from '@/components/onboarding/OnboardingGuide';
 import HomeUploadCard from '@/components/upload/HomeUploadCard';
 import HomeAuthNav from '@/components/layout/HomeAuthNav';
 import SiteHeader from '@/components/layout/SiteHeader';
+import Disclosure from '@/components/ui/Disclosure';
 import Icon from '@/components/ui/Icon';
 import HomeCommunityShelf from '@/components/community/HomeCommunityShelf';
 import RecentDesigns from '@/components/designs/RecentDesigns';
@@ -28,7 +29,7 @@ export default function Home() {
         </div>
         <RecentDesigns />
         <HomeCommunityShelf />
-        <details className="home-guide"><summary>{zhCN.workspace.helpAndGuide}</summary><OnboardingGuide /><Link href="/help" className="link-action">{home.fullGuide}</Link></details>
+        <Disclosure className="home-guide is-flat" icon="help" summary={zhCN.workspace.helpAndGuide}><OnboardingGuide /><Link href="/help" className="link-action">{home.fullGuide}</Link></Disclosure>
         <footer className="home-footer">
           <p>{home.openSourceNotice} · <a href={SOURCE_REPO_URL} target="_blank" rel="noreferrer">{footer.sourceCode}</a></p>
           <p>{footer.author(AUTHOR_NAME)} · <a href={AUTHOR_GITHUB_URL} target="_blank" rel="noreferrer">{footer.authorGithub}</a></p>

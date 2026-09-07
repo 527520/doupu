@@ -32,9 +32,9 @@ export default function HomeUploadCard() {
       {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
       <UploadDropzone onValid={onValid} disabled={handing} prominent />
       <Link href="/app?new=1#blank-start" className="home-blank-action">
-        <Icon name="blank" />
+        <span className="home-blank-icon"><Icon name="blank" size={18} /></span>
         <span><strong>{zhCN.home.blankStart}</strong><small>{zhCN.home.blankHint}</small></span>
-        <Icon name="arrow" size={17} />
+        <Icon name="chevron-right" size={18} />
       </Link>
     </section>
   );

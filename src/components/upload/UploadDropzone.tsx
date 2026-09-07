@@ -124,14 +124,21 @@ export function UploadDropzone({ onValid, disabled = false, prominent = false }:
         onDragOver={(event) => event.preventDefault()}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
-        className={`upload-dropzone${prominent ? ' upload-dropzone-primary' : ''}${dragging ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}
+        className={`upload-dropzone${prominent ? ' upload-dropzone-primary pegboard' : ''}${dragging ? ' is-dragging is-active' : ''}${disabled ? ' is-disabled' : ''}`}
       >
         {reading ? (
           <p>{upload.reading}</p>
+        ) : prominent ? (
+          <>
+            {/* 首页钉板落区：一枚主按钮承担动作，落区本身只是「板」。内层是视觉按钮而非真按钮，避免嵌套可交互元素。 */}
+            <span className="upload-dropzone-icon"><Icon name={dragging ? 'check' : 'image'} size={22} /></span>
+            <span className={`btn-primary upload-dropzone-cta${dragging ? ' is-dragging' : ''}`}><Icon name="upload" size={18} />{dragging ? upload.dragActive : zhCN.home.chooseImage}</span>
+            <p><small>{upload.formatHint}<span className="upload-dropzone-drop-hint"> · {upload.dropAlso}</span></small></p>
+          </>
         ) : (
           <>
             <span className="upload-dropzone-icon"><Icon name="upload" size={24} /></span>
-            <p><strong>{dragging ? upload.dragActive : prominent ? zhCN.home.chooseImage : upload.hint}</strong><small>{upload.formatHint}</small></p>
+            <p><strong>{dragging ? upload.dragActive : upload.hint}</strong><small>{upload.formatHint}</small></p>
           </>
         )}
       </div>
