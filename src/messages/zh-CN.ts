@@ -1027,6 +1027,7 @@ export const zhCN = {
       retry: '重试确认上次操作', refresh: '刷新对象状态', refreshFailed: '操作已成功，但列表刷新失败。请刷新列表确认，勿重复提交。',
       saved: '操作已完成。', loading: '正在读取…', reload: '重新读取', back: '返回列表', select: '先在左侧选择一项，再进行处理',
       empty: '没有符合条件的内容。', cancel: '取消编辑', save: '保存修改',
+      reason: '操作理由', reasonPlaceholder: '写下这次处理的依据（至少 3 个字），会进入审计记录', reasonTooShort: '理由至少 3 个字',
       previous: '当前已公开版本（对照）', frozenMaterial: '本次提交的图纸', stale: '内容已被其他人更新，请刷新后重新确认。',
     },
     adminTitleTemplate: '%s - 豆谱管理后台',
@@ -1113,8 +1114,14 @@ export const zhCN = {
     nav: {
       reviews: '作品审核', works: '作品管理', comments: '评论治理', reports: '举报案件', tags: '正式标签', openMenu: '切换模块', closeMenu: '收起模块',
       analytics: '匿名分析', batches: '官方批次', users: '人员管理',
-      audit: '审计记录', system: '系统信息', community: '豆社',
-      label: '管理模块', back: '返回豆谱', wordmark: 'DP',
+      audit: '审计记录', system: '系统信息', community: '豆社', overview: '总览',
+      label: '管理模块', back: '返回豆谱', wordmark: 'DP', pendingCount: (count: number) => `${count} 项待处理`,
+    },
+    overview: {
+      eyebrow: '管理后台', title: '今天要处理什么', description: '待办按处理顺序排列：先审投稿，再看评论与举报。数字实时统计，点进模块即可开始。',
+      pendingRevisions: '待审投稿', pendingRevisionsHelp: '等待批准或驳回的修订', pendingComments: '待处理评论', pendingCommentsHelp: '建议复核与最近 30 天被拦截的评论',
+      openReports: '待处理举报', openReportsHelp: '尚未结案的举报案件', moderation: '内容安全服务', moderationHealthy: '运行正常', moderationDegraded: '需要关注', moderationHelp: '评论判定服务的今日状态，详见系统信息',
+      allClear: '暂无待办', allClearHelp: '所有队列都处理完了。可以去看看作品管理或使用统计。', open: '进入', shortcuts: '常用入口',
     },
     states: {
       work: { active: '正常', withdrawn: '已撤回', removed: '已下架' },
@@ -1251,7 +1258,7 @@ export const zhCN = {
       status: { pending: '待生成', running: '生成中', saving: '保存中', save_unknown: '保存结果待确认', uploading: '上传原图中', upload_failed: '原图未上传', saved: '已保存，可发布', published: '已发布', failed: '生成失败', cancelled: '已取消', unavailable: '已撤回或不可发布' },
     },
     reviewFailed: '审核失败',
-    works: { queue: '作品列表', material: '作品内容与处置', search: '搜索标题、作者或作品编号', status: '作品状态', all: '全部状态', query: '查询作品', noTitle: '暂无标题', featured: '已精选', page: (page: number) => `第 ${page} 页`, previous: '上一页', next: '下一页',
+    works: { queue: '作品列表', material: '作品内容与处置', search: '搜索标题、作者或作品编号', status: '作品状态', all: '全部状态', query: '查询作品', noTitle: '暂无标题', featured: '已精选', page: (page: number) => `第 ${page} 页`, previous: '上一页', next: '下一页', pagination: '分页',
       public: '公开可见', notPublic: '未公开', locked: '评论已锁定', unlocked: '评论可互动', removedReason: '下架理由：', noMaterial: '作品暂时没有可读取的版本内容。', newerRevision: '另有较新版本：', counts: (likes: number, comments: number, reuses: number) => `${likes} 次点赞 · ${comments} 条公开评论 · ${reuses} 次引用`, openPublic: '在新窗口查看公开页', reason: '操作理由',
       workId: '作品编号', revisionNumber: (number: number) => `第 ${number} 版`,
       tagsTitle: '作品标签', tagsHelp: '输入「星星人」「海绵宝宝」这类分类名后按回车；用户可以在豆社按标签筛选。保存标签不需要填写操作理由。', saveTags: '保存标签', resetTags: '放弃修改',

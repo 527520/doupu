@@ -13,6 +13,7 @@ import {
   queryAnalyticsTrend,
 } from '@/lib/analytics/reports';
 import { DASHBOARD_COMBINATION_FILTERS, resolveDashboardQuery, type DashboardSearchParams } from '@/lib/analytics/dashboardQuery';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { zhCN } from '@/messages/zh-CN';
 
 import TrendChart from '@/components/admin/AnalyticsTrendChart';
@@ -41,7 +42,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const funnelNames = Object.entries(t.funnelNames);
   const select = (name: typeof DASHBOARD_COMBINATION_FILTERS[number], label: string, options: Record<string, string>) => <ResponsiveSelect label={label} name={name} defaultValue={requested[name]??''} options={[{value:'',label:t.all},...Object.entries(options).map(([value,label])=>({value,label}))]} />;
   return <main id="main" className="admin-page">
-    <header className="admin-page-header"><div><span>{t.eyebrow}</span><h1>{t.title}</h1></div><p>{t.description}</p></header>
+    <AdminPageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} />
     {invalid && <p role="alert" className="notice notice-warning">{t.invalidQuery}</p>}
     <form className="admin-panel admin-analytics-form" method="get">
       <div className="admin-analytics-filters">

@@ -4,6 +4,7 @@ import { authorize } from '@/lib/auth/authorization';
 import { getSessionActor } from '@/lib/auth/session';
 import { getSystemInfo } from '@/lib/admin/queries';
 import { summarizeModerationToday } from '@/lib/moderation/commentModeration';
+import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import { zhCN } from '@/messages/zh-CN';
 
 export default async function AdminSystemPage() {
@@ -15,7 +16,7 @@ export default async function AdminSystemPage() {
   const date = (value: string | null) => value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Asia/Shanghai' }).format(new Date(value)) : t.notRecorded;
   const degraded = !moderation.enabled || moderation.health.consecutiveFailures > 0 || moderation.calls >= moderation.budget;
   return <main id="main" className="admin-page admin-system-page">
-    <header className="admin-page-header"><span>{t.eyebrow}</span><h1>{t.title}</h1><p>{t.description}</p></header>
+    <AdminPageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} />
     <section className="admin-panel" aria-label={m.title}>
       <header><h2>{m.title}</h2><span className={`admin-run-state ${degraded ? 'is-failed' : 'is-succeeded'}`}>{!moderation.enabled ? m.disabled : moderation.health.consecutiveFailures > 0 ? m.failing : moderation.calls >= moderation.budget ? m.budgetExhausted : m.healthy}</span></header>
       <p className="admin-help">{m.help}</p>
