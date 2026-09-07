@@ -36,5 +36,5 @@
 @keyframes settle { from { transform: scale(.8); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .field *, .popover, .mobilePopover, .option, .check { animation: none !important; transition: none !important; } }
 .search { padding: 8px 8px 4px; flex-shrink: 0; }
-.search input { width: 100%; min-height: 44px; border: 1px solid var(--color-cream-border); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 16px; background: var(--color-cream); color: var(--color-ink); }
+.search input { width: 100%; min-height: 44px; border: 1px solid var(--color-border); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 16px; background: var(--color-cream); color: var(--color-ink); }
 .search input:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }

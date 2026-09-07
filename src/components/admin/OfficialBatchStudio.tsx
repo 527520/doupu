@@ -99,8 +99,8 @@ function BatchItemCard({ item, index, session, editable, onCrop, onInspect }: { 
       <header><span className="batch-card-index">{String(index + 1).padStart(2, '0')}</span><span className="batch-card-status">{t.status[item.status]}</span></header>
       <label>{t.publicTitle}<input value={item.title} maxLength={80} disabled={!editable} onChange={(event) => session.updateItem(item.localId, { title: event.target.value })} /></label>
       <p className="batch-card-file">{item.localName}{item.preview && ` · ${item.preview.originalWidth}×${item.preview.originalHeight}`}{item.hasOriginal && item.status !== 'published' ? ` · ${t.originalReady}` : ''}</p>
-      {item.file && editable && <div className="batch-card-crop"><button type="button" className="btn-outline btn-sm" onClick={onCrop}>{item.crop ? t.recrop : t.cropTitle}</button><span>{item.crop ? t.cropSummary(item.crop.width, item.crop.height) : t.uncropped}</span>{item.crop && <button type="button" className="btn-ghost btn-sm" onClick={() => session.updateItem(item.localId, { crop: null })}>{t.resetCrop}</button>}</div>}
-      {editable && <details><summary>{t.itemOverrides}</summary><BatchParamsEditor value={item.paramsOverride} inherited={state.defaults} onChange={(paramsOverride) => session.updateItem(item.localId, { paramsOverride })} /><button type="button" className="btn-ghost btn-sm" onClick={() => session.updateItem(item.localId, { paramsOverride: {} })}>{t.resetOverrides}</button></details>}
+      {item.file && editable && <div className="batch-card-crop"><button type="button" className="btn-outline btn-sm" onClick={onCrop}>{item.crop ? t.recrop : t.cropTitle}</button><span>{item.crop ? t.cropSummary(item.crop.width, item.crop.height) : t.uncropped}</span>{item.crop && <button type="button" className="btn-quiet btn-sm" onClick={() => session.updateItem(item.localId, { crop: null })}>{t.resetCrop}</button>}</div>}
+      {editable && <details><summary>{t.itemOverrides}</summary><BatchParamsEditor value={item.paramsOverride} inherited={state.defaults} onChange={(paramsOverride) => session.updateItem(item.localId, { paramsOverride })} /><button type="button" className="btn-quiet btn-sm" onClick={() => session.updateItem(item.localId, { paramsOverride: {} })}>{t.resetOverrides}</button></details>}
       {item.error && <p role="alert" className="notice notice-danger">{item.error}</p>}
       {item.status === 'save_unknown' && <p className="notice notice-warning">{t.saveUnknown}</p>}
     </div>
@@ -192,7 +192,7 @@ export default function OfficialBatchStudio() {
           <span className="batch-toolbar-spacer" />
           <span className="batch-toolbar-summary">{t.selectedSummary(selected.length, publishable.length)}</span>
           <button className="btn-outline" type="button" disabled={session.locked || publishable.length === 0 || selected.length === publishable.length} onClick={() => session.selectAll()}>{t.selectAll}</button>
-          {selected.length > 0 && <button className="btn-ghost" type="button" disabled={session.locked} onClick={() => session.clearSelection()}>{t.clearSelection}</button>}
+          {selected.length > 0 && <button className="btn-quiet" type="button" disabled={session.locked} onClick={() => session.clearSelection()}>{t.clearSelection}</button>}
           <button className="btn-primary" type="button" disabled={session.locked || session.processing || Boolean(session.retainedSaveCount) || state.conflict || !selected.length} onClick={(event) => { event.currentTarget.focus(); setConfirmPublish(true); setConfirmed(false); }}>{t.publishSelected} · {selected.length}</button>
         </>}
       </div>

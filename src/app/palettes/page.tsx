@@ -15,6 +15,7 @@ import { compatibleBoardProfilesForPalette } from '@/lib/boardProfiles';
 import PaletteEditor from '@/components/palettes/PaletteEditor';
 import PaletteSwatches from '@/components/palettes/PaletteSwatches';
 import Modal from '@/components/ui/Modal';
+import IconButton from '@/components/ui/IconButton';
 import Notice from '@/components/ui/Notice';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import SiteHeader from '@/components/layout/SiteHeader';
@@ -345,13 +346,9 @@ export default function PalettesPage() {
                       {t.colorCount(record.colors.length)} · {new Date(record.updatedAt).toLocaleDateString('zh-CN')}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-1 text-xs">
-                    <button type="button" onClick={() => startEdit(record)} className="rounded-full px-1.5 py-1 text-primary-deep hover:bg-primary-soft">
-                      {t.edit}
-                    </button>
-                    <button type="button" disabled={deleting} onClick={() => void handleDelete(record)} className="btn-danger-quiet">
-                      {t.delete}
-                    </button>
+                  <div className="flex shrink-0 gap-1">
+                    <IconButton icon="edit" label={t.edit} size="sm" onClick={() => startEdit(record)} />
+                    <IconButton icon="trash" label={t.delete} size="sm" tone="danger" disabled={deleting} onClick={() => void handleDelete(record)} />
                   </div>
                 </div>
                 {/* 自定义色板同样要能一眼看到颜色（E-1） */}

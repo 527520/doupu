@@ -219,7 +219,7 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
           <div>
             <strong>{original.name}</strong>
             <p>{formatBytes(original.bytes.byteLength)} · {original.source === 'workbench' ? t.originalFromWorkbench : t.originalFromFile}</p>
-            {!originalLocked && <button type="button" className="btn-ghost btn-sm" onClick={() => { setOriginal(null); setOriginalConsent(false); }}>{t.originalReplace}</button>}
+            {!originalLocked && <button type="button" className="btn-quiet btn-sm" onClick={() => { setOriginal(null); setOriginalConsent(false); }}>{t.originalReplace}</button>}
           </div>
         </div> : <label className="submission-original-picker">
           <input type="file" className="sr-only" accept="image/*,.heic,.heif" disabled={originalLocked} onChange={(event) => { void chooseOriginal(event.target.files?.[0]); event.target.value = ''; }} />

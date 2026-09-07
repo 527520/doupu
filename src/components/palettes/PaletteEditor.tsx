@@ -5,6 +5,7 @@ import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import { Fragment, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
+import IconButton from '@/components/ui/IconButton';
 import { getBuiltinPalette, isBuiltinPaletteId, listBuiltinPalettes } from '@/lib/palettes';
 import { parseCustomPaletteImport } from '@/lib/palettes/customImport';
 import { customPaletteColorsSchema, designNameSchema } from '@/lib/schemas';
@@ -284,14 +285,7 @@ export default function PaletteEditor({ initialName, initialColors, saving, onSa
                     </span>
                   </td>
                   <td className="py-1">
-                    <button
-                      type="button"
-                      onClick={() => removeRow(index)}
-                      aria-label={`${t.removeRow} ${index + 1}`}
-                      className="btn-danger-quiet text-xs"
-                    >
-                      ×
-                    </button>
+                    <IconButton icon="trash" size="sm" tone="danger" onClick={() => removeRow(index)} label={`${t.removeRow} ${index + 1}`} />
                   </td>
                 </tr>
                 {/*

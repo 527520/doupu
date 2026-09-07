@@ -11,6 +11,7 @@
  */
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import Modal from './Modal';
+import Button from './Button';
 import { zhCN } from '@/messages/zh-CN';
 
 export interface ConfirmRequest {
@@ -52,18 +53,12 @@ export function useConfirm(): {
       <h2 className="mb-2 text-base font-medium text-ink">{request.title}</h2>
       {request.message && <p className="mb-4 text-sm text-ink-soft">{request.message}</p>}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => settle(false)} className="btn-outline">
+        <Button variant="quiet" onClick={() => settle(false)}>
           {request.cancelLabel ?? zhCN.designs.cancel}
-        </button>
-        <button
-          type="button"
-          onClick={() => settle(true)}
-          className={request.danger
-            ? 'inline-flex items-center justify-center rounded-full bg-danger px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-danger/90'
-            : 'btn-primary'}
-        >
+        </Button>
+        <Button variant={request.danger ? 'dangerSolid' : 'primary'} onClick={() => settle(true)}>
           {request.confirmLabel ?? zhCN.common.confirm}
-        </button>
+        </Button>
       </div>
     </Modal>
   );

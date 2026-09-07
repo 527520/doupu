@@ -105,49 +105,65 @@
 
 /* 组件类：全站按钮/输入/卡片/链接的统一样式（避免逐处重复） */
 @layer components {
-  /* 主操作按钮：胶囊 + 柔和粉色阴影 */
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition-all duration-150 hover:-translate-y-px hover:bg-primary-deep disabled:opacity-50;
-    transition-property: background-color, color, box-shadow, transform;
-  }
-  /* 次级描边按钮 */
-  .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-white px-4 py-2 text-sm font-medium text-ink transition-all duration-150 hover:-translate-y-px hover:border-primary hover:text-primary-deep disabled:opacity-50;
-    transition-property: background-color, border-color, color, transform;
-  }
-  /** 工具条控件：方角一档（rounded-lg），与胶囊形的主/次操作区分开。 */
-  .btn-tool {
-    @apply inline-flex items-center justify-center gap-1 rounded-lg border border-border bg-white px-2 py-1 text-sm text-ink transition-colors duration-150 hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-50;
-  }
-  /** 破坏性实心按钮：确认弹窗里的最终删除动作。 */
-  .btn-danger {
-    @apply inline-flex items-center justify-center rounded-xl bg-danger px-4 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:brightness-95 disabled:opacity-50;
-  }
-  /** 破坏性描边按钮：删除/清空/放弃。 */
-  .btn-danger-outline {
-    @apply inline-flex items-center justify-center rounded-xl border border-danger bg-white px-4 py-2 text-sm font-medium text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
-  }
-  /** 破坏性无边框按钮：列表行内的删除图标。 */
-  .btn-danger-quiet {
-    @apply inline-flex items-center justify-center rounded-full px-2 py-1 text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
-  }
   /*
-    尺寸修饰符（C-6）：全站原有 47 种手抄配方（68 处）里，差异几乎只有尺寸。
-    统一成「种类 + 尺寸」两段式，之后改按钮观感只需改这里。
-    注意顺序：必须放在所有按钮种类**之后**——同层同特异性下后定义者胜，
-    此前 btn-danger-outline 排在 btn-xs 后面，px-4 py-2 text-sm 覆盖了修饰符，
-    「注销账号」等 9 处破坏性按钮全都以基础尺寸渲染。
+    按钮体系（site-ui-overhaul 01）。React 层由 ui/Button 与 ui/IconButton 生成这些类；
+    类名保留旧名以便 200+ 处历史用法同步换新观感。
+    四种语气：primary（每个视区最多一个实心莓果）、outline（次级）、quiet（低调，替代裸文字）、danger（描边 / 实心）。
+    不做位移式 hover：触感只靠颜色与 90ms 的轻微收缩。
   */
-  .btn-sm {
-    @apply px-3 py-1.5 text-sm;
+  .btn-primary, .btn-outline, .btn-quiet, .btn-ghost, .btn-tool, .btn-danger, .btn-danger-outline, .btn-danger-quiet {
+    display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+    min-height: 44px; padding: .55rem 1.1rem; border: 1px solid transparent; border-radius: 12px;
+    font-size: 15px; font-weight: 600; line-height: 1.25; text-decoration: none; white-space: nowrap;
+    transition: background-color 160ms var(--ease-gentle), border-color 160ms var(--ease-gentle), color 160ms var(--ease-gentle), box-shadow 160ms var(--ease-gentle), transform 160ms var(--ease-gentle);
   }
-  .btn-xs {
-    @apply px-2 py-1 text-xs;
-  }
+  .btn-primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-soft); }
+  .btn-primary:hover:not(:disabled) { background: var(--color-primary-deep); }
+  .btn-outline { background: #fff; border-color: var(--color-border); color: var(--color-ink); font-weight: 500; }
+  .btn-outline:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary-deep); background: #fffafb; }
+  .btn-quiet, .btn-ghost { background: transparent; color: var(--color-ink-soft); font-weight: 500; }
+  .btn-quiet:hover:not(:disabled), .btn-ghost:hover:not(:disabled) { background: var(--color-cream-deep); color: var(--color-ink); }
+  /** 工具条控件：方角一档，与主/次操作区分开。 */
+  .btn-tool { padding: .35rem .6rem; border-color: var(--color-border); border-radius: var(--radius-lg); background: #fff; color: var(--color-ink); font-size: 14px; font-weight: 500; gap: .3rem; }
+  .btn-tool:hover:not(:disabled) { background: var(--color-primary-soft); }
+  /** 破坏性实心：确认弹窗里的最终动作。 */
+  .btn-danger { background: var(--color-danger); color: #fff; }
+  .btn-danger:hover:not(:disabled) { filter: brightness(.95); }
+  /** 破坏性描边：删除 / 清空 / 放弃 / 下架。 */
+  .btn-danger-outline { background: #fff; border-color: rgb(192 57 43 / 45%); color: var(--color-danger); font-weight: 500; }
+  .btn-danger-outline:hover:not(:disabled) { background: var(--color-danger-soft); border-color: var(--color-danger); }
+  /** 破坏性低调：行内删除。 */
+  .btn-danger-quiet { background: transparent; color: var(--color-danger); font-weight: 500; }
+  .btn-danger-quiet:hover:not(:disabled) { background: var(--color-danger-soft); }
+  .btn-primary:disabled, .btn-outline:disabled, .btn-quiet:disabled, .btn-ghost:disabled, .btn-tool:disabled, .btn-danger:disabled, .btn-danger-outline:disabled, .btn-danger-quiet:disabled { opacity: .5; box-shadow: none; }
+  .btn-primary:active:not(:disabled), .btn-outline:active:not(:disabled), .btn-quiet:active:not(:disabled), .btn-ghost:active:not(:disabled), .btn-tool:active:not(:disabled), .btn-danger:active:not(:disabled), .btn-danger-outline:active:not(:disabled), .btn-danger-quiet:active:not(:disabled) { transform: scale(.985); transition-duration: 90ms; box-shadow: none; }
+  .btn-primary[aria-busy="true"], .btn-outline[aria-busy="true"], .btn-quiet[aria-busy="true"], .btn-danger-outline[aria-busy="true"] { cursor: progress; }
+  .btn-primary > svg, .btn-outline > svg, .btn-quiet > svg, .btn-ghost > svg, .btn-tool > svg, .btn-danger > svg, .btn-danger-outline > svg, .btn-danger-quiet > svg { flex: 0 0 auto; }
+  /*
+    尺寸修饰符：放在所有种类之后（同层同特异性后定义者胜）。
+  */
+  .btn-sm { min-height: 36px; padding: .3rem .8rem; font-size: 14px; border-radius: 10px; }
+  .btn-xs { min-height: 32px; padding: .2rem .6rem; font-size: 13px; border-radius: 9px; }
   /** 图标按钮：只收紧内边距，不动字号（缩放 ± 这类符号按钮）。 */
-  .btn-icon {
-    @apply px-2 py-1;
-  }
+  .btn-icon { padding-inline: .5rem; }
+  /*
+    豆粒按钮：纯图标操作的统一形态。圆环像一颗未上板的豆，hover 中心填色，
+    选中态（aria-pressed）实心莓果并留一圈内环高光——那是豆孔。
+  */
+  .btn-bead { position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1.5px solid var(--color-border); border-radius: 999px; background: #fff; color: var(--color-ink-soft); transition: background-color 160ms var(--ease-gentle), border-color 160ms var(--ease-gentle), color 160ms var(--ease-gentle), box-shadow 160ms var(--ease-gentle), transform 160ms var(--ease-gentle); }
+  .btn-bead:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary-deep); background: var(--color-primary-soft); }
+  .btn-bead:active:not(:disabled) { transform: scale(.94); transition-duration: 90ms; }
+  .btn-bead[aria-pressed="true"] { border-color: var(--color-primary); background: var(--color-primary); color: #fff; box-shadow: inset 0 0 0 3px rgb(255 255 255 / 22%); }
+  .btn-bead[aria-pressed="true"]:hover:not(:disabled) { background: var(--color-primary-deep); border-color: var(--color-primary-deep); color: #fff; }
+  .btn-bead[data-tone="primary"] { border-color: var(--color-primary); color: var(--color-primary-deep); }
+  .btn-bead[data-tone="danger"]:hover:not(:disabled) { border-color: var(--color-danger); color: var(--color-danger); background: var(--color-danger-soft); }
+  .btn-bead[data-tone="danger"][aria-pressed="true"] { border-color: var(--color-danger); background: var(--color-danger); }
+  .btn-bead[data-tone="inverse"] { border-color: rgb(255 255 255 / 35%); background: transparent; color: #fff; }
+  .btn-bead[data-tone="inverse"]:hover:not(:disabled) { background: rgb(255 255 255 / 12%); border-color: rgb(255 255 255 / 60%); color: #fff; }
+  .btn-bead:disabled { opacity: .45; }
+  .btn-bead.btn-bead-sm { width: 36px; height: 36px; min-width: 36px; min-height: 36px; }
+  .btn-bead.btn-bead-sm svg { width: 16px; height: 16px; }
+  .btn-bead-settle[aria-pressed="true"] > svg { animation: bead-settle 180ms var(--ease-gentle); }
   /* 文本输入框 */
   .input-field {
     @apply w-full rounded-xl border border-border bg-white px-3.5 py-2.5 text-base text-ink transition-colors duration-150 placeholder:text-ink-soft/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30;
@@ -167,8 +183,6 @@
   .link-action { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; color: var(--color-primary-deep); font-size: 14px; font-weight: 500; text-decoration: none; }
   .link-action::after { content: '→'; transition: transform 160ms var(--ease-gentle); }
   .link-action:hover::after { transform: translateX(3px); }
-  .btn-primary, .btn-outline, .btn-tool, .btn-danger, .btn-danger-outline, .btn-danger-quiet { min-height: 44px; transition-duration: 160ms; }
-  .btn-primary:active:not(:disabled), .btn-outline:active:not(:disabled), .btn-tool:active:not(:disabled), .btn-danger:active:not(:disabled), .btn-danger-outline:active:not(:disabled) { transform: translateY(1px) scale(.985); transition-duration: 90ms; box-shadow: none; }
   /* 页标题 */
   .page-title {
     font-family: var(--font-sans);
@@ -180,25 +194,15 @@
     仅琥珀色警示条就有三种写法。统一到一套：软底 + 同色深字 + 左侧色条。
     kind 由 .notice-* 决定，间距/字号由 .notice 决定。
   */
-  .notice {
-    @apply flex items-start gap-2 rounded-xl border-l-4 px-3 py-2 text-sm;
-  }
-  .notice-info {
-    @apply border-l-lilac bg-lilac-soft text-ink;
-  }
-  .notice-success {
-    @apply border-l-success bg-success-soft text-success;
-  }
-  .notice-warning {
-    @apply border-l-warning bg-warning-soft text-warning;
-  }
-  .notice-danger {
-    @apply border-l-danger bg-danger-soft text-danger;
-  }
+  /* 软底 + 同调细描边 + 前置图标位；不再用左侧粗色条（圆角下像一个括号）。 */
+  .notice { display: flex; align-items: flex-start; gap: .55rem; padding: .7rem .9rem; border: 1px solid var(--color-lilac-soft); border-radius: 12px; background: var(--color-lilac-soft); color: var(--color-ink); font-size: 14px; line-height: 1.55; }
+  .notice > svg { flex: 0 0 auto; margin-top: .1rem; }
+  .notice-info { border-color: rgb(129 120 140 / 25%); background: var(--color-lilac-soft); color: var(--color-ink); }
+  .notice-success { border-color: rgb(73 115 103 / 30%); background: var(--color-success-soft); color: var(--color-success); }
+  .notice-warning { border-color: rgb(150 89 26 / 30%); background: var(--color-warning-soft); color: var(--color-warning); }
+  .notice-danger { border-color: rgb(192 57 43 / 30%); background: var(--color-danger-soft); color: var(--color-danger); }
   /* 紧凑变体：工具条/表单项下方的一行提示 */
-  .notice-compact {
-    @apply px-2 py-1.5 text-xs;
-  }
+  .notice-compact { padding: .4rem .65rem; font-size: 13px; border-radius: 10px; }
 
   .site-header {
     @apply flex w-full flex-col items-stretch gap-2 sm:gap-3;
@@ -250,7 +254,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid var(--color-cream-border);
+  border: 1px solid var(--color-border);
   border-radius: 14px;
   background: #fffdf8;
 }
@@ -704,7 +708,7 @@ body {
 .home-community ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }
 .home-community li { min-width: 0; overflow: hidden; border: 1px solid #e7e2df; border-radius: 14px; background: white; }
 .home-community li a { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 16px; }
-.home-community canvas, .home-community .community-thumbnail { width: 100%; height: 180px; background: var(--color-paper); border-radius: 8px; object-fit: contain; }
+.home-community canvas, .home-community .community-thumbnail { width: 100%; height: 180px; background: var(--color-cream); border-radius: 8px; object-fit: contain; }
 .home-community strong { overflow-wrap: anywhere; font: 500 17px/1.5 var(--font-sans); }
 .home-community small { color: var(--color-ink-soft); }
 .home-community .community-color-band { padding: 0; }
@@ -1133,7 +1137,7 @@ body {
 .home-welcome h2 span:last-child { color: var(--color-primary-deep); }
 .home-welcome p { margin: 16px 0 0; color: var(--color-ink-soft); font-size: 14px; line-height: 1.8; }
 .home-welcome .home-privacy { display: flex; align-items: center; gap: 7px; font-size: 13px; }
-.home-hero .home-start-card { min-width: 0; padding: 24px; border: 1px solid var(--color-cream-border); border-radius: 24px; box-shadow: var(--shadow-card); background: #fff; }
+.home-hero .home-start-card { min-width: 0; padding: 24px; border: 1px solid var(--color-border); border-radius: 24px; box-shadow: var(--shadow-card); background: #fff; }
 .home-recent > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .home-recent h2 { font-family: var(--font-sans); font-size: 22px; font-weight: 600; }
 .home-recent > p { color: var(--color-ink-soft); font-size: 14px; }
@@ -2029,7 +2033,7 @@ body {
 .auth-form-card button, .auth-back-link { min-height: 44px; }
 
 .share-studio-page,
-.state-studio-page { min-height: 100svh; background: var(--color-paper); padding: 0 28px 48px; }
+.state-studio-page { min-height: 100svh; background: var(--color-cream); padding: 0 28px 48px; }
 .share-studio-header,
 .state-studio-header { display: flex; width: min(1180px, 100%); min-height: 82px; align-items: center; justify-content: space-between; margin: 0 auto; }
 .share-studio-header > span,
@@ -2067,7 +2071,7 @@ body {
 .state-studio-art i { position: absolute; right: -80px; width: 270px; height: 48px; border-radius: 99px; transform: rotate(-15deg); }
 .state-studio-art i:nth-of-type(1) { top: 36px; background: var(--color-primary); }
 .state-studio-art i:nth-of-type(2) { bottom: 82px; right: -40px; background: var(--color-lilac); }
-.state-studio-art i:nth-of-type(3) { bottom: 18px; right: -100px; background: var(--color-gold); }
+.state-studio-art i:nth-of-type(3) { bottom: 18px; right: -100px; background: var(--color-honey); }
 .state-studio-copy h1 { margin: 3px 0 0; font-family: var(--font-sans); font-size: 37px; }
 .state-studio-copy > p:last-of-type { margin: 13px 0 0; color: var(--color-ink-soft); font-size: 13px; line-height: 1.75; }
 .state-studio-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
@@ -2526,8 +2530,8 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
   .community-filter-bar > button { padding-inline: 10px; font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .segmented-control *, .switch-control *, .detail-panel { animation: none !important; transition: none !important; }
-  .btn-primary:hover, .btn-outline:hover, .btn-primary:active, .btn-outline:active, .btn-tool:active, .btn-danger:active, .btn-danger-outline:active,
+  .segmented-control *, .switch-control *, .detail-panel, .btn-bead-settle[aria-pressed="true"] > svg { animation: none !important; transition: none !important; }
+  .btn-primary:active, .btn-outline:active, .btn-quiet:active, .btn-ghost:active, .btn-tool:active, .btn-danger:active, .btn-danger-outline:active, .btn-danger-quiet:active, .btn-bead:active,
   .upload-dropzone.upload-dropzone-primary:active, .upload-dropzone.is-dragging,
   .community-card:hover, .design-card:hover, .home-blank-action:hover, .workspace-nav-item:hover,
   .upload-dropzone:hover, .upload-dropzone:active, .home-recent li:active, .link-action:hover::after { transform: none; translate: none; }

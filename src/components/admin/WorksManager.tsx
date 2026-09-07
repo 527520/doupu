@@ -100,7 +100,7 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
         <label className="admin-batch-select"><input type="checkbox" checked={allChecked} disabled={command.locked} onChange={(event) => setChecked(event.target.checked ? queue.items.map((item) => item.id) : [])} />{allChecked ? t.clearSelection : t.selectAll}{checked.length > 0 && <span>{t.selectedCount(checked.length)}</span>}</label>
         {checked.length > 0 && <div className="admin-bulk-tags" aria-label={t.bulkTagTitle}>
           <TagInput label={t.bulkTagLabel(checked.length)} value={bulkTags} onChange={setBulkTags} suggest={suggestTags} disabled={command.locked} />
-          <div><button type="button" className="btn-primary" disabled={command.locked || bulkTags.length === 0} onClick={() => void bulkTag()}>{t.bulkTagSubmit}</button><button type="button" className="btn-ghost" disabled={command.locked} onClick={() => { setChecked([]); setBulkTags([]); }}>{c.cancel}</button></div>
+          <div><button type="button" className="btn-primary" disabled={command.locked || bulkTags.length === 0} onClick={() => void bulkTag()}>{t.bulkTagSubmit}</button><button type="button" className="btn-quiet" disabled={command.locked} onClick={() => { setChecked([]); setBulkTags([]); }}>{c.cancel}</button></div>
         </div>}
         <ul className="admin-object-list">{queue.items.map((item) => <li key={item.id}>
           <label><input type="checkbox" aria-label={t.selectWork(item.title ?? t.noTitle)} checked={checked.includes(item.id)} disabled={command.locked} onChange={(event) => setChecked((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /></label>
@@ -122,7 +122,7 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
           <section className="admin-form-stack" style={{ padding: 0 }} aria-label={t.tagsTitle}>
             <TagInput label={t.tagsTitle} value={tagDraft} onChange={setTagDraft} suggest={suggestTags} disabled={!ready} describedBy="work-tags-help" />
             <p id="work-tags-help" className="admin-help">{t.tagsHelp}</p>
-            <div className="admin-work-actions"><button type="button" className="btn-primary" disabled={!ready || sameTags(tagDraft, tagBase)} onClick={() => void saveTags()}>{t.saveTags}</button>{!sameTags(tagDraft, tagBase) && <button type="button" className="btn-ghost" disabled={command.locked} onClick={() => setTagDraft(tagBase)}>{t.resetTags}</button>}</div>
+            <div className="admin-work-actions"><button type="button" className="btn-primary" disabled={!ready || sameTags(tagDraft, tagBase)} onClick={() => void saveTags()}>{t.saveTags}</button>{!sameTags(tagDraft, tagBase) && <button type="button" className="btn-quiet" disabled={command.locked} onClick={() => setTagDraft(tagBase)}>{t.resetTags}</button>}</div>
           </section>
           {detail.material ? <><h3>{detail.material.title} · {t.revisionNumber(detail.material.revisionNumber)} · {states.revision[detail.material.status]}</h3><PatternPreview pattern={detail.material.snapshot.pattern} boardSize={getBoardProfile(detail.material.snapshot.boardProfile).boardCols} /><OriginalPreview revisionId={detail.material.id} title={detail.material.title} /></> : <p>{t.noMaterial}</p>}
           {detail.latestRevision && detail.latestRevision.id !== detail.material?.id && <p className="notice">{t.newerRevision} {t.revisionNumber(detail.latestRevision.revisionNumber)} · {states.revision[detail.latestRevision.status]}</p>}
@@ -134,7 +134,7 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
             <p>{danger === 'remove' ? t.removeImpact : t.restoreImpact}</p>
             <label className="admin-check"><input type="checkbox" checked={confirmed} disabled={command.locked} onChange={(event) => setConfirmed(event.target.checked)} />{t.confirm(selected.title ?? t.noTitle, danger === 'remove' ? t.remove : t.restore)}</label>
             <button type="button" className="btn-danger-outline" disabled={!ready || reason.trim().length < 3 || !confirmed} onClick={() => void act(danger)}>{danger === 'remove' ? t.confirmRemove : t.confirmRestore}</button>
-            <button type="button" className="btn-ghost" disabled={command.locked} onClick={() => { setDanger(null); setConfirmed(false); detailRef.current?.focus(); }}>{c.cancel}</button>
+            <button type="button" className="btn-quiet" disabled={command.locked} onClick={() => { setDanger(null); setConfirmed(false); detailRef.current?.focus(); }}>{c.cancel}</button>
           </div> : <div className="admin-work-actions">
             {(detail.isPublic || detail.featured) && <button type="button" className="btn-outline" disabled={!ready || reason.trim().length < 3} onClick={() => void act(detail.featured ? 'unfeature' : 'feature')}>{detail.featured ? t.unfeature : t.feature}</button>}
             <button type="button" className="btn-outline" disabled={!ready || reason.trim().length < 3} onClick={() => void act(detail.commentsLocked ? 'unlock_comments' : 'lock_comments')}>{detail.commentsLocked ? t.unlock : t.lock}</button>

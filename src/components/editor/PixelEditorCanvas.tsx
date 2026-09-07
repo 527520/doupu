@@ -852,7 +852,7 @@ export default function PixelEditorCanvas({
           <input id="editor-replace-from" value={replaceFrom} onChange={(event) => setReplaceFrom(event.target.value)} className="w-24 input-compact" />
           <ResponsiveSelect label={t.replaceTo} id="editor-replace-to" value={replaceTo} onValueChange={setReplaceTo}
             options={[...availablePalette.map((color,index)=>({value:String(index),label:color.code??color.hex,colors:[color.hex]})),{value:'transparent',label:t.excludeColor}]} />
-          <button type="submit" className="rounded-lg border border-primary/60 bg-primary-soft px-2 py-1 text-primary-deep">{t.replaceConfirm}</button>
+          <button type="submit" className="btn-outline btn-sm">{t.replaceConfirm}</button>
         </form>
       )}
 
@@ -911,8 +911,8 @@ export default function PixelEditorCanvas({
           <h3 className="text-sm font-medium text-danger">{t.clearConfirmTitle}</h3>
           <p className="mt-2 text-sm leading-6 text-ink-soft">{t.clearConfirmBody}</p>
           <div className="mt-3 flex justify-end gap-2">
-            <button type="button" onClick={() => setClearOpen(false)} className="btn-outline btn-sm">{zhCN.designs.cancel}</button>
-            <button type="button" onClick={confirmClear} className="rounded-full bg-danger px-3 py-1 text-sm text-white transition-colors hover:bg-danger">{t.clearConfirm}</button>
+            <button type="button" onClick={() => setClearOpen(false)} className="btn-quiet btn-sm">{zhCN.designs.cancel}</button>
+            <button type="button" onClick={confirmClear} className="btn-danger btn-sm">{t.clearConfirm}</button>
           </div>
         </Modal>
       )}

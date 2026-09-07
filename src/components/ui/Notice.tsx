@@ -10,8 +10,11 @@
  * 其余用 role="status"（礼貌播报，不打断当前朗读）。可用 role 覆盖。
  */
 import type { ReactNode } from 'react';
+import Icon, { type IconName } from './Icon';
 
 export type NoticeKind = 'info' | 'success' | 'warning' | 'danger';
+
+const KIND_ICON: Record<NoticeKind, IconName> = { info: 'info', success: 'check', warning: 'alert', danger: 'alert' };
 
 interface Props {
   kind?: NoticeKind;
@@ -24,9 +27,11 @@ interface Props {
   id?: string;
   /** 含块级内容（标题+列表）时用 div；默认 p 只能放行内内容。 */
   as?: 'p' | 'div';
+  /** 紧凑场景可关闭前置图标。 */
+  icon?: boolean;
 }
 
-export default function Notice({ kind = 'info', children, compact, className, role, id, as = 'p' }: Props) {
+export default function Notice({ kind = 'info', children, compact, className, role, id, as = 'p', icon = !compact }: Props) {
   const resolvedRole = role ?? (kind === 'danger' ? 'alert' : 'status');
   const Tag = as;
   return (
@@ -40,6 +45,7 @@ export default function Notice({ kind = 'info', children, compact, className, ro
         className ?? '',
       ].filter(Boolean).join(' ')}
     >
+      {icon && <Icon name={KIND_ICON[kind]} size={16} />}
       {children}
     </Tag>
   );

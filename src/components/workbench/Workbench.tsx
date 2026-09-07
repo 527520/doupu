@@ -1917,7 +1917,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           <button
             type="button"
             onClick={handleCancelGenerate}
-            className="underline underline-offset-2 hover:text-primary-deep"
+            className="btn-quiet btn-xs"
           >
             {t.cancel}
           </button>
