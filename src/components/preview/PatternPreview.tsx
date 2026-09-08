@@ -7,6 +7,8 @@ import type { Pattern, PatternCell } from '@/lib/types';
 import { CANVAS_UI } from '@/lib/appInfo';
 import { drawPattern } from '@/lib/render/draw';
 import { BOARD_SIZE, clampZoom, fitCellSize, pointToCell } from '@/lib/render/layout';
+import Chip from '@/components/ui/Chip';
+import IconButton from '@/components/ui/IconButton';
 import Switch from '@/components/ui/Switch';
 
 export interface CellHoverInfo {
@@ -21,21 +23,16 @@ interface Props {
   /** 测试钩子：固定初始格尺寸（默认按容器自适应） */
   defaultCellPx?: number;
   onCellHover?: (info: CellHoverInfo | null) => void;
+  /**
+   * compact：后台审核 / 治理 / 批次用的精简版——一行 36 高的工具条（豆粒缩放 + 三枚芯片），
+   * 画布限高并与旁边的原图同顶对齐；说明文字只在 figcaption 里。
+   */
+  variant?: 'default' | 'compact';
+  /** 媒体上方的一行说明（与并排的原图 figcaption 同一水平线）。 */
+  caption?: string;
 }
 
-function PreviewToggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  label: string;
-}) {
-  return <Switch label={label} checked={checked} onChange={onChange} />;
-}
-
-export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover }: Props) {
+export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover, variant = 'default', caption }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -188,34 +185,37 @@ export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaul
   };
 
   const t = zhCN.preview;
+  const compact = variant === 'compact';
+  const toggles: Array<{ label: string; checked: boolean; set: (value: boolean) => void }> = [
+    { label: t.showGrid, checked: showGrid, set: setShowGrid },
+    { label: t.showSeams, checked: showSeams, set: setShowSeams },
+    { label: t.showLabels, checked: showLabels, set: setShowLabels },
+  ];
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className={`pattern-preview${compact ? ' is-compact' : ''}`}>
+      {caption && <p className="pattern-preview-caption">{caption}</p>}
       {/*
         D-8：350px 屏幕上这一行原本要放 9 个控件加一句 24 字提示，会折成 4–5 行
         把图纸挤出首屏。现在：缩放组与三个开关分两行排，长提示只在 sm 以上显示
-        （小屏用户本来就靠手势，提示文字对他们没用）。
+        （小屏用户本来就靠手势，提示文字对他们没用）；compact 下提示只放在 title 里。
       */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-        <span className="flex items-center gap-2">
-          <button type="button" aria-label={t.zoomOut} title={t.zoomOut} onClick={() => setZoom((z) => clampZoom(z / 1.25))} className="btn-outline btn-icon">
-            −
-          </button>
+      <div className="pattern-preview-toolbar" title={compact ? t.panHint : undefined}>
+        <span className="pattern-preview-zoom">
+          <IconButton icon="zoom-out" size="sm" label={t.zoomOut} settle={false} onClick={() => setZoom((z) => clampZoom(z / 1.25))} />
           {/* 缩放百分比不是「状态播报」：原来的 role="status" 会让读屏在每次缩放时
               打断朗读（D-9 的 role 滥用）。可访问名仍是「缩放」，数值由文本提供。 */}
-          <span aria-label={t.zoom} className="w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button type="button" aria-label={t.zoomIn} title={t.zoomIn} onClick={() => setZoom((z) => clampZoom(z * 1.25))} className="btn-outline btn-icon">
-            +
-          </button>
+          <span aria-label={t.zoom} className="pattern-preview-zoom-value">{Math.round(zoom * 100)}%</span>
+          <IconButton icon="zoom-in" size="sm" label={t.zoomIn} settle={false} onClick={() => setZoom((z) => clampZoom(z * 1.25))} />
         </span>
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <PreviewToggle checked={showGrid} onChange={setShowGrid} label={t.showGrid} />
-          <PreviewToggle checked={showSeams} onChange={setShowSeams} label={t.showSeams} />
-          <PreviewToggle checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
+        <span className="pattern-preview-toggles">
+          {toggles.map((toggle) => compact
+            ? <Chip key={toggle.label} pressed={toggle.checked} onClick={() => toggle.set(!toggle.checked)}>{toggle.label}</Chip>
+            : <Switch key={toggle.label} compact label={toggle.label} checked={toggle.checked} onChange={toggle.set} />)}
         </span>
-        <span className="hidden text-ink-soft sm:inline">{t.panHint}</span>
+        {!compact && <span className="pattern-preview-hint">{t.panHint}</span>}
       </div>
-      <div ref={containerRef} className="overflow-auto rounded-2xl border border-lilac/40 bg-cream-deep/60 p-2">
+      <div ref={containerRef} className="pattern-preview-stage surface-sunken">
         <canvas
           ref={canvasRef}
           onWheel={onWheel}

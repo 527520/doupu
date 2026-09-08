@@ -1170,7 +1170,7 @@ export const zhCN = {
       outcomeLine: (published: number, pending: number, rejected: number, limited: number) => `直接公开 ${published} · 待审 ${pending} · 拦截 ${rejected} · 频率超限 ${limited}`,
     },
     audit: { time: '时间', action: '操作', target: '对象', role: '操作者角色', reason: '理由', request: '请求编号', actor: '操作者账号编号', anonymized: '已注销或未记录', select: '选择一条记录，查看操作前后的状态。',
-      queue: '操作记录列表', detail: '记录详情', search: '搜索操作名称、对象编号或请求编号', from: '开始日期', to: '结束日期', query: '查询', queryHelp: '每页 50 条，按时间倒序；日期按上海时间筛选。支持按操作名称、对象编号、请求编号的部分文字匹配。', before: '操作前', after: '操作后', noState: '这一侧没有可展示的状态。', empty: '—', readOnly: '操作记录只增不改，此页仅供查看。',
+      queue: '操作记录列表', detail: '记录详情', search: '搜索记录', range: '日期范围', from: '开始日期', to: '结束日期', query: '查询', queryHelp: '每页 50 条，按时间倒序；日期按上海时间筛选。支持按操作名称、对象编号、请求编号的部分文字匹配。', before: '操作前', after: '操作后', noState: '这一侧没有可展示的状态。', empty: '—', readOnly: '操作记录只增不改，此页仅供查看。',
       actions: {
         'community.revision_published': '批准作品发布', 'community.revision_rejected': '驳回作品', 'community.work_remove': '下架作品', 'community.work_restore': '恢复作品', 'community.work_feature': '设为精选', 'community.work_unfeature': '取消精选',
         'community.work_lock_comments': '锁定评论', 'community.work_unlock_comments': '解除评论锁定', 'community.work_tags_updated': '调整作品标签',

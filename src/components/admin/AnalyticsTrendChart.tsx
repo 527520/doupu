@@ -1,8 +1,10 @@
+import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
+import { AdminEmpty } from './AdminPrimitives';
 
 export default function AnalyticsTrendChart({ points }: { points: Array<{ day: string; events: number; uniqueVisitors: number | null }> }) {
   const t = zhCN.communityAdmin.analyticsDashboard;
-  if (points.length === 0) return <div className="admin-empty">{t.empty}</div>;
+  if (points.length === 0) return <AdminEmpty icon="chart" title={t.empty} />;
   const max = Math.max(...points.map((point) => point.events), 1);
   const firstDay = Date.parse(points[0].day);
   const lastDay = Date.parse(points[points.length - 1].day);
@@ -20,7 +22,7 @@ export default function AnalyticsTrendChart({ points }: { points: Array<{ day: s
         {coordinates.map((point) => <circle key={point.day} cx={point.x} cy={point.y} r="5" tabIndex={0} role="img" aria-label={t.chartPoint(point.day, point.events)}><title>{t.chartPoint(point.day, point.events)}</title></circle>)}
       </svg>
     </figure>
-    {points.some((point) => point.uniqueVisitors === null) && <p className="notice">{t.legacyDailyUvUnavailable}</p>}
+    {points.some((point) => point.uniqueVisitors === null) && <Notice kind="info" compact className="admin-panel-note">{t.legacyDailyUvUnavailable}</Notice>}
     <div className="admin-table-scroll admin-chart-data" tabIndex={0} role="region" aria-label={t.trendTable}><table><caption className="sr-only">{t.trendTable}</caption><thead><tr><th>{t.day}</th><th>{t.events}</th><th>{t.visitors}</th></tr></thead><tbody>{points.map((point) => <tr key={point.day}><td>{point.day}</td><td>{point.events}</td><td>{point.uniqueVisitors ?? t.emptyValue}</td></tr>)}</tbody></table></div>
   </>;
 }

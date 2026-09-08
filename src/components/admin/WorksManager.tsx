@@ -2,8 +2,7 @@
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import TagInput, { type TagSuggestion } from '@/components/ui/TagInput';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import type { ManagedCommunityWork, ManagedWorkInspection } from '@/lib/community/adminQueries';
 import { getBoardProfile } from '@/lib/boardProfiles';
@@ -12,10 +11,11 @@ import OriginalPreview from '@/components/community/OriginalPreview';
 import PatternPreview from '@/components/preview/PatternPreview';
 import AdminQueueState from './AdminQueueState';
 import AdminCommandNotice from './AdminCommandNotice';
-import { FilterBar, Pagination, ReasonPanel, StatusBadge } from './AdminPrimitives';
-import Button from '@/components/ui/Button';
+import { AdminEmpty, AdminSkeleton, FilterBar, Pagination, ReasonPanel, StatusBadge } from './AdminPrimitives';
+import Button, { ButtonLink } from '@/components/ui/Button';
 import Checkbox from '@/components/ui/Checkbox';
 import Notice from '@/components/ui/Notice';
+import TextField from '@/components/ui/TextField';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminInspection } from './useAdminInspection';
 import { useAdminCommand } from './useAdminCommand';
@@ -93,53 +93,58 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
   const page = (next: string[]) => { if (!command.locked) { select(null); setCursors(next); setChecked([]); } };
   const allChecked = queue.items.length > 0 && checked.length === queue.items.length;
   const reasonReady = Boolean(ready) && reason.trim().length >= 3;
+  // 结果反馈紧挨着动作：有选中项时在理由区正下方，处理完毕（选中项清空）后落在详情面板顶部。
+  const notice = <AdminCommandNotice command={command} onRefresh={() => void refresh()} />;
   return <div className={`admin-task-layout works-task-layout${selected ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" ref={queueRef} tabIndex={-1} aria-label={t.queue}>
       <header><h2>{t.queue}</h2><span>{t.page(cursors.length)}</span></header>
-      <FilterBar submitLabel={t.query} disabled={command.locked || queue.loading} onSubmit={(event) => { event.preventDefault(); if (!command.locked) { select(null); setFilter({ q: q.trim(), status }); setCursors(['']); setChecked([]); if (q.trim() === filter.q && status === filter.status && cursors.length === 1) void queue.reload(); } }}>
-        <label>{t.search}<input value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} /></label>
+      <FilterBar className="is-search-first" submitLabel={t.query} disabled={command.locked || queue.loading} onSubmit={(event) => { event.preventDefault(); if (!command.locked) { select(null); setFilter({ q: q.trim(), status }); setCursors(['']); setChecked([]); if (q.trim() === filter.q && status === filter.status && cursors.length === 1) void queue.reload(); } }}>
+        <TextField label={t.search} value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} />
         <ResponsiveSelect label={t.status} value={status} disabled={command.locked} onValueChange={setStatus} options={[{value:'all',label:t.all},...(['active','withdrawn','removed'] as const).map(value=>({value,label:states.work[value]}))]} />
       </FilterBar>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>
-        <div className="admin-batch-select"><Checkbox label={<>{allChecked ? t.clearSelection : t.selectAll}{checked.length > 0 && <span className="admin-batch-count">{t.selectedCount(checked.length)}</span>}</>} checked={allChecked} disabled={command.locked} onChange={(next) => setChecked(next ? queue.items.map((item) => item.id) : [])} /></div>
-        {checked.length > 0 && <div className="admin-bulk-tags" aria-label={t.bulkTagTitle}>
+        <div className="admin-batch-select"><Checkbox compact label={<>{allChecked ? t.clearSelection : t.selectAll}{checked.length > 0 && <span className="admin-batch-count">{t.selectedCount(checked.length)}</span>}</>} checked={allChecked} disabled={command.locked} onChange={(next) => setChecked(next ? queue.items.map((item) => item.id) : [])} /></div>
+        {checked.length > 0 && <div className="admin-bulk-tags animate-rise" aria-label={t.bulkTagTitle}>
           <TagInput label={t.bulkTagLabel(checked.length)} value={bulkTags} onChange={setBulkTags} suggest={suggestTags} disabled={command.locked} />
-          <div><Button variant="primary" size="sm" icon="tag" disabled={command.locked || bulkTags.length === 0} onClick={() => void bulkTag()}>{t.bulkTagSubmit}</Button><Button variant="quiet" size="sm" disabled={command.locked} onClick={() => { setChecked([]); setBulkTags([]); }}>{c.cancel}</Button></div>
+          <div className="admin-form-actions"><Button variant="quiet" size="sm" disabled={command.locked} onClick={() => { setChecked([]); setBulkTags([]); }}>{t.clearSelection}</Button><Button variant="primary" size="sm" icon="tag" disabled={command.locked || bulkTags.length === 0} loading={command.busy && bulkTags.length > 0} onClick={() => void bulkTag()}>{t.bulkTagSubmit}</Button></div>
         </div>}
-        <ul className="admin-object-list">{queue.items.map((item) => <li key={item.id}>
-          <label><input type="checkbox" aria-label={t.selectWork(item.title ?? t.noTitle)} checked={checked.includes(item.id)} disabled={command.locked} onChange={(event) => setChecked((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /></label>
+        <ul className="admin-object-list stagger">{queue.items.map((item, index) => <li key={item.id} style={{ '--i': index } as CSSProperties}>
+          <Checkbox compact className="admin-row-check" label={<span className="sr-only">{t.selectWork(item.title ?? t.noTitle)}</span>} checked={checked.includes(item.id)} disabled={command.locked} onChange={(next) => setChecked((current) => next ? [...current, item.id] : current.filter((id) => id !== item.id))} />
           <button type="button" disabled={command.locked} aria-current={selectedId === item.id} onClick={() => select(item.id)}>
             {item.thumbnail && <CommunityThumbnail revisionId={item.thumbnail.revisionId} width={item.thumbnail.width} height={item.thumbnail.height} label={item.title ?? t.noTitle} />}
-            <strong>{item.title ?? t.noTitle}</strong><span>{item.displayName} · <StatusBadge kind="work" value={item.lifecycleStatus} /> {item.isPublic ? t.public : t.notPublic}{item.featured ? ` · ${t.featured}` : ''}</span>
+            <strong>{item.title ?? t.noTitle}</strong><span>{item.displayName}<StatusBadge kind="work" value={item.lifecycleStatus} /><small>{item.isPublic ? t.public : t.notPublic}</small>{item.featured && <small>{t.featured}</small>}</span>
           </button>
         </li>)}</ul>
       </AdminQueueState>
       <Pagination page={cursors.length} hasPrevious={cursors.length > 1} hasNext={Boolean(queue.nextCursor)} disabled={command.locked || queue.loading} onPrevious={() => page(cursors.slice(0, -1))} onNext={() => page([...cursors, queue.nextCursor!])} />
     </section>
     <section className="admin-panel admin-task-detail" ref={detailRef} tabIndex={-1} aria-label={t.material}>
-      {selected ? <div className="admin-form-stack">
+      <header><h2>{t.material}</h2>{inspection.refreshing && <span role="status">{c.loading}</span>}</header>
+      {selected ? <div className="admin-form-stack animate-rise">
         <Button variant="quiet" size="sm" icon="chevron-left" className="admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</Button>
         <h2>{selected.title ?? t.noTitle}</h2><p className="mono-id">{t.workId} {selected.id}</p>
-        {inspection.error ? <div><Notice kind="danger">{inspection.error}</Notice><Button variant="secondary" icon="refresh" onClick={() => void inspection.reload()}>{c.reload}</Button></div> : !detail ? <p role="status">{c.loading}</p> : <>
-          <p className="admin-badges"><StatusBadge kind="work" value={detail.lifecycleStatus} /><span>{detail.isPublic ? t.public : t.notPublic}</span><span>{detail.commentsLocked ? t.locked : t.unlocked}</span></p>
+        {inspection.error && !detail ? <><Notice kind="danger">{inspection.error}</Notice><div className="admin-form-actions"><Button variant="secondary" size="sm" icon="refresh" onClick={() => void inspection.reload()}>{c.reload}</Button></div></> : !detail ? <AdminSkeleton rows={4} label={c.loading} /> : <>
+          {inspection.error && <Notice kind="danger">{inspection.error}</Notice>}
+          <p className="admin-badges"><StatusBadge kind="work" value={detail.lifecycleStatus} /><span>{detail.isPublic ? t.public : t.notPublic}</span><span>{detail.commentsLocked ? t.locked : t.unlocked}</span><span>{t.counts(detail.counts.likes, detail.counts.comments, detail.counts.reuses)}</span></p>
           {detail.removedReason && <Notice kind="info">{t.removedReason} {detail.removedReason}</Notice>}
-          <section className="admin-form-stack" style={{ padding: 0 }} aria-label={t.tagsTitle}>
+          <section className="admin-subsection" aria-label={t.tagsTitle}>
             <TagInput label={t.tagsTitle} value={tagDraft} onChange={setTagDraft} suggest={suggestTags} disabled={!ready} describedBy="work-tags-help" />
-            <p id="work-tags-help" className="admin-help">{t.tagsHelp}</p>
-            <div className="admin-work-actions"><Button variant="primary" size="sm" icon="tag" disabled={!ready || sameTags(tagDraft, tagBase)} onClick={() => void saveTags()}>{t.saveTags}</Button>{!sameTags(tagDraft, tagBase) && <Button variant="quiet" size="sm" disabled={command.locked} onClick={() => setTagDraft(tagBase)}>{t.resetTags}</Button>}</div>
+            <div className="admin-subsection-foot"><p id="work-tags-help" className="admin-help">{t.tagsHelp}</p><div className="admin-form-actions">{!sameTags(tagDraft, tagBase) && <Button variant="quiet" size="sm" disabled={command.locked} onClick={() => setTagDraft(tagBase)}>{t.resetTags}</Button>}<Button variant="primary" size="sm" icon="tag" disabled={!ready || sameTags(tagDraft, tagBase)} onClick={() => void saveTags()}>{t.saveTags}</Button></div></div>
           </section>
-          {detail.material ? <><h3>{detail.material.title} · {t.revisionNumber(detail.material.revisionNumber)} · {states.revision[detail.material.status]}</h3><PatternPreview pattern={detail.material.snapshot.pattern} boardSize={getBoardProfile(detail.material.snapshot.boardProfile).boardCols} /><OriginalPreview revisionId={detail.material.id} title={detail.material.title} /></> : <p>{t.noMaterial}</p>}
+          {detail.material ? <div className="review-material-pair">
+            <PatternPreview variant="compact" caption={`${detail.material.title} · ${t.revisionNumber(detail.material.revisionNumber)} · ${states.revision[detail.material.status]}`} pattern={detail.material.snapshot.pattern} boardSize={getBoardProfile(detail.material.snapshot.boardProfile).boardCols} />
+            <OriginalPreview revisionId={detail.material.id} title={detail.material.title} />
+          </div> : <AdminEmpty icon="image" title={t.noMaterial} />}
           {detail.latestRevision && detail.latestRevision.id !== detail.material?.id && <Notice kind="info">{t.newerRevision} {t.revisionNumber(detail.latestRevision.revisionNumber)} · {states.revision[detail.latestRevision.status]}</Notice>}
-          <p className="admin-help">{t.counts(detail.counts.likes, detail.counts.comments, detail.counts.reuses)}</p>
-          {detail.isPublic && <Link href={`/community/${selected.id}`} target="_blank" rel="noopener noreferrer" className="btn-outline btn-sm">{t.openPublic}</Link>}
+          {detail.isPublic && <ButtonLink variant="secondary" size="sm" icon="external" iconPosition="end" href={`/community/${selected.id}`} target="_blank" rel="noopener noreferrer">{t.openPublic}</ButtonLink>}
           {!ready && !command.locked && <Notice kind="warning">{c.stale}</Notice>}
           <div ref={confirmRef} tabIndex={-1}>
             <ReasonPanel reason={reason} onReasonChange={setReason} disabled={command.locked}
               confirm={danger ? { checked: confirmed, onChange: setConfirmed, danger: danger === 'remove', label: t.confirm(selected.title ?? t.noTitle, danger === 'remove' ? t.remove : t.restore) } : undefined}
               hint={danger ? (danger === 'remove' ? t.removeImpact : t.restoreImpact) : undefined}>
               {danger ? <>
-                <Button variant={danger === 'remove' ? 'danger' : 'primary'} icon={danger === 'remove' ? 'trash' : 'refresh'} disabled={!reasonReady || !confirmed} onClick={() => void act(danger)}>{danger === 'remove' ? t.confirmRemove : t.confirmRestore}</Button>
                 <Button variant="quiet" disabled={command.locked} onClick={() => { setDanger(null); setConfirmed(false); detailRef.current?.focus(); }}>{c.cancel}</Button>
+                <Button variant={danger === 'remove' ? 'dangerSolid' : 'primary'} icon={danger === 'remove' ? 'trash' : 'refresh'} disabled={!reasonReady || !confirmed} loading={command.busy} onClick={() => void act(danger)}>{danger === 'remove' ? t.confirmRemove : t.confirmRestore}</Button>
               </> : <>
                 {(detail.isPublic || detail.featured) && <Button variant="secondary" icon="star" disabled={!reasonReady} onClick={() => void act(detail.featured ? 'unfeature' : 'feature')}>{detail.featured ? t.unfeature : t.feature}</Button>}
                 <Button variant="secondary" icon="lock" disabled={!reasonReady} onClick={() => void act(detail.commentsLocked ? 'unlock_comments' : 'lock_comments')}>{detail.commentsLocked ? t.unlock : t.lock}</Button>
@@ -149,8 +154,9 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
             </ReasonPanel>
           </div>
         </>}
-      </div> : <p className="admin-empty">{c.select}</p>}
+        {notice}
+      </div> : <div className="admin-form-stack">{notice}<AdminEmpty icon="image" title={c.select} /></div>}
     </section>
-    <div className="admin-task-notice"><AdminCommandNotice command={command} onRefresh={() => void refresh()} />{selected && queue.error && <AdminQueueState {...queue} empty={false}>{null}</AdminQueueState>}</div>
+    {selected && queue.error && <div className="admin-task-notice"><AdminQueueState {...queue} empty={false}>{null}</AdminQueueState></div>}
   </div>;
 }

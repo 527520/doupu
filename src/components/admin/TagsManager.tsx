@@ -2,13 +2,15 @@
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import Switch from '@/components/ui/Switch';
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import AdminCommandNotice from './AdminCommandNotice';
 import AdminQueueState from './AdminQueueState';
-import { ReasonPanel } from './AdminPrimitives';
+import { AdminEmpty, ReasonPanel } from './AdminPrimitives';
 import Button from '@/components/ui/Button';
+import Checkbox from '@/components/ui/Checkbox';
 import Disclosure from '@/components/ui/Disclosure';
+import TextField from '@/components/ui/TextField';
 import NumberField from '@/components/ui/NumberField';
 import Badge from '@/components/ui/Badge';
 import { useAdminCollection } from './useAdminCollection';
@@ -60,36 +62,44 @@ export default function TagsManager() {
     await command.run({ url: `/api/admin/community/tags/${selected.id}/merge`, method: 'POST',
       body: { targetTagId: target.id, expectedVersion: selected.version, reason } }, completed);
   };
+  const canCreate = !command.locked && !queue.loading && !queue.error;
+  const createButton = <Button variant="primary" size="sm" icon="plus" disabled={!canCreate} onClick={() => select('new')}>{t.create}</Button>;
+  // 结果反馈紧挨着动作：有选中项时在表单底部，处理完毕（选中项清空）后落在详情面板顶部。
+  const notice = <AdminCommandNotice command={command} onRefresh={() => void queue.reload()} />;
   return <div className={`admin-task-layout${inspecting ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
-      <header><h2>{t.title}</h2><Button variant="primary" size="sm" icon="plus" disabled={command.locked || queue.loading || Boolean(queue.error)} onClick={() => select('new')}>{t.create}</Button></header>
+      <header><h2>{t.title}</h2>{!creating && createButton}</header>
       <p className="admin-help admin-queue-help">{t.quickHelp}</p>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>
-        <ul className="admin-object-list">{queue.items.map((tag) => <li key={tag.id}><button type="button" disabled={command.locked} aria-current={selected?.id === tag.id} onClick={() => select(tag)}>
+        <ul className="admin-object-list stagger">{queue.items.map((tag, index) => <li key={tag.id} style={{ '--i': index } as CSSProperties}><button type="button" disabled={command.locked} aria-current={selected?.id === tag.id} onClick={() => select(tag)}>
           <strong>{tag.name}</strong><span>{tag.mergedIntoTagId ? <Badge tone="neutral">{t.mergedState}</Badge> : <Badge tone={tag.active ? 'ok' : 'warn'}>{tag.active ? t.enabled : t.disabled}</Badge>}<small>{t.usage(tag.workCount ?? 0)} · {t.sort} {tag.sortOrder}</small></span>
         </button></li>)}</ul>
       </AdminQueueState>
     </section>
     <section className="admin-panel admin-task-detail" tabIndex={-1} ref={detailRef} aria-label={t.action}>
-      {inspecting ? <div className="admin-form-stack">
+      <header><h2>{t.action}</h2></header>
+      {inspecting ? <div className="admin-form-stack animate-rise">
         <Button variant="quiet" size="sm" icon="chevron-left" className="admin-back-to-queue" disabled={command.locked} onClick={() => select(null)}>{c.back}</Button>
         <h2>{creating ? t.createTitle : selected!.name}</h2>
         {selected?.mergedIntoTagId ? <p>{t.mergedTo} {queue.items.find((tag) => tag.id === selected.mergedIntoTagId)?.name ?? selected.mergedIntoTagId}</p> : <>
-          <label>{t.name}<input value={name} maxLength={30} disabled={!editable} onChange={(event) => setName(event.target.value)} /></label>
-          <NumberField label={t.sort} value={order.trim() === '' ? undefined : Number(order)} disabled={!editable} onValueChange={(value) => setOrder(value === undefined ? '' : String(value))} description={t.slugHelp} />
+          <div className="form-row">
+            <TextField label={t.name} value={name} maxLength={30} disabled={!editable} onChange={(event) => setName(event.target.value)} description={t.slugHelp} />
+            <NumberField label={t.sort} value={order.trim() === '' ? undefined : Number(order)} disabled={!editable} onValueChange={(value) => setOrder(value === undefined ? '' : String(value))} />
+          </div>
           {!creating && <Switch label={t.enabled} checked={active} disabled={!editable} onChange={setActive} />}
           <ReasonPanel reason={reason} onReasonChange={setReason} disabled={command.locked}>
-            <Button variant="primary" icon={creating ? 'plus' : 'check'} disabled={!editable || !validFields || !validReason || !changed} onClick={() => void save()}>{creating ? t.create : c.save}</Button>
+            <Button variant="primary" icon={creating ? 'plus' : 'check'} disabled={!editable || !validFields || !validReason || !changed} loading={command.busy && !mergeConfirmed} onClick={() => void save()}>{creating ? t.create : c.save}</Button>
           </ReasonPanel>
-          {selected && <Disclosure compact icon="copy" summary={t.merge}><div className="admin-form-stack" style={{ padding: 0 }}>
+          {selected && <Disclosure compact icon="copy" summary={t.merge}><div className="admin-subsection">
             <p className="admin-help">{t.mergeHelp}</p>
             <ResponsiveSelect label={t.mergeTarget} value={mergeTarget} disabled={!editable} onValueChange={value=>{setMergeTarget(value);setMergeConfirmed(false);}} options={[{value:'',label:t.chooseTarget},...queue.items.filter(tag=>tag.id!==selected.id&&tag.active&&!tag.mergedIntoTagId).map(tag=>({value:tag.id,label:tag.name}))]} />
-            {target && <label className="admin-check"><input type="checkbox" checked={mergeConfirmed} disabled={!editable} onChange={(event) => setMergeConfirmed(event.target.checked)} />{t.confirmMerge(selected.name, target.name)}</label>}
-            <Button variant="danger" icon="copy" disabled={!editable || !target || !mergeConfirmed || !validReason} onClick={() => void merge()}>{t.mergeSubmit}</Button>
+            {target && <Checkbox label={t.confirmMerge(selected.name, target.name)} checked={mergeConfirmed} disabled={!editable} onChange={setMergeConfirmed} />}
+            <div className="admin-form-actions"><Button variant="danger" icon="copy" disabled={!editable || !target || !mergeConfirmed || !validReason} loading={command.busy && mergeConfirmed} onClick={() => void merge()}>{t.mergeSubmit}</Button></div>
           </div></Disclosure>}
         </>}
-      </div> : <p className="admin-empty">{c.select}</p>}
+        {notice}
+      </div> : <div className="admin-form-stack">{notice}<AdminEmpty icon="tag" title={c.select} /></div>}
     </section>
-    <div className="admin-task-notice"><AdminCommandNotice command={command} onRefresh={() => void queue.reload()} />{inspecting && queue.error && <AdminQueueState {...queue} empty={false}>{null}</AdminQueueState>}</div>
+    {inspecting && queue.error && <div className="admin-task-notice"><AdminQueueState {...queue} empty={false}>{null}</AdminQueueState></div>}
   </div>;
 }

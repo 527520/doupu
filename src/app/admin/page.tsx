@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { forbidden } from 'next/navigation';
 import AdminPageHeader from '@/components/admin/AdminPageHeader';
 import Icon, { type IconName } from '@/components/ui/Icon';
@@ -34,15 +35,15 @@ export default async function AdminOverviewPage() {
   const allClear = queues.every((queue) => queue.count === 0);
   return <main id="main" className="admin-page admin-overview">
     <AdminPageHeader eyebrow={t.eyebrow} title={t.title} description={t.description} />
-    <section className="admin-overview-queues" aria-label={t.title}>
-      {queues.map((queue) => <Link key={queue.href} href={queue.href} className={`admin-overview-card${queue.count > 0 ? ' has-pending' : ''}`}>
+    <section className="admin-overview-queues stagger" aria-label={t.title}>
+      {queues.map((queue, index) => <Link key={queue.href} href={queue.href} style={{ '--i': index } as CSSProperties} className={`admin-overview-card${queue.count > 0 ? ' has-pending' : ''}`}>
         <span className="admin-overview-icon"><Icon name={queue.icon} size={20} /></span>
         <strong>{queue.count}</strong>
         <span className="admin-overview-label">{queue.label}</span>
         <small>{queue.help}</small>
         <span className="admin-overview-open">{t.open}<Icon name="arrow" size={14} /></span>
       </Link>)}
-      {includeSystem && <Link href="/admin/system" className={`admin-overview-card is-system${overview.moderationDegraded ? ' has-pending' : ''}`}>
+      {includeSystem && <Link href="/admin/system" style={{ '--i': queues.length } as CSSProperties} className={`admin-overview-card is-system${overview.moderationDegraded ? ' has-pending' : ''}`}>
         <span className="admin-overview-icon"><Icon name="shield" size={20} /></span>
         <strong className="admin-overview-state">{overview.moderationDegraded ? t.moderationDegraded : t.moderationHealthy}</strong>
         <span className="admin-overview-label">{t.moderation}</span>
@@ -50,7 +51,7 @@ export default async function AdminOverviewPage() {
         <span className="admin-overview-open">{t.open}<Icon name="arrow" size={14} /></span>
       </Link>}
     </section>
-    {allClear && <p className="admin-overview-clear"><Icon name="check" size={16} />{t.allClear} {t.allClearHelp}</p>}
+    {allClear && <p className="admin-overview-clear"><Icon name="check" size={16} /><strong>{t.allClear}</strong><span>{t.allClearHelp}</span></p>}
     <section className="admin-panel admin-overview-shortcuts" aria-label={t.shortcuts}>
       <header><h2>{t.shortcuts}</h2></header>
       <div>{shortcuts.map((item) => <Link key={item.href} href={item.href} className="admin-shortcut"><Icon name={item.icon} size={18} />{item.label}</Link>)}</div>

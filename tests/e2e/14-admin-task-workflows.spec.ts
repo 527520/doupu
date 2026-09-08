@@ -170,7 +170,7 @@ test('具名作品下架恢复与评论锁不绕过内容核查和确认', async
 
 test('审计可检索与查看状态，分析无效筛选和系统未知证据明示', async ({ page }) => {
   await login(page, '/admin/audit');
-  await page.getByLabel('搜索操作名称、对象编号或请求编号').fill('community'); await page.getByRole('button', { name: '查询' }).click();
+  await page.getByLabel('搜索记录').fill('community'); await page.getByRole('button', { name: '查询' }).click();
   await page.locator('.admin-object-list button').first().click();
   await expect(page.getByRole('heading', { name: '操作前', exact: true })).toBeVisible(); await expect(page.getByRole('heading', { name: '操作后', exact: true })).toBeVisible();
   await page.goto('/admin/analytics?start=invalid'); await expect(page.locator('main [role=alert]')).toContainText('部分查询条件无效');

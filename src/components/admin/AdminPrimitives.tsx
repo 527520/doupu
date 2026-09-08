@@ -36,13 +36,16 @@ export function Pagination({ page, hasPrevious, hasNext, onPrevious, onNext, dis
   </nav>;
 }
 
-/** 筛选条：字段横排，查询按钮靠右；提交交给调用方。 */
+/**
+ * 筛选条：字段与查询按钮在同一行（.form-row 让所有控件底边对齐），按钮靠行尾；提交交给调用方。
+ * 字段请用 TextField / ResponsiveSelect / DatePicker——它们的标签都锁高且不换行，同行才对得齐。
+ */
 export function FilterBar({ children, onSubmit, submitLabel, disabled = false, extra, className = '' }: {
   children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; submitLabel: string; disabled?: boolean; extra?: ReactNode; className?: string;
 }) {
-  return <form className={`admin-filter-bar${className ? ` ${className}` : ''}`} onSubmit={onSubmit}>
-    <div className="admin-filter-fields">{children}</div>
-    <div className="admin-filter-submit"><Button type="submit" variant="secondary" icon="search" disabled={disabled}>{submitLabel}</Button>{extra}</div>
+  return <form className={`admin-filter-bar form-row${className ? ` ${className}` : ''}`} onSubmit={onSubmit}>
+    {children}
+    <div className="form-row-actions">{extra}<Button type="submit" variant="secondary" icon="search" disabled={disabled}>{submitLabel}</Button></div>
   </form>;
 }
 
@@ -63,9 +66,11 @@ export function StatusBadge({ kind, value, className }: { kind: StateKind; value
  * 理由 + 确认区：所有管理写入都要填理由（≥3 字）；破坏性动作再加一句确认。
  * 动作按钮由调用方传入，这里只负责把「为什么」和「我确认」摆在动作旁边。
  */
-export function ReasonPanel({ reason, onReasonChange, label, placeholder, disabled = false, confirm, children, hint }: {
+export function ReasonPanel({ reason, onReasonChange, label, placeholder, disabled = false, confirm, fields, children, hint }: {
   reason: string; onReasonChange: (value: string) => void; label?: string; placeholder?: string; disabled?: boolean;
   confirm?: { checked: boolean; onChange: (checked: boolean) => void; label: ReactNode; danger?: boolean };
+  /** 动作之前的附加字段（确认编号、目标角色…）：独立成行，不与按钮同排。 */
+  fields?: ReactNode;
   children?: ReactNode; hint?: ReactNode;
 }) {
   const t = zhCN.communityAdmin.command;
@@ -74,10 +79,19 @@ export function ReasonPanel({ reason, onReasonChange, label, placeholder, disabl
     <Textarea label={label ?? t.reason} value={reason} maxLength={500} rows={3} disabled={disabled} placeholder={placeholder ?? t.reasonPlaceholder}
       onValueChange={onReasonChange} error={tooShort ? t.reasonTooShort : undefined} hint={tooShort ? undefined : hint} />
     {confirm && <Checkbox label={confirm.label} checked={confirm.checked} disabled={disabled} onChange={confirm.onChange} className="admin-reason-confirm" />}
+    {fields}
     {children && <div className="admin-reason-actions">{children}</div>}
   </div>;
 }
 
-export function AdminEmpty({ title, description, icon = 'inbox', action }: { title: ReactNode; description?: ReactNode; icon?: IconName; action?: ReactNode }) {
-  return <EmptyState compact icon={icon} title={title} description={description} action={action} className="admin-empty-state" />;
+/** 面板里的空态：靠顶排布，紧挨着它指向的列表；`align="center"` 只给整块独立的空面板。 */
+export function AdminEmpty({ title, description, icon = 'inbox', action, align = 'start' }: { title: ReactNode; description?: ReactNode; icon?: IconName; action?: ReactNode; align?: 'start' | 'center' }) {
+  return <EmptyState compact icon={icon} title={title} description={description} action={action} align={align} className="admin-empty-state" />;
+}
+
+/** 列表加载中的骨架：三行占位，读屏只播一句「正在读取」。 */
+export function AdminSkeleton({ rows = 3, label }: { rows?: number; label: string }) {
+  return <div className="skeleton-list" role="status" aria-label={label}>
+    {Array.from({ length: rows }, (_, index) => <i key={index} className="skeleton" aria-hidden="true" />)}
+  </div>;
 }

@@ -19,7 +19,7 @@ it('reads before selection, shows actions and states in Chinese, and applies exp
   // 原始动作名仍以代码形式保留，便于对照日志
   expect(screen.getByText('community.revision_published')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
-  fireEvent.change(screen.getByLabelText('搜索操作名称、对象编号或请求编号'), { target: { value: 'request-1' } });
+  fireEvent.change(screen.getByLabelText('搜索记录'), { target: { value: 'request-1' } });
   fireEvent.click(screen.getByRole('button', { name: '查询' }));
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   expect(String(fetcher.mock.calls[1][0])).toContain('q=request-1');

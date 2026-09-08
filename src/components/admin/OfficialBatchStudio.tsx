@@ -3,7 +3,7 @@ import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import Switch from '@/components/ui/Switch';
 import SegmentedControl from '@/components/ui/SegmentedControl';
 
-import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { DEFAULT_GENERATION_PARAMS, type GenerationParams } from '@/lib/types';
 import { batchGenerationFailureMessage, officialBatchConcurrency } from '@/lib/community/batchClient';
 import type { OfficialBatchSpec } from '@/lib/community/batchDefaults';
@@ -19,14 +19,16 @@ import { zhCN } from '@/messages/zh-CN';
 import CropDialog from '@/components/crop/CropDialog';
 import Modal from '@/components/ui/Modal';
 import Badge, { type BadgeTone } from '@/components/ui/Badge';
-import Button from '@/components/ui/Button';
+import Button, { ButtonLink } from '@/components/ui/Button';
 import Checkbox from '@/components/ui/Checkbox';
 import Chip from '@/components/ui/Chip';
 import Disclosure from '@/components/ui/Disclosure';
 import EmptyState from '@/components/ui/EmptyState';
 import Icon from '@/components/ui/Icon';
+import IconButton from '@/components/ui/IconButton';
 import Notice from '@/components/ui/Notice';
 import NumberField from '@/components/ui/NumberField';
+import TextField from '@/components/ui/TextField';
 import CommunityPreviewCanvas from '@/components/community/CommunityPreviewCanvas';
 import CommunityThumbnail from '@/components/community/CommunityThumbnail';
 import OriginalPreview from '@/components/community/OriginalPreview';
@@ -35,6 +37,7 @@ import { BatchSession, isStoredBatch, RETRYABLE_STATUSES, type BatchItem, type B
 import { generateBatchItem } from './batchGeneration';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminInspection } from './useAdminInspection';
+import { AdminSkeleton } from './AdminPrimitives';
 
 const t = zhCN.communityAdmin.batch;
 const c = zhCN.communityAdmin.command;
@@ -100,15 +103,16 @@ function BatchParamsEditor({ value, inherited, onChange, disabled = false }: { v
   const number = (key: keyof typeof labels, min: number, max: number) => <NumberField compact label={labels[key]} value={value[key]} min={min} max={max} disabled={disabled} placeholder={inherited ? String(inherited[key]) : undefined} onValueChange={(next) => {
     const copy = { ...value }; if (next === undefined) delete copy[key]; else copy[key] = next; onChange(copy);
   }} />;
-  const bool = (key: 'dithering' | 'backgroundRemoval') => inherited ? <ResponsiveSelect label={t[key]} value={value[key] === undefined ? '' : String(value[key])} disabled={disabled} onValueChange={raw => {
+  const bool = (key: 'dithering' | 'backgroundRemoval') => inherited ? <ResponsiveSelect size="sm" label={t[key]} value={value[key] === undefined ? '' : String(value[key])} disabled={disabled} onValueChange={raw => {
     const next = { ...value }; if (!raw) delete next[key]; else next[key] = raw === 'true'; onChange(next);
-  }} options={[{value:'',label:t.inherit},{value:'true',label:t.enabled},{value:'false',label:t.disabled}]} /> : <Switch label={t[key]} checked={value[key]??false} disabled={disabled} onChange={checked=>onChange({...value,[key]:checked})} />;
-  return <div className="batch-params-grid">
+  }} options={[{value:'',label:t.inherit},{value:'true',label:t.enabled},{value:'false',label:t.disabled}]} /> : <Switch compact label={t[key]} checked={value[key]??false} disabled={disabled} onChange={checked=>onChange({...value,[key]:checked})} />;
+  // 参数网格是工具行：全部控件统一 36 高，标签锁高，同一行底边对齐。
+  return <div className="batch-params-grid form-row">
     {number('targetWidth', 20, 200)}{number('targetColorCount', 2, 128)}
-    {inherited ? <ResponsiveSelect label={t.mode} value={value.mode ?? ''} disabled={disabled} onValueChange={raw=>{const next={...value};if(!raw)delete next.mode;else next.mode=raw as GenerationParams['mode'];onChange(next);}} options={[{value:'',label:t.inherit},{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} /> : <SegmentedControl label={t.mode} value={value.mode ?? 'dominant'} disabled={disabled} onValueChange={mode=>onChange({...value,mode:mode as GenerationParams['mode']})} options={[{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} />}
+    {inherited ? <ResponsiveSelect size="sm" label={t.mode} value={value.mode ?? ''} disabled={disabled} onValueChange={raw=>{const next={...value};if(!raw)delete next.mode;else next.mode=raw as GenerationParams['mode'];onChange(next);}} options={[{value:'',label:t.inherit},{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} /> : <SegmentedControl size="sm" showLabel label={t.mode} value={value.mode ?? 'dominant'} disabled={disabled} onValueChange={mode=>onChange({...value,mode:mode as GenerationParams['mode']})} options={[{value:'dominant',label:t.dominant},{value:'average',label:t.average}]} />}
     {bool('dithering')}{number('brightness', -100, 100)}{number('contrast', -100, 100)}
     {bool('backgroundRemoval')}{number('bgTolerance', 0, 40)}
-    <label className="batch-params-hex">{t.backgroundPrototype}<input value={value.backgroundPrototype ?? ''} disabled={disabled} placeholder={inherited?.backgroundPrototype ?? t.autoBackground} maxLength={7} onChange={(event) => onChange({ ...value, backgroundPrototype: event.target.value || null })} /></label>
+    <TextField size="sm" mono label={t.backgroundPrototype} value={value.backgroundPrototype ?? ''} disabled={disabled} placeholder={inherited?.backgroundPrototype ?? t.autoBackground} maxLength={7} onChange={(event) => onChange({ ...value, backgroundPrototype: event.target.value || null })} />
   </div>;
 }
 
@@ -131,13 +135,13 @@ function BatchCropEditor({ item, session, onClose }: { item: BatchItem; session:
     return () => { alive = false; decoder.dispose(); };
   }, [item.file]);
   return image ? <CropDialog image={image} initialRect={item.crop ?? undefined} onCancel={onClose} onConfirm={(crop) => { session.updateItem(item.localId, { crop }); onClose(); }} />
-    : <Modal label={t.cropTitle} onClose={onClose} panelClassName="batch-dialog"><h2>{t.cropTitle}</h2><p role={error ? 'alert' : 'status'}>{error || c.loading}</p><Button variant="secondary" onClick={onClose}>{zhCN.common.close}</Button></Modal>;
+    : <Modal label={t.cropTitle} onClose={onClose} panelClassName="batch-dialog"><h2>{t.cropTitle}</h2>{error ? <Notice kind="danger">{error}</Notice> : <AdminSkeleton rows={2} label={c.loading} />}<div className="modal-actions"><Button variant="secondary" onClick={onClose}>{zhCN.common.close}</Button></div></Modal>;
 }
 
 function DraftInspection({ item, onClose }: { item: BatchItem; onClose: () => void }) {
   const inspection = useAdminInspection<CommunityRevisionInspection>(`/api/admin/community/revisions/${item.revisionId}`);
-  return <Modal label={t.inspectTitle} onClose={onClose} panelClassName="batch-inspection"><header><h2>{item.title}</h2><Button variant="secondary" size="sm" icon="close" onClick={onClose}>{zhCN.common.close}</Button></header>
-    {inspection.error ? <><Notice kind="danger">{inspection.error}</Notice><Button variant="secondary" icon="refresh" onClick={() => void inspection.reload()}>{c.reload}</Button></> : inspection.data ? <><p className="admin-help">{inspection.data.snapshot.pattern.width}×{inspection.data.snapshot.pattern.height} · {getBoardProfile(inspection.data.snapshot.boardProfile).displayName}</p><div className="review-material-pair"><PatternPreview pattern={inspection.data.snapshot.pattern} boardSize={getBoardProfile(inspection.data.snapshot.boardProfile).boardCols} />{item.revisionId && <OriginalPreview revisionId={item.revisionId} title={item.title} />}</div><p className="mono-id">{t.draftId} {item.revisionId}</p></> : <p role="status">{c.loading}</p>}
+  return <Modal label={t.inspectTitle} onClose={onClose} panelClassName="batch-inspection"><header><h2>{item.title}</h2><IconButton icon="close" size="sm" label={zhCN.common.close} onClick={onClose} /></header>
+    {inspection.error ? <><Notice kind="danger">{inspection.error}</Notice><div className="admin-form-actions"><Button variant="secondary" size="sm" icon="refresh" onClick={() => void inspection.reload()}>{c.reload}</Button></div></> : inspection.data ? <><div className="review-material-pair"><PatternPreview variant="compact" caption={`${inspection.data.snapshot.pattern.width}×${inspection.data.snapshot.pattern.height} · ${getBoardProfile(inspection.data.snapshot.boardProfile).displayName}`} pattern={inspection.data.snapshot.pattern} boardSize={getBoardProfile(inspection.data.snapshot.boardProfile).boardCols} />{item.revisionId && <OriginalPreview revisionId={item.revisionId} title={item.title} />}</div><p className="mono-id">{t.draftId} {item.revisionId}</p></> : <AdminSkeleton rows={3} label={c.loading} />}
   </Modal>;
 }
 
@@ -166,21 +170,21 @@ const BatchItemCard = memo(function BatchItemCard({ item, index, session, editab
     </div>
     <div className="batch-card-body">
       <header><Badge tone={STATUS_TONE[item.status]}>{t.status[item.status]}</Badge>{item.hasOriginal && item.status !== 'published' && <Badge tone="ok" dot={false}><Icon name="check" size={12} />{t.originalReady}</Badge>}</header>
-      <label className="batch-card-title">{t.publicTitle}<input value={item.title} maxLength={80} disabled={!editable} onChange={(event) => session.updateItem(item.localId, { title: event.target.value })} /></label>
+      <TextField size="sm" className="batch-card-title" label={t.publicTitle} value={item.title} maxLength={80} disabled={!editable} onChange={(event) => session.updateItem(item.localId, { title: event.target.value })} />
       <p className="batch-card-file"><Icon name="image" size={13} />{item.localName}{item.preview && ` · ${item.preview.originalWidth}×${item.preview.originalHeight}`}</p>
       {item.file && editable && <div className="batch-card-crop"><Button variant="secondary" size="xs" icon="crop" onClick={() => onCrop(item.localId)}>{item.crop ? t.recrop : t.cropTitle}</Button><span>{item.crop ? t.cropSummary(item.crop.width, item.crop.height) : t.uncropped}</span>{item.crop && <Button variant="quiet" size="xs" onClick={() => session.updateItem(item.localId, { crop: null })}>{t.resetCrop}</Button>}</div>}
       {/* 覆盖参数编辑器只在展开时挂载：50 张卡片各带一套数字输入会拖慢每次进度刷新。 */}
-      {editable && <Disclosure compact icon="sliders" summary={t.itemOverrides} meta={overrideCount > 0 ? `${overrideCount}` : undefined} expanded={overridesOpen} onExpandedChange={setOverridesOpen}>{overridesOpen && <><BatchParamsEditor value={item.paramsOverride} inherited={defaults} onChange={(paramsOverride) => session.updateItem(item.localId, { paramsOverride })} />{overrideCount > 0 && <Button variant="quiet" size="sm" icon="close" onClick={() => session.updateItem(item.localId, { paramsOverride: {} })}>{t.resetOverrides}</Button>}</>}</Disclosure>}
+      {editable && <Disclosure compact icon="sliders" summary={t.itemOverrides} meta={overrideCount > 0 ? `${overrideCount}` : undefined} expanded={overridesOpen} onExpandedChange={setOverridesOpen}>{overridesOpen && <><BatchParamsEditor value={item.paramsOverride} inherited={defaults} onChange={(paramsOverride) => session.updateItem(item.localId, { paramsOverride })} />{overrideCount > 0 && <div className="admin-form-actions"><Button variant="quiet" size="xs" icon="close" onClick={() => session.updateItem(item.localId, { paramsOverride: {} })}>{t.resetOverrides}</Button></div>}</>}</Disclosure>}
       {item.error && <Notice kind="danger" compact>{item.error}</Notice>}
       {item.status === 'save_unknown' && <Notice kind="warning" compact>{t.saveUnknown}</Notice>}
     </div>
     <footer className="batch-card-actions">
-      {item.status === 'saved' && <Checkbox className="admin-checkbox" label={t.selectPublish} checked={item.selected} disabled={locked} onChange={(checked) => session.updateItem(item.localId, { selected: checked })} />}
+      {item.status === 'saved' && <Checkbox compact className="admin-checkbox" label={t.selectPublish} checked={item.selected} disabled={locked} onChange={(checked) => session.updateItem(item.localId, { selected: checked })} />}
       {item.revisionId && ['saved', 'published', 'upload_failed'].includes(item.status) && <Button variant="secondary" size="xs" icon="eye" onClick={() => onInspect(item.localId)}>{t.inspectTitle}</Button>}
       {['pending', 'running', 'failed'].includes(item.status) && <Button variant="quiet" size="xs" icon="close" disabled={locked} onClick={() => session.cancelItem(item.localId)}>{t.cancelItem}</Button>}
       {retryable && <Button variant="secondary" size="xs" icon="refresh" disabled={locked || processing || conflict} onClick={() => void session.retryItem(item.localId)}>{item.status === 'upload_failed' ? t.retryUpload : hasSave ? t.retrySave : t.retry}</Button>}
       {needsOriginalFile && <label className="btn-outline btn-xs batch-select-files" data-disabled={locked}>{t.attachOriginal}<input className="sr-only" type="file" accept="image/*,.heic,.heif" disabled={locked} onChange={(event) => { const file = event.target.files?.[0]; if (file) void session.attachOriginal(item.localId, file); event.target.value = ''; }} /></label>}
-      {item.status === 'published' && item.workId && <a href={`/community/${item.workId}`} target="_blank" rel="noreferrer" className="btn-quiet btn-xs"><Icon name="external" size={14} />{t.openPublic}</a>}
+      {item.status === 'published' && item.workId && <ButtonLink external variant="quiet" size="xs" icon="external" iconPosition="end" href={`/community/${item.workId}`} target="_blank" rel="noreferrer">{t.openPublic}</ButtonLink>}
     </footer>
   </li>;
 });
@@ -253,8 +257,8 @@ export default function OfficialBatchStudio() {
     <label className={`${step === 'select' ? 'btn-primary' : 'btn-outline btn-sm'} batch-select-files`} data-disabled={!session.replaceable}><Icon name={step === 'select' ? 'upload' : 'refresh'} size={step === 'select' ? 18 : 14} />{t.selectFiles}<input className="sr-only" type="file" disabled={!session.replaceable} accept="image/*,.heic,.heif" multiple onChange={(event) => { if (event.target.files?.length) choose({ files: [...event.target.files] }); event.target.value = ''; }} /></label>
   </div>;
   const historyList = <div className="batch-history">
-    <div className="batch-history-head"><p className="admin-help">{t.localOnly}</p><Button variant="quiet" size="xs" icon="refresh" disabled={history.loading} onClick={() => void history.reload()}>{c.reload}</Button></div>
-    {history.error ? <Notice kind="danger">{history.error}</Notice> : history.loading ? <p role="status" className="admin-help">{c.loading}</p> : history.items.length === 0 ? <p className="admin-help">{t.noHistory}</p> : <ul>{history.items.map((entry) => <li key={entry.id}>
+    <div className="batch-history-head"><p className="admin-help">{t.localOnly}</p><Button variant="quiet" size="sm" icon="refresh" disabled={history.loading} onClick={() => void history.reload()}>{c.reload}</Button></div>
+    {history.error ? <Notice kind="danger">{history.error}</Notice> : history.loading ? <AdminSkeleton rows={2} label={c.loading} /> : history.items.length === 0 ? <p className="admin-help">{t.noHistory}</p> : <ul className="stagger">{history.items.map((entry, index) => <li key={entry.id} style={{ '--i': index } as CSSProperties}>
       <Button variant="secondary" size="sm" icon="clock" disabled={!session.replaceable} onClick={() => choose({ batch: entry })}>{t.historyEntry(new Date(entry.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }), entry.successCount, entry.itemCount)} · {t.batchStatus[entry.status]}</Button>
       <small className="mono-id">{t.batchId} {entry.id}</small>
     </li>)}</ul>}
@@ -275,11 +279,11 @@ export default function OfficialBatchStudio() {
         <div className="batch-panel-body">
           <Disclosure compact icon="palette" summary={t.spec} meta={specSummary(state.spec)} expanded={specOpen} onExpandedChange={setSpecOpen}>{specOpen && <><SpecPicker spec={state.spec} onChange={(spec) => session.setSpec(spec)} disabled={!editable} /><p className="admin-help">{t.specFrozen}</p></>}</Disclosure>
           <Disclosure compact icon="sliders" summary={`${t.uniformParams} · ${state.defaults.targetWidth} ${t.widthUnit} · ${state.defaults.targetColorCount} ${t.colorUnit}`} expanded={paramsOpen && !batch} onExpandedChange={setParamsOpen}>{paramsOpen && !batch && <fieldset disabled={!editable} className="batch-fieldset"><BatchParamsEditor value={state.defaults} disabled={!editable} onChange={(value) => session.setDefaults({ ...DEFAULT_GENERATION_PARAMS, ...value })} /></fieldset>}</Disclosure>
-          <label className="batch-reason">{t.reason}<input value={state.reason} disabled={!editable} maxLength={500} onChange={(event) => session.setReason(event.target.value)} /></label>
+          <TextField className="batch-reason" label={t.reason} value={state.reason} disabled={!editable} maxLength={500} onChange={(event) => session.setReason(event.target.value)} />
           {!batch && <Disclosure compact icon="clock" summary={t.history}>{historyList}</Disclosure>}
         </div>
       </section>
-      {state.error && <Notice kind="danger">{state.error}</Notice>}{state.uncertain && <Notice kind="warning" as="div"><span>{c.uncertain} <Button variant="secondary" size="sm" disabled={state.busy} onClick={() => void session.retryCommand()}>{c.retry}</Button></span></Notice>}
+      {state.error && <Notice kind="danger">{state.error}</Notice>}{state.uncertain && <div className="admin-command-notice animate-rise"><Notice kind="warning" as="div"><span>{c.uncertain}</span><Button variant="secondary" size="sm" icon="refresh" disabled={state.busy} onClick={() => void session.retryCommand()}>{c.retry}</Button></Notice></div>}
       {state.notice && <Notice kind="info" role="status">{state.notice}</Notice>}
       {state.conflict && <Notice kind="warning">{t.conflictHelp}</Notice>}{refreshError && <Notice kind="danger">{refreshError}</Notice>}
       <div className="batch-toolbar batch-toolbar-sticky">
@@ -293,8 +297,8 @@ export default function OfficialBatchStudio() {
           {retryableCount > 0 && <Button variant="secondary" icon="refresh" disabled={session.locked || session.processing || state.conflict} onClick={() => void session.retryAllFailed()}>{t.retryAll} · {retryableCount}</Button>}
           <span className="batch-toolbar-spacer" />
           <span className="batch-toolbar-summary">{t.selectedSummary(selected.length, publishable.length)}</span>
-          <Button variant="secondary" size="sm" disabled={session.locked || publishable.length === 0 || selected.length === publishable.length} onClick={() => session.selectAll()}>{t.selectAll}</Button>
-          {selected.length > 0 && <Button variant="quiet" size="sm" disabled={session.locked} onClick={() => session.clearSelection()}>{t.clearSelection}</Button>}
+          <Button variant="secondary" disabled={session.locked || publishable.length === 0 || selected.length === publishable.length} onClick={() => session.selectAll()}>{t.selectAll}</Button>
+          {selected.length > 0 && <Button variant="quiet" disabled={session.locked} onClick={() => session.clearSelection()}>{t.clearSelection}</Button>}
           <Button variant="primary" icon="send" disabled={session.locked || session.processing || Boolean(session.retainedSaveCount) || state.conflict || !selected.length} onClick={(event) => { event.currentTarget.focus(); setConfirmPublish(true); setConfirmed(false); }}>{t.publishSelected} · {selected.length}</Button>
         </>}
       </div>
@@ -305,14 +309,14 @@ export default function OfficialBatchStudio() {
       </div>}
       {/* 生成期间卡片用本地派生预览，批次停下后再换成服务端带格线缩略图，避免 50 张 PNG 渲染与草稿保存抢同一个服务器。 */}
       <ol className="batch-cards">{visibleItems.map((item) => <BatchItemCard key={item.localId} item={item} index={items.indexOf(item)} session={session} editable={editable} serverThumbnails={!(batch && state.mode === 'running')} defaults={state.defaults} locked={session.locked} processing={session.processing} conflict={state.conflict} hasSave={session.hasSave(item.localId)} onCrop={setCropId} onInspect={setInspectionId} />)}</ol>
-      {visibleItems.length === 0 && <EmptyState compact icon="filter" title={t.filterEmpty} />}
+      {visibleItems.length === 0 && <EmptyState compact align="start" icon="filter" title={t.filterEmpty} />}
     </>}
     {cropItem && <BatchCropEditor item={cropItem} session={session} onClose={() => setCropId(null)} />}
     {inspected && <DraftInspection item={inspected} onClose={() => setInspectionId(null)} />}
-    {replacement && <Modal label={t.replaceTitle} onClose={() => setReplacement(null)} panelClassName="batch-dialog"><h2>{t.replaceTitle}</h2><p>{t.replaceHelp}</p><div className="table-actions"><Button variant="secondary" onClick={() => setReplacement(null)}>{t.keepFiles}</Button><Button variant="danger" onClick={() => { if ('files' in replacement) session.selectFiles(replacement.files); else session.restore(replacement.batch); setReplacement(null); setConfirmPublish(false); setFilter('all'); }}>{t.replaceConfirm}</Button></div></Modal>}
-    {confirmPublish && <Modal label={t.publishSelected} onClose={() => { if (!session.locked) setConfirmPublish(false); }} panelClassName="batch-dialog"><h2>{t.publishSelected}</h2><p>{t.publishHelp}</p><ul>{selected.map((item) => <li key={item.localId}>{item.title}</li>)}</ul><Checkbox className="admin-checkbox" label={t.confirmPublication} checked={confirmed} disabled={session.locked} onChange={setConfirmed} />
-      {state.error && <p role="alert">{state.error}</p>}{state.uncertain && <><p>{c.uncertain}</p><Button variant="secondary" disabled={state.busy} onClick={() => void session.retryCommand().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{c.retry}</Button></>}
-      <div className="table-actions"><Button variant="quiet" disabled={session.locked} onClick={() => setConfirmPublish(false)}>{t.backToDrafts}</Button><Button variant="primary" icon="send" disabled={!confirmed || session.locked || !selected.length} onClick={() => void session.publish().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{t.confirmPublish}</Button></div>
+    {replacement && <Modal label={t.replaceTitle} onClose={() => setReplacement(null)} panelClassName="batch-dialog"><h2>{t.replaceTitle}</h2><p className="modal-copy">{t.replaceHelp}</p><div className="modal-actions"><Button variant="quiet" onClick={() => setReplacement(null)}>{t.keepFiles}</Button><Button variant="dangerSolid" onClick={() => { if ('files' in replacement) session.selectFiles(replacement.files); else session.restore(replacement.batch); setReplacement(null); setConfirmPublish(false); setFilter('all'); }}>{t.replaceConfirm}</Button></div></Modal>}
+    {confirmPublish && <Modal label={t.publishSelected} onClose={() => { if (!session.locked) setConfirmPublish(false); }} panelClassName="batch-dialog"><h2>{t.publishSelected}</h2><p className="modal-copy">{t.publishHelp}</p><ul>{selected.map((item) => <li key={item.localId}>{item.title}</li>)}</ul><Checkbox className="admin-checkbox" label={t.confirmPublication} checked={confirmed} disabled={session.locked} onChange={setConfirmed} />
+      {state.error && <Notice kind="danger">{state.error}</Notice>}{state.uncertain && <Notice kind="warning" as="div"><span>{c.uncertain}</span><Button variant="secondary" size="sm" icon="refresh" disabled={state.busy} onClick={() => void session.retryCommand().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{c.retry}</Button></Notice>}
+      <div className="modal-actions"><Button variant="quiet" disabled={session.locked} onClick={() => setConfirmPublish(false)}>{t.backToDrafts}</Button><Button variant="primary" icon="send" disabled={!confirmed || session.locked || !selected.length} loading={state.busy && confirmed} onClick={() => void session.publish().then(() => { if (!session.locked && !session.getSnapshot().error) setConfirmPublish(false); })}>{t.confirmPublish}</Button></div>
     </Modal>}
   </section>;
 }

@@ -29,12 +29,23 @@ describe('PatternPreview', () => {
   it('缩放按钮受 [50%,1600%] 钳制', () => {
     render(<PatternPreview pattern={pattern} defaultCellPx={10} />);
     const zoomLabel = screen.getByLabelText('缩放');
-    const minus = screen.getByText('−');
-    const plus = screen.getByText('+');
+    const minus = screen.getByRole('button', { name: '缩小' });
+    const plus = screen.getByRole('button', { name: '放大' });
     for (let i = 0; i < 20; i++) fireEvent.click(minus);
     expect(zoomLabel.textContent).toBe('50%');
     for (let i = 0; i < 20; i++) fireEvent.click(plus);
     expect(zoomLabel.textContent).toBe('1600%');
+  });
+
+  it('后台精简版把三个开关换成芯片，说明行与原图对位，提示只留在 title', () => {
+    render(<PatternPreview pattern={pattern} defaultCellPx={10} variant="compact" caption="本次提交的图纸 · R2" />);
+    expect(screen.getByText('本次提交的图纸 · R2').className).toContain('pattern-preview-caption');
+    const grid = screen.getByRole('button', { name: '网格线' });
+    expect(grid).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(grid);
+    expect(grid).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByText(/鼠标拖动/)).toBeNull();
   });
 
   it('悬停发出格子信息（桌面指针移动）', () => {
