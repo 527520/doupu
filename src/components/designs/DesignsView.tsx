@@ -1,7 +1,7 @@
 'use client';
 
 /** 我的设计列表页（ticket 17）：本地 + 云端设计网格、同步角标、重命名/删除、账号菜单。 */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
@@ -11,6 +11,9 @@ import { enqueueDesignSync, withDesignStorageLock } from '@/lib/sync/queue';
 import { openIndexedDb, parseStoredProject, type DesignRecord, type StorageAdapter } from '@/lib/storage';
 import type { PatternCell } from '@/lib/types';
 import Notice from '@/components/ui/Notice';
+import Badge from '@/components/ui/Badge';
+import Button, { ButtonLink } from '@/components/ui/Button';
+import EmptyState from '@/components/ui/EmptyState';
 import ColorBand from '@/components/palettes/ColorBand';
 import { LIMITS } from '@/lib/appInfo';
 import SiteHeader from '@/components/layout/SiteHeader';
@@ -303,9 +306,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
         currentPath="/designs"
         subtitle={zhCN.workspace.designsSubtitle}
         primaryActions={
-          <Link href="/app?new=1" className="btn-primary btn-sm">
+          <ButtonLink variant="primary" size="sm" icon="plus" href="/app?new=1">
             {t.newDesign}
-          </Link>
+          </ButtonLink>
         }
       />
 
@@ -340,33 +343,30 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
       )}
 
       {cloudFailed && (
-        <Notice kind="info">
+        <div className="admin-command-notice"><Notice kind="info" as="div">
           <span>{t.syncFailed}</span>
-          <button type="button" onClick={() => void retrySync()} disabled={syncing} className="btn-outline btn-xs">
+          <Button variant="secondary" size="sm" icon="refresh" onClick={() => void retrySync()} loading={syncing}>
             {syncing ? t.syncing : t.retry}
-          </button>
-        </Notice>
+          </Button>
+        </Notice></div>
       )}
 
       {error && !renaming && !deleting && (
-        <Notice kind="danger">
+        <div className="admin-command-notice"><Notice kind="danger" as="div">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="btn-danger-outline btn-xs">
+          <Button variant="secondary" size="sm" icon="refresh" onClick={() => void load()}>
             {t.retry}
-          </button>
-        </Notice>
+          </Button>
+        </Notice></div>
       )}
 
       {me !== 'loading' && !syncing && !error && designs.length === 0 && (
-        <div className="designs-empty">
-          <p className="font-medium text-ink">{t.emptyTitle}</p>
-          <p className="text-sm text-ink-soft">{t.emptyHint}</p>
-        </div>
+        <EmptyState icon="folder" title={t.emptyTitle} description={t.emptyHint} action={<ButtonLink variant="primary" icon="plus" href="/app?new=1">{t.newDesign}</ButtonLink>} />
       )}
 
-      <ul className="designs-grid">
-        {designs.map((design) => (
-          <li key={design.id} className="design-card">
+      <ul className="designs-grid stagger">
+        {designs.map((design, index) => (
+          <li key={design.id} className="design-card" style={{ '--i': index } as CSSProperties}>
             <button type="button" className="design-card-open" aria-label={t.resumeLabel(design.name)}
               disabled={opening !== null || mutating || syncing} aria-busy={opening === design.id}
               onClick={() => void handleOpen(design)}>
@@ -393,14 +393,12 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
             {design.colors.length > 0 && (
               <ColorBand colors={design.colors} max={12} label={t.colorBandAria(design.name, design.colors.length)} />
             )}
-            <div className="flex flex-wrap items-center gap-1 text-xs">
-              <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">
-                {design.localPresent ? t.localSaved : t.localMissing}
-              </span>
-              {design.status === 'synced' && <span className="rounded-full bg-success-soft px-1.5 py-0.5 text-success">{t.synced}</span>}
-              {design.status === 'unsynced' && <span className="rounded-full bg-warning-soft px-1.5 py-0.5 text-warning">{t.unsynced}</span>}
-              {design.status === 'localOnly' && <span className="rounded-full bg-lilac-soft px-1.5 py-0.5 text-ink-soft">{t.localOnly}</span>}
-              {design.status === 'conflict' && <span className="rounded-full bg-danger-soft px-1.5 py-0.5 text-danger">{t.conflict}</span>}
+            <div className="design-card-badges">
+              <Badge tone="neutral" dot={false}>{design.localPresent ? t.localSaved : t.localMissing}</Badge>
+              {design.status === 'synced' && <Badge tone="ok">{t.synced}</Badge>}
+              {design.status === 'unsynced' && <Badge tone="warn">{t.unsynced}</Badge>}
+              {design.status === 'localOnly' && <Badge tone="progress">{t.localOnly}</Badge>}
+              {design.status === 'conflict' && <Badge tone="danger">{t.conflict}</Badge>}
             </div>
             <div className="design-card-actions">
               <p className="text-xs text-ink-soft">{t.updatedAt(formatDateTime(design.updatedAt))}</p>
@@ -437,7 +435,7 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               void handleRename();
             }}
           >
-            <h3 className="mb-2 text-sm font-medium text-ink">{t.renameTitle}</h3>
+            <h3 className="modal-title">{t.renameTitle}</h3>
             {error && <Notice kind="danger">{error}</Notice>}
             <input
               aria-label={t.renameLabel}
@@ -446,17 +444,9 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
               onChange={(e) => setRenameValue(e.target.value)}
               className="input-field"
             />
-            <div className="mt-3 flex justify-end gap-2">
-              <button type="button" disabled={mutating} onClick={() => setRenaming(null)} className="btn-outline btn-sm">
-                {t.cancel}
-              </button>
-              <button
-                type="submit"
-                disabled={mutating || renameValue.trim().length === 0}
-                className="btn-primary btn-sm"
-              >
-                {t.save}
-              </button>
+            <div className="modal-actions">
+              <Button variant="quiet" disabled={mutating} onClick={() => setRenaming(null)}>{t.cancel}</Button>
+              <Button type="submit" variant="primary" icon="check" disabled={renameValue.trim().length === 0} loading={mutating}>{t.save}</Button>
             </div>
           </form>
         </Modal>
@@ -464,16 +454,12 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
 
       {deleting && (
         <Modal label={t.deleteTitle} onClose={() => { if (!mutationRef.current) setDeleting(null); }} panelClassName="max-w-sm border-danger/40">
-          <h3 className="mb-2 text-sm font-medium text-danger">{t.deleteTitle}</h3>
+          <h3 className="modal-title is-danger">{t.deleteTitle}</h3>
           {error && <Notice kind="danger">{error}</Notice>}
-          <p className="mb-3 text-sm text-ink-soft">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
-          <div className="flex justify-end gap-2">
-            <button type="button" disabled={mutating} onClick={() => setDeleting(null)} className="btn-outline btn-sm">
-              {t.cancel}
-            </button>
-            <button type="button" disabled={mutating} onClick={() => void handleDelete()} className="btn-danger btn-sm">
-              {t.delete}
-            </button>
+          <p className="modal-copy">{fillDeleteHint(t.deleteHint, deleting.name)}</p>
+          <div className="modal-actions">
+            <Button variant="quiet" disabled={mutating} onClick={() => setDeleting(null)}>{t.cancel}</Button>
+            <Button variant="dangerSolid" icon="trash" loading={mutating} onClick={() => void handleDelete()}>{t.delete}</Button>
           </div>
         </Modal>
       )}

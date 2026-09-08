@@ -126,8 +126,8 @@ export const zhCN = {
     startHint: '选一张喜欢的图片，让第一张图纸自动成形。',
     fromImage: '从一张图片开始',
     fromImageHint: '选图即生成整图预览，之后仍可按需裁剪。',
-    blankStart: '空白起稿',
-    blankHint: '直接选择画布尺寸，从第一颗豆开始摆。',
+    blankStart: '从空白图纸开始',
+    blankHint: '不上传照片，选好色板和尺寸，从第一颗豆开始摆。',
     process: '制作流程',
     libraryKicker: '继续创作',
     libraryTitle: '你的手作草稿',
@@ -163,8 +163,9 @@ export const zhCN = {
     dithering: '抖动',
     advanced: '高级选项',
     sampleMode: '取样模式',
-    sampleDominant: '主色（卡通）',
-    sampleAverage: '平均色（真实）',
+    sampleDominant: '主色',
+    sampleAverage: '平均色',
+    sampleModeHint: '主色：卡通风格，色块纯净；平均色：真实风格，过渡柔和。',
     brightness: '亮度',
     contrast: '对比度',
     backgroundRemoval: '背景去除',
@@ -509,7 +510,8 @@ export const zhCN = {
     /* H-2：空白起稿——不上传图片，直接从空白图纸开始摆。 */
     blankTitle: '从空白图纸开始',
     blankHint: '不上传照片，直接自己摆格子（照着别人的图纸摆、画图标或文字都用这个）。之后可以随时换色板、导出打印。',
-    blankPreset: (boards: number, size: number) => `${boards} 板（${size} × ${size} 格）`,
+    blankBoards: '板数', blankBoardsOption: (boards: number) => `${boards} 板`, blankCreate: '创建空白图纸',
+    blankSummary: '将创建 {size} × {size} 格的空白图纸 · {palette} · {spec}',
     /* H-3：套装档位应用结果。 */
     kitApplied: (tier: number, changed: number) =>
       tier === 0

@@ -8,6 +8,9 @@ import type { Pattern } from '@/lib/types';
 import { isProgressCompatible, isStitchableCell, summarizeProgress } from '@/lib/progress/stitchProgress';
 import ColorBand from '@/components/palettes/ColorBand';
 import { zhCN } from '@/messages/zh-CN';
+import type { CSSProperties } from 'react';
+import Button from '@/components/ui/Button';
+import Notice from '@/components/ui/Notice';
 
 interface RecentDesign {
   id: string; name: string; thumbnail: string | null; width: number; height: number;
@@ -51,10 +54,10 @@ export default function RecentDesigns({ storage }: { storage?: Pick<StorageAdapt
 
   return <section className="home-recent" aria-labelledby="recent-designs-title">
     <header><h2 id="recent-designs-title">{t.recentTitle}</h2><Link href="/designs" className="link-action">{t.allDesigns}</Link></header>
-    {failed ? <p>{t.recentUnavailable} <button type="button" className="btn-outline" onClick={() => setAttempt((value) => value + 1)}>{zhCN.common.retry}</button></p>
+    {failed ? <div className="admin-command-notice"><Notice kind="danger" as="div"><span>{t.recentUnavailable}</span><Button variant="secondary" size="sm" icon="refresh" onClick={() => setAttempt((value) => value + 1)}>{zhCN.common.retry}</Button></Notice></div>
       : items === null ? <p aria-live="polite">{t.recentLoading}</p>
         : items.length === 0 ? <p>{t.recentEmpty}</p>
-          : <ul>{items.map((item) => <li key={item.id}>
+          : <ul className="stagger">{items.map((item, index) => <li key={item.id} style={{ '--i': index } as CSSProperties}>
             <Link href={`/app?id=${encodeURIComponent(item.id)}&mode=${item.percent === null ? 'edit' : 'stitch'}`} aria-label={t.resumeAria(item.percent === null ? t.resumeEdit : t.resumeStitch, item.name)}>
               <div className="recent-design-preview">{item.thumbnail
                 // eslint-disable-next-line @next/next/no-img-element

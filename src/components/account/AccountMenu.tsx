@@ -2,10 +2,11 @@
 
 /** 账号菜单（ticket 17）：登录态显示 + 重发验证 + 修改密码 + 注销账号 + 退出登录。 */
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema, passwordSchema, usernameSchema } from '@/lib/schemas';
 import Modal from '@/components/ui/Modal';
+import Button, { ButtonLink } from '@/components/ui/Button';
+import Notice from '@/components/ui/Notice';
 import type { DoupuApi, MeInfo } from '@/lib/sync/api';
 import { LIMITS } from '@/lib/appInfo';
 import { track } from '@/lib/analytics/client';
@@ -66,9 +67,9 @@ export function ChangePasswordDialog({
         e.preventDefault();
         void submit();
       }}
-      className="flex flex-col gap-2"
+      className="modal-form"
     >
-      <h3 className="text-sm font-medium">{t.changePasswordTitle}</h3>
+      <h3 className="modal-title">{t.changePasswordTitle}</h3>
       <input
         type="password"
         aria-label={t.currentPassword}
@@ -99,18 +100,10 @@ export function ChangePasswordDialog({
         placeholder={t.confirmPassword}
         className="input-field"
       />
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
-      <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="btn-outline btn-sm">
-          {zhCN.designs.cancel}
-        </button>
-        <button type="submit" disabled={busy} className="btn-primary btn-sm">
-          {zhCN.designs.save}
-        </button>
+      {error && <Notice kind="danger">{error}</Notice>}
+      <div className="modal-actions">
+        <Button variant="quiet" onClick={onClose} disabled={busy}>{zhCN.designs.cancel}</Button>
+        <Button type="submit" variant="primary" icon="check" loading={busy}>{zhCN.designs.save}</Button>
       </div>
     </form>
   );
@@ -154,10 +147,10 @@ export function DeleteAccountDialog({
         e.preventDefault();
         void submit();
       }}
-      className="flex flex-col gap-2"
+      className="modal-form"
     >
-      <h3 className="text-sm font-medium text-danger">{t.deleteAccountTitle}</h3>
-      <p className="text-sm text-ink-soft">{t.deleteAccountHint}</p>
+      <h3 className="modal-title is-danger">{t.deleteAccountTitle}</h3>
+      <p className="modal-copy">{t.deleteAccountHint}</p>
       <input
         type="password"
         aria-label={t.passwordLabel}
@@ -168,18 +161,10 @@ export function DeleteAccountDialog({
         placeholder={t.passwordLabel}
         className="input-field"
       />
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
-      <div className="mt-1 flex justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={busy} className="btn-outline btn-sm">
-          {zhCN.designs.cancel}
-        </button>
-        <button type="submit" disabled={busy || !password} className="btn-danger-outline">
-          {t.deleteConfirm}
-        </button>
+      {error && <Notice kind="danger">{error}</Notice>}
+      <div className="modal-actions">
+        <Button variant="quiet" onClick={onClose} disabled={busy}>{zhCN.designs.cancel}</Button>
+        <Button type="submit" variant="dangerSolid" icon="trash" disabled={!password} loading={busy}>{t.deleteConfirm}</Button>
       </div>
     </form>
   );
@@ -278,7 +263,7 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
     return (
       <section className="account-menu account-guest">
         <div className="account-section-heading"><span className="account-section-icon" aria-hidden="true">{zhCN.app.name.charAt(0)}</span><div><h2>{t.guestTitle}</h2><p>{t.guestHint}</p></div></div>
-        <div className="account-button-row"><Link href="/login" className="btn-primary">{t.login}</Link><Link href="/register" className="btn-outline">{t.register}</Link></div>
+        <div className="account-button-row"><ButtonLink variant="primary" icon="user" href="/login">{t.login}</ButtonLink><ButtonLink variant="secondary" href="/register">{t.register}</ButtonLink></div>
       </section>
     );
   }
@@ -296,42 +281,44 @@ export default function AccountMenu({ api, me, onAuthChanged }: Props) {
       {me.state === 'unverified' && (
         <section className="account-form-section">
           <div className="account-section-heading"><div><h2>{t.unverified}</h2><p>{t.unverifiedHint}</p></div></div>
-          <input type="email" aria-label={t.resendEmailLabel} value={resendEmail} onChange={(e) => setResendEmail(e.target.value)} placeholder={t.resendEmailLabel} className="input-field" />
-          <button type="button" onClick={() => void resend()} disabled={cooldown > 0 || resendBusy} className="btn-outline">
-            {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
-          </button>
+          <div className="account-field-row">
+            <input type="email" aria-label={t.resendEmailLabel} value={resendEmail} onChange={(e) => setResendEmail(e.target.value)} placeholder={t.resendEmailLabel} className="input-field" />
+            <Button variant="secondary" icon="send" onClick={() => void resend()} disabled={cooldown > 0} loading={resendBusy}>
+              {cooldown > 0 ? zhCN.authPages.cooldown(cooldown) : t.resend}
+            </Button>
+          </div>
         </section>
       )}
-      {resendSent && me.state === 'unverified' && <span role="status" className="text-xs text-success">{t.resendSent}</span>}
-      {resendError && <span role="alert" className="text-xs text-danger">{resendError}</span>}
+      {resendSent && me.state === 'unverified' && <Notice kind="success" compact>{t.resendSent}</Notice>}
+      {resendError && <Notice kind="danger" compact>{resendError}</Notice>}
 
       {me.state === 'verified' && (
         <>
           <section className="account-form-section">
             <div className="account-section-heading"><div><h2>{t.profileTitle}</h2><p>{t.profileHint}</p></div></div>
-            <label htmlFor="account-username">{t.username}</label>
+            <label htmlFor="account-username" className="field-label">{t.username}</label>
             <div className="account-field-row">
               <input id="account-username" className="input-field" value={username} disabled={profileBusy} onChange={(event) => setUsername(event.target.value)} maxLength={LIMITS.usernameLength} placeholder={t.username} />
-              <button type="button" onClick={() => void saveProfile()} disabled={profileBusy} className="btn-primary">{t.saveUsername}</button>
+              <Button variant="primary" icon="check" onClick={() => void saveProfile()} loading={profileBusy}>{t.saveUsername}</Button>
             </div>
-            {profileMessage && <span role="status" className="text-xs text-ink-soft">{profileMessage}</span>}
+            {profileMessage && <Notice kind="info" compact role="status">{profileMessage}</Notice>}
           </section>
           <section className="account-action-section">
             <div className="account-section-heading"><div><h2>{t.securityTitle}</h2><p>{t.securityHint}</p></div></div>
             <div className="account-button-row">
-              <button type="button" onClick={() => setShowPassword(true)} className="btn-outline">{t.changePassword}</button>
-              <button type="button" onClick={() => void logout()} disabled={logoutBusy} className="btn-outline">{t.logout}</button>
+              <Button variant="secondary" icon="lock" onClick={() => setShowPassword(true)}>{t.changePassword}</Button>
+              <Button variant="secondary" icon="log-out" onClick={() => void logout()} loading={logoutBusy}>{t.logout}</Button>
             </div>
           </section>
           <section className="account-danger-section">
             <div className="account-section-heading"><div><h2>{t.dangerTitle}</h2><p>{t.deleteAccountHint}</p></div></div>
-            <button type="button" onClick={() => setShowDelete(true)} className="btn-danger-outline">{t.deleteAccount}</button>
+            <Button variant="danger" icon="trash" onClick={() => setShowDelete(true)}>{t.deleteAccount}</Button>
           </section>
         </>
       )}
-      {me.state === 'unverified' && <button type="button" onClick={() => void logout()} disabled={logoutBusy} className="btn-outline">{t.logout}</button>}
-      {actionError && <p role="alert" className="notice notice-danger">{actionError}</p>}
-      {actionMessage && <p role="status" className="notice notice-success">{actionMessage}</p>}
+      {me.state === 'unverified' && <div className="account-button-row"><Button variant="secondary" icon="log-out" onClick={() => void logout()} loading={logoutBusy}>{t.logout}</Button></div>}
+      {actionError && <Notice kind="danger" className="animate-rise">{actionError}</Notice>}
+      {actionMessage && <Notice kind="success" className="animate-rise">{actionMessage}</Notice>}
 
       {showPassword && (
         <Modal label={t.changePasswordTitle} onClose={() => { if (!dialogBusy.current) setShowPassword(false); }} panelClassName="max-w-sm">

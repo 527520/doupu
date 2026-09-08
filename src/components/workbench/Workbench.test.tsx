@@ -807,9 +807,13 @@ describe('Workbench 项目操作栏', () => {
     const panel = screen.getByRole('region', { name: zhCN.nav.more });
     const login = within(panel).getByRole('link', { name: zhCN.nav.login });
     const register = within(panel).getByRole('link', { name: zhCN.nav.registerAccount });
-    expect(login).toHaveClass('btn-primary', 'workspace-overflow-action');
-    expect(register).toHaveClass('btn-outline', 'workspace-overflow-action');
+    // 菜单项是统一的 44px 行（图标 + 文字），登录 / 注册 / 重新上传纵向排列，重新上传前有分隔线。
+    expect(login).toHaveAttribute('href', '/login');
+    expect(register).toHaveAttribute('href', '/register');
+    expect(login.querySelector('svg')).toBeTruthy();
+    expect(panel.querySelector('hr')).toBeTruthy();
     expect(within(panel).getByRole('button', { name: zhCN.workbench.restart })).toBeTruthy();
+    expect(login.compareDocumentPosition(register) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('登录后不展示邮箱，并把重新上传与保存并列放在项目操作栏', async () => {
@@ -1236,8 +1240,10 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 
   it('不上传图片也能进入工作台：空白图纸落在修补页签，参数锁定但可导出', async () => {
     render(<Workbench storage={new FakeStorage()} />);
-    // 上传页同时给出空白起稿入口
-    const blank = await screen.findByRole('button', { name: zhCN.workbench.blankPreset(1, 29) });
+    // 上传页同时给出空白起稿入口：默认 1 板，摘要说清尺寸，唯一主按钮「创建空白图纸」
+    const blank = await screen.findByRole('button', { name: zhCN.workbench.blankCreate });
+    expect(screen.getByRole('radio', { name: zhCN.workbench.blankBoardsOption(1) })).toBeChecked();
+    expect(screen.getByText(/将创建 29 × 29 格/)).toBeTruthy();
     fireEvent.click(blank);
 
     // 进入工作台，且直接在「修补」页签（空白图纸的第一步一定是画）
@@ -1260,7 +1266,8 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     const profileSelect = selectField(zhCN.params.boardProfile);
     expect(profileSelect.value).toBe('2.6mm-50');
     await chooseValue(zhCN.params.boardProfile, '2.6mm-52');
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 52) }));
+    expect(screen.getByText(/将创建 52 × 52 格/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankCreate }));
     await screen.findByRole('tab', { name: zhCN.workbench.editTab });
     fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.save }));
 
@@ -1384,7 +1391,7 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
     clickGuestRestart();
 
     await screen.findByLabelText(zhCN.upload.inputLabel);
-    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankPreset(1, 29) }));
+    fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.blankCreate }));
     await screen.findByRole('tab', { name: zhCN.workbench.editTab });
     expect((selectField(zhCN.params.kitTier)).value).toBe('0');
   });

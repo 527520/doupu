@@ -171,10 +171,11 @@ describe('GenerationParamsPanel', () => {
     fireEvent.click(screen.getByText('高级选项'));
     expect(screen.getByRole('group',{name:'取样模式'})).toBeTruthy();
     expect(screen.getByText('背景去除')).toBeTruthy();
-    // 容差仅当背景去除开启时出现
-    expect(screen.queryByLabelText(/背景容差/)).toBeNull();
+    // 容差仅当背景去除开启时出现：滑杆 + 同行的数字输入都带这个名字
+    expect(screen.queryByRole('slider', { name: /背景容差/ })).toBeNull();
     fireEvent.click(screen.getByText('背景去除'));
-    expect(screen.getByLabelText(/背景容差/)).toBeTruthy();
+    expect(screen.getByRole('slider', { name: /背景容差/ })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: /背景容差/ })).toBeTruthy();
   });
 
   it('背景去除可显式指定背景原型颜色并防抖上抛', () => {

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
@@ -126,13 +127,9 @@ function VerifyInner() {
               onChange={(e) => setResendEmail(e.target.value)}
               required
             />
-            <button
-              type="submit"
-              disabled={resendPending || cooldown > 0}
-              className="btn-primary w-full"
-            >
+            <Button type="submit" variant="primary" className="w-full" disabled={cooldown > 0} loading={resendPending}>
               {cooldown > 0 ? t.cooldown(cooldown) : t.submit}
-            </button>
+            </Button>
             {resendDone && <p className="text-sm text-success">{t.resendSent}</p>}
           </form>
         </>

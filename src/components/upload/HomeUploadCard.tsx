@@ -31,10 +31,11 @@ export default function HomeUploadCard() {
     <section className="studio-panel home-start-card">
       {/* 不加 capture：移动端带 capture 只能开摄像头、选不了相册（真机验收回归）。 */}
       <UploadDropzone onValid={onValid} disabled={handing} prominent />
-      <Link href="/app?new=1#blank-start" className="home-blank-action">
-        <span className="home-blank-icon"><Icon name="blank" size={18} /></span>
+      {/* 次级入口做成与上传落区同体量的卡片：图标 + 标题 + 说明 + 箭头，hover 上浮，而不是一条列表项。 */}
+      <Link href="/app?new=1#blank-start" className="home-blank-action surface-card is-interactive">
+        <span className="home-blank-icon"><Icon name="blank" size={20} /></span>
         <span><strong>{zhCN.home.blankStart}</strong><small>{zhCN.home.blankHint}</small></span>
-        <Icon name="chevron-right" size={18} />
+        <Icon name="arrow" size={18} />
       </Link>
     </section>
   );

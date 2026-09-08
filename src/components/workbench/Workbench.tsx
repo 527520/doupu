@@ -1,5 +1,7 @@
 'use client';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import SegmentedControl from '@/components/ui/SegmentedControl';
+import Button from '@/components/ui/Button';
 
 /**
  * 工作台（T12）：选图→整图首版→可选裁剪 + 生成管线 + 编辑器/预览 + 导出 + 本地保存。
@@ -65,6 +67,7 @@ import {
 
 /** 空白起稿的尺寸档（H-2）：按当前制作规格的整板倍数提供。 */
 const BLANK_PRESETS = [1, 2, 3] as const;
+type BlankBoards = typeof BLANK_PRESETS[number];
 import { disposeGenerateWorker, prepareGenerationSource, runGenerate } from '@/lib/engine/runGenerate';
 import {
   selectCommittedSnapshot,
@@ -360,6 +363,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const [cloudSaveState, setCloudSaveState] = useState<CloudSaveState>('pending');
   const [storageReady, setStorageReady] = useState(false);
   const [tab, setTab] = useState<Tab>('preview');
+  const [blankBoards, setBlankBoards] = useState<BlankBoards>(1);
   const [mobilePanel, setMobilePanel] = useState<'params' | 'colors' | 'export'>('params');
   const mobileToolSheetRef = useRef<HTMLElement>(null);
   const [paletteIntent, setPaletteIntent] = useState<{ designId: string; value: string } | null>(null);
@@ -947,6 +951,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
    * 空白起稿（H-2）：不经过上传与生成，直接把一张全透明图纸提交进会话。
    * 没有生成源，因此参数面板保持锁定（改参数需要原图），但可以修补、换色板、导出。
    */
+  const blankSummary = useMemo(() => {
+    const spec = getBoardProfile(boardProfile);
+    return t.blankSummary.replaceAll('{size}', String(blankBoards * spec.boardCols)).replace('{palette}', paletteDisplayName).replace('{spec}', spec.displayName);
+  }, [blankBoards, boardProfile, paletteDisplayName, t]);
   const startBlank = useCallback((width: number, height: number): void => {
     if (rebindRestoredSourceRef.current) return;
     clearOriginalSource();
@@ -1945,10 +1953,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             空白起稿（H-2）：此前进工作台的唯一入口是「上传一张图」，
             想从零摆一个像素图案（照着别人的图纸摆、画图标或文字）没有任何入口。
           */}
-          {!pattern && <section id="blank-start" aria-label={t.blankTitle} className="studio-panel flex flex-col gap-2 p-5 text-sm">
-            <p className="font-medium text-ink">{t.blankTitle}</p>
-            <p className="text-xs text-ink-soft">{t.blankHint}</p>
-            <div className="blank-start-controls">
+          {!pattern && <section id="blank-start" aria-label={t.blankTitle} className="studio-panel blank-start">
+            <header className="blank-start-heading"><span className="home-blank-icon" aria-hidden="true"><Icon name="blank" size={18} /></span><div><h2>{t.blankTitle}</h2><p>{t.blankHint}</p></div></header>
+            {/* 一行四个 44 高的字段：色板品牌 / 系列 / 制作规格 / 板数；色板信息卡在下一行整行展开。 */}
+            <div className="form-row blank-start-controls">
               <PalettePicker
                 options={paletteOptions}
                 value={selectedPalette}
@@ -1956,25 +1964,19 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 onSelect={handlePaletteSelect}
                 className="blank-palette-picker"
               />
-                <ResponsiveSelect label={zhCN.params.boardProfile}
-                  id="blank-board-profile"
-                  value={boardProfile}
-                  disabled={busy || generating}
-                  onValueChange={handleBoardProfileSelect} options={boardProfileOptions}
-                />
+              <ResponsiveSelect label={zhCN.params.boardProfile}
+                id="blank-board-profile"
+                value={boardProfile}
+                disabled={busy || generating}
+                onValueChange={handleBoardProfileSelect} options={boardProfileOptions}
+              />
+              <SegmentedControl showLabel label={t.blankBoards} value={String(blankBoards)} disabled={busy} onValueChange={(value) => setBlankBoards(Number(value) as BlankBoards)}
+                options={BLANK_PRESETS.map((boards) => ({ value: String(boards), label: t.blankBoardsOption(boards) }))} />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {BLANK_PRESETS.map((boards) => (
-                <button
-                  key={boards}
-                  type="button"
-                  onClick={() => startBlank(boards * boardSpec.boardCols, boards * boardSpec.boardRows)}
-                  disabled={busy}
-                  className="btn-outline btn-sm"
-                >
-                  {t.blankPreset(boards, boards * boardSpec.boardCols)}
-                </button>
-              ))}
+            {/* 摘要说清将要创建什么，主按钮只有一个：之前三个尺寸 chip 都是次级样式，没人知道点哪个才是「开始」。 */}
+            <div className="blank-start-foot">
+              <p className="blank-start-summary" role="status">{blankSummary}</p>
+              <Button variant="primary" icon="blank" disabled={busy} onClick={() => startBlank(blankBoards * boardSpec.boardCols, blankBoards * boardSpec.boardRows)}>{t.blankCreate}</Button>
             </div>
           </section>}
         </>

@@ -4,6 +4,7 @@
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
@@ -146,9 +147,9 @@ export default function RegisterPage() {
             required
           />
         </label>
-        <button type="submit" disabled={pending} className="btn-primary w-full">
-          {pending ? '…' : t.registerSubmit}
-        </button>
+        <Button type="submit" variant="primary" className="w-full" loading={pending}>
+          {t.registerSubmit}
+        </Button>
         <div className="text-center text-sm">
           <Link href={authPageHref('login', returnTo)} className="link-soft">
             {t.hasAccount}

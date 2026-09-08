@@ -7,6 +7,9 @@ import Switch from '@/components/ui/Switch';
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import Notice from '@/components/ui/Notice';
+import Chip from '@/components/ui/Chip';
+import Disclosure from '@/components/ui/Disclosure';
+import NumberField from '@/components/ui/NumberField';
 import PalettePicker, { type PalettePickerOption } from '@/components/palettes/PalettePicker';
 import type { BoardProfileId, GenerationParams } from '@/lib/types';
 import { LIMITS } from '@/lib/appInfo';
@@ -192,38 +195,28 @@ export default function GenerationParamsPanel({
   };
 
   return (
-    <section aria-label={t.title} className="card-surface generation-params-panel flex flex-col gap-4 p-4">
+    <section aria-label={t.title} className="card-surface generation-params-panel params-panel">
       <fieldset disabled={disabled} className="contents">
       <div>
-        <label htmlFor="param-width" className="mb-1 block text-sm font-medium text-ink-soft">
+        <label htmlFor="param-width" className="field-label">
           {t.targetWidth}（{LIMITS.targetWidth.min}–{LIMITS.targetWidth.max}）
         </label>
         {/*
           板数快捷档（F-2）：用户买豆板是按块买的，脑子里想的是「两块板那么大」，
           而不是「58 格」。这里给常用板数一键设定，仍保留滑块做微调。
         */}
-        <div className="mb-2 flex flex-wrap items-center gap-1" role="group" aria-label={t.boardPresetGroup}>
+        <div className="params-presets" role="group" aria-label={t.boardPresetGroup}>
           {BOARD_PRESETS.map((boards) => {
             const width = boards * boardSize;
             if (width > LIMITS.targetWidth.max) return null;
-            const active = local.targetWidth === width;
             return (
-              <button
-                key={boards}
-                type="button"
-                aria-pressed={active}
-                onClick={() => {
-                  patch({ targetWidth: width });
-                  setWidthText(String(width));
-                }}
-                className={active ? 'btn-primary btn-xs' : 'btn-outline btn-xs'}
-              >
+              <Chip key={boards} size="xs" pressed={local.targetWidth === width} onClick={() => { patch({ targetWidth: width }); setWidthText(String(width)); }}>
                 {t.boardPreset(boards, width)}
-              </button>
+              </Chip>
             );
           })}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="params-range-row">
           <input
             id="param-width"
             type="range"
@@ -248,7 +241,7 @@ export default function GenerationParamsPanel({
             onChange={(e) => setWidthText(e.target.value)}
             onBlur={commitWidth}
             onKeyDown={(e) => e.key === 'Enter' && commitWidth()}
-            className="w-20 max-w-full shrink-0 input-compact"
+            className="input-compact params-range-value"
           />
         </div>
         {widthError && (
@@ -257,7 +250,7 @@ export default function GenerationParamsPanel({
           </Notice>
         )}
         {rows && (
-          <p className="mt-1 text-xs text-ink-soft">{t.sizeHint(local.targetWidth, rows.rows)}</p>
+          <p className="params-hint">{t.sizeHint(local.targetWidth, rows.rows)}</p>
         )}
         {rows?.clamped && (
           <Notice kind="warning" compact className="mt-2">
@@ -267,10 +260,10 @@ export default function GenerationParamsPanel({
       </div>
 
       <div>
-        <label htmlFor="param-colors" className="mb-1 block text-sm font-medium text-ink-soft">
+        <label htmlFor="param-colors" className="field-label">
           {t.targetColorCount}（{LIMITS.targetColorCount.min}–{LIMITS.targetColorCount.max}）
         </label>
-        <div className="flex items-center gap-3">
+        <div className="params-range-row">
           <input
             id="param-colors"
             type="range"
@@ -295,7 +288,7 @@ export default function GenerationParamsPanel({
             onChange={(e) => setColorsText(e.target.value)}
             onBlur={commitColors}
             onKeyDown={(e) => e.key === 'Enter' && commitColors()}
-            className="w-20 max-w-full shrink-0 input-compact"
+            className="input-compact params-range-value"
           />
         </div>
         {colorsError && (
@@ -304,33 +297,23 @@ export default function GenerationParamsPanel({
           </Notice>
         )}
         {/* D-10：新手不知道「颜色数」意味着要买多少种豆子，也不知道多少算合适。 */}
-        <p className="mt-1 text-xs text-ink-soft">{t.colorCountHint}</p>
+        <p className="params-hint">{t.colorCountHint}</p>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setAdvancedOpen((v) => !v)}
-        aria-expanded={advancedOpen}
-        className="link-soft text-left text-sm"
-      >
-        {t.advanced}
-      </button>
-
-      {advancedOpen && (
-        <div className="flex flex-col gap-4 rounded-xl border border-lilac/30 bg-lilac-soft/40 p-3">
-          <div className="text-sm">
-            <Switch label={t.dithering} checked={local.dithering} onChange={checked=>patch({dithering:checked})} describedBy="param-dithering-hint" />
-            <p id="param-dithering-hint" className="mt-1 text-xs text-ink-soft">{t.ditheringHint}</p>
+      {/* 高级选项是标准折叠（带 chevron 与展开动效），面板是下沉井；里面全是 36 档工具行。 */}
+      <Disclosure compact icon="sliders" summary={t.advanced} expanded={advancedOpen} onExpandedChange={setAdvancedOpen} className="params-advanced">
+        <div className="params-advanced-body surface-sunken">
+          <div>
+            <Switch compact label={t.dithering} checked={local.dithering} onChange={checked=>patch({dithering:checked})} describedBy="param-dithering-hint" />
+            <p id="param-dithering-hint" className="params-hint">{t.ditheringHint}</p>
           </div>
           <div>
-            <p className="mb-1 block text-sm text-ink-soft">
-              {t.sampleMode}
-            </p>
-            <SegmentedControl label={t.sampleMode}
+            <SegmentedControl showLabel size="sm" label={t.sampleMode}
               value={local.mode}
               onValueChange={(mode) => patch({ mode: mode as 'dominant' | 'average' })}
               options={[{value:'dominant',label:t.sampleDominant},{value:'average',label:t.sampleAverage}]}
             />
+            <p className="params-hint">{t.sampleModeHint}</p>
           </div>
 
           {(
@@ -340,64 +323,64 @@ export default function GenerationParamsPanel({
             ] as const
           ).map(([key, label, min, max]) => (
             <div key={key}>
-              <label htmlFor={`param-${key}`} className="mb-1 block text-sm text-ink-soft">
-                {label}（{local[key]}）
-              </label>
-              <input
-                id={`param-${key}`}
-                type="range"
-                min={min}
-                max={max}
-                step={1}
-                value={local[key]}
-                onChange={(e) => patch({ [key]: Number(e.target.value) } as Partial<GenerationParams>)}
-                className="w-full"
-              />
+              <label htmlFor={`param-${key}`} className="field-label">{label}</label>
+              <div className="params-range-row">
+                <input
+                  id={`param-${key}`}
+                  type="range"
+                  min={min}
+                  max={max}
+                  step={1}
+                  value={local[key]}
+                  onChange={(e) => patch({ [key]: Number(e.target.value) } as Partial<GenerationParams>)}
+                />
+                <NumberField compact hideLabel label={label} value={local[key]} min={min} max={max} onValueChange={(value) => { if (value !== undefined) patch({ [key]: value } as Partial<GenerationParams>); }} className="params-range-number" />
+              </div>
             </div>
           ))}
 
-          <Switch label={t.backgroundRemoval} checked={local.backgroundRemoval} onChange={checked=>patch({backgroundRemoval:checked})} />
+          <Switch compact label={t.backgroundRemoval} checked={local.backgroundRemoval} onChange={checked=>patch({backgroundRemoval:checked})} />
 
           {local.backgroundRemoval && (
-            <div className="flex flex-col gap-3">
+            <div className="params-stack">
               <div>
-                <label htmlFor="param-bgtolerance" className="mb-1 block text-sm text-ink-soft">
-                  {t.bgTolerance}（{local.bgTolerance}）
-                </label>
-                <input
-                  id="param-bgtolerance"
-                  type="range"
-                  min={0}
-                  max={40}
-                  step={1}
-                  value={local.bgTolerance}
-                  onChange={(e) => patch({ bgTolerance: Number(e.target.value) })}
-                  className="w-full"
-                />
+                <label htmlFor="param-bgtolerance" className="field-label">{t.bgTolerance}</label>
+                <div className="params-range-row">
+                  <input
+                    id="param-bgtolerance"
+                    type="range"
+                    min={0}
+                    max={40}
+                    step={1}
+                    value={local.bgTolerance}
+                    onChange={(e) => patch({ bgTolerance: Number(e.target.value) })}
+                  />
+                  <NumberField compact hideLabel label={t.bgTolerance} value={local.bgTolerance} min={0} max={40} onValueChange={(value) => { if (value !== undefined) patch({ bgTolerance: value }); }} className="params-range-number" />
+                </div>
               </div>
-              <Switch label={t.manualBackground} checked={local.backgroundPrototype !== null && local.backgroundPrototype !== undefined} onChange={checked=>patch({backgroundPrototype:checked?'#FFFFFF':null})} />
+              <Switch compact label={t.manualBackground} checked={local.backgroundPrototype !== null && local.backgroundPrototype !== undefined} onChange={checked=>patch({backgroundPrototype:checked?'#FFFFFF':null})} />
               {local.backgroundPrototype && (
                 <>
-                  <label className="flex items-center justify-between gap-3 text-sm text-ink-soft">
-                    {t.backgroundPrototype}
+                  <label className="params-color-row">
+                    <span className="field-label">{t.backgroundPrototype}</span>
                     <input
                       type="color"
                       aria-label={t.backgroundPrototype}
                       value={local.backgroundPrototype}
                       onChange={(event) => patch({ backgroundPrototype: event.target.value.toUpperCase() })}
-                      className="h-9 w-14 rounded-lg border border-lilac/50 bg-white p-1"
+                      className="params-color-input"
                     />
                   </label>
                   {backgroundSampleSource && (
-                    <div className="flex flex-col gap-1 text-xs text-ink-soft">
-                      <span>{t.backgroundPickHint}</span>
+                    <div className="params-sampler">
+                      <span className="params-hint">{t.backgroundPickHint}</span>
                       <canvas
                         ref={samplerRef}
                         width={samplerWidth}
                         height={samplerHeight}
                         aria-label={t.backgroundSampler}
                         onClick={sampleBackground}
-                        className="max-h-40 max-w-full cursor-crosshair rounded-lg border border-lilac/50"
+                        className="params-sampler-canvas"
                       />
                     </div>
                   )}
@@ -406,9 +389,9 @@ export default function GenerationParamsPanel({
             </div>
           )}
         </div>
-      )}
+      </Disclosure>
       </fieldset>
-      <div className="mb-2 text-sm">
+      <div>
         {/*
           色板选择独立于 fieldset 的禁用（H-1）：换色板走图纸级重映射，不需要原图，
           所以「没有生成源」时参数锁定但色板仍可换——这正是此前导入的项目文件
@@ -422,16 +405,16 @@ export default function GenerationParamsPanel({
           className="generation-palette-picker"
         />
       </div>
-      <div className="mb-2 text-sm">
+      <div>
         <ResponsiveSelect label={t.boardProfile}
           id="param-board-profile"
           value={selectedBoardProfile}
           disabled={paletteLocked}
           onValueChange={(value) => onBoardProfileSelect(value as BoardProfileId)} options={boardProfileOptions}
         />
-        <p className="mt-1 text-xs text-ink-soft">{t.boardProfileHint}</p>
+        <p className="params-hint">{t.boardProfileHint}</p>
       </div>
-      <div className="mb-2 text-sm">
+      <div>
         {/*
           套装档位（H-3）：内置色板是「品牌一共有多少色」，但用户手里常常只有
           一盒 24/48 色套装。不限制时生成结果里会出现买不到的色号——这是用户
@@ -444,7 +427,7 @@ export default function GenerationParamsPanel({
           onValueChange={(value) => onKitTierChange?.(Number(value))}
           options={availableKitTiers.map(tier=>({value:String(tier),label:tier===0?t.kitTierAll(paletteColorCount):t.kitTierOption(tier)}))}
         />
-        <p className="mt-1 text-xs text-ink-soft">{t.kitTierHint}</p>
+        <p className="params-hint">{t.kitTierHint}</p>
       </div>
     </section>
   );

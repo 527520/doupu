@@ -1,7 +1,7 @@
 # 06 工作台 / 首页 / 色板 / 账号 / 登录
 
 Status: ready-for-agent
-Completion: not-started
+Completion: complete
 
 ## 范围
 

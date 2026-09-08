@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
+import Button from '@/components/ui/Button';
 import FormError from '@/components/auth/FormError';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
@@ -96,9 +97,9 @@ export default function LoginPage() {
             required
           />
         </label>
-        <button type="submit" disabled={pending} className="btn-primary w-full">
-          {pending ? '…' : t.loginSubmit}
-        </button>
+        <Button type="submit" variant="primary" className="w-full" loading={pending}>
+          {t.loginSubmit}
+        </Button>
         {adminLogin && <p className="text-sm text-ink-soft">{t.adminAccountNotice}</p>}
         <div className="flex justify-between text-sm">
           {next && !adminLogin && (

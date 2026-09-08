@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AuthShell from '@/components/auth/AuthShell';
+import Button from '@/components/ui/Button';
 import Notice from '@/components/ui/Notice';
 import { zhCN } from '@/messages/zh-CN';
 import { emailSchema } from '@/lib/schemas';
@@ -88,13 +89,9 @@ export default function ForgotPasswordPage() {
             required
           />
         </label>
-        <button
-          type="submit"
-          disabled={pending || cooldown > 0}
-          className="btn-primary w-full"
-        >
+        <Button type="submit" variant="primary" className="w-full" disabled={cooldown > 0} loading={pending}>
           {cooldown > 0 ? t.cooldown(cooldown) : t.submit}
-        </button>
+        </Button>
         <div className="text-center text-sm">
           <Link href={authPageHref('login', returnTo)} className="link-soft">
             {t.hasAccount}

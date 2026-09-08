@@ -402,6 +402,10 @@ describe('DesignsView', () => {
   it('空态：无设计时显示引导', async () => {
     render(<DesignsView storageOverride={new FakeStorage()} apiOverride={new FakeApi()} />);
     await screen.findByText('还没有设计');
-    expect(screen.getByRole('link', { name: '新建设计' })).toBeTruthy();
+    // 页头一个主入口，钉板空态里再给一个就近的主按钮，两处都指向新建。
+    const links = screen.getAllByRole('link', { name: '新建设计' });
+    expect(links).toHaveLength(2);
+    for (const link of links) expect(link).toHaveAttribute('href', '/app?new=1');
+    expect(screen.getByText('还没有设计').closest('.empty-state')).toBeTruthy();
   });
 });
