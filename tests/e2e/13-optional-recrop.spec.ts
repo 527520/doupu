@@ -49,7 +49,7 @@ test('整图首版 → 取消不更新 → 确认自动更新 → 刷新缺原�
   await expect(beads(page, 10000)).toBeVisible();
   await revealMissingOriginalHelp(page);
   await page.getByRole('button', { name: '重新选择图片', exact: true }).click();
-  await page.getByRole('button', { name: '取消选图，返回原图纸' }).click();
+  await page.getByRole('button', { name: '返回原图纸' }).click();
   await expect(beads(page, 10000)).toBeVisible();
   await revealMissingOriginalHelp(page);
   await page.getByRole('button', { name: '重新选择图片', exact: true }).click();
@@ -83,7 +83,7 @@ test('手工修改：取消裁剪和拒绝覆盖均保留，确认后可以撤�
   await cropDialog(page).getByRole('button', { name: '确认并更新' }).click();
   await warning.getByRole('button', { name: '重新生成', exact: true }).click();
   await expect(beads(page, 10000)).toBeVisible();
-  await page.getByRole('button', { name: '撤销上一步自动改动，恢复上一版图纸' }).click();
+  await page.getByRole('button', { name: '撤销自动改动' }).click();
   await expect(beads(page, 6299)).toBeVisible();
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByText('本地：已保存', { exact: true }).first()).toBeVisible();

@@ -14,11 +14,11 @@ it('keeps all high risk controls tied to one explicitly selected and confirmed u
   fireEvent.change(screen.getByRole('textbox', { name: '再次输入该账号编号以确认' }), { target: { value: user.userId } });
   vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
   fireEvent.click(screen.getByRole('button', { name: '暂停账号' }));
-  await screen.findByRole('button', { name: '重试确认上次操作' });
+  await screen.findByRole('button', { name: '重试确认' });
   expect(screen.getByRole('textbox', { name: '操作理由' })).toHaveValue('多次垃圾推广');
   expect(screen.getByRole('textbox', { name: '再次输入该账号编号以确认' })).toBeDisabled();
   vi.mocked(fetch).mockResolvedValueOnce(new Response('{}'));
-  fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
+  fireEvent.click(screen.getByRole('button', { name: '重试确认' }));
   await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
   const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH');
   expect(writes).toHaveLength(2); expect(writes[0][0]).toBe(writes[1][0]);

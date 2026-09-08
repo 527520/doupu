@@ -1,7 +1,7 @@
 # 07 文案缩短
 
 Status: ready-for-agent
-Completion: not-started
+Completion: complete
 
 ## 范围
 

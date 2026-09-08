@@ -288,7 +288,7 @@ describe('Workbench 全流程', () => {
     try {
       await screen.findByDisplayValue('准确的目标设计');
       expect(selectPaletteSeries().value).toBe('builtin:MARD');
-      fireEvent.click(screen.getByRole('button', { name: '应用到这张图纸' }));
+      fireEvent.click(screen.getByRole('button', { name: '应用到图纸' }));
       expect(selectPaletteSeries().value).toBe(value);
       expect(new URLSearchParams(window.location.search).has('palette')).toBe(false);
       fireEvent.click(screen.getByRole('button', { name: zhCN.workbench.undoRegeneration }));
@@ -305,7 +305,7 @@ describe('Workbench 全流程', () => {
     const view = render(<Workbench storage={storage} />);
     try {
       await screen.findByDisplayValue('其他设计');
-      expect(screen.queryByRole('button', { name: '应用到这张图纸' })).toBeNull();
+      expect(screen.queryByRole('button', { name: '应用到图纸' })).toBeNull();
     } finally { view.unmount(); window.history.replaceState(null, '', '/app'); }
   });
 

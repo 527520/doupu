@@ -31,11 +31,11 @@ describe('review task flow', () => {
     fireEvent.change(screen.getByLabelText('审核理由'), { target: { value: '需要重新审核' } });
     vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
     fireEvent.click(screen.getByRole('button', { name: '批准发布' }));
-    await screen.findByRole('button', { name: '重试确认上次操作' });
+    await screen.findByRole('button', { name: '重试确认' });
     expect(screen.getByLabelText('审核理由')).toHaveValue('需要重新审核');
     expect(screen.getByLabelText('审核理由')).toBeDisabled();
     vi.mocked(fetch).mockResolvedValueOnce(new Response('{}'));
-    fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试确认' }));
     await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
     const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
     expect(writes).toHaveLength(2);

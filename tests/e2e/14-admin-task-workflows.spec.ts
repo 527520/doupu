@@ -67,7 +67,7 @@ test('标签创建丢响应同键恢复，改名停用及具名合并可完成',
   await page.getByLabel('操作理由').fill('人工核对的正式分类');
   await page.locator('.admin-task-detail').getByRole('button', { name: '新建标签', exact: true }).click();
   await expect(page.getByLabel('标签名称', { exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: '重试确认上次操作' }).click();
+  await page.getByRole('button', { name: '重试确认' }).click();
   await expect(page.locator('.admin-object-list button').filter({ hasText: name })).toHaveCount(1);
   expect(writes).toHaveLength(2); expect(writes[0]).toEqual(writes[1]);
   await page.locator('.admin-object-list button').filter({ hasText: name }).click();
@@ -83,9 +83,9 @@ test('标签创建丢响应同键恢复，改名停用及具名合并可完成',
   await page.getByText('合并重复标签', { exact: true }).click();
   expect(target.id).toBeTruthy();
   await selectChoice(page,'合并到标签',`归档 ${suffix}`);
-  await expect(page.getByRole('button', { name: '确认合并标签' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '确认合并' })).toBeDisabled();
   await page.getByRole('checkbox', { name: /我确认将/ }).check();
-  await page.getByRole('button', { name: '确认合并标签' }).click();
+  await page.getByRole('button', { name: '确认合并' }).click();
   await expect(page.locator('.admin-object-list button').filter({ hasText: `新${name}` })).toContainText('已合并');
 });
 
@@ -111,7 +111,7 @@ test('人员二次确认、暂停撤销会话、恢复与角色调整可完成',
     await page.getByRole('button', { name: '恢复账号' }).click(); await expect(entry).toContainText('正常');
     for (const role of ['moderator', 'user']) {
       await entry.click(); await page.getByLabel('操作理由').fill('核对角色调整与会话撤销'); await page.getByLabel('再次输入该账号编号以确认').fill(userId);
-      await selectChoice(page,'调整为',role==='moderator'?'审核员':'用户'); await page.getByRole('button', { name: '确认调整角色' }).click();
+      await selectChoice(page,'调整为',role==='moderator'?'审核员':'用户'); await page.getByRole('button', { name: '确认调整' }).click();
       await expect(entry).toContainText(role === 'moderator' ? '审核员' : '用户');
     }
   } finally { await targetContext.close(); }
@@ -158,12 +158,12 @@ test('具名作品下架恢复与评论锁不绕过内容核查和确认', async
   await expect(detail).toContainText('评论已锁定');
   await page.getByLabel('操作理由').fill('核对后暂时下架作品');
   await page.getByRole('button', { name: '下架作品', exact: true }).click();
-  await expect(page.getByRole('button', { name: '确认下架作品' })).toBeDisabled();
-  await page.getByRole('checkbox', { name: /我已核对/ }).check(); await page.getByRole('button', { name: '确认下架作品' }).click();
+  await expect(page.getByRole('button', { name: '确认下架' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /我已核对/ }).check(); await page.getByRole('button', { name: '确认下架' }).click();
   expect(await page.evaluate(async (id) => (await fetch(`/api/community/works/${id}`)).status, workId)).toBe(404);
   await page.locator('.admin-object-list button').filter({ hasText: title }).click();
-  await page.getByLabel('操作理由').fill('复核已批准版本恢复'); await page.getByRole('button', { name: '恢复已批准版本' }).click();
-  await page.getByRole('checkbox', { name: /我已核对/ }).check(); await page.getByRole('button', { name: '确认恢复作品' }).click();
+  await page.getByLabel('操作理由').fill('复核已批准版本恢复'); await page.getByRole('button', { name: '恢复发布' }).click();
+  await page.getByRole('checkbox', { name: /我已核对/ }).check(); await page.getByRole('button', { name: '确认恢复' }).click();
   await expect(page.locator('.admin-object-list button').filter({ hasText: title })).toContainText('公开可见');
   expect(await page.evaluate(async (id) => (await fetch(`/api/community/works/${id}`)).status, workId)).toBe(200);
 });
@@ -174,7 +174,7 @@ test('审计可检索与查看状态，分析无效筛选和系统未知证据�
   await page.locator('.admin-object-list button').first().click();
   await expect(page.getByRole('heading', { name: '操作前', exact: true })).toBeVisible(); await expect(page.getByRole('heading', { name: '操作后', exact: true })).toBeVisible();
   await page.goto('/admin/analytics?start=invalid'); await expect(page.locator('main [role=alert]')).toContainText('部分查询条件无效');
-  await page.getByRole('link', { name: '重置查询' }).click();
+  await page.getByRole('link', { name: '重置' }).click();
   await expect(page).toHaveURL(/\/admin\/analytics$/); await expect(page.locator('main [role=alert]')).toHaveCount(0);
   await expect(page.locator('.admin-advanced-filters')).not.toHaveAttribute('open');
   await page.goto('/admin/system'); await expect(page.getByText('数据库实际执行时间', { exact: true })).toBeVisible(); await expect(page.getByText('未接入', { exact: true })).toBeVisible();
@@ -193,7 +193,7 @@ test('举报先核查当前评论，隐藏内容和案件结案分别留痕', as
     await entry.click(); await expect(page.locator('.report-material')).toContainText(`E2E人工核查评论${info.project.name}`);
     await page.getByLabel('处置理由').fill('受理并核查当前评论'); await page.getByRole('button', { name: '受理', exact: true }).click();
     await entry.click(); await page.getByLabel('处置理由').fill('核对当前版本后隐藏');
-    await page.getByRole('button', { name: '隐藏当前评论版本' }).click();
+    await page.getByRole('button', { name: '隐藏此版本' }).click();
     await expect(page.locator('.report-material')).toContainText('已隐藏');
     await expect(page.getByRole('button', { name: '结案', exact: true })).toBeDisabled();
     const comments = await reporterPage.evaluate(async (id) => (await (await fetch(`/api/community/works/${id}/comments`)).json()).items, workId);

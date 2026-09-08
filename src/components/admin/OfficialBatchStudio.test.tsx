@@ -22,7 +22,7 @@ it('requires explicit confirmation before replacing still-local files', async ()
   expect(screen.getByText(/first.png/)).toBeInTheDocument(); expect(screen.queryByText(/second.png/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '保留当前任务' }));
   fireEvent.change(input, { target: { files: [new File(['b'], 'second.png', { type: 'image/png' })] } });
-  fireEvent.click(screen.getByRole('button', { name: '释放本地任务并切换' }));
+  fireEvent.click(screen.getByRole('button', { name: '释放并切换' }));
   expect(screen.getByText(/second.png/)).toBeInTheDocument(); expect(screen.queryByText(/first.png/)).toBeNull();
   await waitFor(() => expect(screen.getByText('暂无已保存批次。')).toBeInTheDocument());
 });
@@ -58,5 +58,5 @@ it('locks the selected file set and rejects duplicate starts while batch creatio
   expect(fetcher).toHaveBeenCalledTimes(2);
   await act(async () => complete(new Response('{}', { status: 500 })));
   expect(start).toBeDisabled(); expect(fileInput).toBeDisabled();
-  expect(screen.getByRole('button', { name: '重试确认上次操作' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: '重试确认' })).toBeEnabled();
 });

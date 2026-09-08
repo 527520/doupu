@@ -88,13 +88,13 @@ test('投稿从可信云端预览确认，失败保留草稿并可撤回重提',
     if (withdrawalRequests.length === 1) await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     else await route.fulfill({ response });
   });
-  await item.getByRole('button', { name: '撤回本次审核' }).click();
+  await item.getByRole('button', { name: '撤回审核' }).click();
   await page.getByRole('button', { name: '确认撤回' }).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
   await expect(page.getByRole('button', { name: '暂不撤回' })).toBeDisabled();
   await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByRole('button', { name: '重试确认本次操作' }).click();
-  await item.getByRole('link', { name: '修改并重新投稿' }).click();
+  await page.getByRole('button', { name: '重试确认' }).click();
+  await item.getByRole('link', { name: '修改后重投' }).click();
   expect(withdrawalRequests).toHaveLength(2); expect(withdrawalRequests[1]).toEqual(withdrawalRequests[0]);
   await expect(page.getByLabel('公开作品标题')).toHaveValue('E2E 私人设计');
   await expect(page.getByRole('checkbox', { name: /合法发布权/ })).not.toBeChecked();
@@ -133,10 +133,10 @@ test('无补充说明的举报仍显示图纸或评论内容和定位入口', as
   await expect(page.getByText('被举报对象编号')).toBeVisible();
   await expect(page.locator('.report-material h3')).toHaveText('E2E 已公开作品');
   await expect(page.locator('.report-material canvas').first()).toBeVisible();
-  await expect(page.getByRole('link', { name: '打开当前公开对象' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '公开页' })).toBeVisible();
   await page.locator('.review-queue button', { hasText: '评论 / 其他' }).first().click();
   await expect(page.locator('.report-material')).toContainText('E2E 被举报评论');
-  await expect(page.getByRole('link', { name: '打开当前公开对象' })).toHaveAttribute('href', /#comment-/);
+  await expect(page.getByRole('link', { name: '公开页' })).toHaveAttribute('href', /#comment-/);
   await expect(page.getByRole('button', { name: '受理', exact: true })).toBeDisabled();
 });
 
@@ -221,7 +221,7 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await savedItem.getByRole('checkbox').check();
   await page.getByRole('button', { name: /发布已勾选草稿/ }).click();
   await page.getByRole('checkbox', { name: /我已核对所选图纸与标题/ }).check();
-  await page.getByRole('button', { name: '确认公开所选草稿' }).click();
+  await page.getByRole('button', { name: '确认公开' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await expect(savedItem.getByRole('checkbox')).toHaveCount(0);
   const remaining = page.locator('.batch-cards li', { hasText: 'second-photo.png' });
@@ -234,7 +234,7 @@ test('官方批次允许单项失败、保留成功草稿并只发布勾选项',
   await restored.getByRole('checkbox').check();
   await page.getByRole('button', { name: /发布已勾选草稿/ }).click();
   await page.getByRole('checkbox', { name: /我已核对所选图纸与标题/ }).check();
-  await page.getByRole('button', { name: '确认公开所选草稿' }).click();
+  await page.getByRole('button', { name: '确认公开' }).click();
   await expect(page.getByRole('status')).toHaveText('已发布 1 个官方作品。');
   await expect(page.locator('.batch-cards input[type="checkbox"]')).toHaveCount(0);
   await page.goto('/community');

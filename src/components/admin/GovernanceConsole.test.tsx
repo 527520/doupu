@@ -14,11 +14,11 @@ describe('governance task state', () => {
     fireEvent.change(reason, { target: { value: '经过人工检查' } });
     vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
     fireEvent.click(screen.getByRole('button', { name: '公开' }));
-    await screen.findByRole('button', { name: '重试确认上次操作' });
+    await screen.findByRole('button', { name: '重试确认' });
     expect(reason).toHaveValue('经过人工检查');
     expect(reason).toBeDisabled();
     vi.mocked(fetch).mockResolvedValueOnce(new Response('{}'));
-    fireEvent.click(screen.getByRole('button', { name: '重试确认上次操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '重试确认' }));
     await waitFor(() => expect(screen.getByText('操作已完成。')).toBeInTheDocument());
     const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH');
     expect(writes).toHaveLength(2); expect(writes[0][0]).toBe(writes[1][0]);
@@ -38,7 +38,7 @@ describe('governance task state', () => {
     fireEvent.click(await screen.findByRole('button', { name: /评论 \/ 垃圾推广/ }));
     await screen.findByText('当前待处置正文');
     fireEvent.change(screen.getByRole('textbox', { name: '处置理由' }), { target: { value: '核对当前版本确认有害' } });
-    fireEvent.click(screen.getByRole('button', { name: '隐藏当前评论版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '隐藏此版本' }));
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true));
     const write = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PATCH')!;
     expect(write[0]).toBe('/api/admin/community/comments/comment-one');

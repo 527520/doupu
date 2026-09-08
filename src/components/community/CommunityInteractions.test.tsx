@@ -72,7 +72,7 @@ it('副本已创建但下载失败时，重试只打开已有副本', async () =
   fireEvent.click(screen.getByRole('button', { name: '用这张制作' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('副本已保存在云端');
   expect(state.push).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '打开已创建的图纸' }));
+  fireEvent.click(screen.getByRole('button', { name: '打开图纸' }));
   await waitFor(() => expect(state.push).toHaveBeenCalled());
   expect(state.fetch.mock.calls.filter((call) => call[0].endsWith('/reuse'))).toHaveLength(1);
 });
