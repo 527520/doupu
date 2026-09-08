@@ -300,9 +300,13 @@ export default function GenerationParamsPanel({
         <p className="params-hint">{t.colorCountHint}</p>
       </div>
 
-      {/* 高级选项是标准折叠（带 chevron 与展开动效），面板是下沉井；里面全是 36 档工具行。 */}
+      {/*
+        高级选项是标准折叠（带 chevron 与展开动效），面板是下沉井；里面全是 36 档工具行。
+        折叠时不挂载内容：解码完成后的首次提交有 50ms 主线程预算（E2E 03），
+        四个 NumberField、分段与开关在没人看的时候不该占这份预算。
+      */}
       <Disclosure compact icon="sliders" summary={t.advanced} expanded={advancedOpen} onExpandedChange={setAdvancedOpen} className="params-advanced">
-        <div className="params-advanced-body surface-sunken">
+        {advancedOpen && <div className="params-advanced-body surface-sunken">
           <div>
             <Switch compact label={t.dithering} checked={local.dithering} onChange={checked=>patch({dithering:checked})} describedBy="param-dithering-hint" />
             <p id="param-dithering-hint" className="params-hint">{t.ditheringHint}</p>
@@ -388,7 +392,7 @@ export default function GenerationParamsPanel({
               )}
             </div>
           )}
-        </div>
+        </div>}
       </Disclosure>
       </fieldset>
       <div>

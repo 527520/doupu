@@ -9,7 +9,7 @@
  * 字符串交互，兼容现有 URL 查询参数与表单 GET 提交（`name` 会写入隐藏输入）。
  * 未水合前渲染原生日期输入，保证无 JS 时依旧可用。
  */
-import { useId, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useId, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
 import {
   Button, Calendar, CalendarCell, CalendarGrid, CalendarGridBody, CalendarGridHeader, CalendarHeaderCell,
   DateInput, DatePicker as AriaDatePicker, DateSegment, Dialog, FieldError, Group, Heading, I18nProvider, Label, Popover,
@@ -48,6 +48,24 @@ export function toCalendarDate(value: string | undefined): CalendarDate | null {
   try { return parseDate(value); } catch { return null; }
 }
 
+/**
+ * 整块可点：react-aria 的分段与日期输入会把 pointerdown / click 的冒泡截断，
+ * Group 上的普通 onClick 只有点到空白处才会触发，点分段（最常见的落点）没有反应。
+ * 改在捕获阶段监听；跳过右侧日历按钮（它自己会切换开合），
+ * 也跳过「按下时月历已经打开」的那次点击——那一下是在关月历，不能又把它打开。
+ */
+export function useOpenOnFieldClick(open: boolean, setOpen: (open: boolean) => void, disabled: boolean) {
+  const wasOpen = useRef(false);
+  return {
+    onPointerDownCapture: () => { wasOpen.current = open; },
+    onClickCapture: (event: MouseEvent<HTMLElement>) => {
+      if (disabled || wasOpen.current) return;
+      if (event.target instanceof Element && event.target.closest('button')) return;
+      setOpen(true);
+    },
+  };
+}
+
 export function CalendarPane({ range = false, children }: { range?: boolean; children?: ReactNode }) {
   const todayDate = today(getLocalTimeZone());
   return <>
@@ -75,6 +93,7 @@ export default function DatePicker({ label, name, id, value: controlled, default
   const t = zhCN.datePicker;
   const value = controlled ?? inner;
   const onValueChange = (next: string) => { setInner(next); emit?.(next); };
+  const openOnClick = useOpenOnFieldClick(open, setOpen, disabled);
 
   if (!hydrated) return <label className={`${styles.field} ${className}`}>
     <span className={hideLabel ? 'sr-only' : styles.label}>{label}</span>
@@ -90,7 +109,7 @@ export default function DatePicker({ label, name, id, value: controlled, default
       className={`${styles.field} ${className}`}>
       <Label className={hideLabel ? 'sr-only' : styles.label}>{label}</Label>
       {/* 整块可点：点分段、点空白都打开月历，不必瞄准右侧那颗小日历按钮；键盘分段输入不受影响。 */}
-      <Group className={styles.group} onClick={() => { if (!disabled) setOpen(true); }}>
+      <Group className={styles.group} {...openOnClick}>
         <DateInput className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>
         <Button className={styles.trigger} aria-label={t.open}><Icon name="calendar" size={18} /></Button>
       </Group>

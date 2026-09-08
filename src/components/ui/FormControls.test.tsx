@@ -59,9 +59,18 @@ describe('DatePicker', () => {
   it('点字段任意位置（不只是日历按钮）都能打开月历；禁用时不打开', async () => {
     const { container, unmount } = render(<ControlledDate initial="2026-09-07" />);
     await screen.findByRole('button', { name: new RegExp(zhCN.datePicker.open) });
-    const group = container.querySelector('[role="group"]') as HTMLElement;
-    expect(group).toBeTruthy();
-    await userEvent.click(group);
+    // 真实落点几乎总是某个分段：react-aria 会在分段 / 日期输入层截断冒泡，Group 上的普通 onClick 收不到。
+    const segment = container.querySelector('[role="spinbutton"]') as HTMLElement;
+    expect(segment).toBeTruthy();
+    await userEvent.click(segment);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    // 月历开着时再点字段不会把它「再打开一次」或关掉：交给 react-aria 自己的开合规则
+    await userEvent.click(segment);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // 点空白处（不是分段、不是日历按钮）同样能打开
+    await userEvent.click(container.querySelector('[role="group"]') as HTMLElement);
     expect(await screen.findByRole('dialog')).toBeTruthy();
     unmount();
     const disabled = render(<DatePicker label="日期" name="d" defaultValue="2026-01-02" disabled />);

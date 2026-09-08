@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import Button, { ButtonLink } from '@/components/ui/Button';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
 import SegmentedControl from '@/components/ui/SegmentedControl';
@@ -24,7 +24,8 @@ export default function CommunityFilters({ query }: { query: CommunityListQuery 
   const [open,setOpen]=useState(false);
   const [draft,setDraft]=useState({q:query.q??'',sort:query.sort,author:query.author??'',boardProfile:query.boardProfile??'',from:query.from??'',to:query.to??''});
   const [editing,setEditing]=useState(draft);
-  const begin=()=>{setEditing(draft);setOpen(true);};
+  // WebKit 鼠标点原生按钮不会给它焦点；先把焦点放到入口再开抽屉，关闭时 react-aria 才有可恢复的入口。
+  const begin=(event:MouseEvent<HTMLButtonElement>)=>{event.currentTarget.focus();setEditing(draft);setOpen(true);};
   const fields=(data:typeof draft, update:(value:typeof draft)=>void)=><>
     <TextField label={t.authorFilter} name="author" maxLength={80} value={data.author} onChange={e=>update({...data,author:e.target.value})} />
     <ResponsiveSelect label={t.boardFilter} name="boardProfile" value={data.boardProfile} onValueChange={v=>update({...data,boardProfile:v as typeof data.boardProfile})}

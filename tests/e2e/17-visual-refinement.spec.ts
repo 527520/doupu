@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,19 @@ const output=(name:string)=>resolve('.scratch/ui-polish-2026/evidence',name);
 async function expectBottomsAligned(locators:Locator[],tolerance=1){
   const bottoms=await Promise.all(locators.map(async locator=>{const box=await locator.boundingBox();expect(box).not.toBeNull();return box!.y+box!.height;}));
   for(const bottom of bottoms) expect(Math.abs(bottom-bottoms[0]),`bottoms ${bottoms.map(v=>v.toFixed(1)).join(' / ')}`).toBeLessThanOrEqual(tolerance);
+}
+/**
+ * 等页面上有限次的动画 / 过渡都跑完再做 axe：错峰入场是从透明淡入的，
+ * 中途抓到的半透明文字会被判成对比度不足——那不是用户看到的最终状态。无限循环的（加载环）不用等。
+ */
+async function settleMotion(page:Page){
+  await page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>animation.effect?.getTiming().iterations!==Infinity).map(animation=>animation.finished.then(()=>undefined,()=>undefined))).then(()=>undefined));
+}
+/** 先等动效落定再跑 axe，全文件统一走这里。 */
+async function axe(page:Page,include?:string){
+  await settleMotion(page);
+  const builder=new AxeBuilder({page});
+  return (await (include?builder.include(include):builder).analyze()).violations;
 }
 async function expectNoMotionTransform(element:Locator){
   expect(await element.evaluate(node=>{const value=getComputedStyle(node).transform;return value==='none'||new DOMMatrixReadOnly(value).isIdentity;})).toBe(true);
@@ -48,7 +61,7 @@ test('合法的长英文公开标题不裁切，减少动态效果取消卡片�
   // 钉板落区：拖入时底色只是轻微变粉，钉阵与描边变莓果色，不再整块实心。
   await expect(upload).toHaveCSS('background-color','rgb(255, 247, 249)');
   await expect(upload).toHaveCSS('border-top-color','rgb(185, 62, 98)');
-  expect((await new AxeBuilder({page}).include('.upload-dropzone-primary').analyze()).violations).toEqual([]);
+  expect(await axe(page,'.upload-dropzone-primary')).toEqual([]);
   await expectNoMotionTransform(upload);await upload.dispatchEvent('dragleave');
 });
 
@@ -58,7 +71,7 @@ test('豆社、色板和登录页五宽度排版与无障碍',async({page},info)
     for(const width of widths){
       await page.setViewportSize({width,height:844});
       expect(await page.evaluate(()=>document.documentElement.scrollWidth),`${route} ${width}px`).toBeLessThanOrEqual(width);
-      expect((await new AxeBuilder({page}).analyze()).violations,`${route} ${width}px`).toEqual([]);
+      expect(await axe(page),`${route} ${width}px`).toEqual([]);
       if(width===350||width===1440)await page.screenshot({path:output(`${route.slice(1)}-${info.project.name}-${width}.png`),fullPage:true});
     }
   }
@@ -107,7 +120,7 @@ test('后台待审、批次和人员队列五宽度排版与无障碍',async({pa
         }
       }
       expect(await page.evaluate(()=>document.documentElement.scrollWidth),`${route} ${width}px`).toBeLessThanOrEqual(width);
-      expect((await new AxeBuilder({page}).analyze()).violations,`${route} ${width}px`).toEqual([]);
+      expect(await axe(page),`${route} ${width}px`).toEqual([]);
       if(width===350||width===1440)await page.screenshot({path:output(`${route.replaceAll('/','-')}-${info.project.name}-${width}.png`),fullPage:true});
     }
   }
@@ -140,7 +153,7 @@ test('字体实际加载，首屏选择图片完整可见，五宽度无溢出',
   for(const width of widths){
     await page.setViewportSize({width,height:844});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-    expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
+    expect(await axe(page)).toEqual([]);
     await page.screenshot({path:output(`home-${info.project.name}-${width}.png`),fullPage:true});
   }
 });
@@ -178,7 +191,7 @@ test('色板详情独立展示不撑高卡片，关闭恢复焦点',async({page}
     await expect(panel.getByRole('listitem').first()).toBeVisible();
     // Compare CSS pixels: Firefox's DOMRect subpixel arithmetic differs by 0.00003px after scroll lock.
     expect(Math.round((await card.boundingBox())!.height)).toBe(Math.round(before!.height));
-    expect((await new AxeBuilder({page}).analyze()).violations).toEqual([]);
+    expect(await axe(page)).toEqual([]);
     await page.screenshot({path:output(`palette-${info.project.name}-${width}.png`)});
     await panel.getByRole('button',{name:'关闭选择'}).click();await expect(trigger).toBeFocused();
   }
@@ -265,7 +278,7 @@ test('空白起稿有唯一主按钮：选板数只改摘要，点「创建空�
   await page.getByRole('radio',{name:'2 板',exact:true}).check();
   await expect(page.getByText(/将创建 58 × 58 格/)).toBeVisible();
   await expect(page.getByRole('tab',{name:'编辑'})).toHaveCount(0);
-  expect((await new AxeBuilder({page}).include('#blank-start').analyze()).violations).toEqual([]);
+  expect(await axe(page,'#blank-start')).toEqual([]);
   await create.click();
   await expect(page.getByRole('tab',{name:'编辑'})).toHaveAttribute('aria-selected','true');
 });

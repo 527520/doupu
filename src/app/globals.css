@@ -2253,8 +2253,13 @@ body {
 .palette-library-section > h2 { margin: 0; font-size: 14px; }
 .palette-brand-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin-top: 5px; }
 .palette-custom-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.palette-brand-card { display: flex; min-width: 0; flex-direction: column; gap: 10px; border: 1px solid var(--color-hairline); border-radius: 15px; background: var(--color-surface); padding: 13px; box-shadow: var(--shadow-1); transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
-.palette-brand-card:hover { border-color: var(--color-hairline-strong); box-shadow: var(--shadow-2); transform: translateY(-2px); }
+/*
+  色板卡片 hover 只加深阴影、不做位移：卡片里有 react-aria 的「查看全部颜色」按钮，
+  WebKit 在祖先位移过渡进行中会打断 usePress 的按下→松开序列，按钮点了没反应（E2E 17 色板详情）。
+  含控件的卡片一律用光影表达悬浮，位移只留给整卡即链接的卡片。
+*/
+.palette-brand-card { display: flex; min-width: 0; flex-direction: column; gap: 10px; border: 1px solid var(--color-hairline); border-radius: 15px; background: var(--color-surface); padding: 13px; box-shadow: var(--shadow-1); transition: box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
+.palette-brand-card:hover { border-color: var(--color-hairline-strong); box-shadow: var(--shadow-2); }
 .palette-empty { margin: 0; border: 1px dashed #d6ced1; border-radius: 15px; padding: 30px; color: var(--color-ink-soft); font-size: 13px; text-align: center; }
 .palette-catalog-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 5px; }
 .palette-search-field { display: flex; width: min(390px, 100%); flex-direction: column; gap: 5px; color: var(--color-ink); font-size: 13px; font-weight: 700; }
@@ -3048,6 +3053,6 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
   .upload-dropzone-cta, .upload-dropzone.is-dragging,
   .community-card:hover, .design-card:hover, .home-blank-action:hover, .workspace-nav-item:hover, .surface-card.is-interactive:hover, .surface-card.is-interactive:active,
   .community-card:hover .community-card-preview img, .community-card:hover .community-card-preview canvas, .community-tag-chip:active, .admin-shortcut:hover, .admin-shortcut:active,
-  .admin-overview-card:hover, .admin-overview-card:active, .home-recent li:hover, .home-community li:hover, .community-mine-list > li:hover, .palette-brand-card:hover,
+  .admin-overview-card:hover, .admin-overview-card:active, .home-recent li:hover, .home-community li:hover, .community-mine-list > li:hover,
   .upload-dropzone:hover, .upload-dropzone:active, .home-recent li:active, .link-action:hover::after, .home-blank-action:hover > svg:last-child { transform: none; translate: none; }
 }

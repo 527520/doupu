@@ -12,7 +12,7 @@ import {
 import { getLocalTimeZone, today } from '@internationalized/date';
 import Icon from './Icon';
 import UiButton from './Button';
-import { CalendarPane, toCalendarDate } from './DatePicker';
+import { CalendarPane, toCalendarDate, useOpenOnFieldClick } from './DatePicker';
 import useCompactLayout from './useCompactLayout';
 import useVisualViewport from './useVisualViewport';
 import { zhCN } from '@/messages/zh-CN';
@@ -54,6 +54,7 @@ export default function DateRangePicker({ label, startName, endName, id, value: 
   const t = zhCN.datePicker;
   const value = controlled ?? inner;
   const onValueChange = (next: DateRange) => { setInner(next); emit?.(next); };
+  const openOnClick = useOpenOnFieldClick(open, setOpen, disabled);
 
   if (!hydrated) return <div className={`${styles.field} ${className}`}>
     <span className={hideLabel ? 'sr-only' : styles.label}>{label}</span>
@@ -78,7 +79,7 @@ export default function DateRangePicker({ label, startName, endName, id, value: 
       isDisabled={disabled} isRequired={required} isInvalid={Boolean(error)} granularity="day" shouldForceLeadingZeros
       className={`${styles.field} ${className}`}>
       <Label className={hideLabel ? 'sr-only' : styles.label}>{label}</Label>
-      <Group className={styles.group} onClick={() => { if (!disabled) setOpen(true); }}>
+      <Group className={styles.group} {...openOnClick}>
         <DateInput slot="start" className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>
         <span aria-hidden="true" className={styles.separator}>–</span>
         <DateInput slot="end" className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>

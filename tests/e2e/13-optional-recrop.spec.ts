@@ -105,7 +105,8 @@ for (const width of [350, 390]) {
       for (const size of [{ width, height: 700 }, { width: 700, height: width }, { width, height: 400 }]) {
         await page.setViewportSize(size);
         const dialog = cropDialog(page);
-        await expect.poll(async () => (await dialog.boundingBox())?.height).toBe(size.height);
+        // Firefox 的 DOMRect 会带 1e-6 级的亚像素误差（700.000004），按 CSS 像素比较。
+        await expect.poll(async () => (await dialog.boundingBox())?.height ?? Number.NaN).toBeCloseTo(size.height, 3);
         const layout = await dialog.evaluate((element) => ({
           viewport: innerWidth,
           scrollWidth: document.documentElement.scrollWidth,

@@ -1,6 +1,6 @@
 # ui-polish-2026 验证记录
 
-日期：2026-09-08 · 基线 `b5c08e5` → 本轮 9 个本地提交（未推送）
+日期：2026-09-08 · 基线 `b5c08e5` → 本轮 10 个本地提交（未推送）
 
 ## 已在本机通过
 
@@ -18,6 +18,7 @@
   - `GenerationParamsPanel.test`：背景容差同时有滑杆与数字输入。
   - `DesignsView.test`：空态给出就近主按钮（页头 + 空态两处指向新建）。
   - `ResponsiveSelect.test`：移动端抽屉里，打开触发器时的那次松手不会误选盖在指针下的选项；在选项上完整点一次才算选。
+  - `FormControls.test`：日期字段改点分段（真实落点）验证整块可点；月历开着再点不重复打开；点空白处同样打开。
   - 文案缩短后同步的名称：`确认调整 / 完整图纸 / 重置 / 重试确认 / 隐藏此版本 / 公开页 / 确认公开 / 释放并切换 / 打开图纸 / 撤回并修改 / 修改后重投 / 返回原图纸 / 撤销自动改动 / 应用到图纸 / 批量打标 / 恢复发布 / 确认下架 / 确认恢复 / 确认合并 / 提交审核 / 撤回审核 / 撤回作品 / 搜索记录`。
 
 ## 第一轮 E2E（在你的终端跑的）：273 用例 · 224 通过 · 22 跳过 · 27 失败
@@ -34,7 +35,21 @@
 | 17:67 图纸与原图舞台 y 差 90px | 窄列里 compact 工具行折成两行，两侧三段各自独立 | `.review-material-pair` 外层三行轨道 + 两侧 `grid-template-rows: subgrid`，工具行折行时另一侧舞台一起下移；不支持 subgrid 的浏览器退化为各自三行 |
 | webkit 一串 429（12:191、14:148、14:183、15:24 / 74 / 90、17:19） | 三个浏览器项目共用一个 PGlite 与同一 IP，豆社写接口默认 300/小时被批次原图上传耗尽 | `globalSetup` 放开 `RATE_COMMUNITY_WRITE_USER_HOUR / RATE_COMMUNITY_WRITE_IP_HOUR / RATE_PUBLIC_READ_IP_HOUR`（与已有 `RATE_LOGIN` 同一处，E2E 不验证限流本身） |
 
-## 第二轮 E2E（需要在你的终端里再跑一次）
+## 第二轮 E2E：273 用例 · 239 通过 · 22 跳过 · 12 失败
+
+第一轮的 27 个失败里 22 个已消失（含弹窗 / 菜单入场、17:187 抽屉误选、17:67 对位、webkit 429）。剩下 12 个按 trace 定位后的修法（第 10 个提交）：
+
+| 失败用例 | 根因 | 修法 |
+| --- | --- | --- |
+| 03:57 8000×8000 上传主线程 73ms 长任务（chromium） | trace 对时：长任务落在解码完成后的首次 React 提交，不是裁剪弹窗打开。项目历史（site-visual-refinement）把这一提交压到 50ms 预算内，靠的是「没展示的东西不算」；这轮把高级选项从 `advancedOpen &&` 换成 `Disclosure` 后，折叠着的 4 个 NumberField、分段、开关都在首次提交里挂载了 | 折叠时不挂载高级选项内容（`{advancedOpen && …}`），恢复基线成本；展开动效不依赖内容预先存在 |
+| 17:67 `/admin/batches` 350px axe 对比度（三浏览器）、17:126 首页 axe 对比度（chromium） | 列表错峰入场是从透明淡入的（`.stagger > *`），axe 在淡入中途抓到半透明文字（`#807a83` → `#e0dee1` 逐项变淡正是错峰序列）；令牌本身 `--color-ink-soft #68616C` 对白底 6.0:1 | E2E 17 新增 `settleMotion`：等页面上有限次动画 / 过渡跑完再跑 axe（无限循环的加载环不等）；全文件 6 处 axe 统一走 `axe(page, include?)` |
+| 17:242 「发布日期」字段点本体不开月历（三浏览器） | react-aria 的 DateSegment / DateInput 自带 usePress，会在冒泡阶段截断 pointerdown / click，Group 上的普通 `onClick` 只有点空白处才收到；单测此前直接对 group 派发事件，是假阳性 | `useOpenOnFieldClick`：改在捕获阶段监听 `onClickCapture`，跳过右侧日历按钮（自带切换）与「按下时已打开」的点击；DatePicker / DateRangePicker 共用；单测改点分段，去掉修复即失败 |
+| webkit 17:148 关闭抽屉后焦点没回到「更多筛选」 | 项目早前探针已确认：WebKit 鼠标点原生按钮不会给它焦点。基线这里是 react-aria Button，本轮换成了自家 `Button`（原生按钮）后，抽屉打开时 activeElement 是 body，关闭时无可恢复入口 | `begin` 里先 `event.currentTarget.focus()` 再开抽屉（与 site-ux 08 里「发布入口同步 focus()」同一做法） |
+| webkit 17:170 色板「查看全部颜色」点了抽屉不开 | 与基线相比色板卡片只多了 hover 位移过渡；点击落点、水合状态（页面已加载完自定义色板空态）、控制台都正常，唯 react-aria 按钮的按压序列没有完成。相同卡片位移下原生按钮（设计卡片）在 WebKit 正常，问题限定在 usePress + 祖先位移过渡。机制没有 100% 证实 | 含控件的卡片 hover 只加深阴影不位移（`.palette-brand-card:hover` 去掉 `translateY`），位移只留给整卡即链接的卡片 |
+| firefox 13:99 裁剪弹窗高度 700.000004 ≠ 700 | Firefox DOMRect 亚像素误差；弹窗面板不再有 transform（transform 会把图层吸附到整像素） | 断言改 `toBeCloseTo(height, 3)`，与文件里既有的「按 CSS 像素比较」注释一致 |
+| firefox 02:12 取消生成后 UI 恢复 128.5ms > 100ms | 第一轮同一用例通过；测量包含 Worker 协作式取消的块边界延迟，Firefox 上本就贴着阈值。本轮唯一与之相关的改动（高级选项不再预挂载）只会让重渲染更轻 | 未改代码或阈值；请单独重跑几次确认是否为时序噪声：`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15-arm64 npx playwright test tests/e2e/02-workbench-journey.spec.ts --project=firefox --repeat-each=3` |
+
+## 第三轮 E2E（需要在你的终端里再跑一次）
 
 代理沙箱里浏览器进程起不来、`next dev` 因文件监听 EMFILE 反复自重启，**E2E 仍需在你的终端执行**：
 
