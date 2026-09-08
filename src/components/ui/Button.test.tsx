@@ -33,6 +33,15 @@ describe('Button', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it('loading 时用加载环占据图标位，且加载环不进入可访问名称', () => {
+    const { rerender } = render(<Button loading icon="send">发布中</Button>);
+    const button = screen.getByRole('button', { name: '发布中' });
+    expect(button.querySelector('.spinner')).toHaveAttribute('aria-hidden', 'true');
+    expect(button.querySelector('svg')).toBeNull();
+    rerender(<Button icon="send">发布</Button>);
+    expect(screen.getByRole('button', { name: '发布' }).querySelector('.spinner')).toBeNull();
+  });
+
   it('ButtonLink 渲染为链接并沿用按钮类名', () => {
     render(<ButtonLink href="/community" variant="primary" icon="arrow" iconPosition="end">打开豆社</ButtonLink>);
     const link = screen.getByRole('link', { name: '打开豆社' });

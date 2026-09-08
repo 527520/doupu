@@ -63,9 +63,51 @@
   /* 动效（C-5）：默认 150ms，编排类动效 240ms；曲线统一 */
   --ease-gentle: cubic-bezier(0.32, 0.72, 0.35, 1);
 
-  /* 柔和粉色阴影（卡片/主按钮） */
-  --shadow-soft: 0 4px 12px -5px rgb(185 62 98 / 24%);
-  --shadow-card: 0 4px 18px -8px rgb(41 38 51 / 12%);
+  /*
+    动效尺（ui-polish-2026）：轻快、有弹性、必停。
+    press 只用于按压收缩；fast 用于颜色/边框；base 用于状态切换（滑块、勾、开关）；
+    slow 只给进场编排。spring 有过冲，只允许用在点赞/选中落位这类「落一颗豆」的瞬间。
+  */
+  --dur-press: 90ms;
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /*
+    五级表面（ui-polish-2026）。此前全站只有「白底 + 1px 实色灰边」一种面，
+    页面、卡片、下沉区、浮层、弹窗没有层次可辨。这里用发丝边（低透明度墨色）
+    替代实色边，让边界随底色自然变化；阴影一律「环境 + 主光」双层暖墨。
+  */
+  --color-hairline: rgb(41 38 51 / 8%);
+  --color-hairline-strong: rgb(41 38 51 / 14%);
+  --color-surface: #ffffff;
+  --color-surface-raised: #fffdfb;
+  --color-surface-sunken: #f4f0ea;
+  --shadow-1: 0 1px 2px rgb(41 38 51 / 4%), 0 1px 1px rgb(41 38 51 / 3%);
+  --shadow-2: 0 2px 4px rgb(41 38 51 / 4%), 0 12px 28px -14px rgb(41 38 51 / 16%);
+  --shadow-3: 0 8px 16px -8px rgb(41 38 51 / 12%), 0 28px 64px -24px rgb(41 38 51 / 26%);
+  --shadow-primary: 0 1px 2px rgb(150 48 79 / 20%), 0 8px 20px -8px rgb(185 62 98 / 42%);
+  --shadow-primary-hover: 0 2px 4px rgb(150 48 79 / 20%), 0 12px 26px -8px rgb(185 62 98 / 50%);
+  --ring-focus: 0 0 0 3px rgb(185 62 98 / 18%);
+  --ring-danger: 0 0 0 3px rgb(192 57 43 / 18%);
+
+  /* 字段配方：所有文本类输入（原生 input、RAC 字段、数字、文本域、标签输入）只从这里取值。 */
+  --field-bg: #fffdfb;
+  --field-bg-disabled: #f2eee8;
+  --field-border: rgb(41 38 51 / 14%);
+  --field-border-hover: rgb(41 38 51 / 26%);
+  --field-shadow: inset 0 1px 2px rgb(41 38 51 / 4%);
+  --field-height: 44px;
+  --field-height-sm: 36px;
+  --field-radius: 12px;
+  --field-radius-sm: 10px;
+  --field-font-size: 15px;
+
+  /* 柔和粉色阴影（卡片/主按钮）——历史别名，映射到新阴影尺。 */
+  --shadow-soft: var(--shadow-primary);
+  --shadow-card: var(--shadow-1);
 
   /* 固定同源字体优先；系统字仅作字体请求失败时的可读降级。 */
   --font-sans:
@@ -77,7 +119,9 @@
    可点击的按钮显示手型，禁用按钮显示禁止光标。 */
 @layer base {
   body { font-family: var(--font-sans); font-size: 15px; line-height: 1.65; font-synthesis: none; }
-  input, textarea, select { font-size: 16px; }
+  input, textarea, select { font-size: var(--field-font-size); }
+  /* 触屏浏览器（iOS Safari）在字段字号 <16px 时聚焦会自动放大页面；桌面保持 15px 与正文一致。 */
+  @media (pointer: coarse) { :root { --field-font-size: 16px; } }
   input[type='checkbox'], input[type='radio'] { accent-color: var(--color-primary); }
   button:not(:disabled),
   [role='button']:not(:disabled) {
@@ -2609,7 +2653,7 @@ body {
 }
 
 /* Shared tactile controls and responsive detail surfaces. */
-input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), textarea { font-size: 16px; }
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), textarea { font-size: var(--field-font-size); }
 button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
 .editor-tool-button, .desktop-mode-button { min-height: 44px; }
 .segmented-control { display: inline-flex; gap: 4px; min-width: 0; border: 1px solid var(--color-border); border-radius: 14px; padding: 3px; background: var(--color-cream-deep); }
@@ -2740,6 +2784,59 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
 .auth-form-column > .consent-slot { width: min(430px, 100%); }
 @keyframes bead-settle { from { transform: translateY(-4px) scale(.8); } to { transform: none; } }
 @keyframes panel-enter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+
+/* ============================================================
+   质感基建（ui-polish-2026）：进场、落位、层次与骨架。
+   所有 keyframes 只在这里定义；组件用 class 引用，不得在运行时注入 <style>（CSP）。
+   ============================================================ */
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes heart-pop { 0% { transform: scale(1); } 35% { transform: scale(1.32); } 70% { transform: scale(.94); } 100% { transform: scale(1); } }
+@keyframes heart-release { from { transform: scale(.86); } to { transform: scale(1); } }
+@keyframes count-roll { from { opacity: 0; transform: translateY(.55em); } to { opacity: 1; transform: none; } }
+@keyframes check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/*
+  错峰进场：给列表/网格容器加 .stagger，子项用 style="--i: n" 报自己的序号。
+  单项 320ms，间隔 28ms，最多 12 阶（≈ 650ms 全部落定），fill-mode both 保证停在终态。
+*/
+.stagger > * { animation: doupu-rise var(--dur-slow) var(--ease-out) both; animation-delay: calc(min(var(--i, 0), 12) * 28ms); }
+
+/* 五级表面。卡片静置 shadow-1，可交互卡片 hover 升到 shadow-2 并上浮 2px，按下回落。 */
+.surface-card { border: 1px solid var(--color-hairline); border-radius: 16px; background: var(--color-surface); box-shadow: var(--shadow-1); }
+.surface-card.is-interactive { transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out); }
+.surface-card.is-interactive:hover { transform: translateY(-2px); border-color: var(--color-hairline-strong); box-shadow: var(--shadow-2); }
+.surface-card.is-interactive:active { transform: translateY(0) scale(.995); box-shadow: var(--shadow-1); transition-duration: var(--dur-press); }
+.surface-sunken { border-radius: 12px; background: var(--color-surface-sunken); box-shadow: inset 0 0 0 1px var(--color-hairline); }
+
+/*
+  表单行：字段并排时底边永远对齐。规则只有两条——
+  1) 标签锁高且不换行（长标签用省略号，完整文案在 title）；2) 网格 align-items: end。
+  动作组（查询 / 重置）放在同一行末尾，与字段同高（44）。
+*/
+.field-label { display: block; min-height: 1.25rem; color: var(--color-ink-soft); font-size: 13px; font-weight: 500; line-height: 1.25rem; }
+.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--col, 12rem), 1fr)); gap: .75rem 1rem; align-items: end; }
+.form-row > * { min-width: 0; }
+.form-row .field-label, .form-row label > span:first-child, .form-row [class*="label"] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.form-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; min-height: var(--field-height); }
+.form-row > .form-row-actions { justify-self: end; }
+.form-row-wide { grid-column: span 2; }
+@media (max-width: 640px) { .form-row-wide { grid-column: auto; } .form-row > .form-row-actions { justify-self: stretch; } .form-row-actions > * { flex: 1 1 auto; } }
+
+/* 骨架：加载列表时占位，唯一允许循环的动效之一（内容到达即被替换）。 */
+.skeleton { position: relative; overflow: hidden; border-radius: 10px; background: linear-gradient(90deg, var(--color-cream-deep) 0%, #fbf9f5 40%, var(--color-cream-deep) 80%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.skeleton-list { display: grid; gap: .6rem; padding: .85rem 1rem; }
+.skeleton-list > i { display: block; height: 3.25rem; }
+
+/* 加载环：16px 细环，唯一允许循环的动效之一。 */
+.spinner { display: inline-block; width: 16px; height: 16px; flex: 0 0 auto; border: 2px solid currentColor; border-right-color: transparent; border-radius: 999px; opacity: .85; animation: spin 700ms linear infinite; }
+.spinner.is-lg { width: 22px; height: 22px; border-width: 2.5px; }
+
+/* 计数滚动：数字变化时旧值被新值从下方顶替。 */
+.count-roll { display: inline-block; animation: count-roll var(--dur-base) var(--ease-out) both; }
 @media (max-width: 767px) {
   .detail-panel-overlay { align-items: flex-end; bottom: var(--sheet-bottom, 0px); }
   .detail-panel { width: 100%; max-height: calc(var(--sheet-height, 100dvh) * .7); border-radius: 24px 24px 0 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -2753,9 +2850,12 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
   .community-filter-bar > button { padding-inline: 10px; font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .segmented-control *, .switch-control *, .detail-panel, .btn-bead-settle[aria-pressed="true"] > svg { animation: none !important; transition: none !important; }
+  .segmented-control *, .switch-control *, .detail-panel, .btn-bead-settle[aria-pressed="true"] > svg, .btn-bead > svg, .stagger > *, .count-roll, .checkbox-box svg path { animation: none !important; transition: none !important; }
+  .stagger > * { animation-delay: 0s !important; opacity: 1; }
   .btn-primary:active, .btn-outline:active, .btn-quiet:active, .btn-ghost:active, .btn-tool:active, .btn-danger:active, .btn-danger-outline:active, .btn-danger-quiet:active, .btn-bead:active,
+  .btn-primary:hover, .btn-outline:hover, .btn-danger-outline:hover, .btn-bead:hover, .chip:active,
   .upload-dropzone-cta, .upload-dropzone.is-dragging,
-  .community-card:hover, .design-card:hover, .home-blank-action:hover, .workspace-nav-item:hover,
+  .community-card:hover, .design-card:hover, .home-blank-action:hover, .workspace-nav-item:hover, .surface-card.is-interactive:hover, .surface-card.is-interactive:active,
+  .admin-overview-card:hover, .admin-overview-card:active, .home-recent li:hover, .home-community li:hover, .community-mine-list > li:hover, .palette-brand-card:hover,
   .upload-dropzone:hover, .upload-dropzone:active, .home-recent li:active, .link-action:hover::after { transform: none; translate: none; }
 }

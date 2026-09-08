@@ -12,6 +12,7 @@
 import Link from 'next/link';
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from 'react';
 import Icon, { type IconName } from './Icon';
+import Spinner from './Spinner';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'dangerSolid' | 'tool';
 export type ButtonSize = 'md' | 'sm' | 'xs';
@@ -45,12 +46,14 @@ export interface ButtonProps extends CommonProps, Omit<ButtonHTMLAttributes<HTML
 }
 
 export default function Button({ variant = 'secondary', size = 'md', icon, iconPosition = 'start', loading = false, className, children, type = 'button', disabled, ...rest }: ButtonProps) {
-  const glyph = icon ? <Icon name={icon} size={ICON_SIZE[size]} /> : null;
+  // 进行中：加载环占据图标位（没有图标时插在文字前），文案由调用方切换。
+  const glyph = loading ? <Spinner /> : icon ? <Icon name={icon} size={ICON_SIZE[size]} /> : null;
+  const glyphPosition = loading && !icon ? 'start' : iconPosition;
   return (
     <button type={type} className={buttonClassName(variant, size, className)} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
-      {iconPosition === 'start' && glyph}
+      {glyphPosition === 'start' && glyph}
       {children}
-      {iconPosition === 'end' && glyph}
+      {glyphPosition === 'end' && glyph}
     </button>
   );
 }

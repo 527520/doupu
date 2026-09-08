@@ -1,7 +1,7 @@
 # 01 token 与动效基建
 
 Status: ready-for-agent
-Completion: not-started
+Completion: complete
 
 ## 范围
 
