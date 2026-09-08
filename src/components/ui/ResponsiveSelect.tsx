@@ -61,7 +61,11 @@ export default function ResponsiveSelect({ label, options, name, id, value, defa
     </select>
   </label>;
 
-  const list = <ListBox items={options} className={styles.list} renderEmptyState={() => <p className={styles.empty}>{zhCN.selection.empty}</p>}>
+  // Select 默认「按下即开、松手即选」：桌面浮层锚在触发器下方，松手落在触发器上没事；
+  // 底部抽屉却会盖到触发器所在位置，鼠标松开时正压在某个选项上就被误选。
+  // 紧凑档改成只认选项自己的按压（鼠标在选项上按下、触摸在选项上抬起），打开时那次松手不再算选择。
+  const list = <ListBox items={options} className={styles.list} shouldSelectOnPressUp={compact ? false : undefined}
+    renderEmptyState={() => <p className={styles.empty}>{zhCN.selection.empty}</p>}>
     {(option) => <ListBoxItem id={option.value} textValue={option.label} className={styles.option}>
       {({ isSelected }) => <>
         <span className={styles.optionCopy}><Text slot="label">{option.label}</Text>

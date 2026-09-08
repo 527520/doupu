@@ -33,6 +33,21 @@ describe('ResponsiveSelect', () => {
     await user.click(screen.getByRole('option',{name:'2.6mm / 50×50'}));
     expect(screen.getByRole('dialog',{name:'筛选'})).toBeVisible();
   });
+  it('移动端抽屉：打开触发器时的那次松手不会误选盖在指针下的选项', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<ResponsiveSelect label="复制内置色板" options={options} value="" onValueChange={onValueChange} />);
+    // 鼠标在触发器上按下即打开抽屉，抽屉从底部盖住触发器位置，松手落在选项上
+    await user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: /复制内置色板/ }) });
+    const option = await screen.findByRole('option', { name: '2.6mm / 50×50' });
+    await user.pointer({ keys: '[/MouseLeft]', target: option });
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('listbox')).toBeVisible();
+    // 在选项上完整点一次才算选
+    await user.click(option);
+    expect(onValueChange).toHaveBeenCalledWith('mini');
+  });
   it('选择后提交原始选项值，关闭列表并恢复入口焦点', async () => {
     const user = userEvent.setup();
     const { container } = render(<form><ResponsiveSelect label="制作规格" name="board" options={options} defaultValue="" /></form>);

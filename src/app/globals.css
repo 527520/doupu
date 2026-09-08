@@ -245,12 +245,14 @@
     border: 1px solid var(--color-hairline); border-radius: 16px; background: var(--color-surface); box-shadow: var(--shadow-1);
   }
   /*
-    弹窗（ui-polish-2026）：遮罩淡入 + 轻微模糊，面板从下方 10px、97% 缩放落到位（220ms）。
+    弹窗（ui-polish-2026）：遮罩底色 220ms 染上，面板阴影 320ms 由浅落深——「落座」的感觉靠光影，不靠位移。
+    刻意不动 transform / opacity / backdrop-filter：这三样在动画进行中会改变几何与合成结果，
+    裁剪手柄的拖拽坐标、菜单项 44px 命中区、对比度计算都会被 200ms 的过渡骗到。
     放在 components 层，调用方仍可用 max-w-* / border-* 工具类覆盖尺寸与边色。
   */
-  .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(41 38 51 / 32%); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: backdrop-in var(--dur-base) var(--ease-out) both; }
-  .modal-panel { width: 100%; max-width: calc(100vw - 2rem); padding: 1.25rem; border: 1px solid var(--color-hairline); border-radius: 20px; background: var(--color-surface); box-shadow: var(--shadow-3); animation: modal-in var(--dur-base) var(--ease-out) both; }
-  .modal-panel.mobile-immersive-workspace { animation: none; }
+  .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgb(41 38 51 / 32%); animation: backdrop-tint var(--dur-base) var(--ease-out) both; }
+  .modal-panel { width: 100%; max-width: calc(100vw - 2rem); padding: 1.25rem; border: 1px solid var(--color-hairline); border-radius: 20px; background: var(--color-surface); box-shadow: var(--shadow-3); animation: panel-settle var(--dur-slow) var(--ease-out) both; }
+  .modal-panel.mobile-immersive-workspace, .modal-panel.crop-dialog { animation: none; }
   .modal-panel h2:first-child, .modal-panel h3:first-child, .modal-panel form > h3:first-child, .modal-title { margin: 0 0 .5rem; font-family: var(--font-sans); font-size: 18px; font-weight: 600; line-height: 1.3; color: var(--color-ink); }
   .modal-title.is-danger { color: var(--color-danger); }
   .modal-copy { margin: 0 0 1rem; color: var(--color-ink-soft); font-size: 14px; line-height: 1.65; }
@@ -574,9 +576,16 @@ body {
 .pattern-preview-stage { overflow: auto; padding: .5rem; border-radius: 12px; }
 .pattern-preview-stage > canvas { display: block; }
 .pattern-preview.is-compact .pattern-preview-stage { max-height: 22rem; }
-.review-material-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+/*
+  并排：外层三行轨道（说明 / 工具行 / 舞台），两侧用 subgrid 共享——工具行在窄列里折成两行时，另一侧的舞台也一起下移，两张图顶边始终对齐。
+  不支持 subgrid 的浏览器退化为各自独立的三行。
+*/
+.review-material-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto auto; gap: 1rem; align-items: start; }
 /* WebKit 会把替换元素的固有宽度算进 auto 最小轨道尺寸，子项必须显式允许收缩。 */
 .review-material-pair > * { min-width: 0; max-width: 100%; }
+@supports (grid-template-rows: subgrid) {
+  .review-material-pair > .pattern-preview { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: .5rem; align-items: start; }
+}
 .admin-original-preview { margin: 0; }
 .admin-original-help { color: var(--color-ink-soft); font-size: 12.5px; line-height: 1.5; }
 .admin-original-stage { position: relative; display: grid; place-items: center; min-height: 8rem; }
@@ -666,7 +675,7 @@ body {
 .tag-chip button:hover:not(:disabled) { background: rgb(48 41 56 / 10%); }
 .tag-input-text { flex: 1 1 8rem; min-width: 6rem; min-height: 28px; padding: .2rem .25rem; border: 0; background: transparent; font-size: .95rem; }
 .tag-input-text:focus { outline: none; }
-.tag-input-suggestions { position: absolute; z-index: 5; top: calc(100% - 1.4rem); left: 0; right: 0; margin: 0; padding: .35rem; list-style: none; border: 1px solid var(--color-hairline); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-2); animation: pop-in var(--dur-fast) var(--ease-out) both; }
+.tag-input-suggestions { position: absolute; z-index: 5; top: calc(100% - 1.4rem); left: 0; right: 0; margin: 0; padding: .35rem; list-style: none; border: 1px solid var(--color-hairline); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-2); animation: menu-in var(--dur-fast) var(--ease-out) both; }
 .tag-input-suggestions button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem .6rem; border-radius: 8px; text-align: left; }
 .tag-input-suggestions li[aria-selected="true"] button, .tag-input-suggestions button:hover { background: var(--color-primary-soft); }
 .tag-input-suggestions small { color: var(--color-ink-soft); }
@@ -1222,7 +1231,7 @@ body {
 .workspace-top-avatar { width: 38px; height: 38px; margin-left: 4px; font-size: 13px; text-decoration: none; }
 
 /*
-  溢出菜单（ui-polish-2026）：触发器是豆粒，面板是浮层（shadow-2）并从触发器下方 pop-in 弹出。
+  溢出菜单（ui-polish-2026）：触发器是豆粒，面板是浮层（shadow-2）并从触发器下方淡入落下。
   子项是调用方的真实链接 / 按钮，这里统一成 44px 菜单项：图标位 + 文字，hover 奶油底，危险项红字。
   分隔用 <hr>。菜单项本身不带边框与阴影——「一列按钮」是旧观感，这里要的是「一张菜单」。
 */
@@ -1242,8 +1251,8 @@ body {
   box-shadow: var(--shadow-2);
 }
 .overflow-menu[data-align="start"] { right: auto; left: 0; }
-.overflow-menu.is-open { display: flex; flex-direction: column; gap: 2px; animation: pop-in var(--dur-fast) var(--ease-out) both; transform-origin: top right; }
-.overflow-menu[data-align="start"].is-open { transform-origin: top left; }
+/* 只淡入 + 4px 下落，不缩放：缩放会让菜单项在动画期间量不到 44px。 */
+.overflow-menu.is-open { display: flex; flex-direction: column; gap: 2px; animation: menu-in var(--dur-fast) var(--ease-out) both; }
 .overflow-menu > a, .overflow-menu > button, .overflow-menu .overflow-item {
   display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: flex-start; gap: .65rem;
   padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; box-shadow: none;
@@ -2811,8 +2820,7 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
   .segmented-track::before { display: none; }
   .segmented-control input:checked + span { background: var(--color-surface); box-shadow: 0 1px 2px rgb(41 38 51 / 8%); }
 }
-.detail-panel-overlay { position: fixed; inset: 0; z-index: 90; display: flex; justify-content: flex-end; background: rgb(41 38 51 / 32%); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.detail-panel-overlay[data-entering] { animation: backdrop-in var(--dur-base) var(--ease-out); }
+.detail-panel-overlay { position: fixed; inset: 0; z-index: 90; display: flex; justify-content: flex-end; background: rgb(41 38 51 / 32%); }
 .detail-panel { display: flex; width: min(520px, 100%); max-height: var(--visual-viewport-height, 100dvh); background: var(--color-cream); box-shadow: var(--shadow-3); }
 .detail-panel[data-entering] { animation: panel-enter var(--dur-base) var(--ease-out); }
 .detail-panel-dialog { width: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; }
@@ -2965,8 +2973,9 @@ button:not([tabindex="-1"]) { min-width: 44px; min-height: 44px; }
    所有 keyframes 只在这里定义；组件用 class 引用，不得在运行时注入 <style>（CSP）。
    ============================================================ */
 @keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.96); } to { opacity: 1; transform: none; } }
-@keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
-@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdrop-tint { from { background-color: transparent; } }
+@keyframes panel-settle { from { box-shadow: var(--shadow-1); } to { box-shadow: var(--shadow-3); } }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @keyframes heart-pop { 0% { transform: scale(1); } 35% { transform: scale(1.32); } 70% { transform: scale(.94); } 100% { transform: scale(1); } }
 @keyframes heart-release { from { transform: scale(.86); } to { transform: scale(1); } }
 @keyframes count-roll { from { opacity: 0; transform: translateY(.55em); } to { opacity: 1; transform: none; } }

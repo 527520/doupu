@@ -242,11 +242,11 @@ test('多色续作、长标题，以及加载失败后的重试状态',async({pa
 test('分段滑块随选中位移，日期字段整块可点，审计筛选行底边对齐',async({page})=>{
   await page.setViewportSize({width:1280,height:844});await page.goto('/community');await waitHydrated(page);
   const track=page.locator('.community-filter-bar .segmented-track');
-  const thumb=()=>track.evaluate(node=>getComputedStyle(node,'::before').transform);
-  const before=await thumb();
+  // 滑块是轨道的 ::before，位移读它 transform 矩阵的 X 分量（在浏览器里解析，Node 没有 DOMMatrix）。
+  const thumbX=()=>track.evaluate(node=>new DOMMatrixReadOnly(getComputedStyle(node,'::before').transform).m41);
+  expect(await thumbX()).toBe(0);
   await page.getByRole('radio',{name:'精选',exact:true}).check();
-  await expect.poll(thumb).not.toBe(before);
-  const shifted=new DOMMatrixReadOnly(await thumb());expect(shifted.m41).toBeGreaterThan(0);
+  await expect.poll(thumbX).toBeGreaterThan(0);
   // 更多筛选里的「发布日期」：点字段本体（不是右侧日历按钮）就能打开月历
   await page.getByRole('button',{name:'更多筛选',exact:true}).click();
   const group=page.getByRole('group',{name:/发布日期/}).first();await expect(group).toBeVisible();

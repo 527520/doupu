@@ -62,6 +62,11 @@ export default async function globalSetup(): Promise<void> {
         RATE_LOGIN: '1000',
         RATE_REGISTER: '1000',
         RATE_TOKEN: '1000',
+        // 豆社写接口（点赞 / 举报 / 引用 / 投稿 / 原图上传）与公开读同样按 IP 计数：
+        // 三个浏览器项目串行跑完一轮会上传上百张原图（批次用例一次 50 张），默认 300/小时会在第三个项目里被耗尽。
+        RATE_COMMUNITY_WRITE_USER_HOUR: '10000',
+        RATE_COMMUNITY_WRITE_IP_HOUR: '10000',
+        RATE_PUBLIC_READ_IP_HOUR: '20000',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,

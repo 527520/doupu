@@ -1,6 +1,6 @@
 # ui-polish-2026 验证记录
 
-日期：2026-09-08 · 基线 `b5c08e5` → 本轮 8 个本地提交（未推送）
+日期：2026-09-08 · 基线 `b5c08e5` → 本轮 9 个本地提交（未推送）
 
 ## 已在本机通过
 
@@ -17,15 +17,30 @@
   - `Workbench.test`：空白起稿改为「板数分段 + 摘要 + 创建空白图纸」；游客菜单项为统一菜单行。
   - `GenerationParamsPanel.test`：背景容差同时有滑杆与数字输入。
   - `DesignsView.test`：空态给出就近主按钮（页头 + 空态两处指向新建）。
+  - `ResponsiveSelect.test`：移动端抽屉里，打开触发器时的那次松手不会误选盖在指针下的选项；在选项上完整点一次才算选。
   - 文案缩短后同步的名称：`确认调整 / 完整图纸 / 重置 / 重试确认 / 隐藏此版本 / 公开页 / 确认公开 / 释放并切换 / 打开图纸 / 撤回并修改 / 修改后重投 / 返回原图纸 / 撤销自动改动 / 应用到图纸 / 批量打标 / 恢复发布 / 确认下架 / 确认恢复 / 确认合并 / 提交审核 / 撤回审核 / 撤回作品 / 搜索记录`。
 
-## 未能在本机执行（需要在你的终端里跑）
+## 第一轮 E2E（在你的终端跑的）：273 用例 · 224 通过 · 22 跳过 · 27 失败
 
-本次代理运行的沙箱里 Playwright 三种浏览器都无法启动（chromium / webkit 启动即 SIGSEGV，firefox 无法拉起进程），`next dev` 也因文件描述符上限（EMFILE）反复重启，所以 **E2E 与截图对照没有在本机完成**。请在你的终端执行：
+22 个跳过是项目里既有的按浏览器条件跳过。27 个失败已按 trace 逐个定位，根因与修法如下（第 9 个提交 `fix(ui)`）：
+
+| 失败用例 | 根因 | 修法 |
+| --- | --- | --- |
+| 05 裁剪拖拽（chromium / firefox）、15:90 弹窗底边 385.8 > 384、15:125 裁剪弹窗 axe 对比度、03:57 64ms 长任务 | 弹窗入场用了 `transform` / `opacity` / `backdrop-filter`，动画进行中的几何与合成结果被拿去做断言 | `.modal-backdrop` 只染底色（`backdrop-tint`），`.modal-panel` 只过渡阴影（`panel-settle`），裁剪弹窗与沉浸工作台不做入场动画；去掉 blur |
+| 06:154 菜单项 < 44px | `.overflow-menu` 的 `pop-in` 带 `scale(.96)` | 改 `menu-in`（淡入 + 4px 下落，不缩放）；标签建议浮层同样改用 |
+| webkit 17:148 / 17:170 DetailPanel 打不开、焦点不还 | 抽屉遮罩加了 blur 与 `[data-entering]` 动画 | 回退遮罩为纯底色 |
+| 17:187 弹窗里下拉「不开」（三浏览器） | **不是动画问题**：trace 里颜色数从 `1 / 500` 跳成 `291 / 500`——下拉其实开了又立刻选中。RAC Select 是「按下即开、松手即选」，390px 下抽屉从底部盖住触发器位置，鼠标松开正压在「MARD · 291 色」上就被选走并复制进编辑器；选项高度从 48 改 44 后落点刚好换了一项。这是紧凑抽屉对鼠标用户的真实误触 bug，之前只是几何上侥幸 | `ResponsiveSelect` 紧凑档给 `ListBox` 传 `shouldSelectOnPressUp={false}`：只认选项自己的按压，打开那次松手不再算选择。新增单测「打开触发器时的那次松手不会误选盖在指针下的选项」（去掉修复会失败） |
+| 17:242 `DOMMatrixReadOnly is not defined` | 在 Node 侧解析 transform 矩阵 | 改在浏览器里 `evaluate` 取 `m41` |
+| 17:67 图纸与原图舞台 y 差 90px | 窄列里 compact 工具行折成两行，两侧三段各自独立 | `.review-material-pair` 外层三行轨道 + 两侧 `grid-template-rows: subgrid`，工具行折行时另一侧舞台一起下移；不支持 subgrid 的浏览器退化为各自三行 |
+| webkit 一串 429（12:191、14:148、14:183、15:24 / 74 / 90、17:19） | 三个浏览器项目共用一个 PGlite 与同一 IP，豆社写接口默认 300/小时被批次原图上传耗尽 | `globalSetup` 放开 `RATE_COMMUNITY_WRITE_USER_HOUR / RATE_COMMUNITY_WRITE_IP_HOUR / RATE_PUBLIC_READ_IP_HOUR`（与已有 `RATE_LOGIN` 同一处，E2E 不验证限流本身） |
+
+## 第二轮 E2E（需要在你的终端里再跑一次）
+
+代理沙箱里浏览器进程起不来、`next dev` 因文件监听 EMFILE 反复自重启，**E2E 仍需在你的终端执行**：
 
 ```bash
-# 若之前的冒烟服务器还占着端口，先清掉
-lsof -ti:3200,3300 | xargs kill
+# 若上一轮的 dev 服务器还占着端口，先清掉（E2E 用 3100；冒烟用 3200 / 3300）
+lsof -ti:3100,3200,3300 | xargs kill
 
 # macOS 26 上 Playwright 1.62 会把主机判成 mac-x64，需要显式指定 arm64
 PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15-arm64 npm run test:e2e
