@@ -50,9 +50,9 @@ export function useConfirm(): {
 
   const confirmDialog = request === null ? null : (
     <Modal label={request.title} onClose={() => settle(false)} panelClassName="max-w-sm">
-      <h2 className="mb-2 text-base font-medium text-ink">{request.title}</h2>
-      {request.message && <p className="mb-4 text-sm text-ink-soft">{request.message}</p>}
-      <div className="flex justify-end gap-2">
+      <h2>{request.title}</h2>
+      {request.message && <p className="modal-copy">{request.message}</p>}
+      <div className="modal-actions">
         <Button variant="quiet" onClick={() => settle(false)}>
           {request.cancelLabel ?? zhCN.designs.cancel}
         </Button>

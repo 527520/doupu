@@ -16,6 +16,7 @@ import ActionOverflow from '@/components/layout/ActionOverflow';
 import Button from '@/components/ui/Button';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import EmptyState from '@/components/ui/EmptyState';
+import Icon from '@/components/ui/Icon';
 import IconButton from '@/components/ui/IconButton';
 import Modal from '@/components/ui/Modal';
 import Notice from '@/components/ui/Notice';
@@ -206,8 +207,8 @@ export function WorkActions({ workId, initialLikes, initialReuses, canInteract =
       </span>
       <IconButton icon="flag" label={t.reportWork} disabled={!canInteract || pending !== null} onClick={() => { setMessage(null); setReportTarget({ targetType: 'work', targetId: workId }); }} />
       <ActionOverflow label={t.more} actions={<>
-        <Link href="/designs">{t.myDesigns}</Link>
-        <Link href="/community/copyright">{t.copyrightNotice}</Link>
+        <Link href="/designs"><Icon name="folder" size={16} />{t.myDesigns}</Link>
+        <Link href="/community/copyright"><Icon name="shield" size={16} />{t.copyrightNotice}</Link>
       </>} />
     </div>
     <p className="community-stats">{zhCN.communityAdmin.detail.likeCount(likes)} · {zhCN.communityAdmin.detail.reuseCount(reuses)}</p>

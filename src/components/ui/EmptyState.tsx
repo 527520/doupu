@@ -1,14 +1,16 @@
 /**
- * 空态（site-ui-overhaul 02）：钉板纹理上放一句邀请，而不是一行灰字。
+ * 空态（site-ui-overhaul 02 / ui-polish-2026）：钉板纹理上放一句邀请，而不是一行灰字。
  * 说清「这里会出现什么」和「下一步做什么」，可选一个动作。
+ *
+ * `align="start"` 用于面板里的空态：内容靠顶，紧挨着它所指向的列表，而不是吊在一大块空白的中央。
  */
 import type { ReactNode } from 'react';
 import Icon, { type IconName } from './Icon';
 
-export default function EmptyState({ title, description, action, icon = 'grid', compact = false, className = '', role }: {
-  title: ReactNode; description?: ReactNode; action?: ReactNode; icon?: IconName; compact?: boolean; className?: string; role?: 'status';
+export default function EmptyState({ title, description, action, icon = 'grid', compact = false, align = 'center', className = '', role }: {
+  title: ReactNode; description?: ReactNode; action?: ReactNode; icon?: IconName; compact?: boolean; align?: 'center' | 'start'; className?: string; role?: 'status';
 }) {
-  return <div role={role} className={`empty-state pegboard${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`}>
+  return <div role={role} className={`empty-state pegboard${compact ? ' is-compact' : ''}${align === 'start' ? ' is-start' : ''}${className ? ` ${className}` : ''}`}>
     <span className="empty-state-icon" aria-hidden="true"><Icon name={icon} size={compact ? 20 : 26} /></span>
     <p className="empty-state-title">{title}</p>
     {description && <p className="empty-state-description">{description}</p>}

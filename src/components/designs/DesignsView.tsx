@@ -15,6 +15,7 @@ import ColorBand from '@/components/palettes/ColorBand';
 import { LIMITS } from '@/lib/appInfo';
 import SiteHeader from '@/components/layout/SiteHeader';
 import Modal from '@/components/ui/Modal';
+import Icon from '@/components/ui/Icon';
 import ActionOverflow from '@/components/layout/ActionOverflow';
 import { isProgressCompatible, summarizeProgress } from '@/lib/progress/stitchProgress';
 import type { ProjectFile } from '@/lib/types';
@@ -412,16 +413,16 @@ export default function DesignsView({ storageOverride, apiOverride }: Props) {
                   setRenaming(design);
                   setRenameValue(design.name);
                 }}
-                className="btn-outline btn-icon"
               >
-                {t.rename}
-              </button>
-              <button type="button" disabled={opening !== null || mutating || syncing} onClick={() => { setError(null); setDeleting(design); }} className="btn-danger-outline btn-xs">
-                {t.delete}
+                <Icon name="edit" size={16} />{t.rename}
               </button>
               {me !== 'loading' && me.state === 'verified' && design.cloudPresent && (
-                <Link href={`/community/submit?designId=${design.id}`} className="btn-outline btn-xs">{zhCN.designs.submitCommunity}</Link>
+                <Link href={`/community/submit?designId=${design.id}`}><Icon name="send" size={16} />{zhCN.designs.submitCommunity}</Link>
               )}
+              <hr aria-hidden="true" />
+              <button type="button" data-tone="danger" disabled={opening !== null || mutating || syncing} onClick={() => { setError(null); setDeleting(design); }}>
+                <Icon name="trash" size={16} />{t.delete}
+              </button>
               </>} />
             </div>
           </li>

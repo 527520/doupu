@@ -1881,14 +1881,15 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           )}
           overflowActions={authStatus.kind !== 'user' ? (
           <>
-            <Link href="/login" className="btn-primary workspace-overflow-action" onClick={(event) => handleNavigationClick(event, '/login')}>
-              {zhCN.nav.login}
+            <Link href="/login" onClick={(event) => handleNavigationClick(event, '/login')}>
+              <Icon name="user" size={16} />{zhCN.nav.login}
             </Link>
-            <Link href="/register" className="btn-outline workspace-overflow-action" onClick={(event) => handleNavigationClick(event, '/register')}>
-              {zhCN.nav.registerAccount}
+            <Link href="/register" onClick={(event) => handleNavigationClick(event, '/register')}>
+              <Icon name="plus" size={16} />{zhCN.nav.registerAccount}
             </Link>
-            <button type="button" onClick={handleRestart} className="workspace-overflow-restart">
-              {t.restart}
+            <hr aria-hidden="true" />
+            <button type="button" onClick={handleRestart}>
+              <Icon name="refresh" size={16} />{t.restart}
             </button>
           </>
         ) : undefined}

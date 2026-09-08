@@ -30,6 +30,8 @@ export interface ResponsiveSelectProps {
   error?: string;
   className?: string;
   hideLabel?: boolean;
+  /** 尺寸档：md = 44（表单行），sm = 36（参数面板等工具行）。 */
+  size?: 'md' | 'sm';
   'aria-describedby'?: string;
 }
 const subscribeHydration = () => () => {};
@@ -38,7 +40,7 @@ const subscribeHydration = () => () => {};
  * Only presentation changes at the breakpoint; callers keep business transitions.
  */
 export default function ResponsiveSelect({ label, options, name, id, value, defaultValue, onValueChange,
-  disabled = false, required = false, error, className = '', hideLabel = false,
+  disabled = false, required = false, error, className = '', hideLabel = false, size = 'md',
   'aria-describedby': describedBy,
 }: ResponsiveSelectProps) {
   const compact = useCompactLayout();
@@ -48,8 +50,9 @@ export default function ResponsiveSelect({ label, options, name, id, value, defa
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const initial = defaultValue ?? options.find((option) => !option.disabled)?.value;
+  const fieldClass = `${styles.field}${size === 'sm' ? ` ${styles.sm}` : ''} ${className}`;
   // An operable, labelled GET/form control is delivered even with JS disabled.
-  if (!hydrated) return <label className={`${styles.field} ${className}`}>
+  if (!hydrated) return <label className={fieldClass}>
     <span className={hideLabel ? 'sr-only' : styles.label}>{label}</span>
     <select id={fieldId} name={name} value={value} defaultValue={value === undefined ? initial : undefined}
       required={required} disabled={disabled} aria-describedby={describedBy}
@@ -80,7 +83,7 @@ export default function ResponsiveSelect({ label, options, name, id, value, defa
     onChange={(key) => { if (key !== null) onValueChange?.(String(key)); }}
     isDisabled={disabled} isRequired={required} isInvalid={Boolean(error)}
     disabledKeys={options.filter((option) => option.disabled).map((option) => option.value)}
-    placeholder={zhCN.selection.placeholder} className={`${styles.field} ${className}`}>
+    placeholder={zhCN.selection.placeholder} className={fieldClass}>
     <Label className={hideLabel ? 'sr-only' : styles.label}>{label}</Label>
     <Button id={fieldId} className={styles.trigger} aria-describedby={describedBy}>
       <SelectValue className={styles.value}>{({ selectedText }) => selectedText || zhCN.selection.placeholder}</SelectValue>

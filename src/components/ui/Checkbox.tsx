@@ -16,11 +16,13 @@ export interface CheckboxProps {
   value?: string;
   description?: ReactNode;
   className?: string;
+  /** 紧凑档：行高 36，用于卡片脚、工具行。 */
+  compact?: boolean;
   'aria-describedby'?: string;
 }
 
-export default function Checkbox({ label, checked, onChange, disabled = false, name, value, description, className = '', 'aria-describedby': describedBy }: CheckboxProps) {
-  return <label className={`checkbox-control${className ? ` ${className}` : ''}`}>
+export default function Checkbox({ label, checked, onChange, disabled = false, name, value, description, className = '', compact = false, 'aria-describedby': describedBy }: CheckboxProps) {
+  return <label className={`checkbox-control${compact ? ' is-compact' : ''}${className ? ` ${className}` : ''}`}>
     <input type="checkbox" name={name} value={value} checked={checked} disabled={disabled} aria-describedby={describedBy} onChange={(event) => onChange(event.target.checked)} />
     <span className="checkbox-box" aria-hidden="true"><Icon name="check" size={14} /></span>
     <span className="checkbox-copy"><span>{label}</span>{description && <small>{description}</small>}</span>

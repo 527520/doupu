@@ -1,7 +1,7 @@
 # 02 控件质感重做
 
 Status: ready-for-agent
-Completion: not-started
+Completion: complete
 
 ## 范围
 
@@ -18,3 +18,7 @@ Completion: not-started
 ## 验收
 
 - 单测：Modal / FormControls / ResponsiveSelect / CommunityInteractions / AccountMenu / SiteHeader 通过；新增 Menu.test。
+
+## Comments
+
+- 菜单没有改用 react-aria `Menu`：四处调用方与 E2E 03/04/06、SiteHeader/WorkbenchProjectBar 单测都依赖「子项是真实 <a>/<button>、面板 data-testid=site-overflow-panel、onNavigate(event, href) 离开保护」这一契约。改为保留 `ActionOverflow` 的子项模型，重做其表面（豆粒触发器、浮层 pop-in、44px 菜单项、危险语气、<hr> 分隔）并补方向键漫游，效果一致且不动契约。

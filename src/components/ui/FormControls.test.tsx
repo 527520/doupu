@@ -12,6 +12,7 @@ import Textarea from './Textarea';
 import Chip from './Chip';
 import Badge from './Badge';
 import EmptyState from './EmptyState';
+import SegmentedControl from './SegmentedControl';
 import { zhCN } from '@/messages/zh-CN';
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -53,6 +54,39 @@ describe('DatePicker', () => {
   it('非受控 + 无 onValueChange 时自行维护状态', async () => {
     const { container } = render(<DatePicker label="日期" name="d" defaultValue="2026-01-02" />);
     await waitFor(() => expect((container.querySelector('input[name="d"]') as HTMLInputElement).value).toBe('2026-01-02'));
+  });
+
+  it('点字段任意位置（不只是日历按钮）都能打开月历；禁用时不打开', async () => {
+    const { container, unmount } = render(<ControlledDate initial="2026-09-07" />);
+    await screen.findByRole('button', { name: new RegExp(zhCN.datePicker.open) });
+    const group = container.querySelector('[role="group"]') as HTMLElement;
+    expect(group).toBeTruthy();
+    await userEvent.click(group);
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    unmount();
+    const disabled = render(<DatePicker label="日期" name="d" defaultValue="2026-01-02" disabled />);
+    await screen.findByRole('button', { name: new RegExp(zhCN.datePicker.open) });
+    await userEvent.click(disabled.container.querySelector('[role="group"]') as HTMLElement);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('SegmentedControl', () => {
+  it('原生单选承担状态；轨道知道选项数以便滑块均分，可见标签可选', async () => {
+    const onChange = vi.fn();
+    const { container, rerender } = render(<SegmentedControl label="取样模式" value="dominant" onValueChange={onChange}
+      options={[{ value: 'dominant', label: '主色' }, { value: 'average', label: '平均色' }]} />);
+    const fieldset = container.querySelector('fieldset.segmented-control') as HTMLElement;
+    expect(fieldset.style.getPropertyValue('--n')).toBe('2');
+    expect(container.querySelector('.segmented-track')).toBeTruthy();
+    expect(screen.queryByText('取样模式', { selector: '.field-label' })).toBeNull();
+    await userEvent.click(screen.getByRole('radio', { name: '平均色' }));
+    expect(onChange).toHaveBeenCalledWith('average');
+    rerender(<SegmentedControl label="取样模式" value="average" showLabel size="sm" onValueChange={onChange}
+      options={[{ value: 'dominant', label: '主色' }, { value: 'average', label: '平均色' }]} />);
+    expect(screen.getByText('取样模式', { selector: '.field-label' })).toBeTruthy();
+    expect(fieldset.className).toContain('is-sm');
+    expect(screen.getByRole('radio', { name: '平均色' })).toBeChecked();
   });
 });
 

@@ -89,7 +89,8 @@ export default function DatePicker({ label, name, id, value: controlled, default
       isDisabled={disabled} isRequired={required} isInvalid={Boolean(error)} granularity="day" shouldForceLeadingZeros
       className={`${styles.field} ${className}`}>
       <Label className={hideLabel ? 'sr-only' : styles.label}>{label}</Label>
-      <Group className={styles.group}>
+      {/* 整块可点：点分段、点空白都打开月历，不必瞄准右侧那颗小日历按钮；键盘分段输入不受影响。 */}
+      <Group className={styles.group} onClick={() => { if (!disabled) setOpen(true); }}>
         <DateInput className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>
         <Button className={styles.trigger} aria-label={t.open}><Icon name="calendar" size={18} /></Button>
       </Group>

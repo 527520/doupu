@@ -111,7 +111,7 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4"
+      className="modal-backdrop"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -124,7 +124,7 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
         aria-label={label}
         tabIndex={-1}
         style={panelStyle}
-        className={`w-full max-w-[calc(100vw-2rem)] rounded-2xl border border-lilac/30 bg-white p-4 shadow-soft ${panelClassName}`}
+        className={`modal-panel ${panelClassName}`}
       >
         {children}
       </div>

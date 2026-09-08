@@ -78,7 +78,7 @@ export default function DateRangePicker({ label, startName, endName, id, value: 
       isDisabled={disabled} isRequired={required} isInvalid={Boolean(error)} granularity="day" shouldForceLeadingZeros
       className={`${styles.field} ${className}`}>
       <Label className={hideLabel ? 'sr-only' : styles.label}>{label}</Label>
-      <Group className={styles.group}>
+      <Group className={styles.group} onClick={() => { if (!disabled) setOpen(true); }}>
         <DateInput slot="start" className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>
         <span aria-hidden="true" className={styles.separator}>–</span>
         <DateInput slot="end" className={styles.input}>{(segment) => <DateSegment segment={segment} className={styles.segment} />}</DateInput>

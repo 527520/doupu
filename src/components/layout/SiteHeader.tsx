@@ -54,9 +54,10 @@ export default function SiteHeader({
   const avatar = displayName.trim().charAt(0).toUpperCase() || zhCN.app.name.charAt(0);
   const overflowControl = <ActionOverflow label={zhCN.nav.moreLinks} actions={<>
     {overflowActions}
-    <Link href="/palettes" onClick={(event) => navigate(event, '/palettes')}>{zhCN.nav.palettes}</Link>
-    <Link href="/help" onClick={(event) => navigate(event, '/help')}>{zhCN.workspace.helpAndGuide}</Link>
-    <Link href="/privacy" onClick={(event) => navigate(event, '/privacy')}>{zhCN.workspace.privacyPreferences}</Link>
+    {overflowActions ? <hr aria-hidden="true" /> : null}
+    <Link href="/palettes" onClick={(event) => navigate(event, '/palettes')}><Icon name="palette" size={16} />{zhCN.nav.palettes}</Link>
+    <Link href="/help" onClick={(event) => navigate(event, '/help')}><Icon name="help" size={16} />{zhCN.workspace.helpAndGuide}</Link>
+    <Link href="/privacy" onClick={(event) => navigate(event, '/privacy')}><Icon name="lock" size={16} />{zhCN.workspace.privacyPreferences}</Link>
   </>} />;
 
   return (
