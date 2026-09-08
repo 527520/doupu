@@ -2,7 +2,10 @@ import type { NextConfig } from "next";
 import { networkInterfaces } from "node:os";
 import { collectAllowedDevOrigins } from "./src/lib/config/devOrigins";
 
-const allowedDevOrigins = collectAllowedDevOrigins(process.env.DEV_LAN_ORIGIN, networkInterfaces());
+// macOS 15+ 在终端没有「本地网络」权限时会让 os.networkInterfaces() 以 EPERM 失败；
+// 这只影响「自动放行局域网 IPv4」这一便利项，不该把 dev 服务器整个拖垮。
+const detectedInterfaces = (() => { try { return networkInterfaces(); } catch { return {}; } })();
+const allowedDevOrigins = collectAllowedDevOrigins(process.env.DEV_LAN_ORIGIN, detectedInterfaces);
 
 const nextConfig: NextConfig = {
   // Isolate disposable browser-test builds from the user's running dev server.

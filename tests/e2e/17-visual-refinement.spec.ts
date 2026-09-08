@@ -5,7 +5,12 @@ import { randomUUID } from 'node:crypto';
 import { attachSubmissionOriginal, fillField, selectChoice, uploadDraftOriginal, waitHydrated } from './helpers';
 
 const widths=[350,390,768,1280,1440];
-const output=(name:string)=>resolve('.scratch/site-visual-refinement/evidence',name);
+const output=(name:string)=>resolve('.scratch/ui-polish-2026/evidence',name);
+/** 同一行控件的底边必须对齐（表单行尺寸律）。 */
+async function expectBottomsAligned(locators:Locator[],tolerance=1){
+  const bottoms=await Promise.all(locators.map(async locator=>{const box=await locator.boundingBox();expect(box).not.toBeNull();return box!.y+box!.height;}));
+  for(const bottom of bottoms) expect(Math.abs(bottom-bottoms[0]),`bottoms ${bottoms.map(v=>v.toFixed(1)).join(' / ')}`).toBeLessThanOrEqual(tolerance);
+}
 async function expectNoMotionTransform(element:Locator){
   expect(await element.evaluate(node=>{const value=getComputedStyle(node).transform;return value==='none'||new DOMMatrixReadOnly(value).isIdentity;})).toBe(true);
   await expect(element).toHaveCSS('translate','none');
@@ -84,6 +89,23 @@ test('后台待审、批次和人员队列五宽度排版与无障碍',async({pa
     }
     for(const width of widths){
       await page.setViewportSize({width,height:844});
+      if(width>=1280){
+        if(route==='/admin/reviews'){
+          // 图纸舞台与作者原图舞台顶边严格对齐（说明行 → 工具行 → 舞台三段对位）
+          const pair=page.locator('.review-material-pair').first();
+          const stage=await pair.locator('.pattern-preview-stage').first().boundingBox();const original=await pair.locator('.admin-original-stage').boundingBox();
+          expect(stage).not.toBeNull();expect(original).not.toBeNull();expect(Math.abs(stage!.y-original!.y)).toBeLessThanOrEqual(2);
+          // 禁用的主按钮不再靠半透明表达：理由为空时「批准发布」禁用但 opacity 仍为 1
+          const approve=page.getByRole('button',{name:'批准发布'});await expect(approve).toBeDisabled();await expect(approve).toHaveCSS('opacity','1');
+          // 空态 / 详情靠顶：返回按钮与左栏列表第一项在同一水平带内
+          const back=await page.getByRole('button',{name:'返回列表'}).boundingBox();const firstItem=await page.locator('.review-queue button').first().boundingBox();
+          expect(Math.abs(back!.y-firstItem!.y)).toBeLessThan(60);
+        }
+        if(route==='/admin/users'){
+          // 筛选行：搜索输入与「查询」按钮同行且底边对齐
+          await expectBottomsAligned([page.getByRole('textbox',{name:'搜索账号'}),page.getByRole('button',{name:'查询'})]);
+        }
+      }
       expect(await page.evaluate(()=>document.documentElement.scrollWidth),`${route} ${width}px`).toBeLessThanOrEqual(width);
       expect((await new AxeBuilder({page}).analyze()).violations,`${route} ${width}px`).toEqual([]);
       if(width===350||width===1440)await page.screenshot({path:output(`${route.replaceAll('/','-')}-${info.project.name}-${width}.png`),fullPage:true});
@@ -215,4 +237,35 @@ test('多色续作、长标题，以及加载失败后的重试状态',async({pa
   await page.unroute('**/api/community/works?sort=*');
   await page.locator('.home-community').getByRole('button',{name:'重试',exact:true}).click();
   await expect(page.locator('.home-community img.community-thumbnail').first()).toBeVisible();
+});
+
+test('分段滑块随选中位移，日期字段整块可点，审计筛选行底边对齐',async({page})=>{
+  await page.setViewportSize({width:1280,height:844});await page.goto('/community');await waitHydrated(page);
+  const track=page.locator('.community-filter-bar .segmented-track');
+  const thumb=()=>track.evaluate(node=>getComputedStyle(node,'::before').transform);
+  const before=await thumb();
+  await page.getByRole('radio',{name:'精选',exact:true}).check();
+  await expect.poll(thumb).not.toBe(before);
+  const shifted=new DOMMatrixReadOnly(await thumb());expect(shifted.m41).toBeGreaterThan(0);
+  // 更多筛选里的「发布日期」：点字段本体（不是右侧日历按钮）就能打开月历
+  await page.getByRole('button',{name:'更多筛选',exact:true}).click();
+  const group=page.getByRole('group',{name:/发布日期/}).first();await expect(group).toBeVisible();
+  await group.click({position:{x:12,y:20}});
+  await expect(page.getByRole('dialog',{name:'发布日期'})).toBeVisible();await page.keyboard.press('Escape');
+  // 审计筛选：搜索、日期区间、查询三者底边对齐（标签锁高，不因文案长短换行）
+  await page.goto('/login?next=/admin/audit');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
+  await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/audit');await waitHydrated(page);
+  await expectBottomsAligned([page.getByRole('textbox',{name:'搜索记录'}),page.getByRole('group',{name:/日期范围/}).first(),page.getByRole('button',{name:'查询',exact:true})]);
+});
+
+test('空白起稿有唯一主按钮：选板数只改摘要，点「创建空白图纸」才进入修补',async({page})=>{
+  await page.setViewportSize({width:1280,height:844});await page.goto('/app?new=1#blank-start');await waitHydrated(page);
+  const create=page.getByRole('button',{name:'创建空白图纸',exact:true});await expect(create).toBeVisible();
+  await expect(page.getByText(/将创建 29 × 29 格/)).toBeVisible();
+  await page.getByRole('radio',{name:'2 板',exact:true}).check();
+  await expect(page.getByText(/将创建 58 × 58 格/)).toBeVisible();
+  await expect(page.getByRole('tab',{name:'编辑'})).toHaveCount(0);
+  expect((await new AxeBuilder({page}).include('#blank-start').analyze()).violations).toEqual([]);
+  await create.click();
+  await expect(page.getByRole('tab',{name:'编辑'})).toHaveAttribute('aria-selected','true');
 });

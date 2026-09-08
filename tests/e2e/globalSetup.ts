@@ -41,7 +41,9 @@ export default async function globalSetup(): Promise<void> {
   const nextBin = require.resolve('next/dist/bin/next');
   server = spawn(
     process.execPath,
-    [nextBin, 'dev', '-p', String(E2E_PORT)],
+    // 显式绑定回环地址：E2E 只走 127.0.0.1，同时跳过 Next 打印局域网地址时的网卡枚举
+    // （macOS 缺少「本地网络」权限时该调用会以 EPERM 让进程直接退出）。
+    [nextBin, 'dev', '-p', String(E2E_PORT), '-H', '127.0.0.1'],
     {
       cwd: process.cwd(),
       env: {

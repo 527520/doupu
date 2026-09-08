@@ -1,7 +1,7 @@
 # 豆谱 2026 质感精修：柔和纵深 + 轻快必停
 
 Status: ready-for-agent
-Completion: in-progress
+Completion: in-progress（E2E 待在本地终端执行）
 Baseline: b5c08e5
 
 ## 背景

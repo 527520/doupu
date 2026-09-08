@@ -59,8 +59,9 @@ export default function UsersManager({ currentUserId }: { currentUserId: string 
     <section className="admin-panel admin-task-queue" tabIndex={-1} ref={queueRef} aria-label={t.title}>
       <header><h2>{t.title}</h2>{!queue.loading && !queue.error && <span>{queue.items.length}</span>}</header>
       <FilterBar submitLabel={t.query} disabled={command.locked || queue.loading} onSubmit={(event) => { event.preventDefault(); query(); }}>
-        <TextField label={t.search} value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} description={t.searchHelp} />
+        <TextField label={t.search} value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} />
       </FilterBar>
+      <p className="admin-help admin-queue-help">{t.searchHelp}</p>
       <AdminQueueState {...queue} empty={queue.items.length === 0}>
         {/* 列表只显示人能认的信息：显示名、角色、状态、掩码邮箱；账号编号进详情。 */}
         <ul className="admin-object-list stagger">{queue.items.map((user, index) => <li key={user.userId} style={{ '--i': index } as React.CSSProperties}><button type="button" disabled={command.locked} aria-current={selected?.userId === user.userId} onClick={() => select(user)}>

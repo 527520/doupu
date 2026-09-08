@@ -1,7 +1,7 @@
 # 08 验证门禁
 
 Status: ready-for-agent
-Completion: not-started
+Completion: in-progress
 
 ## 范围
 
@@ -9,3 +9,7 @@ Completion: not-started
 - E2E 17 扩展：分段滑块位移、日期字段整块点击、审核台顶边对齐、筛选行底边对齐、禁用主按钮 opacity 为 1、空白起稿主按钮、reduced-motion 恒等变换保留。
 - 五宽度 × 三浏览器截图到 `evidence/`；axe 零违规。
 - `npm run lint && npm run typecheck && npm test && npm run test:e2e && npm run build`。
+
+## Comments
+
+- lint / typecheck / 全量 vitest / 生产构建已通过；E2E 与截图对照因代理沙箱无法启动浏览器与稳定运行 dev 服务器而未在本机完成，见 [verification.md](../verification.md)。
