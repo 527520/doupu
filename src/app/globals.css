@@ -509,10 +509,16 @@ body {
 .admin-confirmation-field { display: grid; gap: .3rem; color: var(--color-ink-soft); font-size: 13px; }
 .admin-confirmation-field input { min-height: 44px; padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; color: var(--color-ink); font-family: ui-monospace, monospace; font-size: 14px; }
 .admin-batch-count { margin-left: .5rem; color: var(--color-ink-soft); font-weight: 400; }
-/* 筛选条与理由区（AdminPrimitives）。筛选条本身就是一行 .form-row：字段 + 行尾动作组，底边对齐。 */
-.admin-filter-bar { --col: 12rem; padding: 1rem; border-bottom: 1px solid var(--color-cream-deep); }
-.admin-filter-bar.is-search-first > .field:first-child { grid-column: span 2; }
-@media (max-width: 640px) { .admin-filter-bar.is-search-first > .field:first-child { grid-column: auto; } }
+/*
+  筛选条（AdminPrimitives）：两段式。第一段「搜索 + 查询」同一行——搜索吃满剩余宽度、查询贴右、底边对齐；
+  第二段是其余筛选（状态 / 日期区间），各占一整行。队列栏永远只有 370px 上下，不做 auto-fit 网格。
+*/
+.admin-filter-bar { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; border-bottom: 1px solid var(--color-cream-deep); }
+.admin-filter-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem 1rem; align-items: end; }
+.admin-filter-primary > * { min-width: 0; }
+.admin-filter-primary .field-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-filter-secondary { --col: 12rem; }
+.admin-filter-secondary > .form-row-wide { grid-column: 1 / -1; }
 .admin-form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 .admin-command-notice { display: grid; gap: .5rem; }
 .admin-command-notice .notice { flex-wrap: wrap; align-items: center; }

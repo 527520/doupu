@@ -98,7 +98,7 @@ export default function WorksManager({ initialWorkId }: { initialWorkId?: string
   return <div className={`admin-task-layout works-task-layout${selected ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" ref={queueRef} tabIndex={-1} aria-label={t.queue}>
       <header><h2>{t.queue}</h2><span>{t.page(cursors.length)}</span></header>
-      <FilterBar className="is-search-first" submitLabel={t.query} disabled={command.locked || queue.loading} onSubmit={(event) => { event.preventDefault(); if (!command.locked) { select(null); setFilter({ q: q.trim(), status }); setCursors(['']); setChecked([]); if (q.trim() === filter.q && status === filter.status && cursors.length === 1) void queue.reload(); } }}>
+      <FilterBar submitLabel={t.query} disabled={command.locked || queue.loading} onSubmit={(event) => { event.preventDefault(); if (!command.locked) { select(null); setFilter({ q: q.trim(), status }); setCursors(['']); setChecked([]); if (q.trim() === filter.q && status === filter.status && cursors.length === 1) void queue.reload(); } }}>
         <TextField label={t.search} value={q} maxLength={80} disabled={command.locked} onChange={(event) => setQ(event.target.value)} />
         <ResponsiveSelect label={t.status} value={status} disabled={command.locked} onValueChange={setStatus} options={[{value:'all',label:t.all},...(['active','withdrawn','removed'] as const).map(value=>({value,label:states.work[value]}))]} />
       </FilterBar>

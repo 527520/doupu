@@ -50,8 +50,8 @@ export default function AuditExplorer() {
   return <div className={`admin-task-layout${selected ? ' is-inspecting' : ''}`}>
     <section className="admin-panel admin-task-queue" ref={queueRef} tabIndex={-1} aria-label={t.queue}>
       <header><h2>{t.queue}</h2><span>{zhCN.communityAdmin.works.page(cursors.length)}</span></header>
-      {/* 搜索占两格、日期区间占两格、查询在行尾：同一行四个 44 高控件底边对齐，标签永不换行。 */}
-      <FilterBar className="is-search-first" submitLabel={t.query} disabled={queue.loading || Boolean(fields.from && fields.to && fields.from > fields.to)} onSubmit={(event) => { event.preventDefault(); move(['']); setFilter({ ...fields }); if (JSON.stringify(fields) === JSON.stringify(filter) && cursors.length === 1) void queue.reload(); }}>
+      {/* 搜索与查询同一行、底边对齐；日期区间独占下一整行——队列栏只有 370px 上下，三者塞不进一行。 */}
+      <FilterBar submitLabel={t.query} disabled={queue.loading || Boolean(fields.from && fields.to && fields.from > fields.to)} onSubmit={(event) => { event.preventDefault(); move(['']); setFilter({ ...fields }); if (JSON.stringify(fields) === JSON.stringify(filter) && cursors.length === 1) void queue.reload(); }}>
         <TextField label={t.search} value={fields.q} maxLength={120} onChange={(event) => setFields({ ...fields, q: event.target.value })} />
         <DateRangePicker label={t.range} startLabel={t.from} endLabel={t.to} value={{ start: fields.from, end: fields.to }} onValueChange={({ start, end }) => setFields({ ...fields, from: start, to: end })} className="form-row-wide" />
       </FilterBar>

@@ -12,11 +12,16 @@ async function expectBottomsAligned(locators:Locator[],tolerance=1){
   for(const bottom of bottoms) expect(Math.abs(bottom-bottoms[0]),`bottoms ${bottoms.map(v=>v.toFixed(1)).join(' / ')}`).toBeLessThanOrEqual(tolerance);
 }
 /**
- * 等页面上有限次的动画 / 过渡都跑完再做 axe：错峰入场是从透明淡入的，
- * 中途抓到的半透明文字会被判成对比度不足——那不是用户看到的最终状态。无限循环的（加载环）不用等。
+ * 等页面「静下来」再做 axe：骨架 / aria-busy 还在说明列表没到，到了之后错峰入场又是从透明淡入的，
+ * 中途抓到的半透明文字会被判成对比度不足——那不是用户看到的最终状态。
+ * 用轮询而不是一次性 await finished：列表是异步到的，取样那一刻可能还没有动画。无限循环的（加载环）不算。
  */
 async function settleMotion(page:Page){
-  await page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>animation.effect?.getTiming().iterations!==Infinity).map(animation=>animation.finished.then(()=>undefined,()=>undefined))).then(()=>undefined));
+  await expect.poll(()=>page.evaluate(()=>{
+    if(document.querySelector('.skeleton, [aria-busy="true"]')) return 'loading';
+    const running=document.getAnimations().filter(animation=>(animation.playState==='running'||animation.pending)&&animation.effect?.getTiming().iterations!==Infinity);
+    return running.length===0?'settled':'animating';
+  }),{timeout:15_000}).toBe('settled');
 }
 /** 先等动效落定再跑 axe，全文件统一走这里。 */
 async function axe(page:Page,include?:string){
@@ -265,10 +270,15 @@ test('分段滑块随选中位移，日期字段整块可点，审计筛选行�
   const group=page.getByRole('group',{name:/发布日期/}).first();await expect(group).toBeVisible();
   await group.click({position:{x:12,y:20}});
   await expect(page.getByRole('dialog',{name:'发布日期'})).toBeVisible();await page.keyboard.press('Escape');
-  // 审计筛选：搜索、日期区间、查询三者底边对齐（标签锁高，不因文案长短换行）
+  // 审计筛选是两段式：搜索与「查询」同一行底边对齐；日期区间独占下一整行，宽度与搜索 + 查询整行一致
   await page.goto('/login?next=/admin/audit');await fillField(page,'邮箱','e2e-admin@example.com');await fillField(page,'密码','E2e-pass-123!');
   await page.getByRole('button',{name:'登录',exact:true}).click();await expect.poll(()=>new URL(page.url()).pathname).toBe('/admin/audit');await waitHydrated(page);
-  await expectBottomsAligned([page.getByRole('textbox',{name:'搜索记录'}),page.getByRole('group',{name:/日期范围/}).first(),page.getByRole('button',{name:'查询',exact:true})]);
+  const search=page.getByRole('textbox',{name:'搜索记录'});const query=page.getByRole('button',{name:'查询',exact:true});
+  await expectBottomsAligned([search,query]);
+  const searchBox=(await search.boundingBox())!;const queryBox=(await query.boundingBox())!;const rangeBox=(await page.getByRole('group',{name:/日期范围/}).first().boundingBox())!;
+  expect(rangeBox.y).toBeGreaterThan(searchBox.y+searchBox.height);
+  expect(Math.abs(rangeBox.x-searchBox.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(rangeBox.x+rangeBox.width-(queryBox.x+queryBox.width))).toBeLessThanOrEqual(1);
 });
 
 test('空白起稿有唯一主按钮：选板数只改摘要，点「创建空白图纸」才进入修补',async({page})=>{

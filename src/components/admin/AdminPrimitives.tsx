@@ -4,7 +4,7 @@
  * 后台共享组件（site-ui-overhaul 06）。此前分页、筛选条、状态徽标、理由 + 确认区都是各 Manager 内联的 JSX，
  * 九个模块九种写法。这里把它们收成小组件，样式仍走 globals.css 的 .admin-* 类。
  */
-import type { FormEvent, ReactNode } from 'react';
+import { Children, type FormEvent, type ReactNode } from 'react';
 import Badge, { type BadgeTone } from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import Checkbox from '@/components/ui/Checkbox';
@@ -37,15 +37,21 @@ export function Pagination({ page, hasPrevious, hasNext, onPrevious, onNext, dis
 }
 
 /**
- * 筛选条：字段与查询按钮在同一行（.form-row 让所有控件底边对齐），按钮靠行尾；提交交给调用方。
- * 字段请用 TextField / ResponsiveSelect / DatePicker——它们的标签都锁高且不换行，同行才对得齐。
+ * 筛选条：第一个字段（搜索）与查询按钮永远同一行、底边对齐；其余筛选各占一整行排在下面。
+ * 队列栏只有 370px 上下，不管视口多宽都塞不下「搜索 + 日期区间 + 查询」一行，与其让 auto-fit 网格
+ * 把按钮挤到孤零零的第三行，不如固定这个两段式。字段请用 TextField / ResponsiveSelect / DatePicker——
+ * 它们的标签都锁高且不换行，同行才对得齐。
  */
 export function FilterBar({ children, onSubmit, submitLabel, disabled = false, extra, className = '' }: {
   children: ReactNode; onSubmit: (event: FormEvent<HTMLFormElement>) => void; submitLabel: string; disabled?: boolean; extra?: ReactNode; className?: string;
 }) {
-  return <form className={`admin-filter-bar form-row${className ? ` ${className}` : ''}`} onSubmit={onSubmit}>
-    {children}
-    <div className="form-row-actions">{extra}<Button type="submit" variant="secondary" icon="search" disabled={disabled}>{submitLabel}</Button></div>
+  const [primary, ...secondary] = Children.toArray(children);
+  return <form className={`admin-filter-bar${className ? ` ${className}` : ''}`} onSubmit={onSubmit}>
+    <div className="admin-filter-primary">
+      {primary}
+      <div className="form-row-actions">{extra}<Button type="submit" variant="secondary" icon="search" disabled={disabled}>{submitLabel}</Button></div>
+    </div>
+    {secondary.length > 0 && <div className="form-row admin-filter-secondary">{secondary}</div>}
   </form>;
 }
 

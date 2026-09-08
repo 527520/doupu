@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import {
   createGenerationSession,
   generationSessionReducer,
@@ -60,6 +60,10 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     const draft = current.draft;
     const source = current.source;
     if (!draft || !source || !current.sourceAvailable) return null;
+    // 图纸落地是整个工作台最大的一次提交：预览画布、材料清单、导出面板一起挂载。
+    // 成功路径作为过渡渲染，让 React 分片让出主线程，不出现 >50ms 的长任务（E2E 03 的性能门禁）；
+    // 模块状态（stateRef）仍在 dispatch 里同步写入，取消 / 失败路径保持同步，取消后的 UI 恢复时限不受影响。
+    let succeeded = false;
     return tasks.start(
     (onProgress) => options.create(source, draft, onProgress),
     {
@@ -73,8 +77,11 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
       },
       onSuccess: (taskId, result) => {
         const commit = options.commit(result, draft);
-        dispatch({ type: 'success', taskId, commit });
-        options.onSuccess?.(commit);
+        succeeded = true;
+        startTransition(() => {
+          dispatch({ type: 'success', taskId, commit });
+          options.onSuccess?.(commit);
+        });
       },
       onFailure: (taskId, error) => {
         if (error instanceof Error && error.name === 'AbortError') return;
@@ -82,7 +89,11 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
         dispatch({ type: 'failure', taskId, error: options.errorMessage });
         options.onFailure?.(error, stableDraft);
       },
-      onSettled: () => options.onSettled?.(),
+      // 成功后的收尾（隐藏进度条）与图纸提交同一优先级，避免进度条先消失、图纸晚一帧才出现。
+      onSettled: () => {
+        if (succeeded) startTransition(() => options.onSettled?.());
+        else options.onSettled?.();
+      },
     },
   );
   }, [dispatch, tasks]);

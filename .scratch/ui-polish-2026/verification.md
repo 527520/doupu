@@ -1,6 +1,6 @@
 # ui-polish-2026 验证记录
 
-日期：2026-09-08 · 基线 `b5c08e5` → 本轮 10 个本地提交（未推送）
+日期：2026-09-08 · 基线 `b5c08e5` → 本轮 11 个本地提交（未推送）
 
 ## 已在本机通过
 
@@ -49,7 +49,17 @@
 | firefox 13:99 裁剪弹窗高度 700.000004 ≠ 700 | Firefox DOMRect 亚像素误差；弹窗面板不再有 transform（transform 会把图层吸附到整像素） | 断言改 `toBeCloseTo(height, 3)`，与文件里既有的「按 CSS 像素比较」注释一致 |
 | firefox 02:12 取消生成后 UI 恢复 128.5ms > 100ms | 第一轮同一用例通过；测量包含 Worker 协作式取消的块边界延迟，Firefox 上本就贴着阈值。本轮唯一与之相关的改动（高级选项不再预挂载）只会让重渲染更轻 | 未改代码或阈值；请单独重跑几次确认是否为时序噪声：`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15-arm64 npx playwright test tests/e2e/02-workbench-journey.spec.ts --project=firefox --repeat-each=3` |
 
-## 第三轮 E2E（需要在你的终端里再跑一次）
+## 第三轮 E2E：273 用例 · 244 通过 · 22 跳过 · 7 失败
+
+第二轮的 12 个里，webkit 抽屉两项（17:148 / 17:170）、日期字段点本体、firefox 02 与 13 都已通过。剩下 7 个（第 11 个提交）：
+
+| 失败用例 | 根因 | 修法 |
+| --- | --- | --- |
+| 03:57 长任务 53ms（chromium，上一轮 73ms） | 用 trace 截图帧对时：1212ms 时页面还是「正在生成图纸…」，1422ms 已是完整工作台，长任务落在 1283ms——就是**图纸落地的那次 React 提交**（预览画布 + 参数面板三个下拉 + 材料 / 导出面板一起挂载）。高级选项不再预挂载省了 20ms，但这次提交本来就贴着 50ms | `useGenerationSession` 把成功路径（`success` dispatch + `onSuccess` + 成功后的 `onSettled`）放进 `startTransition`：React 分片渲染、每 5ms 让出主线程，提交本身只剩 DOM 写入；`stateRef` 仍同步写入，取消 / 失败路径保持同步（取消后 100ms 的门禁不受影响） |
+| 17:80 `/admin/users` 350px axe 对比度（chromium） | 还是错峰淡入被抓在半路：`settleMotion` 一次性 `await finished` 取样时列表还没到（异步请求），到了之后才开始淡入 | `settleMotion` 改轮询：有 `.skeleton` / `[aria-busy]` 视为「还在加载」，有正在跑的有限次动画视为「还在动」，直到静下来才跑 axe；首页「正在读取本机设计…」补 `aria-busy` |
+| 17:80 users 与 17:255 audit 的筛选行底边不对齐（三浏览器） | 断言假设「搜索 / 日期区间 / 查询」能排成一行，但队列栏永远只有 370px 上下（截图里 1280 视口下左栏就这么宽），auto-fit 网格把三者排成了三行、查询按钮孤零零在第三行 | `FilterBar` 改两段式：第一段「搜索 + 查询」固定同一行（`minmax(0,1fr) auto`，底边对齐），第二段其余筛选各占一整行；断言同步改为「搜索与查询对齐、日期区间独占下一整行且左右与上一行对齐」 |
+
+## 第四轮 E2E（需要在你的终端里再跑一次）
 
 代理沙箱里浏览器进程起不来、`next dev` 因文件监听 EMFILE 反复自重启，**E2E 仍需在你的终端执行**：
 
