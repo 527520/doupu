@@ -1,7 +1,7 @@
 # 05 豆社全链路
 
 Status: ready-for-agent
-Completion: not-started
+Completion: complete
 
 ## 范围
 

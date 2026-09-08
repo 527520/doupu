@@ -13,7 +13,7 @@ import { createDoupuApi } from '@/lib/sync/api';
 import { ApiError, createSyncClient } from '@/lib/sync/clientAdapter';
 import { withDesignStorageLock } from '@/lib/sync/queue';
 import ActionOverflow from '@/components/layout/ActionOverflow';
-import Button from '@/components/ui/Button';
+import Button, { ButtonLink } from '@/components/ui/Button';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import EmptyState from '@/components/ui/EmptyState';
 import Icon from '@/components/ui/Icon';
@@ -200,10 +200,11 @@ export function WorkActions({ workId, initialLikes, initialReuses, canInteract =
     <div className="community-action-row">
       {canInteract
         ? <Button variant="primary" icon="spark" loading={pending === 'reuse'} disabled={pending !== null} onClick={() => void reuse()}>{pending === 'reuse' ? t.opening : copyReady ? t.openCopy : t.reuse}</Button>
-        : <Link href={loginHref} className="btn-primary">{t.loginToReuse}</Link>}
+        : <ButtonLink variant="primary" icon="user" href={loginHref}>{t.loginToReuse}</ButtonLink>}
       <span className="community-like">
-        <IconButton icon={liked ? 'heart-filled' : 'heart'} label={liked ? t.unlike : t.like} pressed={liked ?? false} tone="primary" disabled={!canInteract || pending !== null || liked === null} onClick={() => void like()} />
-        <span className="community-like-count" aria-label={zhCN.communityAdmin.detail.likeCount(likes)}>{likes}</span>
+        {/* 点赞状态未返回时不走 disabled 灰态（会在灰亮之间闪一下），只把图标降一点。 */}
+        <IconButton icon={liked ? 'heart-filled' : 'heart'} label={liked ? t.unlike : t.like} pressed={liked ?? false} tone="primary" loading={canInteract && liked === null} disabled={!canInteract || pending !== null || liked === null} onClick={() => void like()} />
+        <span className="community-like-count" aria-label={zhCN.communityAdmin.detail.likeCount(likes)}><span key={likes} className="count-roll">{likes}</span></span>
       </span>
       <IconButton icon="flag" label={t.reportWork} disabled={!canInteract || pending !== null} onClick={() => { setMessage(null); setReportTarget({ targetType: 'work', targetId: workId }); }} />
       <ActionOverflow label={t.more} actions={<>

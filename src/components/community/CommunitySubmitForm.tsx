@@ -1,5 +1,9 @@
 'use client';
 import ResponsiveSelect from '@/components/ui/ResponsiveSelect';
+import Button, { ButtonLink, buttonClassName } from '@/components/ui/Button';
+import Icon from '@/components/ui/Icon';
+import Notice from '@/components/ui/Notice';
+import TextField from '@/components/ui/TextField';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -207,7 +211,7 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
       {loading && <p role="status">{t.loadingSources}</p>}
       {!loading && !designs.length && !error && <p>{t.noSources}</p>}
       {preview && <section className="submission-preview" aria-label={t.preview}><CommunityPreviewCanvas preview={preview} label={t.previewAria(title || source!.name)} /><div><strong>{title || source!.name}</strong><p>{t.author}{displayName}</p><p>{t.previewSize(preview.originalWidth, preview.originalHeight)}</p></div></section>}
-      <label>{t.title}<input className="input-field" value={title} maxLength={80} disabled={!source || locked} onChange={(event) => setTitle(event.target.value)} required /></label>
+      <TextField label={t.title} value={title} maxLength={80} disabled={!source || locked} onChange={(event) => setTitle(event.target.value)} required />
 
       <fieldset className="submission-original" disabled={originalLocked} aria-describedby="submission-original-help">
         <legend>{t.originalTitle}</legend>
@@ -219,15 +223,15 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
           <div>
             <strong>{original.name}</strong>
             <p>{formatBytes(original.bytes.byteLength)} · {original.source === 'workbench' ? t.originalFromWorkbench : t.originalFromFile}</p>
-            {!originalLocked && <button type="button" className="btn-quiet btn-sm" onClick={() => { setOriginal(null); setOriginalConsent(false); }}>{t.originalReplace}</button>}
+            {!originalLocked && <Button variant="quiet" size="sm" icon="refresh" onClick={() => { setOriginal(null); setOriginalConsent(false); }}>{t.originalReplace}</Button>}
           </div>
         </div> : <label className="submission-original-picker">
           <input type="file" className="sr-only" accept="image/*,.heic,.heif" disabled={originalLocked} onChange={(event) => { void chooseOriginal(event.target.files?.[0]); event.target.value = ''; }} />
-          <span className="btn-outline">{t.chooseOriginal}</span>
+          <span className={buttonClassName('secondary')}><Icon name="image" size={18} />{t.chooseOriginal}</span>
           <small>{t.originalPickerHint}</small>
         </label>}
-        {originalError && <p role="alert" className="notice notice-danger">{originalError}</p>}
-        {needsOriginal && !original && <p role="alert" className="notice notice-warning">{t.originalRequired}</p>}
+        {originalError && <Notice kind="danger">{originalError}</Notice>}
+        {needsOriginal && !original && <Notice kind="warning" role="alert">{t.originalRequired}</Notice>}
         {original && <label className="community-license-check"><input type="checkbox" checked={originalConsent} disabled={originalLocked} onChange={(event) => setOriginalConsent(event.target.checked)} />
           <span>{t.originalConsent}<Link href="/privacy" className="link-soft">{t.originalConsentLink}</Link></span>
         </label>}
@@ -236,8 +240,8 @@ export default function CommunitySubmitForm({ initialDesignId = '', displayName,
       <label className="community-license-check"><input type="checkbox" checked={accepted} disabled={!source || locked} onChange={(event) => setAccepted(event.target.checked)} />
         <span>{t.license}<Link href="/community/copyright" className="link-soft">{t.copyright}</Link></span>
       </label>
-      {error && <div role="alert" className="notice notice-danger"><p>{error}</p>{!locked && <button type="button" className="btn-outline btn-sm" onClick={() => designId ? void selectSource(designId) : window.location.reload()}>{t.reloadPreview}</button>}</div>}
-      <div className="community-form-actions"><Link href={hasDraft || locked ? '/community/mine' : '/designs'} className="btn-outline">{hasDraft || locked ? t.mine : t.back}</Link><button className="btn-primary" disabled={busy || loading || (!locked && !canSubmit) || (locked && needsOriginal && !original)}>{busy ? (busyText ?? t.submitting) : hasDraft ? t.retryReview : locked ? t.retryOriginal : t.submit}</button></div>
+      {error && <div className="admin-command-notice"><Notice kind="danger" as="div"><span>{error}</span>{!locked && <Button variant="secondary" size="sm" icon="refresh" onClick={() => designId ? void selectSource(designId) : window.location.reload()}>{t.reloadPreview}</Button>}</Notice></div>}
+      <div className="community-form-actions"><ButtonLink variant="quiet" href={hasDraft || locked ? '/community/mine' : '/designs'}>{hasDraft || locked ? t.mine : t.back}</ButtonLink><Button type="submit" variant="primary" icon="send" loading={busy} disabled={busy || loading || (!locked && !canSubmit) || (locked && needsOriginal && !original)}>{busy ? (busyText ?? t.submitting) : hasDraft ? t.retryReview : locked ? t.retryOriginal : t.submit}</Button></div>
     </form>
   );
 }

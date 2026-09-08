@@ -1066,7 +1066,7 @@ export const zhCN = {
       analyticsSettingsTitle: '匿名使用统计偏好',
     },
     community: {
-      moreFilters: '更多筛选', activeFilters: (count: number) => `已启用 ${count} 项`, authorFilter: '作者', boardFilter: '制作规格', allBoards: '全部规格', fromDate: '发布于此日期之后', toDate: '发布于此日期之前',
+      moreFilters: '更多筛选', activeFilters: (count: number) => `已启用 ${count} 项`, authorFilter: '作者', boardFilter: '制作规格', allBoards: '全部规格', dateRange: '发布日期', fromDate: '发布于此日期之后', toDate: '发布于此日期之前',
       invalidFilters: '筛选条件无法识别', invalidFiltersHint: '请清除筛选后重新选择条件。',
       clearFilters: '清除筛选', noMatch: '没有符合这些条件的作品', noMatchHint: '换个标题或作者试试，也可以清除筛选查看全部作品。',
       headerTitle: '豆社', headerSubtitle: '发现喜欢的作品，开始自己的制作', mine: '我的投稿',

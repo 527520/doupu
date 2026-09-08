@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import SiteHeader from '@/components/layout/SiteHeader';
+import { ButtonLink } from '@/components/ui/Button';
+import Icon from '@/components/ui/Icon';
 import CommunityThumbnail from '@/components/community/CommunityThumbnail';
 import { CommunityListImpression } from '@/components/community/CommunityImpression';
 import { getDb } from '@/lib/auth/db';
@@ -14,7 +17,7 @@ export const metadata: Metadata = { title: zhCN.communityAdmin.communityTitle, d
 
 function InvalidFilters() {
   const t = zhCN.communityAdmin.community;
-  return <main id="main" className="workspace-page"><SiteHeader title={t.headerTitle} currentPath="/community" /><section className="community-empty"><h2>{t.invalidFilters}</h2><p>{t.invalidFiltersHint}</p><Link href="/community" className="btn-primary">{t.clearFilters}</Link></section></main>;
+  return <main id="main" className="workspace-page"><SiteHeader title={t.headerTitle} currentPath="/community" /><section className="community-empty pegboard"><span className="empty-state-icon" aria-hidden="true"><Icon name="filter" size={26} /></span><h2>{t.invalidFilters}</h2><p>{t.invalidFiltersHint}</p><ButtonLink variant="primary" icon="close" href="/community">{t.clearFilters}</ButtonLink></section></main>;
 }
 
 export default async function CommunityPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -38,7 +41,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   const activeTag = query.tag ? popularTags.find((tag) => tag.name.toLocaleLowerCase('zh-CN') === query.tag!.toLocaleLowerCase('zh-CN') || tag.slug === query.tag)?.name ?? query.tag : null;
   return (
     <main id="main" className="workspace-page">
-      <SiteHeader title={t.headerTitle} currentPath="/community" primaryActions={<Link href="/community/mine" className="btn-outline btn-sm">{t.mine}</Link>} />
+      <SiteHeader title={t.headerTitle} currentPath="/community" primaryActions={<ButtonLink variant="secondary" size="sm" icon="folder" href="/community/mine">{t.mine}</ButtonLink>} />
       <CommunityListImpression sort={query.sort} />
       <div className="workspace-content community-page">
         <section className="community-hero"><div><h2>{t.heroTitle}</h2><p>{t.heroBody}</p></div><Link href="/community/rules" className="link-action">{t.rules}</Link></section>
@@ -48,9 +51,9 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
           {popularTags.filter((tag) => tag.name !== activeTag).map((tag) => <Link key={tag.id} href={communityTagHref(tag.name)} className="community-tag-chip">{tag.name}<small>{tag.count}</small></Link>)}
         </nav>}
         {activeFilters && result.items.length > 0 && <Link href="/community" className="link-soft">{t.clearFilters}</Link>}
-        {result.items.length === 0 ? <section className="community-empty"><h2>{activeFilters ? t.noMatch : t.emptyTitle}</h2><p>{activeFilters ? t.noMatchHint : t.emptyBody}</p><Link href={activeFilters ? '/community' : '/designs'} className="btn-primary">{activeFilters ? t.clearFilters : t.chooseDesign}</Link></section> : (
-          <ul className="community-grid">{result.items.map((work) => (
-            <li key={work.id} className="community-card">
+        {result.items.length === 0 ? <section className="community-empty pegboard"><span className="empty-state-icon" aria-hidden="true"><Icon name={activeFilters ? 'search' : 'grid'} size={26} /></span><h2>{activeFilters ? t.noMatch : t.emptyTitle}</h2><p>{activeFilters ? t.noMatchHint : t.emptyBody}</p><ButtonLink variant="primary" icon={activeFilters ? 'close' : 'folder'} href={activeFilters ? '/community' : '/designs'}>{activeFilters ? t.clearFilters : t.chooseDesign}</ButtonLink></section> : (
+          <ul className="community-grid stagger">{result.items.map((work, index) => (
+            <li key={work.id} className="community-card" style={{ '--i': index } as CSSProperties}>
               <Link href={`/community/${work.id}?returnTo=${encodeURIComponent(returnTo)}`} className="community-card-preview"><CommunityThumbnail revisionId={work.revisionId} width={work.width} height={work.height} label={t.preview(work.title)} /></Link>
               <div className="community-color-band" role="img" aria-label={t.colorBand(work.colorCount)}>{work.preview.colorBand.map((color) => <span key={color} style={{ backgroundColor: color }} />)}</div>
               <div className="community-card-body"><div><h2><Link href={`/community/${work.id}?returnTo=${encodeURIComponent(returnTo)}`}>{work.title}</Link></h2><p>{work.author.displayName} · {work.width}×{work.height}</p></div>{work.featured && <span className="community-featured">{t.featuredBadge}</span>}</div>
@@ -59,7 +62,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
             </li>
           ))}</ul>
         )}
-        {result.nextCursor && <div className="community-more"><Link className="btn-outline" href={`/community?${nextParams}`}>{t.next}</Link></div>}
+        {result.nextCursor && <div className="community-more"><ButtonLink variant="secondary" size="sm" icon="chevron-down" href={`/community?${nextParams}`}>{t.next}</ButtonLink></div>}
       </div>
     </main>
   );

@@ -12,6 +12,8 @@ import { useRouter } from 'next/navigation';
 import type { ImageType } from '@/lib/image/sniff';
 import { putPendingOriginal } from '@/lib/storage/pendingOriginals';
 import { zhCN } from '@/messages/zh-CN';
+import Button from '@/components/ui/Button';
+import Notice from '@/components/ui/Notice';
 
 interface Props {
   designId: string;
@@ -49,10 +51,10 @@ export default function PublishToCommunityButton({ designId, onBeforePublish, ge
 
   return (
     <div className="publish-community">
-      <button type="button" className="btn-outline btn-sm" disabled={disabled || busy} title={disabled ? disabledReason : undefined} onClick={() => void publish()}>
+      <Button variant="secondary" size="sm" icon="send" disabled={disabled || busy} loading={busy} title={disabled ? disabledReason : undefined} onClick={() => void publish()}>
         {busy ? t.preparing : t.button}
-      </button>
-      {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+      </Button>
+      {error && <Notice kind="danger" compact>{error}</Notice>}
     </div>
   );
 }

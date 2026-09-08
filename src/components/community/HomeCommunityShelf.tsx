@@ -6,6 +6,9 @@ import { z } from 'zod';
 import { communityPreviewSchema } from '@/lib/community/snapshot';
 import CommunityThumbnail from './CommunityThumbnail';
 import { zhCN } from '@/messages/zh-CN';
+import type { CSSProperties } from 'react';
+import Button, { ButtonLink } from '@/components/ui/Button';
+import Notice from '@/components/ui/Notice';
 
 const shelfResponse = z.object({ items: z.array(z.object({
   id: z.string().min(1), revisionId: z.string().min(1), title: z.string(), featured: z.boolean(),
@@ -36,12 +39,12 @@ export default function HomeCommunityShelf() {
       }).catch(() => { if (!cancelled) setError(true); }).finally(() => window.clearTimeout(timeout));
     return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
   }, [attempt]);
-  const cards = (items: ShelfWork[]) => <ul>{items.map((work) => <li key={work.id}><Link href={`/community/${work.id}`}><CommunityThumbnail revisionId={work.revisionId} width={work.width} height={work.height} label={t.preview(work.title)} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>;
+  const cards = (items: ShelfWork[]) => <ul className="stagger">{items.map((work, index) => <li key={work.id} style={{ '--i': index } as CSSProperties}><Link href={`/community/${work.id}`}><CommunityThumbnail revisionId={work.revisionId} width={work.width} height={work.height} label={t.preview(work.title)} /><strong>{work.title}</strong><small>{work.author.displayName} · {work.width}×{work.height}</small><span className="community-color-band">{work.preview.colorBand.map((color) => <i key={color} style={{ backgroundColor: color }} />)}</span></Link></li>)}</ul>;
   return (
     <section className="home-community">
-      <header><div><span className="studio-eyebrow">{state?.featured.length ? t.featured : t.latest}</span><h2>{state?.featured.length ? t.featuredProofs : t.latestProofs}</h2></div><Link href="/community" className="btn-outline btn-sm">{t.open}</Link></header>
-      {error ? <div><p role="alert">{t.loadFailed}</p><button type="button" className="btn-outline" onClick={() => { setError(false); setState(null); setAttempt((value) => value + 1); }}>{zhCN.common.retry}</button></div>
-        : !state ? <p role="status">{t.loading}</p>
+      <header><div><span className="studio-eyebrow">{state?.featured.length ? t.featured : t.latest}</span><h2>{state?.featured.length ? t.featuredProofs : t.latestProofs}</h2></div><ButtonLink variant="secondary" size="sm" icon="arrow" iconPosition="end" href="/community">{t.open}</ButtonLink></header>
+      {error ? <div className="admin-command-notice"><Notice kind="danger" as="div"><span>{t.loadFailed}</span><Button variant="secondary" size="sm" icon="refresh" onClick={() => { setError(false); setState(null); setAttempt((value) => value + 1); }}>{zhCN.common.retry}</Button></Notice></div>
+        : !state ? <div className="skeleton-list home-community-skeleton" role="status" aria-label={t.loading}><i className="skeleton" /><i className="skeleton" /><i className="skeleton" /></div>
           : <>{state.featured.length > 0 && <>{cards(state.featured)}<header className="home-community-latest"><div><span className="studio-eyebrow">{t.latest}</span><h2>{t.latestProofs}</h2></div></header></>}{state.latest.length > 0 ? cards(state.latest) : <p>{t.empty}</p>}</>}
     </section>
   );
