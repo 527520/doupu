@@ -58,15 +58,19 @@ function parseHexRgb(hex: string): [number, number, number] | null {
 function drawCellsImageData(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
   const { width: W, height: H, cells } = pattern;
   const { cellPx } = opts;
-  const canvas = typeof OffscreenCanvas !== 'undefined'
-    ? new OffscreenCanvas(W, H)
-    : Object.assign(document.createElement('canvas'), { width: W, height: H });
-  const off = canvas.getContext('2d');
+  if (typeof document === 'undefined' || typeof ImageData === 'undefined') {
+    drawCellsFillRect(ctx, pattern, opts);
+    return;
+  }
+  const bitmap = document.createElement('canvas');
+  bitmap.width = W;
+  bitmap.height = H;
+  const off = bitmap.getContext('2d');
   if (!off) {
     drawCellsFillRect(ctx, pattern, opts);
     return;
   }
-  const image = off.createImageData(W, H);
+  const image = new ImageData(W, H);
   const data = image.data;
   const parsed = new Map<string, [number, number, number]>();
   const external = opts.externalColor ?? '#d1d5db';
@@ -88,7 +92,7 @@ function drawCellsImageData(ctx: CanvasRenderingContext2D, pattern: Pattern, opt
   off.putImageData(image, 0, 0);
   const smooth = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(canvas, 0, 0, W * cellPx, H * cellPx);
+  ctx.drawImage(bitmap, 0, 0, W * cellPx, H * cellPx);
   ctx.imageSmoothingEnabled = smooth;
 }
 
