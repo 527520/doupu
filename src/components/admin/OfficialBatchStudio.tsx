@@ -34,7 +34,7 @@ import CommunityThumbnail from '@/components/community/CommunityThumbnail';
 import OriginalPreview from '@/components/community/OriginalPreview';
 import PatternPreview from '@/components/preview/PatternPreview';
 import { BatchSession, isStoredBatch, RETRYABLE_STATUSES, type BatchItem, type BatchItemStatus, type StoredBatch } from './batchSession';
-import { generateBatchItem } from './batchGeneration';
+import { createOfficialBatchGeneratePool } from './batchGeneration';
 import { useAdminCollection } from './useAdminCollection';
 import { useAdminInspection } from './useAdminInspection';
 import { AdminSkeleton } from './AdminPrimitives';
@@ -190,7 +190,14 @@ const BatchItemCard = memo(function BatchItemCard({ item, index, session, editab
 });
 
 export default function OfficialBatchStudio() {
-  const [session] = useState(() => new BatchSession({ generate: generateBatchItem, concurrency: officialBatchConcurrency(typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency, typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number }).deviceMemory) }));
+  const [{ session, pool }] = useState(() => {
+    const concurrency = officialBatchConcurrency(
+      typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency,
+      typeof navigator === 'undefined' ? undefined : (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+    );
+    const nextPool = createOfficialBatchGeneratePool(concurrency);
+    return { session: new BatchSession({ generate: nextPool.generate, concurrency }), pool: nextPool };
+  });
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const history = useAdminCollection<StoredBatch>('/api/admin/batches', isStoredBatch);
   const cleanup = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,8 +215,8 @@ export default function OfficialBatchStudio() {
     // Strict Mode re-subscribes immediately. Dispose only when the page actually
     // leaves; no session/file state is ever written to browser storage.
     if (cleanup.current) clearTimeout(cleanup.current);
-    return () => { cleanup.current = setTimeout(() => session.dispose(), 0); };
-  }, [session]);
+    return () => { cleanup.current = setTimeout(() => { session.dispose(); pool.dispose(); }, 0); };
+  }, [session, pool]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (session.processing || session.locked || session.retainedSaveCount || session.getSnapshot().items.some((item) => item.file)) event.preventDefault();

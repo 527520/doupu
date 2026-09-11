@@ -18,6 +18,42 @@ export interface DrawOptions {
   phase?: 'all' | 'cells' | 'overlay';
 }
 
+function drawGridWithPattern(
+  ctx: CanvasRenderingContext2D,
+  cellPx: number,
+  totalW: number,
+  totalH: number,
+): boolean {
+  if (typeof document === 'undefined' || typeof ctx.createPattern !== 'function') return false;
+  const size = Math.max(1, cellPx);
+  const tile = document.createElement('canvas');
+  tile.width = size;
+  tile.height = size;
+  const tileCtx = tile.getContext('2d');
+  if (!tileCtx) return false;
+  tileCtx.strokeStyle = 'rgba(0,0,0,0.18)';
+  tileCtx.lineWidth = 1;
+  tileCtx.beginPath();
+  tileCtx.moveTo(0.5, 0);
+  tileCtx.lineTo(0.5, size);
+  tileCtx.moveTo(0, 0.5);
+  tileCtx.lineTo(size, 0.5);
+  tileCtx.stroke();
+  const fill = ctx.createPattern(tile, 'repeat');
+  if (!fill) return false;
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, totalW, totalH);
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(totalW - 0.5, 0);
+  ctx.lineTo(totalW - 0.5, totalH);
+  ctx.moveTo(0, totalH - 0.5);
+  ctx.lineTo(totalW, totalH - 0.5);
+  ctx.stroke();
+  return true;
+}
+
 function drawCellsFillRect(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
   const { width: W, height: H, cells } = pattern;
   const { cellPx } = opts;
@@ -112,20 +148,24 @@ export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opt
   }
   if (phase === 'cells') return;
 
-  // 网格线
+  // 网格线。大图纸上逐条 stroke 在无 GPU 的 CI 上会超过 50ms；改成 1 格瓷砖的
+  // createPattern 一次铺满，右/下外沿再补一笔，避免缺边。
   if (opts.showGrid) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 0; x <= W; x++) {
-      ctx.moveTo(x * cellPx + 0.5, 0);
-      ctx.lineTo(x * cellPx + 0.5, totalH);
+    const tiled = W * H >= 2_500 && drawGridWithPattern(ctx, cellPx, totalW, totalH);
+    if (!tiled) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x++) {
+        ctx.moveTo(x * cellPx + 0.5, 0);
+        ctx.lineTo(x * cellPx + 0.5, totalH);
+      }
+      for (let y = 0; y <= H; y++) {
+        ctx.moveTo(0, y * cellPx + 0.5);
+        ctx.lineTo(totalW, y * cellPx + 0.5);
+      }
+      ctx.stroke();
     }
-    for (let y = 0; y <= H; y++) {
-      ctx.moveTo(0, y * cellPx + 0.5);
-      ctx.lineTo(totalW, y * cellPx + 0.5);
-    }
-    ctx.stroke();
   }
 
   // 板缝线（间距由当前制作规格决定）

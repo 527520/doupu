@@ -106,7 +106,7 @@ for (const width of [350, 390]) {
         await page.setViewportSize(size);
         const dialog = cropDialog(page);
         // Firefox 的 DOMRect 会带 1e-6 级的亚像素误差（700.000004），按 CSS 像素比较。
-        await expect.poll(async () => (await dialog.boundingBox())?.height ?? Number.NaN).toBeCloseTo(size.height, 3);
+        await expect.poll(async () => Math.round((await dialog.boundingBox())?.height ?? Number.NaN)).toBe(size.height);
         const layout = await dialog.evaluate((element) => ({
           viewport: innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
@@ -133,7 +133,7 @@ for (const width of [350, 390]) {
         expect(box!.height).toBeGreaterThan(44);
       }
       await page.setViewportSize({ width, height: 700 });
-      await expect.poll(async () => (await cropDialog(page).boundingBox())?.height).toBe(700);
+      await expect.poll(async () => Math.round((await cropDialog(page).boundingBox())?.height ?? Number.NaN)).toBe(700);
       if (browserName === 'chromium' && width === 350) {
         // 浏览器协议的原生触控输入（不是 DOM dispatchEvent）；仍非真机证据。
         const client = await context.newCDPSession(page);

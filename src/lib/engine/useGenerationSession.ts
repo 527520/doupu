@@ -98,17 +98,27 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
   );
   }, [dispatch, tasks]);
 
-  const cancel = useCallback((): CancelledGeneration | null => {
+  const abort = useCallback((): CancelledGeneration | null => {
     const before = stateRef.current;
     const taskId = tasks.cancel();
     if (taskId === null) return null;
-    dispatch({ type: 'cancel', taskId });
     return {
       taskId,
       hadCommit: before.committed !== null,
       stableDraft: before.lastStableDraft,
     };
-  }, [dispatch, tasks]);
+  }, [tasks]);
+
+  const cancel = useCallback((): CancelledGeneration | null => {
+    const cancelled = abort();
+    if (!cancelled) return null;
+    dispatch({ type: 'cancel', taskId: cancelled.taskId });
+    return cancelled;
+  }, [abort, dispatch]);
+
+  const commitCancel = useCallback((taskId: number): void => {
+    dispatch({ type: 'cancel', taskId });
+  }, [dispatch]);
 
   const upload = useCallback((source: ImageDataLike | null, draft: GenerationDraft): void => {
     tasks.cancel();
@@ -153,6 +163,8 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     state,
     generate,
     cancel,
+    abort,
+    commitCancel,
     upload,
     reupload,
     replaceSource,

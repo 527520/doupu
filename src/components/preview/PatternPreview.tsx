@@ -43,7 +43,7 @@ export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaul
   const [zoom, setZoom] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
   const [showSeams, setShowSeams] = useState(true);
-  const [showLabels, setShowLabels] = useState(true);
+  const [showLabels, setShowLabels] = useState(() => pattern.width * pattern.height < 2_500);
   const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const dragState = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,8 +82,11 @@ export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaul
     const maxBuffer = 800;
     const scale = Math.min(dpr, maxBuffer / Math.max(cssW, cssH, 1));
     if (phase !== 'overlay') {
-      canvas.width = Math.max(1, Math.round(cssW * scale));
-      canvas.height = Math.max(1, Math.round(cssH * scale));
+      const nextW = Math.max(1, Math.round(cssW * scale));
+      const nextH = Math.max(1, Math.round(cssH * scale));
+      // 赋 canvas.width 会清空后备缓冲；尺寸没变就不要重分配。
+      if (canvas.width !== nextW) canvas.width = nextW;
+      if (canvas.height !== nextH) canvas.height = nextH;
       canvas.style.width = `${cssW}px`;
       canvas.style.height = `${cssH}px`;
     }

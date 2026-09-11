@@ -63,8 +63,28 @@ describe('local official batch session', () => {
     const fetcher = vi.fn(async (url: string) => response(url.endsWith('/drafts') ? { ...saved, revisionId: crypto.randomUUID() } : row()));
     const session = new BatchSession({ fetcher, generate, concurrency: 2, uploadOriginal }); session.selectFiles([file(), file(), file()]);
     await session.start(); await session.start(); expect(generate).toHaveBeenCalledTimes(2);
-    finishes[0](snapshot); await flush(); expect(generate).toHaveBeenCalledTimes(3);
+    finishes[0](snapshot); await flush();     expect(generate).toHaveBeenCalledTimes(3);
     session.dispose(); finishes[1](snapshot); finishes[2](snapshot); await flush();
+  });
+
+  it('releases the generation slot before original upload so the next item can start', async () => {
+    let releaseUpload!: () => void;
+    const gate = new Promise<void>((done) => { releaseUpload = done; });
+    const heldUpload = vi.fn(() => gate);
+    const finishes: Array<(next: CommunitySnapshotV1) => void> = [];
+    const generate = vi.fn(() => ({ promise: new Promise<CommunitySnapshotV1>((done) => { finishes.push(done); }), cancel: vi.fn() }));
+    const fetcher = vi.fn(async (url: string) => response(url.endsWith('/drafts') ? { ...saved, revisionId: crypto.randomUUID() } : row()));
+    const session = new BatchSession({ fetcher, generate, concurrency: 1, uploadOriginal: heldUpload });
+    session.selectFiles([file(), file('second.png')]);
+    await session.start();
+    expect(generate).toHaveBeenCalledTimes(1);
+    finishes[0]!(snapshot); await flush();
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['uploading', 'running']);
+    releaseUpload();
+    finishes[1]!(snapshot); await flush();
+    expect(session.getSnapshot().items.map((item) => item.status)).toEqual(['saved', 'saved']);
+    session.dispose();
   });
 
   it('freezes publishing selection through an uncertain reply, and releases it only after identical replay', async () => {

@@ -119,6 +119,16 @@ describe('PatternPreview', () => {
     expect(canvas).toHaveAttribute('tabindex', '0');
   });
 
+  it('万格图纸默认关闭色号，避免首帧上万次 fillText', () => {
+    const large: Pattern = {
+      width: 50,
+      height: 50,
+      cells: Array.from({ length: 2500 }, () => ({ hex: '#112233', code: 'A1', transparent: false })),
+    };
+    render(<PatternPreview pattern={large} defaultCellPx={4} />);
+    expect(screen.getByRole('switch', { name: '色号标注' })).not.toBeChecked();
+  });
+
   it('暂停时仍渲染画布，只是不马上重绘', () => {
     render(<PatternPreview pattern={pattern} defaultCellPx={10} paused />);
     expect(screen.getByRole('img', { name: /3 × 2 格/ })).toBeTruthy();

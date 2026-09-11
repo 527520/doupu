@@ -19,9 +19,12 @@ describe('official batch browser limits', () => {
     expect(validateOfficialBatchFiles(Array.from({ length: 11 }, () => image(19 * 1024 * 1024)))).toContain('200 MiB');
   });
 
-  it('uses one worker on lower concurrency devices and otherwise two', () => {
-    expect(officialBatchConcurrency(4, 8)).toBe(1);
-    expect(officialBatchConcurrency(8, 4)).toBe(1);
+  it('uses one worker on single-core or very low-memory devices and otherwise two', () => {
+    expect(officialBatchConcurrency(1, 8)).toBe(1);
+    expect(officialBatchConcurrency(8, 2)).toBe(1);
+    expect(officialBatchConcurrency(2, undefined)).toBe(2);
+    expect(officialBatchConcurrency(4, 8)).toBe(2);
+    expect(officialBatchConcurrency(8, 4)).toBe(2);
     expect(officialBatchConcurrency(8, 8)).toBe(2);
   });
 });

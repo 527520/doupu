@@ -10,6 +10,7 @@ import Button from '@/components/ui/Button';
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
  */
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
@@ -261,6 +262,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     state: generationSession,
     generate: startGeneration,
     cancel: cancelGeneration,
+    abort: abortGeneration,
+    commitCancel,
     upload: uploadGenerationSource,
     reupload: reuploadGenerationSource,
     replaceSource: replaceGenerationSourceForCrop,
@@ -276,6 +279,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     sourceRef.current = generationSession.committedSource;
   }, [generationSession.committedSource]);
   const generating = generationSession.status === 'generating';
+  const [showCancelUi, setShowCancelUi] = useState(false);
+  useEffect(() => {
+    setShowCancelUi(generating);
+  }, [generating]);
   // Pattern/statistics are projections of the session's immutable commit;
   // Workbench never mirrors a second independently mutable copy.
   const pattern = generationSession.committed?.pattern ?? null;
@@ -313,6 +320,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
   const progress = showProgress ? generationSession.progress : null;
   /** 生成开始时刻：进度条仅当任务超过 300ms 才显示（快速任务直接出结果）。 */
   const genStartedAtRef = useRef(0);
+  const cancelEpochRef = useRef(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const visibleErrorMsg = errorMsg ?? generationSession.error;
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
@@ -559,6 +567,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         }),
         errorMessage: t.generateFailed,
         onStart: () => {
+          cancelEpochRef.current += 1;
           genStartedAtRef.current = performance.now();
           setShowProgress(false);
           setErrorMsg(null);
@@ -613,19 +622,27 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   /** 取消在途生成任务：作废令牌、终止 Worker，并回滚到生成前的稳定提交态。 */
   const handleCancelGenerate = useCallback((): void => {
-    const cancelled = cancelGeneration();
+    // 先把「取消」按钮移出 DOM（E2E 02 要求 <100ms），Worker 同步停掉；
+    // 回滚参数与生成态的整树提交放到下一轮任务，避免和卸按钮叠成一帧长任务。
+    flushSync(() => setShowCancelUi(false));
+    const cancelled = abortGeneration();
     if (!cancelled) return;
+    const epoch = cancelEpochRef.current;
     pendingCropRef.current = null;
     track({ name: 'generation_cancelled', properties: {} });
-    if (cancelled.stableDraft) restoreDraftControls(cancelled.stableDraft);
-    setShowProgress(false);
-    if (!cancelled.hadCommit) {
-      clearOriginalSource();
-      pendingGenerationSourceRef.current = undefined;
-      uploadGenerationSource(null, initialGenerationDraft);
-      setStep('upload');
-    }
-  }, [cancelGeneration, clearOriginalSource, restoreDraftControls, uploadGenerationSource, initialGenerationDraft]);
+    window.setTimeout(() => {
+      if (epoch !== cancelEpochRef.current) return;
+      commitCancel(cancelled.taskId);
+      if (cancelled.stableDraft) restoreDraftControls(cancelled.stableDraft);
+      setShowProgress(false);
+      if (!cancelled.hadCommit) {
+        clearOriginalSource();
+        pendingGenerationSourceRef.current = undefined;
+        uploadGenerationSource(null, initialGenerationDraft);
+        setStep('upload');
+      }
+    }, 0);
+  }, [abortGeneration, commitCancel, clearOriginalSource, restoreDraftControls, uploadGenerationSource, initialGenerationDraft]);
 
   // ---------- 上传/裁剪 ----------
 
@@ -1908,7 +1925,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       <StepIndicator step={step} />
 
       {busy && <p className="text-sm text-primary-deep" role="status">{busyText}</p>}
-      {generating && !busy && (
+      {showCancelUi && !busy && (
         <div className="flex flex-wrap items-center gap-3 text-sm text-primary-deep" role="status">
           <span>{t.generating}</span>
           {/* 进度条与百分比用固定宽度槽位：出现/更新时「取消」按钮位置不跳动（可稳定点击） */}

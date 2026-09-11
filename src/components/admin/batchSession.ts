@@ -89,7 +89,7 @@ export class BatchSession {
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   get retainedSaveCount() { return this.saves.size; }
   hasSave(id: string) { return this.saves.has(id); }
-  get processing() { return this.active.size > 0; }
+  get processing() { return this.active.size > 0 || this.state.items.some((item) => item.status === 'uploading'); }
   get locked() { return this.state.busy || this.state.uncertain; }
   get replaceable() { return !this.locked && !this.processing && !this.saves.size && this.state.mode !== 'running'; }
   private emit(change: Partial<State>) { if (this.disposed) return; this.state = { ...this.state, ...change }; this.listeners.forEach((listener) => listener()); }
@@ -176,12 +176,22 @@ export class BatchSession {
       this.patch(item.localId, { status: 'running', error: null, progress: 1 });
       void this.process(item);
     }
-    if (!this.active.size && !this.saves.size && this.state.items.every((item) => item.status !== 'pending')) void this.finish();
+    if (!this.active.size && !this.saves.size && !this.state.items.some((item) => ['pending', 'running', 'saving', 'uploading'].includes(item.status))) void this.finish();
   }
   private async process(item: BatchItem) {
     try {
       if (!item.file) throw new Error(t.generationFailed);
-      const task = this.deps.generate({ file: item.file, crop: item.crop, params: { ...this.state.defaults, ...item.paramsOverride }, spec: this.state.spec }, (progress) => this.patch(item.localId, { progress }));
+      let lastProgress = -1;
+      let lastProgressAt = 0;
+      const task = this.deps.generate({ file: item.file, crop: item.crop, params: { ...this.state.defaults, ...item.paramsOverride }, spec: this.state.spec }, (progress) => {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const rounded = Math.round(progress);
+        if (rounded < 100 && rounded === lastProgress) return;
+        if (rounded < 100 && now - lastProgressAt < 80) return;
+        lastProgress = rounded;
+        lastProgressAt = now;
+        this.patch(item.localId, { progress: rounded });
+      });
       this.active.set(item.localId, task);
       const snapshot = await task.promise;
       if (this.disposed || this.state.items.find((entry) => entry.localId === item.localId)?.status === 'cancelled') return;
@@ -207,6 +217,10 @@ export class BatchSession {
       this.saves.delete(id);
       this.patch(id, { status: 'uploading', revisionId: body.revisionId, workId: body.workId, selected: false, error: null });
       track({ name: 'official_batch_item_succeeded', properties: {} });
+      // 原图上传不再占用生成槽：下一张可以立刻解码/生成。
+      this.active.delete(id);
+      this.emit({});
+      this.pump();
       await this.upload(id);
     } else {
       const uncertain = result.ok || result.uncertain;
@@ -264,7 +278,7 @@ export class BatchSession {
   }
   async pause() { if (this.locked || this.state.batch?.status !== 'running') return; this.emit({ mode: 'paused' }); await this.transition('pause'); }
   async resume() {
-    if (this.locked || this.processing || this.state.conflict || !this.state.batch) return;
+    if (this.locked || this.active.size > 0 || this.state.conflict || !this.state.batch) return;
     if (this.state.batch.status !== 'running') await this.transition('resume');
     else { this.emit({ mode: 'running', error: null }); this.pump(); }
   }
@@ -278,11 +292,11 @@ export class BatchSession {
     await this.transition('cancel');
   }
   async finish() {
-    if (this.locked || this.processing || this.saves.size || this.state.conflict || this.state.items.some((item) => item.status === 'pending') || !this.state.batch || !['running', 'paused'].includes(this.state.batch.status)) return;
+    if (this.locked || this.active.size > 0 || this.saves.size || this.state.conflict || this.state.items.some((item) => ['pending', 'running', 'saving', 'uploading'].includes(item.status)) || !this.state.batch || !['running', 'paused'].includes(this.state.batch.status)) return;
     await this.transition('finish');
   }
   /**
-   * 重试全部可重试项。保存确认与原图上传逐项串行（各占一个并发槽）；
+   * 重试全部可重试项。保存确认与原图上传不再占用生成并发槽；
    * 需要重新生成的项目一次性回到待生成，再统一恢复派发。
    */
   async retryAllFailed() {

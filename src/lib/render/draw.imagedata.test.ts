@@ -95,4 +95,28 @@ describe('drawPattern ImageData 路径', () => {
       }
     });
   });
+
+  it('大图纸网格用 createPattern 铺瓷砖，而不是逐条 stroke', () => {
+    withImageData(() => {
+      const fillRect = vi.fn();
+      const createPattern = vi.fn(() => ({} as CanvasPattern));
+      const moveTo = vi.fn();
+      drawPattern(
+        {
+          clearRect: vi.fn(),
+          fillRect,
+          createPattern,
+          beginPath: vi.fn(),
+          moveTo,
+          lineTo: vi.fn(),
+          stroke: vi.fn(),
+          imageSmoothingEnabled: true,
+        } as unknown as CanvasRenderingContext2D,
+        solidPattern(),
+        { cellPx: 4, showGrid: true, showSeams: false, showLabels: false, phase: 'overlay' },
+      );
+      expect(createPattern).toHaveBeenCalled();
+      expect(fillRect).toHaveBeenCalled();
+    });
+  });
 });

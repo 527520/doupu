@@ -98,17 +98,46 @@ function cursorForMode(mode: DragMode): string {
   }
 }
 
-/** 把解码预览打进离屏画布。不要在 React render 里做，否则会和弹层提交叠成 >50ms 长任务。 */
-function blitDecodedPreview(image: DecodedImage): HTMLCanvasElement | null {
+const BLIT_STRIPE_ROWS = 48;
+
+function previewImageData(image: DecodedImage): ImageData {
+  const length = image.width * image.height * 4;
+  const source = image.data.length === length ? image.data : image.data.subarray(0, length);
+  if (
+    source.length === length
+    && source.byteOffset === 0
+    && source.buffer instanceof ArrayBuffer
+    && source.byteLength === source.buffer.byteLength
+  ) {
+    return new ImageData(source as Uint8ClampedArray<ArrayBuffer>, image.width, image.height);
+  }
+  const bytes = new Uint8ClampedArray(length);
+  bytes.set(source);
+  return new ImageData(bytes, image.width, image.height);
+}
+
+/** 把解码预览打进离屏画布。大图按条带让出帧，避免单次 putImageData 超过 50ms。 */
+async function blitDecodedPreview(
+  image: DecodedImage,
+  signal: { cancelled: boolean },
+): Promise<HTMLCanvasElement | null> {
   if (typeof document === 'undefined' || typeof ImageData === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = image.width;
   canvas.height = image.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  const bytes = new Uint8ClampedArray(image.width * image.height * 4);
-  bytes.set(image.data.subarray(0, bytes.length));
-  ctx.putImageData(new ImageData(bytes, image.width, image.height), 0, 0);
+  const imageData = previewImageData(image);
+  if (image.width * image.height < BLIT_STRIPE_ROWS * 256) {
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+  for (let y = 0; y < image.height; y += BLIT_STRIPE_ROWS) {
+    if (signal.cancelled) return null;
+    if (y > 0) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (signal.cancelled) return null;
+    ctx.putImageData(imageData, 0, 0, 0, y, image.width, Math.min(BLIT_STRIPE_ROWS, image.height - y));
+  }
   return canvas;
 }
 
@@ -182,24 +211,30 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     // 预览缓冲封顶 800：dpr=2 时不要分配 1600²，打开裁剪弹层会变成 >50ms 长任务。
     const bufferScale = Math.min(dpr, MAX_DISPLAY_WIDTH / Math.max(displayWidth, displayHeight, 1));
-    canvas.width = Math.max(1, Math.round(displayWidth * bufferScale));
-    canvas.height = Math.max(1, Math.round(displayHeight * bufferScale));
+    const nextW = Math.max(1, Math.round(displayWidth * bufferScale));
+    const nextH = Math.max(1, Math.round(displayHeight * bufferScale));
     // 显式 CSS 尺寸与容器测量一致：父容器（grid/flex）无法拉伸画布。
     // 容器尚未测出时（首帧 clientWidth 为 0）高度给 auto：max-width:100% 只会夹宽度，
     // auto 高度按画布固有宽高比随夹取宽度自动计算，避免「宽被夹、高不变」的变形中间帧。
     canvas.style.width = `${displayWidth}px`;
     canvas.style.height = containerWidth === null ? 'auto' : `${displayHeight}px`;
-    // 像素上传放到下一帧：不要和弹层的 React 提交挤在同一个 50ms 长任务里。
+    const signal = { cancelled: false };
+    // 像素上传与后备缓冲分配都放到下一帧：不要和弹层的 React 提交挤在同一个 50ms 长任务里。
     const frame = requestAnimationFrame(() => {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      if (sourceImageRef.current !== image) {
-        sourceCanvasRef.current = blitDecodedPreview(image);
-        sourceImageRef.current = image;
-      }
-      ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
-      ctx.clearRect(0, 0, displayWidth, displayHeight);
-      if (sourceCanvasRef.current) ctx.drawImage(sourceCanvasRef.current, 0, 0, displayWidth, displayHeight);
+      void (async () => {
+        if (signal.cancelled) return;
+        if (canvas.width !== nextW) canvas.width = nextW;
+        if (canvas.height !== nextH) canvas.height = nextH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        if (sourceImageRef.current !== image) {
+          sourceCanvasRef.current = await blitDecodedPreview(image, signal);
+          if (signal.cancelled) return;
+          sourceImageRef.current = image;
+        }
+        ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
+        ctx.clearRect(0, 0, displayWidth, displayHeight);
+        if (sourceCanvasRef.current) ctx.drawImage(sourceCanvasRef.current, 0, 0, displayWidth, displayHeight);
 
       const r = clampCropRect(rect, naturalWidth, naturalHeight);
       const rx = r.x * scaleX;
@@ -230,8 +265,12 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled
       ] as const) {
         ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
       }
+      })();
     });
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      signal.cancelled = true;
+      cancelAnimationFrame(frame);
+    };
   }, [image, naturalWidth, naturalHeight, rect, scaleX, scaleY, displayWidth, displayHeight, containerWidth]);
 
   /** 客户区坐标 → 图像像素坐标（按画布真实渲染尺寸换算，与 CSS 拉伸无关）。 */

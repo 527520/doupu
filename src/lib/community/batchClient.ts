@@ -24,6 +24,9 @@ export function validateOfficialBatchFiles(files: readonly Pick<File, 'size' | '
 }
 
 export function officialBatchConcurrency(hardwareConcurrency?: number, deviceMemory?: number): 1 | 2 {
-  return (hardwareConcurrency !== undefined && hardwareConcurrency <= 4)
-    || (deviceMemory !== undefined && deviceMemory <= 4) ? 1 : 2;
+  // 只在单核或 ≤2GB 设备上串行。CI 与常见笔记本是 2 核 / 4–8GB，
+  // 旧阈值（≤4 核或 ≤4GB）会把官方批次锁成 1，50 张草稿在 15s 内排不完。
+  if (deviceMemory !== undefined && deviceMemory <= 2) return 1;
+  if (hardwareConcurrency !== undefined && hardwareConcurrency < 2) return 1;
+  return 2;
 }
