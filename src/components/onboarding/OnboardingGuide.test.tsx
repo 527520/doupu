@@ -16,11 +16,25 @@ function mockFetch(status: number): void {
 beforeEach(() => {
   // 登录态探测在组件间共享（J-1），用例之间必须清掉，否则第二个用例读到上一个的结果。
   resetAuthStatusCache();
+  if (!window.localStorage) {
+    const store = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => { store.set(key, String(value)); },
+        removeItem: (key: string) => { store.delete(key); },
+        clear: () => { store.clear(); },
+        get length() { return store.size; },
+        key: (index: number) => [...store.keys()][index] ?? null,
+      },
+    });
+  }
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  window.localStorage.clear();
+  window.localStorage?.clear();
   resetAuthStatusCache();
 });
 

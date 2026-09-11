@@ -19,14 +19,27 @@ export default function OnboardingGuide() {
   useEffect(() => {
     // localStorage 读取放进宏任务：SSR 阶段没有 window，且不在 effect 体内同步 setState。
     if (typeof window === 'undefined') return;
+    let cancelled = false;
     const timer = setTimeout(() => {
-      if (window.localStorage.getItem(DISMISS_KEY) === '1') setDismissed(true);
+      if (cancelled) return;
+      try {
+        if (window.localStorage?.getItem(DISMISS_KEY) === '1') setDismissed(true);
+      } catch {
+        // jsdom 拆掉环境后，未清掉的定时器不能再碰 storage。
+      }
     }, 0);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   const dismiss = (): void => {
-    if (typeof window !== 'undefined') window.localStorage.setItem(DISMISS_KEY, '1');
+    try {
+      window.localStorage?.setItem(DISMISS_KEY, '1');
+    } catch {
+      // 测试环境拆掉 jsdom 后 storage 可能已经不在。
+    }
     setDismissed(true);
   };
 

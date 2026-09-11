@@ -92,4 +92,30 @@ describe('drawPattern', () => {
     drawPattern(context, pattern, { ...base, phase: 'overlay' });
     expect(beginPath).toHaveBeenCalled();
   });
+
+  it('node 环境没有 document 时，大图纸回退到 fillRect', () => {
+    const fillRect = vi.fn();
+    const context = {
+      clearRect: vi.fn(),
+      fillRect,
+    } as unknown as CanvasRenderingContext2D;
+    const pattern: Pattern = {
+      width: 50,
+      height: 50,
+      cells: Array.from({ length: 2500 }, () => ({
+        hex: '#112233',
+        code: 'A1',
+        transparent: false,
+      })),
+    };
+
+    drawPattern(context, pattern, {
+      cellPx: 2,
+      showGrid: false,
+      showSeams: false,
+      showLabels: false,
+    });
+
+    expect(fillRect).toHaveBeenCalled();
+  });
 });
