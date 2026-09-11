@@ -5,7 +5,7 @@ import Switch from '@/components/ui/Switch';
 /** PNG 导出按钮（spec §F7 + 优化票 10）：空图纸禁用并提示；选项面板（格子大小/裁边/图例）。 */
 import { useId, useMemo, useRef, useState } from 'react';
 import { zhCN } from '@/messages/zh-CN';
-import { EXPORT_CELL_PX_CHOICES } from '@/lib/export/layout';
+import { EXPORT_CELL_PX_CHOICES, patternHasPaintedCells, pngCanvasWithinLimits } from '@/lib/export/layout';
 import { exportPngBlob } from '@/lib/export/png';
 import { createPngArchiveBlob } from '@/lib/export/pngArchive';
 import { createPngExportPlan, largestFittingPngCellPx } from '@/lib/export/pngPlan';
@@ -51,13 +51,17 @@ export default function PngExportButton({
   const [optCellPx, setOptCellPx] = useState<number>(defaultCellPx);
   const [optCrop, setOptCrop] = useState<boolean>(defaultCrop);
   const [optLegend, setOptLegend] = useState<boolean>(defaultLegend);
-  const defaultPlan = useMemo(() => createPngExportPlan(pattern, {
-    cellPx: defaultCellPx, cropToContent: defaultCrop, includeLegend: defaultLegend,
-  }), [pattern, defaultCellPx, defaultCrop, defaultLegend]);
-  const empty = defaultPlan.kind === 'empty';
+  const empty = useMemo(() => !patternHasPaintedCells(pattern), [pattern]);
+  const defaultPlan = useMemo(() => (
+    open
+      ? createPngExportPlan(pattern, {
+        cellPx: defaultCellPx, cropToContent: defaultCrop, includeLegend: defaultLegend,
+      })
+      : null
+  ), [open, pattern, defaultCellPx, defaultCrop, defaultLegend]);
+  // 尚未打开选项时不扫整张图纸：生成中的锁定态只要按钮在 DOM 里即可（E2E 02），
+  // 快捷下载用整图尺寸做保守预检，点下去之后 exportPngBlob 再做精确规划。
 
-  // 尚未打开的选项不逐档遍历图纸；首次生成优先提交画布与制作控件。
-  // 快捷下载仍立即使用同一规划器预检，打开选项后再计算全部合法档位。
   const fits = useMemo(
     () => new Map<number, boolean>(
       (open ? EXPORT_CELL_PX_CHOICES : []).map((size) => {
@@ -86,8 +90,15 @@ export default function PngExportButton({
     }) : null,
     [open, optCrop, optLegend, pattern],
   );
-  const currentFits = currentPlan.kind === 'single' || currentPlan.kind === 'split';
-  const defaultFits = defaultPlan.kind === 'single' || defaultPlan.kind === 'split';
+  const currentFits = currentPlan?.kind === 'single' || currentPlan?.kind === 'split';
+  const defaultFits = empty
+    ? false
+    : defaultPlan
+      ? defaultPlan.kind === 'single' || defaultPlan.kind === 'split'
+      : pngCanvasWithinLimits({
+        width: pattern.width * defaultCellPx,
+        height: pattern.height * defaultCellPx,
+      });
 
   const t = zhCN.exportPng;
 
@@ -166,8 +177,8 @@ export default function PngExportButton({
       >
         {t.options}
       </button></div>
-      {defaultPlan.kind === 'split' && !open && <p className="text-xs text-ink-soft">{t.splitArchiveNotice}</p>}
-      {defaultPlan.kind === 'too-large' && !open && <p className="text-xs text-ink-soft">{t.defaultTooLarge}</p>}
+      {defaultPlan?.kind === 'split' && !open && <p className="text-xs text-ink-soft">{t.splitArchiveNotice}</p>}
+      {defaultPlan?.kind === 'too-large' && !open && <p className="text-xs text-ink-soft">{t.defaultTooLarge}</p>}
       {error && (
         <p role="alert" className="text-xs text-danger">
           {error}
@@ -190,7 +201,7 @@ export default function PngExportButton({
                 {zhCN.export.pngTooLargeError(suggestedCellPx ?? defaultCellPx)}
               </p>
             )}
-            {currentPlan.kind === 'split' && (
+            {currentPlan?.kind === 'split' && (
               <p role="status" className="text-xs text-ink-soft">
                 {t.splitArchiveNotice}
               </p>

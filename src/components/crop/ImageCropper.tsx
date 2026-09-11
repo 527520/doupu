@@ -10,12 +10,12 @@
  * 全部矩形几何经 src/lib/crop/layout.ts 纯函数处理。
  * 说明：自研实现（未采用 react-cropper：其 React 19 peer 依赖不兼容）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from 'react';
 import { zhCN } from '@/messages/zh-CN';
 import {
   applyAspectLock,
-  buildCropPreview,
   clampCropRect,
+  fitCropPreviewSize,
   MIN_CROP_SIZE,
   resizeEdge,
   type AspectAnchor,
@@ -98,6 +98,20 @@ function cursorForMode(mode: DragMode): string {
   }
 }
 
+/** 把解码预览打进离屏画布。不要在 React render 里做，否则会和弹层提交叠成 >50ms 长任务。 */
+function blitDecodedPreview(image: DecodedImage): HTMLCanvasElement | null {
+  if (typeof document === 'undefined' || typeof ImageData === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const bytes = new Uint8ClampedArray(image.width * image.height * 4);
+  bytes.set(image.data.subarray(0, bytes.length));
+  ctx.putImageData(new ImageData(bytes, image.width, image.height), 0, 0);
+  return canvas;
+}
+
 export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled = false, fitViewport = false }: ImageCropperProps) {
   const naturalWidth = image.naturalWidth ?? image.width;
   const naturalHeight = image.naturalHeight ?? image.height;
@@ -150,78 +164,75 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled
 
   const previewWidthLimit = Math.max(1, Math.min(MAX_DISPLAY_WIDTH, containerWidth ?? MAX_DISPLAY_WIDTH));
   const previewHeightLimit = fitViewport ? Math.max(1, Math.min(MAX_DISPLAY_HEIGHT, containerHeight ?? MAX_DISPLAY_HEIGHT)) : MAX_DISPLAY_HEIGHT;
-  const preview = useMemo(
-    () => buildCropPreview(image, previewWidthLimit, previewHeightLimit),
-    [image, previewWidthLimit, previewHeightLimit],
-  );
-  const displayWidth = preview.width;
-  const displayHeight = preview.height;
+  // 解码器已经给出有界预览（最长边 512）。展示尺寸只做 CSS 缩放，
+  // 不要再走 JS 逐像素重采样——打开裁剪弹层时那次循环会超过 50ms。
+  const fitted = fitCropPreviewSize(image.width, image.height, previewWidthLimit, previewHeightLimit);
+  const displayWidth = fitted.width;
+  const displayHeight = fitted.height;
   const scaleX = displayWidth / naturalWidth;
   const scaleY = displayHeight / naturalHeight;
 
-  /** 有界预览像素画布（不复制整幅原图 RGBA，避免大图内存峰值）。 */
-  const sourceCanvas = useMemo(() => {
-    if (typeof ImageData === 'undefined' || typeof document === 'undefined') return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = preview.width;
-    canvas.height = preview.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    // slice() 仅复制已缩小的预览缓冲（最大 800×800），并收窄为 ImageData 要求的 ArrayBuffer。
-    ctx.putImageData(new ImageData(preview.data.slice(), preview.width, preview.height), 0, 0);
-    return canvas;
-  }, [preview]);
+  const sourceCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sourceImageRef = useRef<DecodedImage | null>(null);
 
   /** 重绘：源图 + 选框遮罩 + 四角/四边手柄。 */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-    canvas.width = Math.round(displayWidth * dpr);
-    canvas.height = Math.round(displayHeight * dpr);
+    // 预览缓冲封顶 800：dpr=2 时不要分配 1600²，打开裁剪弹层会变成 >50ms 长任务。
+    const bufferScale = Math.min(dpr, MAX_DISPLAY_WIDTH / Math.max(displayWidth, displayHeight, 1));
+    canvas.width = Math.max(1, Math.round(displayWidth * bufferScale));
+    canvas.height = Math.max(1, Math.round(displayHeight * bufferScale));
     // 显式 CSS 尺寸与容器测量一致：父容器（grid/flex）无法拉伸画布。
     // 容器尚未测出时（首帧 clientWidth 为 0）高度给 auto：max-width:100% 只会夹宽度，
     // auto 高度按画布固有宽高比随夹取宽度自动计算，避免「宽被夹、高不变」的变形中间帧。
     canvas.style.width = `${displayWidth}px`;
     canvas.style.height = containerWidth === null ? 'auto' : `${displayHeight}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, displayWidth, displayHeight);
-    if (sourceCanvas) ctx.drawImage(sourceCanvas, 0, 0, displayWidth, displayHeight);
+    // 像素上传放到下一帧：不要和弹层的 React 提交挤在同一个 50ms 长任务里。
+    const frame = requestAnimationFrame(() => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      if (sourceImageRef.current !== image) {
+        sourceCanvasRef.current = blitDecodedPreview(image);
+        sourceImageRef.current = image;
+      }
+      ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
+      ctx.clearRect(0, 0, displayWidth, displayHeight);
+      if (sourceCanvasRef.current) ctx.drawImage(sourceCanvasRef.current, 0, 0, displayWidth, displayHeight);
 
-    const r = clampCropRect(rect, naturalWidth, naturalHeight);
-    const rx = r.x * scaleX;
-    const ry = r.y * scaleY;
-    const rw = r.width * scaleX;
-    const rh = r.height * scaleY;
+      const r = clampCropRect(rect, naturalWidth, naturalHeight);
+      const rx = r.x * scaleX;
+      const ry = r.y * scaleY;
+      const rw = r.width * scaleX;
+      const rh = r.height * scaleY;
 
-    // 选框外暗化
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, 0, displayWidth, ry);
-    ctx.fillRect(0, ry + rh, displayWidth, displayHeight - ry - rh);
-    ctx.fillRect(0, ry, rx, rh);
-    ctx.fillRect(rx + rw, ry, displayWidth - rx - rw, rh);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(0, 0, displayWidth, ry);
+      ctx.fillRect(0, ry + rh, displayWidth, displayHeight - ry - rh);
+      ctx.fillRect(0, ry, rx, rh);
+      ctx.fillRect(rx + rw, ry, displayWidth - rx - rw, rh);
 
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
 
-    // 四角手柄（视觉 8px）+ 四边中点手柄（视觉 6px）
-    ctx.fillStyle = getComputedStyle(canvas).getPropertyValue('--color-primary').trim() || '#a83f68';
-    for (const [hx, hy, size] of [
-      [rx, ry, HANDLE_VISUAL],
-      [rx + rw, ry, HANDLE_VISUAL],
-      [rx, ry + rh, HANDLE_VISUAL],
-      [rx + rw, ry + rh, HANDLE_VISUAL],
-      [rx + rw / 2, ry, EDGE_HANDLE_VISUAL],
-      [rx + rw / 2, ry + rh, EDGE_HANDLE_VISUAL],
-      [rx, ry + rh / 2, EDGE_HANDLE_VISUAL],
-      [rx + rw, ry + rh / 2, EDGE_HANDLE_VISUAL],
-    ] as const) {
-      ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
-    }
-  }, [naturalWidth, naturalHeight, rect, scaleX, scaleY, displayWidth, displayHeight, sourceCanvas, containerWidth]);
+      ctx.fillStyle = getComputedStyle(canvas).getPropertyValue('--color-primary').trim() || '#a83f68';
+      for (const [hx, hy, size] of [
+        [rx, ry, HANDLE_VISUAL],
+        [rx + rw, ry, HANDLE_VISUAL],
+        [rx, ry + rh, HANDLE_VISUAL],
+        [rx + rw, ry + rh, HANDLE_VISUAL],
+        [rx + rw / 2, ry, EDGE_HANDLE_VISUAL],
+        [rx + rw / 2, ry + rh, EDGE_HANDLE_VISUAL],
+        [rx, ry + rh / 2, EDGE_HANDLE_VISUAL],
+        [rx + rw, ry + rh / 2, EDGE_HANDLE_VISUAL],
+      ] as const) {
+        ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [image, naturalWidth, naturalHeight, rect, scaleX, scaleY, displayWidth, displayHeight, containerWidth]);
 
   /** 客户区坐标 → 图像像素坐标（按画布真实渲染尺寸换算，与 CSS 拉伸无关）。 */
   const toImageCoords = useCallback(

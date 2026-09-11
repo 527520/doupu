@@ -59,9 +59,28 @@
 | 17:80 `/admin/users` 350px axe 对比度（chromium） | 还是错峰淡入被抓在半路：`settleMotion` 一次性 `await finished` 取样时列表还没到（异步请求），到了之后才开始淡入 | `settleMotion` 改轮询：有 `.skeleton` / `[aria-busy]` 视为「还在加载」，有正在跑的有限次动画视为「还在动」，直到静下来才跑 axe；首页「正在读取本机设计…」补 `aria-busy` |
 | 17:80 users 与 17:255 audit 的筛选行底边不对齐（三浏览器） | 断言假设「搜索 / 日期区间 / 查询」能排成一行，但队列栏永远只有 370px 上下（截图里 1280 视口下左栏就这么宽），auto-fit 网格把三者排成了三行、查询按钮孤零零在第三行 | `FilterBar` 改两段式：第一段「搜索 + 查询」固定同一行（`minmax(0,1fr) auto`，底边对齐），第二段其余筛选各占一整行；断言同步改为「搜索与查询对齐、日期区间独占下一整行且左右与上一行对齐」 |
 
-## 第四轮 E2E（需要在你的终端里再跑一次）
+## 第四轮 E2E：273 用例 · 249 通过 · 22 跳过 · 2 失败
 
-代理沙箱里浏览器进程起不来、`next dev` 因文件监听 EMFILE 反复自重启，**E2E 仍需在你的终端执行**：
+第三轮的 7 个里只剩 chromium 两条（第 12 个提交）：
+
+| 失败用例 | 根因 | 修法 |
+| --- | --- | --- |
+| 03:57 长任务 54ms + 52ms（chromium） | 两条都在竖长图阶段：3432ms 是裁剪弹层打开后底下 2 万格预览被滚动条/布局挤一次重绘；3592ms 是第二次生成落地时桌面侧栏用 `hidden` 仍挂着导出，`createPngExportPlan` / `contentBounds` / `computeStats` 再扫一遍 2 万格，和 React 提交叠在一起。`startTransition` 只能分片，减不掉这些同步扫描 | 桌面导出与手机一致：没打开的面板不挂载；裁剪中 / 生成中 `PatternPreview` 暂停重绘，落地绘制改到下一帧；PDF 空图用已有 stats 判断，不再扫格子 |
+| 16:46 首页五宽度 axe 对比度（chromium） | `.btn-primary` 上沿 `color-mix(..., 86%, #fff)` 把莓果加白，钉板落区主按钮 15px/600 白字对取样色 `#af6178` 只有 4.37:1 | 主按钮实心底锁 `--color-primary`，渐变只往 `--color-primary-deep` 走，不再加白；钉板 CTA 同样给不透明底色 |
+
+## 第五轮 E2E：273 用例 · 246 通过 · 22 跳过 · 5 失败
+
+第四轮的 16 对比度已过。剩下 5 条（第 13 个提交）：
+
+| 失败用例 | 根因 | 修法 |
+| --- | --- | --- |
+| 02:12 取消时 `pngDisabled: false`（三浏览器） | 第四轮把桌面导出改成「没打开就不挂载」，MutationObserver 在 DOM 里找不到「下载 PNG」，`Boolean(undefined?.disabled)` 变成 false；宽度/保存锁定其实已经生效 | 导出按钮改回 `hidden=` 留在 DOM，生成中仍 `disabled`；`createPngExportPlan` 延后到打开选项，空图用 `patternHasPaintedCells` 提前返回，关闭时用整图尺寸做保守预检 |
+| 03:57 方图阶段 52ms + 60ms 长任务（chromium） | 100×100 首次落地仍是上万次 `fillRect`；打开裁剪弹层时 `useMemo` 同步 `putImageData`，Retina 上还曾按 `dpr` 分配 1600² 缓冲 | 大图纸改 1px/格 ImageData 再放大，网格/板缝拆到下一帧；裁剪展示缓冲封顶 800，像素上传移出 render、放到 rAF |
+| 06:154 350px 游客菜单项 < 44px | `.overflow-menu.is-open` 仍有 `menu-in`（translateY），按下还有 `scale(.985)`；子像素下量到不足 44 | 打开即终态，去掉菜单位移/缩放；菜单项 `min-height: 44px; flex-shrink: 0; transform: none` |
+
+## 第六轮 E2E：273 用例 · 251 通过 · 22 跳过 · 0 失败
+
+第五轮剩余 5 条已过（导出按钮留在 DOM、大图纸 ImageData 分帧绘制、裁剪缓冲封顶、菜单打开即终态）。全量 E2E 在用户终端跑通。复跑命令：
 
 ```bash
 # 若上一轮的 dev 服务器还占着端口，先清掉（E2E 用 3100；冒烟用 3200 / 3300）

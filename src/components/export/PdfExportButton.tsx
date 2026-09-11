@@ -51,10 +51,7 @@ export default function PdfExportButton({ name, pattern, stats, boardSize = DEFA
     [boardSize, cellMm, pubCfg],
   );
 
-  const isEmpty = useMemo(
-    () => !pattern.cells.some((cell) => !cell.transparent && !cell.external),
-    [pattern],
-  );
+  const isEmpty = stats.every((item) => item.count === 0);
   const layout = useMemo(
     () => computePdfLayout(pattern.width, pattern.height, metrics, 'byBoard', boardSize),
     [boardSize, metrics, pattern.height, pattern.width],

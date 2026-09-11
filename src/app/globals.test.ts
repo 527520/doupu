@@ -29,6 +29,19 @@ describe('全局颜色 token', () => {
     expect(contrast(token('lilac'), '#ffffff')).toBeGreaterThanOrEqual(3);
   });
 
+  it('主按钮不以加白渐变破坏白字对比度（E2E 16：15px 白字对加白莓果只有 4.37:1）', () => {
+    const block = css.match(/\.btn-primary \{[^}]+\}/)?.[0] ?? '';
+    expect(block).toContain('background-color: var(--color-primary)');
+    expect(block).not.toMatch(/color-mix\([^)]*#fff/i);
+  });
+
+  it('溢出菜单打开即终态，菜单项锁 44px（E2E 06：进场 transform 会量到不足 44）', () => {
+    const open = css.match(/\.overflow-menu\.is-open \{[^}]+\}/)?.[0] ?? '';
+    expect(open).not.toMatch(/animation:/);
+    expect(open).not.toMatch(/transform:/);
+    expect(css).toMatch(/\.overflow-menu\.is-open a[\s\S]*min-height: 44px/);
+  });
+
   it('次要文字与标题不同色，且比标题浅（C-1：此前两者同值，正文层级被压平）', () => {
     expect(token('ink-soft')).not.toBe(token('ink'));
     // 与纯黑的对比度越大＝颜色越浅：ink（最深）→ ink-muted → ink-soft

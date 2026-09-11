@@ -49,7 +49,7 @@ describe('PdfExportButton', () => {
   });
 
   it('空图纸（全透明）不打开对话框并显示错误', () => {
-    setup({ pattern: emptyPattern });
+    setup({ pattern: emptyPattern, stats: [] });
     fireEvent.click(screen.getByRole('button', { name: '导出 PDF' }));
     expect(screen.queryByRole('region', { name: '确认导出 PDF' })).toBeNull();
     expect(screen.getByRole('alert').textContent).toBe('图纸为空，无法导出');

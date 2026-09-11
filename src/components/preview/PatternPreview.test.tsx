@@ -118,4 +118,9 @@ describe('PatternPreview', () => {
     expect(canvas.tagName).toBe('CANVAS');
     expect(canvas).toHaveAttribute('tabindex', '0');
   });
+
+  it('暂停时仍渲染画布，只是不马上重绘', () => {
+    render(<PatternPreview pattern={pattern} defaultCellPx={10} paused />);
+    expect(screen.getByRole('img', { name: /3 × 2 格/ })).toBeTruthy();
+  });
 });

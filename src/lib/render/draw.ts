@@ -11,18 +11,16 @@ export interface DrawOptions {
   showLabels: boolean;
   /** 外部格预览色（默认浅灰） */
   externalColor?: string;
+  /**
+   * cells：只填色（可单独一帧）；overlay：只网格/板缝/色号，不清画布；
+   * all：一次画完。大图纸把填色和描线拆开，避免叠成 >50ms 长任务。
+   */
+  phase?: 'all' | 'cells' | 'overlay';
 }
 
-export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
+function drawCellsFillRect(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
   const { width: W, height: H, cells } = pattern;
   const { cellPx } = opts;
-  const totalW = W * cellPx;
-  const totalH = H * cellPx;
-  ctx.clearRect(0, 0, totalW, totalH);
-
-  // 色块：同一行的连续同色格合并为一个矩形。最大图纸有 40,000 格，
-  // 逐格 fillRect 会在低端设备上形成 >50ms 主线程任务；行程合并保持
-  // 完全相同的像素边界，同时让照片中的色块区域和纯色图大幅减少调用数。
   let activeFill = '';
   for (let y = 0; y < H; y++) {
     let x = 0;
@@ -47,6 +45,68 @@ export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opt
       ctx.fillRect(start * cellPx, y * cellPx, (x - start) * cellPx, cellPx);
     }
   }
+}
+
+function parseHexRgb(hex: string): [number, number, number] | null {
+  if (hex.length === 7 && hex.charCodeAt(0) === 35) {
+    const n = Number.parseInt(hex.slice(1), 16);
+    if (Number.isFinite(n)) return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  return null;
+}
+
+function drawCellsImageData(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
+  const { width: W, height: H, cells } = pattern;
+  const { cellPx } = opts;
+  const canvas = typeof OffscreenCanvas !== 'undefined'
+    ? new OffscreenCanvas(W, H)
+    : Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const off = canvas.getContext('2d');
+  if (!off) {
+    drawCellsFillRect(ctx, pattern, opts);
+    return;
+  }
+  const image = off.createImageData(W, H);
+  const data = image.data;
+  const parsed = new Map<string, [number, number, number]>();
+  const external = opts.externalColor ?? '#d1d5db';
+  for (let index = 0; index < cells.length; index++) {
+    const cell = cells[index];
+    if (cell.transparent) continue;
+    const color = cell.external ? external : cell.hex!;
+    let rgb = parsed.get(color);
+    if (!rgb) {
+      rgb = parseHexRgb(color) ?? [209, 213, 219];
+      parsed.set(color, rgb);
+    }
+    const offset = index * 4;
+    data[offset] = rgb[0];
+    data[offset + 1] = rgb[1];
+    data[offset + 2] = rgb[2];
+    data[offset + 3] = 255;
+  }
+  off.putImageData(image, 0, 0);
+  const smooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(canvas, 0, 0, W * cellPx, H * cellPx);
+  ctx.imageSmoothingEnabled = smooth;
+}
+
+export function drawPattern(ctx: CanvasRenderingContext2D, pattern: Pattern, opts: DrawOptions): void {
+  const { width: W, height: H, cells } = pattern;
+  const { cellPx } = opts;
+  const phase = opts.phase ?? 'all';
+  const totalW = W * cellPx;
+  const totalH = H * cellPx;
+  if (phase !== 'overlay') {
+    ctx.clearRect(0, 0, totalW, totalH);
+
+    // 大图纸改走 1px/格的 ImageData 再放大：1 万次 fillRect 在 Retina 画布上会超过 50ms。
+    // 小图纸仍用行程合并 fillRect，单测按调用次数锁住像素边界。
+    if (W * H >= 2_500) drawCellsImageData(ctx, pattern, opts);
+    else drawCellsFillRect(ctx, pattern, opts);
+  }
+  if (phase === 'cells') return;
 
   // 网格线
   if (opts.showGrid) {

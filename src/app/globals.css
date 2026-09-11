@@ -162,10 +162,12 @@
     transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
   }
   /*
-    主按钮（ui-polish-2026）：上浅下深的微渐变 + 顶部 1px 内高光 + 莓果投影，hover 上浮 1px、投影加深；
+    主按钮（ui-polish-2026）：只往深处走的微渐变 + 顶部 1px 内高光 + 莓果投影，hover 上浮 1px、投影加深。
+    上沿绝不能加白——15px/600 的白字对加白后的莓果只有 4.37:1（E2E 16 首页钉板主按钮），
+    实心底色锁在 --color-primary（对白 5.3:1），渐变最浅一档也是它。
     禁用不再用半透明（半透明的莓果在奶油底上是一团脏粉），改为奶油深底 + 灰字，形状与阴影都收掉。
   */
-  .btn-primary { background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 86%, #fff) 0%, var(--color-primary) 55%, color-mix(in srgb, var(--color-primary) 92%, #000) 100%); color: #fff; box-shadow: var(--shadow-primary), inset 0 1px 0 rgb(255 255 255 / 22%); }
+  .btn-primary { background-color: var(--color-primary); background-image: linear-gradient(180deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 55%, var(--color-primary-deep)) 100%); color: #fff; box-shadow: var(--shadow-primary), inset 0 1px 0 rgb(255 255 255 / 22%); }
   .btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--color-primary) 0%, var(--color-primary-deep) 100%); box-shadow: var(--shadow-primary-hover), inset 0 1px 0 rgb(255 255 255 / 18%); transform: translateY(-1px); }
   .btn-outline { background: var(--color-surface); border-color: var(--color-hairline-strong); color: var(--color-ink); font-weight: 500; box-shadow: var(--shadow-1); }
   .btn-outline:hover:not(:disabled) { border-color: rgb(185 62 98 / 45%); color: var(--color-primary-deep); background: #fffafb; box-shadow: var(--shadow-2); transform: translateY(-1px); }
@@ -1257,19 +1259,24 @@ body {
   box-shadow: var(--shadow-2);
 }
 .overflow-menu[data-align="start"] { right: auto; left: 0; }
-/* 只淡入 + 4px 下落，不缩放：缩放会让菜单项在动画期间量不到 44px。 */
-.overflow-menu.is-open { display: flex; flex-direction: column; gap: 2px; animation: menu-in var(--dur-fast) var(--ease-out) both; }
-.overflow-menu > a, .overflow-menu > button, .overflow-menu .overflow-item {
-  display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: flex-start; gap: .65rem;
-  padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; box-shadow: none;
+/* 打开即显示终态：进场 transform 会让 Playwright 量到小于 44px 的点击目标。 */
+.overflow-menu.is-open { display: flex; flex-direction: column; gap: 2px; }
+.overflow-menu.is-open a,
+.overflow-menu.is-open button,
+.overflow-menu > a,
+.overflow-menu > button,
+.overflow-menu .overflow-item {
+  display: flex; width: 100%; min-height: 44px; height: auto; flex-shrink: 0; align-items: center; justify-content: flex-start; gap: .65rem;
+  box-sizing: border-box; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; box-shadow: none;
   color: var(--color-ink); font-size: 14px; font-weight: 500; line-height: 1.4; text-align: left; text-decoration: none; white-space: normal;
-  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
+  transform: none;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .overflow-menu > a > svg, .overflow-menu > button > svg, .overflow-menu .overflow-item > svg { flex: 0 0 auto; color: var(--color-ink-soft); transition: color var(--dur-fast) var(--ease-out); }
 .overflow-menu > a:hover, .overflow-menu > button:hover:not(:disabled), .overflow-menu .overflow-item:hover:not(:disabled),
 .overflow-menu > a:focus-visible, .overflow-menu > button:focus-visible { background: var(--color-cream-deep); color: var(--color-ink); transform: none; outline: none; }
 .overflow-menu > a:hover > svg, .overflow-menu > button:hover:not(:disabled) > svg { color: var(--color-primary-deep); }
-.overflow-menu > a:active, .overflow-menu > button:active:not(:disabled) { background: var(--color-primary-soft); transform: scale(.985); }
+.overflow-menu > a:active, .overflow-menu > button:active:not(:disabled) { background: var(--color-primary-soft); }
 .overflow-menu > a:focus-visible, .overflow-menu > button:focus-visible { box-shadow: inset 0 0 0 2px var(--color-primary); }
 .overflow-menu > button:disabled { color: var(--color-ink-muted); background: transparent; }
 .overflow-menu > [data-tone="danger"], .overflow-menu > [data-tone="danger"] > svg { color: var(--color-danger); }
@@ -1400,8 +1407,8 @@ body {
 .upload-dropzone.upload-dropzone-primary.is-dragging { border-style: solid; border-color: var(--color-primary); color: var(--color-ink); }
 .upload-dropzone.upload-dropzone-primary .upload-dropzone-icon { width: 46px; height: 46px; border-radius: 999px; color: var(--color-primary); box-shadow: 0 6px 18px rgb(41 38 51 / 10%); }
 .upload-dropzone.upload-dropzone-primary.is-dragging .upload-dropzone-icon { background: var(--color-primary); color: #fff; }
-.upload-dropzone-cta { pointer-events: none; max-width: 100%; white-space: normal; text-align: center; }
-.upload-dropzone.upload-dropzone-primary:hover:not(.is-disabled) .upload-dropzone-cta { background: var(--color-primary-deep); }
+.upload-dropzone-cta { pointer-events: none; max-width: 100%; white-space: normal; text-align: center; background-color: var(--color-primary); }
+.upload-dropzone.upload-dropzone-primary:hover:not(.is-disabled) .upload-dropzone-cta { background-color: var(--color-primary-deep); background-image: none; }
 .upload-dropzone.upload-dropzone-primary:active:not(.is-disabled) .upload-dropzone-cta { transform: scale(.985); }
 .upload-dropzone.upload-dropzone-primary small { margin: 0; color: var(--color-ink-soft); font-size: 13px; }
 .upload-dropzone-drop-hint { display: none; }

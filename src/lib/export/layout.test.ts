@@ -7,6 +7,7 @@ import {
   clampCellPx,
   pngCanvasWithinLimits,
   contentBounds,
+  patternHasPaintedCells,
   pngFileName,
   sanitizeFilename,
 } from './layout';
@@ -19,6 +20,15 @@ const external = (hex: string): PatternCell => ({ hex, code: null, transparent: 
 function makePattern(w: number, h: number, cells: PatternCell[]): Pattern {
   return { width: w, height: h, cells };
 }
+
+describe('patternHasPaintedCells', () => {
+  it('有内容时第一格就返回，全透明/全外部为 false', () => {
+    expect(patternHasPaintedCells(makePattern(1, 1, [cell('#000000')]))).toBe(true);
+    expect(patternHasPaintedCells(makePattern(2, 1, [transparent, cell('#000000')]))).toBe(true);
+    expect(patternHasPaintedCells(makePattern(2, 1, [transparent, transparent]))).toBe(false);
+    expect(patternHasPaintedCells(makePattern(1, 1, [external('#000000')]))).toBe(false);
+  });
+});
 
 describe('contentBounds（包围盒）', () => {
   it('全透明 → null（E10）', () => {

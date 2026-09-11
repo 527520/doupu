@@ -63,4 +63,33 @@ describe('drawPattern', () => {
     expect(moveTo).toHaveBeenCalledWith(100, 0);
     expect(moveTo).toHaveBeenCalledWith(200, 0);
   });
+
+  it('cells 阶段只填色，overlay 阶段才画板缝', () => {
+    const fillRect = vi.fn();
+    const beginPath = vi.fn();
+    const context = {
+      clearRect: vi.fn(),
+      fillRect,
+      beginPath,
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    const pattern: Pattern = {
+      width: 2,
+      height: 1,
+      cells: [
+        { hex: '#112233', code: 'A1', transparent: false },
+        { hex: '#112233', code: 'A1', transparent: false },
+      ],
+    };
+    const base = { cellPx: 2, showGrid: false, showSeams: true, showLabels: false, boardSize: 1 };
+
+    drawPattern(context, pattern, { ...base, phase: 'cells' });
+    expect(fillRect).toHaveBeenCalledWith(0, 0, 4, 2);
+    expect(beginPath).not.toHaveBeenCalled();
+
+    drawPattern(context, pattern, { ...base, phase: 'overlay' });
+    expect(beginPath).toHaveBeenCalled();
+  });
 });

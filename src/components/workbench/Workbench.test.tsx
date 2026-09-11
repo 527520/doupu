@@ -1371,9 +1371,11 @@ describe('Workbench 空白起稿与套装档位（H-2/H-3）', () => {
 
     const imported = savedProject('导入设计', '2026-08-15T12:00:00.000Z');
     const file = new File([JSON.stringify(imported)], 'import.doupu.json', { type: 'application/json' });
+    fireEvent.click(screen.getByRole('button', { name: '导出' }));
     fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
 
     await screen.findByDisplayValue('导入设计');
+    fireEvent.click(screen.getByRole('button', { name: '参数' }));
     expect((selectField(zhCN.params.kitTier)).value).toBe('0');
   });
 
@@ -2013,6 +2015,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
 
       const imported = savedProject('新会话项目', '2026-08-15T12:00:00.000Z');
       const file = new File([JSON.stringify(imported)], 'new-session.doupu.json', { type: 'application/json' });
+      fireEvent.click(screen.getByRole('button', { name: '导出' }));
       fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
       await screen.findByDisplayValue('新会话项目');
 
@@ -2272,6 +2275,7 @@ describe('Workbench 云端自定义色板（优化票 06）', () => {
 
       const imported = savedProject('新会话项目', '2026-08-15T12:00:00.000Z');
       const file = new File([JSON.stringify(imported)], 'new-session.doupu.json', { type: 'application/json' });
+      fireEvent.click(screen.getByRole('button', { name: '导出' }));
       fireEvent.change(screen.getByLabelText(zhCN.project.importInputLabel), { target: { files: [file] } });
       await screen.findByDisplayValue('新会话项目');
 

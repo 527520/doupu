@@ -30,9 +30,14 @@ interface Props {
   variant?: 'default' | 'compact';
   /** 媒体上方的一行说明（与并排的原图 figcaption 同一水平线）。 */
   caption?: string;
+  /**
+   * 暂停重绘：裁剪弹层盖住图纸、或新一轮生成尚未落地时，底下那张画布不必跟着
+   * 弹层开关/滚动条消失重画 2 万格（E2E 03 的 50ms 主线程预算）。
+   */
+  paused?: boolean;
 }
 
-export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover, variant = 'default', caption }: Props) {
+export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaultCellPx, onCellHover, variant = 'default', caption, paused = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -68,25 +73,40 @@ export default function PatternPreview({ pattern, boardSize = BOARD_SIZE, defaul
     );
   const cellPx = Math.max(1, Math.round(baseCellPx * zoom));
 
-  const draw = useCallback(() => {
+  const draw = useCallback((phase: 'all' | 'cells' | 'overlay' = 'all') => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const cssW = pattern.width * cellPx;
     const cssH = pattern.height * cellPx;
-    canvas.width = Math.max(1, Math.round(cssW * dpr));
-    canvas.height = Math.max(1, Math.round(cssH * dpr));
-    canvas.style.width = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
+    const maxBuffer = 800;
+    const scale = Math.min(dpr, maxBuffer / Math.max(cssW, cssH, 1));
+    if (phase !== 'overlay') {
+      canvas.width = Math.max(1, Math.round(cssW * scale));
+      canvas.height = Math.max(1, Math.round(cssH * scale));
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+    }
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawPattern(ctx, pattern, { cellPx, boardSize, showGrid, showSeams, showLabels });
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    drawPattern(ctx, pattern, { cellPx, boardSize, showGrid, showSeams, showLabels, phase });
   }, [pattern, cellPx, boardSize, showGrid, showSeams, showLabels]);
 
   useEffect(() => {
-    draw();
-  }, [draw]);
+    if (paused) return;
+    const large = pattern.width * pattern.height >= 2_500;
+    let overlayFrame = 0;
+    const frame = requestAnimationFrame(() => {
+      draw(large ? 'cells' : 'all');
+      if (!large) return;
+      overlayFrame = requestAnimationFrame(() => draw('overlay'));
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(overlayFrame);
+    };
+  }, [draw, paused, pattern.height, pattern.width]);
 
   const emitHover = useCallback(
     (clientX: number, clientY: number): void => {

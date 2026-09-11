@@ -2009,7 +2009,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             <header><LocalSaveBadge state={saveState} /><strong>{pattern.width} × {pattern.height}</strong></header>
             {cropAction}
             <div className="mobile-canvas-stage">
-              <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} boardSize={boardSpec.boardCols} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>
+              <div id="panel-preview" role="tabpanel" aria-labelledby="tab-preview" ref={mobilePatternRegionRef} tabIndex={-1}><PatternPreview pattern={pattern} boardSize={boardSpec.boardCols} paused={step === 'crop' || generating} onCellHover={(info) => setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)} /></div>
             </div>
             <footer>{t.statsTotal(total)} · {t.colorCount(stats.length)}<span>{t.editorHint}</span></footer>
           </section>
@@ -2245,6 +2245,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                 <PatternPreview
                   pattern={pattern}
                   boardSize={boardSpec.boardCols}
+                  paused={step === 'crop' || generating}
                   onCellHover={(info) =>
                     setHoverInfo(info ? zhCN.preview.cellInfo(info.row, info.col, info.cell.code) : null)
                   }
@@ -2341,8 +2342,13 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
               />
             )}
 
+            {/*
+              导出按钮要留在 DOM 里：生成中的 disabled 是取消协议的一部分（E2E 02 查「下载 PNG」）。
+              用 hidden 而不是卸掉；PNG 规划延后到打开选项，避免落地时扫 2 万格。
+            */}
             {generationSession.committed && (
-              <div hidden={mobilePanel !== 'export'}><div className="card-surface flex flex-col gap-3 p-3">
+              <div hidden={mobilePanel !== 'export'}>
+                <div className="card-surface flex flex-col gap-3 p-3">
                 <PngExportButton
                   pattern={generationSession.committed.pattern}
                   designName={name.trim() || zhCN.project.unnamed}
@@ -2389,7 +2395,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
                   disabled={authStatus.kind !== 'user' || generating || communityOrigin}
                   disabledReason={communityOrigin ? zhCN.publish.communityOriginBlocked : generating ? zhCN.share.generationInProgress : zhCN.share.requiresCloud}
                 />
-              </div></div>
+                </div>
+              </div>
             )}
           </aside>
         </div>

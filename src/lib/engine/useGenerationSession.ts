@@ -60,9 +60,9 @@ export function useGenerationSession<Result>(initialDraft: GenerationDraft) {
     const draft = current.draft;
     const source = current.source;
     if (!draft || !source || !current.sourceAvailable) return null;
-    // 图纸落地是整个工作台最大的一次提交：预览画布、材料清单、导出面板一起挂载。
-    // 成功路径作为过渡渲染，让 React 分片让出主线程，不出现 >50ms 的长任务（E2E 03 的性能门禁）；
-    // 模块状态（stateRef）仍在 dispatch 里同步写入，取消 / 失败路径保持同步，取消后的 UI 恢复时限不受影响。
+    // 图纸落地仍走过渡渲染，让 React 分片让出主线程（E2E 03 的 50ms 门禁）。
+    // 真正减负靠调用方：导出按钮留在 DOM 但不做规划扫描、裁剪/生成中预览不重绘。
+    // 模块状态（stateRef）仍在 dispatch 里同步写入，取消 / 失败路径保持同步。
     let succeeded = false;
     return tasks.start(
     (onProgress) => options.create(source, draft, onProgress),

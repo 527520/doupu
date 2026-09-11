@@ -22,6 +22,14 @@ export interface ContentBounds {
   y1: number;
 }
 
+/** 是否有可导出的色块。有内容时第一格就返回，不扫整张图纸。 */
+export function patternHasPaintedCells(pattern: Pattern): boolean {
+  for (const cell of pattern.cells) {
+    if (!cell.transparent && !cell.external) return true;
+  }
+  return false;
+}
+
 export function contentBounds(pattern: Pattern): ContentBounds | null {
   let x0 = Infinity;
   let y0 = Infinity;
