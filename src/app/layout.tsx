@@ -51,10 +51,15 @@ export default async function RootLayout({
   // Reading request headers opts the entire tree into dynamic rendering. This
   // is required for Next.js to attach the request-scoped CSP nonce to its RSC
   // and framework scripts.
-  await headers();
+  // 同一个 nonce 还要给 React Aria 用：它的 usePress / usePreventScroll 会在
+  // 客户端注入静态 <style>，并去文档里找 meta[name="csp-nonce"] 取 nonce
+  // （react-aria/dist/private/utils/getMetaValue.js）。少了这个 meta，生产
+  // style-src-elem 的 nonce 策略会拦掉这两条规则（E2E 08 生产冒烟可捕获）。
+  const nonce = (await headers()).get('x-nonce');
 
   return (
     <html lang="zh-CN">
+      <head>{nonce ? <meta name="csp-nonce" content={nonce} /> : null}</head>
       <body className="antialiased">
         {/*
           跳到主内容（D-9）：键盘用户此前必须逐个 Tab 过站内导航（工作台里还有

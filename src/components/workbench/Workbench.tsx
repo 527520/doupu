@@ -10,7 +10,6 @@ import Button from '@/components/ui/Button';
  * 云端同步接缝（T16/T17）：storage 注入 + onSavedStatus 回调，本票仅本地实现。
  */
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
@@ -279,10 +278,6 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     sourceRef.current = generationSession.committedSource;
   }, [generationSession.committedSource]);
   const generating = generationSession.status === 'generating';
-  const [showCancelUi, setShowCancelUi] = useState(false);
-  useEffect(() => {
-    setShowCancelUi(generating);
-  }, [generating]);
   // Pattern/statistics are projections of the session's immutable commit;
   // Workbench never mirrors a second independently mutable copy.
   const pattern = generationSession.committed?.pattern ?? null;
@@ -622,9 +617,8 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   /** 取消在途生成任务：作废令牌、终止 Worker，并回滚到生成前的稳定提交态。 */
   const handleCancelGenerate = useCallback((): void => {
-    // 先把「取消」按钮移出 DOM（E2E 02 要求 <100ms），Worker 同步停掉；
-    // 回滚参数与生成态的整树提交放到下一轮任务，避免和卸按钮叠成一帧长任务。
-    flushSync(() => setShowCancelUi(false));
+    // Worker 同步停掉；回滚参数与生成态的整树提交放到下一轮任务，避免和
+    // 「取消」按钮卸载（由 generating 派生，不再有镜像 state）叠成一帧长任务。
     const cancelled = abortGeneration();
     if (!cancelled) return;
     const epoch = cancelEpochRef.current;
@@ -1925,7 +1919,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
       <StepIndicator step={step} />
 
       {busy && <p className="text-sm text-primary-deep" role="status">{busyText}</p>}
-      {showCancelUi && !busy && (
+      {generating && !busy && (
         <div className="flex flex-wrap items-center gap-3 text-sm text-primary-deep" role="status">
           <span>{t.generating}</span>
           {/* 进度条与百分比用固定宽度槽位：出现/更新时「取消」按钮位置不跳动（可稳定点击） */}
