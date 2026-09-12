@@ -229,7 +229,8 @@ jobs:
             local code=$1; local title=$2
             E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" \
               E2E_VERIFY_TOKEN="$VERIFY_TOKEN" E2E_ADMIN_SESSION_TOKEN="$ADMIN_TOKEN" \
-              npm run test:e2e:production -- -g "$title"
+              PLAYWRIGHT_JSON_OUTPUT_NAME=smoke-report.json \
+              npm run test:e2e:production -- -g "$title" --reporter=line,json
             if [ $? != 0 ]; then smoke=$code; smoke_where="$title"; return 1; fi
             return 0
           }
@@ -238,6 +239,28 @@ jobs:
             && smoke_case 35 "standalone routes enforce PostgreSQL CAS" \
             && smoke_case 36 "long-range production analytics includes live consented data"
           set -e
+          # 这一步的日志要仓库 admin 才能看，但 check-run 的 annotation 公开可读：
+          # 把 Playwright 的失败原因（错误文本 + 首处堆栈）打到输出里，
+          # annotation 页面直接显示，不必登录、不必下载 artifact。
+          node -e '
+            const fs = require("node:fs");
+            if (!fs.existsSync("smoke-report.json")) { console.log("smoke report: (missing)"); process.exit(0); }
+            const report = JSON.parse(fs.readFileSync("smoke-report.json", "utf8"));
+            const failed = [];
+            const walk = (suites) => (suites ?? []).forEach((suite) => {
+              (suite.specs ?? []).forEach((spec) => {
+                (spec.tests ?? []).forEach((test) => {
+                  if (test.status !== "expected" && test.status !== "skipped") {
+                    const error = (test.results?.[0]?.error?.message ?? "").split("\n").slice(0, 8).join("\n");
+                    failed.push("SMOKE-FAIL " + spec.title + "\n" + test.status + ": " + error);
+                  }
+                });
+              });
+              walk(suite.suites);
+            });
+            walk(report.suites);
+            console.log(failed.length ? failed.join("\n---\n") : "smoke report: no failed specs recorded");
+          ' || true
           # 退出码编码「失败在哪一段」：31=容器没起来 / 32=route-contract /
           # 33..36=浏览器冒烟的四个用例。check-run 的 annotation 公开可读，不看日志也能定位。
           {
