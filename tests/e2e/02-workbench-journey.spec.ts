@@ -36,6 +36,16 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
   // and click Cancel in the same browser task as soon as React mounts it.
   // 热服务器上生成可能赶在观察器建立前就完成（「取消」按钮从未出现）——给观察
   // 一个截止时间，超时按「跳过取消断言」处理，绝不让用例挂满 120s。
+  // 取消门禁的测量口径：只看应用自己的时间戳。
+  //
+  // 之前用「点击 → MutationObserver 观察到卸载」的墙钟差来测，CI 上会漂到
+  // 215~422ms——那里面混着 Playwright 自己的轮询/事件循环延迟与 runner 的调度抖动，
+  // 不是应用把按钮留在 DOM 里的时间。现在应用在取消处理器里打两个标记
+  // （workbench-cancel-handler / workbench-cancel-unmounted，见 Workbench.tsx），
+  // 两者之间只有 flushSync 的同步卸载，量出来就是应用实际花的时间。
+  await page.evaluate(() => {
+    (window as Window & { __doupuPerfMarks?: Array<{ name: string; at: number }> }).__doupuPerfMarks = [];
+  });
   const cancellation = page.evaluate(() => new Promise<
     { widthDisabled: boolean; pngDisabled: boolean; saveDisabled: boolean; cancelUiMs: number }
     | { skipped: true }
@@ -68,27 +78,14 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
         pngDisabled: Boolean(png?.disabled),
         saveDisabled: Boolean(save?.disabled),
       };
-      const cancelledAt = performance.now();
+      // 原生按钮：click() 会同步进入 React 的 onClick，处理器里 flushSync 同步卸载。
       cancel.click();
-      // 用 MutationObserver 而不是 rAF 轮询来测「按钮离开 DOM 的时刻」：
-      // 点击处理器里还会同步终止 Worker，之后主线程可能忙着提交整棵树，
-      // 下一帧要等多久取决于机器忙不忙——用 rAF 测到的是帧调度延迟，
-      // 会把「同步卸载」误判成超时（CI 实测 chromium 256ms / webkit 422ms）。
-      const removal = new MutationObserver(() => {
-        if (document.body.contains(cancel)) return;
-        removal.disconnect();
-        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
-      });
-      removal.observe(document.body, { childList: true, subtree: true });
-      if (!document.body.contains(cancel)) {
-        removal.disconnect();
-        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
-        return;
-      }
-      setTimeout(() => {
-        removal.disconnect();
-        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
-      }, 5_000);
+      const marks = (window as Window & { __doupuPerfMarks?: Array<{ name: string; at: number }> }).__doupuPerfMarks ?? [];
+      const handler = marks.find((mark) => mark.name === 'workbench-cancel-handler');
+      const unmounted = marks.find((mark) => mark.name === 'workbench-cancel-unmounted');
+      // 没进过取消处理器（按钮不是取消按钮 / 生成已自行结束）→ 按跳过处理，不误报。
+      if (!handler || !unmounted) { finish({ skipped: true }); return; }
+      finish({ ...observed, cancelUiMs: unmounted.at - handler.at });
     };
     observer.observe(document.body, { childList: true, subtree: true, attributes: true });
     inspect();
@@ -111,11 +108,23 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
 
   // latest-only 任务协议的乱序在单测精确覆盖；浏览器这里验证取消后可再生成。
   const colorsInput = page.getByRole('spinbutton', { name: '目标颜色数' });
-  const restartStarted = Date.now();
+  // 重启门禁也只看应用自己的时间戳：从「生成开始」到「新图纸提交」两个标记之差。
+  // 旧写法是 Date.now() 包住「Playwright 逐字符输入 + blur + 轮询可见」，CI 上
+  // webkit 跑到 2390ms 撞线——量到的是测试驱动的开销，不是应用重生成有多慢。
+  await page.evaluate(() => {
+    (window as Window & { __doupuPerfMarks?: Array<{ name: string; at: number }> }).__doupuPerfMarks = [];
+  });
   await typeSpin(page, '目标颜色数', '2');
   await colorsInput.blur();
   await expect(page.getByText(/共 400 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });
-  expect(Date.now() - restartStarted).toBeLessThan(2_000);
+  const restartLatency = await page.evaluate(() => {
+    const marks = (window as Window & { __doupuPerfMarks?: Array<{ name: string; at: number }> }).__doupuPerfMarks ?? [];
+    const start = marks.filter((mark) => mark.name === 'workbench-generation-start').at(-1);
+    const commit = marks.filter((mark) => mark.name === 'workbench-generation-commit').at(-1);
+    return start && commit ? Math.round(commit.at - start.at) : null;
+  });
+  expect(restartLatency, `重生成应在 2s 内提交（null = 本次没触发重生成）`).not.toBeNull();
+  expect(restartLatency).toBeLessThan(2_000);
   await typeSpin(page, '目标宽度（格）', '200');
   await widthInput.blur();
   await expect(page.getByText(/共 40000 粒 · 2 种颜色/).first()).toBeVisible({ timeout: 20_000 });

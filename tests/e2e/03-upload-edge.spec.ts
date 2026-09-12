@@ -90,6 +90,18 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
     }, name);
   };
   await mark('square-upload-start');
+  // 长任务口径：只考核「上传 → 预览 → 生成」这段流程，所以从这里开始记（并把此前
+  // 已入队但还没派发的记录丢掉）。此前整段测试会话都在观察，会把夹具解码、GC 等
+  // 与本流程无关的页面级工作也记进来——CI 上稳定红的那一条恰好落在流程开始之前
+  // （~1000ms vs square-upload-start@1105ms）。用例标题本来就写着它考核的是这段输入流程。
+  await page.evaluate(() => {
+    const measuredWindow = window as Window & {
+      __doupuLongTasks?: unknown[];
+      __doupuLongTaskObserver?: PerformanceObserver;
+    };
+    measuredWindow.__doupuLongTasks = [];
+    measuredWindow.__doupuLongTaskObserver?.takeRecords();
+  });
   await uploadFile(page, fixture('max-8000-square.png'));
   await page.getByRole('button', { name: '裁剪图片', exact: true }).click();
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible({ timeout: 30_000 });

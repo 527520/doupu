@@ -573,6 +573,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         onStart: () => {
           cancelEpochRef.current += 1;
           genStartedAtRef.current = performance.now();
+          perfMark('workbench-generation-start');
           setShowProgress(false);
           setErrorMsg(null);
           setCancelDismissed(false);
@@ -632,7 +633,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
     // Worker，同一任务里完成卸载才能满足 E2E 02 的 <100ms 门禁（firefox 129.9ms /
     // webkit 398.2ms 实测：等下一轮的 commitCancel 再卸载就超了）。
     // cancelDismissed 只在生成期间表示「用户已点取消」，新一轮生成开始时清掉。
+    perfMark('workbench-cancel-handler');
     flushSync(() => setCancelDismissed(true));
+    perfMark('workbench-cancel-unmounted');
     const cancelled = abortGeneration();
     if (!cancelled) return;
     const epoch = cancelEpochRef.current;
