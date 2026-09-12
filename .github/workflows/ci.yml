@@ -111,20 +111,66 @@ jobs:
       - name: Verify Playwright browsers
         run: npm run test:e2e:check
       - name: Run E2E without retries（连续 3 次）
-        # 与 release-safety 同理：这一步的日志要仓库 admin 才能看，playwright-report
-        # artifact 也要登录才能下载，所以失败时把关键输出打进步骤输出（公开 annotation 可读）。
+        # 这一步与 playwright-report 都要登录才能看，只有 check-run 的 annotation 匿名可读。
+        # 所以把「哪个 spec 文件挂了」编码进退出码：41=02 42=03 43=13 44=17 40=其它。
+        # 每轮跑完整套件（保持原来的 3 次连续不重试门禁），注册 json reporter 到
+        # e2e-round-$attempt.json；失败时用它取回该轮失败的 spec 文件与用例标题。
         run: |
           set +e
-          npm run test:e2e:stable 2>&1 | tee e2e-stable.log
-          status=${PIPESTATUS[0]}
+          failed_codes=''
+          for attempt in 1 2 3; do
+            echo "===== E2E 第 $attempt / 3 轮 ====="
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-round-$attempt.json" \
+              npm run test:e2e -- --reporter=line,json 2>&1 | tee "e2e-run-$attempt.log"
+            status=${PIPESTATUS[0]}
+            if [ "$status" != 0 ]; then
+              echo "E2E-FAIL round=$attempt exit=$status"
+              grep -E -m 8 -A 10 '^\s+[0-9]+\) ' "e2e-run-$attempt.log" || true
+              node -e '
+                const fs = require("node:fs");
+                const file = process.argv[1];
+                let report = null;
+                try { report = JSON.parse(fs.readFileSync(file, "utf8")); }
+                catch (error) { console.log("E2E-FAILED-SPECS: (json report unreadable) " + error.message); }
+                const specs = new Set();
+                const titles = [];
+                const walk = (suites) => (suites ?? []).forEach((suite) => {
+                  (suite.specs ?? []).forEach((spec) => {
+                    for (const test of spec.tests ?? []) {
+                      if (test.status === "expected" || test.status === "skipped") continue;
+                      const where = String(spec.file ?? suite.file ?? "");
+                      if (where) specs.add(where.replace(/^.*tests[\\/]e2e[\\/]/, "tests/e2e/"));
+                      titles.push(`${test.status}: ${spec.title}`);
+                    }
+                  });
+                  walk(suite.suites);
+                });
+                if (report) walk(report.suites);
+                if (report) {
+                  console.log("E2E-STATS: " + JSON.stringify(report.stats ?? {}));
+                  console.log("E2E-FAILED-SPECS: " + ([...specs].sort().join(" ") || "(json report has no unexpected tests)"));
+                  for (const title of titles.slice(0, 12)) console.log("  " + title);
+                }
+              ' "e2e-round-$attempt.json" || true
+              for entry in "02-workbench-journey:41" "03-upload-edge:42" "13-optional-recrop:43" "17-visual-refinement:44"; do
+                spec="${entry%%:*}"
+                if grep -q "E2E-FAILED-SPECS:.*$spec" "e2e-run-$attempt.log"; then
+                  failed_codes="$failed_codes ${entry##*:}"
+                fi
+              done
+              break
+            fi
+          done
           set -e
-          if [ "$status" != 0 ]; then
-            echo "E2E-FAIL exit=$status"
-            grep -E -m 6 -A 12 '^\s+[0-9]+\) ' e2e-stable.log || true
-            echo "----- 末尾 40 行 -----"
-            tail -n 40 e2e-stable.log
+          if [ -n "$failed_codes" ]; then
+            echo "E2E-EXIT-CODES:$failed_codes"
+            exit "$(echo $failed_codes | awk '{print $1}')"
           fi
-          exit "$status"
+          exit 0
+        env:
+          # 与 globalSetup 里的一致：三个浏览器 project 共享一个一次性 PGlite。
+          RATE_LOGIN: '1000'
+          RATE_REGISTER: '1000'
       - name: Upload E2E report
         if: failure()
         uses: actions/upload-artifact@v4
