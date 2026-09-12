@@ -99,7 +99,7 @@ function cursorForMode(mode: DragMode): string {
   }
 }
 
-const BLIT_STRIPE_ROWS = 48;
+const BLIT_STRIPE_ROWS = 16;
 
 function previewImageData(image: DecodedImage): ImageData {
   const length = image.width * image.height * 4;
@@ -117,10 +117,14 @@ function previewImageData(image: DecodedImage): ImageData {
   return new ImageData(bytes, image.width, image.height);
 }
 
-/** 把解码预览打进离屏画布。大图按条带让出帧，避免单次 putImageData 超过 50ms。 */
+/**
+ * 把解码预览打进离屏画布。大图按条带让出帧，避免单次 putImageData 超过 50ms；
+ * 每个条带之间回调一次 onStripe，让调用方把选框重画一遍（否则条带期间框是空的）。
+ */
 async function blitDecodedPreview(
   image: DecodedImage,
   signal: { cancelled: boolean },
+  onStripe?: () => void,
 ): Promise<HTMLCanvasElement | null> {
   if (typeof document === 'undefined' || typeof ImageData === 'undefined') return null;
   const canvas = document.createElement('canvas');
@@ -142,6 +146,7 @@ async function blitDecodedPreview(
     perfMark(`crop-blit-stripe-${y}`);
     ctx.putImageData(imageData, 0, 0, 0, y, image.width, Math.min(BLIT_STRIPE_ROWS, image.height - y));
     perfMark(`crop-blit-stripe-${y}-end`);
+    onStripe?.();
   }
   return canvas;
 }
@@ -224,23 +229,8 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled
     canvas.style.width = `${displayWidth}px`;
     canvas.style.height = containerWidth === null ? 'auto' : `${displayHeight}px`;
     const signal = { cancelled: false };
-    // 像素上传与后备缓冲分配都放到下一帧：不要和弹层的 React 提交挤在同一个 50ms 长任务里。
-    const frame = requestAnimationFrame(() => {
-      void (async () => {
-        if (signal.cancelled) return;
-        if (canvas.width !== nextW) canvas.width = nextW;
-        if (canvas.height !== nextH) canvas.height = nextH;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        if (sourceImageRef.current !== image) {
-          sourceCanvasRef.current = await blitDecodedPreview(image, signal);
-          if (signal.cancelled) return;
-          sourceImageRef.current = image;
-        }
-        ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
-        ctx.clearRect(0, 0, displayWidth, displayHeight);
-        if (sourceCanvasRef.current) ctx.drawImage(sourceCanvasRef.current, 0, 0, displayWidth, displayHeight);
-
+    /** 选框遮罩 + 手柄。与源图无关，可以先把框画出来，源图按条带随后补上。 */
+    const paintOverlay = (ctx: CanvasRenderingContext2D): void => {
       const r = clampCropRect(rect, naturalWidth, naturalHeight);
       const rx = r.x * scaleX;
       const ry = r.y * scaleY;
@@ -270,6 +260,36 @@ export function ImageCropper({ image, initialRect, onConfirm, onCancel, disabled
       ] as const) {
         ctx.fillRect(hx - size / 2, hy - size / 2, size, size);
       }
+    };
+    // 像素上传与后备缓冲分配都放到下一帧：不要和弹层的 React 提交挤在同一个 50ms 长任务里。
+    // 顺序也重要（E2E 03 的 50ms 门禁）：先画选框（本地工作，立刻可见），再分条带上源图；
+    // 每上一个条带都重画一次选框，于是首帧的合成开销被摊到多个条带之间，
+    // 而不是在 drawImage 缩放整幅预览之后一次性结算。
+    const frame = requestAnimationFrame(() => {
+      void (async () => {
+        if (signal.cancelled) return;
+        if (canvas.width !== nextW) canvas.width = nextW;
+        if (canvas.height !== nextH) canvas.height = nextH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
+        ctx.clearRect(0, 0, displayWidth, displayHeight);
+        paintOverlay(ctx);
+        if (sourceImageRef.current !== image) {
+          const blitted = await blitDecodedPreview(image, signal, () => {
+            if (signal.cancelled) return;
+            ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
+            ctx.clearRect(0, 0, displayWidth, displayHeight);
+            paintOverlay(ctx);
+          });
+          if (signal.cancelled) return;
+          sourceCanvasRef.current = blitted;
+          sourceImageRef.current = image;
+        }
+        ctx.setTransform(bufferScale, 0, 0, bufferScale, 0, 0);
+        ctx.clearRect(0, 0, displayWidth, displayHeight);
+        if (sourceCanvasRef.current) ctx.drawImage(sourceCanvasRef.current, 0, 0, displayWidth, displayHeight);
+        paintOverlay(ctx);
       })();
     });
     return () => {
