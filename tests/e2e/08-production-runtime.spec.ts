@@ -133,14 +133,22 @@ test('long-range production analytics includes live consented data and accessibl
     // 后台重做换过文案后这条一直没跟着改（release-safety 第 12 步 exit 36 实证）。
     await expect(page.getByText(/这一天尚未结束（上海时间）/)).toBeVisible();
     const daily = page.getByRole('region', { name: '按分类查看每日趋势' });
-    await daily.getByRole('button',{name:/分类值/}).click();
+    // 选择器标签是「分类」，显示值是维度值（desktop）；此处断言过的「分类值」从未存在过
+    // （DailyDimensionTrend.test.tsx 用的是 /分类/），所以这步 click 一直超时（exit 36 实证）。
+    await daily.getByRole('button',{name:/分类/}).click();
     await page.getByRole('option',{name:'desktop',exact:true}).click();
     await expect(daily.getByRole('table')).toContainText(end);
     await daily.locator('circle').first().focus(); await expect(daily.locator('circle').first()).toBeFocused();
     await expect(page.locator('.admin-metrics article').nth(1)).toContainText('—');
     for (const width of [350, 390, 768, 1280, 1440]) {
       await page.setViewportSize({ width, height: 844 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      // 上一轮的 axe 扫描会往文档里注入样式节点，setViewportSize 之后的回流不一定在同一帧完成：
+      // 直接读 scrollWidth 偶发读到未回流完的旧宽度（run #73 起 exit 36，本地 3 次里红 2 次）。
+      // 等宽度真正落到视口内再断言，门禁强度不变。
+      await expect.poll(
+        async () => page.evaluate(() => document.documentElement.scrollWidth),
+        { message: `布局在 ${width}px 视口内不应横向溢出` },
+      ).toBeLessThanOrEqual(width);
       expect((await new AxeBuilder({ page }).analyze()).violations.filter((entry) => ['serious', 'critical'].includes(entry.impact ?? ''))).toEqual([]);
       if ([350, 1440].includes(width)) await page.screenshot({ path: resolve(`.scratch/site-ux/analytics-live-${width}.png`), fullPage: true });
     }
