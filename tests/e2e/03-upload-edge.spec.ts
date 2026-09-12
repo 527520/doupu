@@ -58,10 +58,17 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
   await openApp(page);
   if (testInfo.project.name === 'chromium') {
     await page.evaluate(() => {
-      const entries: Array<{ startTime: number; duration: number }> = [];
+      const entries: Array<{ startTime: number; duration: number; name: string; attribution: string }> = [];
       const marks: Array<{ name: string; at: number }> = [];
       const observer = new PerformanceObserver((list) => {
-        entries.push(...list.getEntries().map((entry) => ({ startTime: entry.startTime, duration: entry.duration })));
+        entries.push(...list.getEntries().map((entry) => ({
+          startTime: entry.startTime,
+          duration: entry.duration,
+          name: entry.name,
+          attribution: JSON.stringify(
+            (entry as PerformanceEntry & { attribution?: unknown }).attribution ?? [],
+          ).slice(0, 200),
+        })));
       });
       Object.assign(window, {
         __doupuLongTasks: entries,
@@ -116,7 +123,7 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
   if (testInfo.project.name === 'chromium') {
     const performanceLog = await page.evaluate(() => {
       const measuredWindow = window as Window & {
-        __doupuLongTasks?: Array<{ startTime: number; duration: number }>;
+        __doupuLongTasks?: Array<{ startTime: number; duration: number; name: string; attribution: string }>;
         __doupuPerfMarks?: Array<{ name: string; at: number }>;
         __doupuLongTaskObserver?: PerformanceObserver;
       };
@@ -124,6 +131,11 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
       measuredWindow.__doupuLongTasks?.push(...(observer?.takeRecords() ?? []).map((entry) => ({
         startTime: entry.startTime,
         duration: entry.duration,
+        // 归因：长任务可能来自窗口自身 / 某个 iframe / 浏览器内部，不看这个只能猜。
+        name: entry.name,
+        attribution: JSON.stringify(
+          (entry as PerformanceEntry & { attribution?: unknown }).attribution ?? [],
+        ).slice(0, 200),
       })));
       observer?.disconnect();
       return {
@@ -131,6 +143,15 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
         marks: measuredWindow.__doupuPerfMarks ?? [],
       };
     });
+    // 失败时按「长任务 vs 紧邻的性能标记」打印，公开 annotation 可读（E2E 日志要仓库权限）。
+    if (performanceLog.longTasks.length > 0) {
+      const nearby = performanceLog.longTasks.map((task) => {
+        const before = performanceLog.marks.filter((mark) => mark.at <= task.startTime).at(-1)?.name ?? '(before first mark)';
+        const after = performanceLog.marks.find((mark) => mark.at >= task.startTime)?.name ?? '(after last mark)';
+        return `${task.duration}ms at ${Math.round(task.startTime)}ms between ${before} → ${after}`;
+      });
+      console.log(`E2E-LONGTASK ${performanceLog.longTasks.length} 个 >50ms 任务:\n` + nearby.join('\n'));
+    }
     expect(performanceLog.longTasks, `main-thread performance: ${JSON.stringify(performanceLog)}`).toEqual([]);
   }
 });
