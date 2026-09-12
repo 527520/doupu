@@ -54,7 +54,13 @@ test('合法的长英文公开标题不裁切，减少动态效果取消卡片�
   const card=page.locator('.community-card').filter({has:page.getByRole('heading',{name:title,exact:true})});
   for(const width of widths){
     await page.setViewportSize({width,height:844});await expect(card).toBeVisible();
-    expect(await card.locator('.community-card-body > div').evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
+    // 轮询而不是读一次：setViewportSize 之后卡片内部布局（长词的断词、字体度量）
+    // 不一定在同一帧完成，取样到中间态会把合法换行判成溢出（webkit 上间歇性红）。
+    // 判据不变，仍是 scrollWidth <= clientWidth。
+    await expect.poll(async()=>card.locator('.community-card-body > div')
+      .evaluate(element=>element.scrollWidth<=element.clientWidth),
+      {message:`${width}px 下长英文标题不应横向溢出`})
+      .toBe(true);
     await card.hover();await expectNoMotionTransform(card);
   }
   await page.screenshot({path:output(`long-title-${info.project.name}.png`),fullPage:true});

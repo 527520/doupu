@@ -144,6 +144,16 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
       };
     });
     // 失败时按「长任务 vs 紧邻的性能标记」打印，公开 annotation 可读（E2E 日志要仓库权限）。
+    //
+    // 归因方法（本地复现用）：用生产构建 + 渲染侧限速跑同一段流程——
+    //   起 standalone 服务（PORT=3000 npm start 或 node .next/standalone/server.js），
+    //   CDP Emulation.setCPUThrottlingRate = 2~4，再重放本用例的步骤。
+    // 记录到的长任务都落在「应用没有代码在跑」的窗口里
+    // （workbench-generation-settled → 点击裁剪 / 点击裁剪 → 首次 putImageData）：
+    // 上传路径本身很短（read+validate ≈ 2ms、解码在 Worker、预览按 48 行分条让帧，
+    // 单条 ≤45ms），所以那是共享 runner 上的 GC 与浏览器自身开销，而不是某段
+    // 同步重活的抖动。要把它变成 0，得先决定是否给这条「一个长任务都不许有」的
+    // 门禁留余量——那是产品/工程取舍，不在这条用例里单方面放宽。
     if (performanceLog.longTasks.length > 0) {
       const nearby = performanceLog.longTasks.map((task) => {
         const before = performanceLog.marks.filter((mark) => mark.at <= task.startTime).at(-1)?.name ?? '(before first mark)';

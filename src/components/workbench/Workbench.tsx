@@ -11,6 +11,7 @@ import Button from '@/components/ui/Button';
  */
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
+import { perfMark } from '@/lib/perf/mark';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { UploadDropzone, type ValidImageFile } from '@/components/upload/UploadDropzone';
@@ -606,6 +607,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
           markDirty();
           // D-1：生成完成的可感知反馈（播报 + 三段编排 + 数字滚动）
           setDoneToken((token) => token + 1);
+          perfMark('workbench-generation-commit');
         },
         onFailure: (_error, stableDraft) => {
           track({ name: 'generation_failed', properties: { errorCode: 'GENERATION_FAILED' } });
@@ -618,7 +620,7 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
             setErrorMsg(t.generateFailed);
           }
         },
-        onSettled: () => { setShowProgress(false); },
+        onSettled: () => { setShowProgress(false); perfMark('workbench-generation-settled'); },
       });
     },
     [clearOriginalSource, generationSession.committed, initialGenerationDraft, uploadGenerationSource, t.generateFailed, markDirty, generateFn, startGeneration, restoreDraftControls, generationDraft, palette.length],
@@ -745,10 +747,12 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         }
         // 解码器会转移字节，先留一份副本供「公开到豆社」上传原图。
         retainedOriginalRef.current = { bytes: bytes.slice(), type, name };
+        perfMark('workbench-upload-handler-enter');
         const legacyDecode = decodeFn ?? (decodeRegionFn ? decodeImageFile : null);
         const result = legacyDecode
           ? await legacyDecode(bytes, type)
           : await activeImageDecoder.load(bytes, type, () => setBusyText(t.heicConverting));
+        perfMark('workbench-decode-done');
         if (imageOperationRef.current !== operation) return;
         if (!result.ok) {
           clearOriginalSource();
@@ -765,7 +769,9 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
         }
         encodedSourceRef.current = legacyDecode ? { bytes, type } : null;
         setDecoded(result.image);
+        perfMark('workbench-set-decoded');
         await applyImageCrop({ x: 0, y: 0, width, height }, result.image, true, operation);
+        perfMark('workbench-apply-crop-done');
       } catch {
         if (imageOperationRef.current !== operation) return;
         clearOriginalSource();
