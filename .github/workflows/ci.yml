@@ -222,18 +222,31 @@ jobs:
           set +e
           E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" node tests/postgres/route-contract.cjs
           route=$?
-          E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" E2E_VERIFY_TOKEN="$VERIFY_TOKEN" E2E_ADMIN_SESSION_TOKEN="$ADMIN_TOKEN" npm run test:e2e:production
-          smoke=$?
+          # 逐个用例单独跑：artifact 与页面日志都要登录才能看，退出码是唯一公开可读的信号。
+          # 33=第 1 例会话续期 / 34=第 2 例 CSP+Worker / 35=第 3 例 PostgreSQL 事务 / 36=第 4 例长区间分析。
+          smoke=0; smoke_where='all'
+          smoke_case() {
+            local code=$1; local title=$2
+            E2E_BASE_URL=http://127.0.0.1:3000 E2E_SESSION_TOKEN="$SESSION_TOKEN" \
+              E2E_VERIFY_TOKEN="$VERIFY_TOKEN" E2E_ADMIN_SESSION_TOKEN="$ADMIN_TOKEN" \
+              npm run test:e2e:production -- -g "$title"
+            if [ $? != 0 ]; then smoke=$code; smoke_where="$title"; return 1; fi
+            return 0
+          }
+          smoke_case 33 "an aging administrator can render read-only pages" \
+            && smoke_case 34 "standalone production CSP permits RSC navigation" \
+            && smoke_case 35 "standalone routes enforce PostgreSQL CAS" \
+            && smoke_case 36 "long-range production analytics includes live consented data"
           set -e
-          # 退出码编码「失败在哪一段」：31=容器没起来 / 32=route-contract / 33=浏览器冒烟。
-          # check-run 的 annotation 是公开可读的，于是不看日志也能定位。
+          # 退出码编码「失败在哪一段」：31=容器没起来 / 32=route-contract /
+          # 33..36=浏览器冒烟的四个用例。check-run 的 annotation 公开可读，不看日志也能定位。
           {
             echo "route-contract exit=$route"
-            echo "browser-smoke exit=$smoke"
+            echo "browser-smoke exit=$smoke case=$smoke_where"
           } > .artifacts/standalone-stage.txt
           cat .artifacts/standalone-stage.txt
           if [ "$route" != 0 ]; then docker rm -f doupu-standalone-ci >/dev/null 2>&1; exit 32; fi
-          if [ "$smoke" != 0 ]; then docker rm -f doupu-standalone-ci >/dev/null 2>&1; exit 33; fi
+          if [ "$smoke" != 0 ]; then docker rm -f doupu-standalone-ci >/dev/null 2>&1; exit "$smoke"; fi
           docker rm -f doupu-standalone-ci
           trap - EXIT
         env:
