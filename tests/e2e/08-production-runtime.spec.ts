@@ -24,7 +24,8 @@ test('an aging administrator can render read-only pages and renew the database a
     const renewal = page.waitForResponse((response) => response.url().endsWith('/api/auth/me'));
     const rendered = await page.goto('/admin/analytics');
     expect(rendered?.status()).toBe(200);
-    await expect(page.getByRole('heading', { level: 1, name: '匿名分析' })).toBeVisible();
+    // 后台重做后分析页的 h1 是「使用统计」（导航项仍叫「匿名分析」，12/17 已按新文案锁定）。
+    await expect(page.getByRole('heading', { level: 1, name: '使用统计' })).toBeVisible();
     expect((await renewal).status()).toBe(200);
     const after = (await pool.query('select expires_at from sessions where token_hash=$1', [tokenHash])).rows[0].expires_at as Date;
     expect(after.getTime() - before.getTime()).toBeGreaterThan(15 * 24 * 60 * 60 * 1000);
