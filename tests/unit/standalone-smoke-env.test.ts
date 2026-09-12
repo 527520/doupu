@@ -26,7 +26,9 @@ describe('CI standalone 冒烟容器环境变量', () => {
       expect(line, `missing ${name} command`).toBeTruthy();
       expect(line, `${name} must separate positional args with --`).toContain("\" -- \"$");
     }
-    const spaced = smoke.split('\n').filter((entry) => entry.includes('node -e') && !entry.includes('randomBytes'));
+    // 只挑把 token 当位置参数传给 sha256 的那几条：步骤里其它 `node -e`
+    // （例如失败时打印冒烟报告的诊断脚本）不传位置参数，不该被这条断言牵连。
+    const spaced = smoke.split('\n').filter((entry) => entry.includes('node -e') && entry.includes('process.argv[1]'));
     expect(spaced).toHaveLength(3);
     for (const line of spaced) expect(line).toContain(' -- ');
   });
