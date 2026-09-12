@@ -190,12 +190,14 @@ jobs:
             sleep 2
           done
           if [ "$healthy" != true ]; then docker logs doupu-standalone-ci; exit 1; fi
+          # `--` 不是装饰：随机 token 有 1/64 的概率以「-」开头（base64url），
+          # 此时 node 会把位置参数当成选项解析并以 `bad option` 退出 9（曾整步红灯）。
           SESSION_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
           VERIFY_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
           ADMIN_TOKEN=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
-          SESSION_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$SESSION_TOKEN")
-          VERIFY_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$VERIFY_TOKEN")
-          ADMIN_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "$ADMIN_TOKEN")
+          SESSION_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" -- "$SESSION_TOKEN")
+          VERIFY_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" -- "$VERIFY_TOKEN")
+          ADMIN_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" -- "$ADMIN_TOKEN")
           docker exec ${{ job.services.postgres.id }} psql -U doupu -d doupu -v ON_ERROR_STOP=1 -c "
             INSERT INTO users(id,email,password_hash,email_verified_at) VALUES
               ('00000000-0000-4000-8000-000000000101','production-contract@example.test','not-used',now()),
