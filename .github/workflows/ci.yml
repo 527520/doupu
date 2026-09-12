@@ -96,7 +96,10 @@ jobs:
   e2e:
     name: E2E（chromium / firefox / webkit）
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 3 浏览器 × 完整套件 × 连续 3 轮，实测 32~35 分钟；40 分钟余量太小，
+    # 再加上失败时的诊断重跑（--last-failed）会顶到上限被 cancelled——
+    # 那等于把门禁关掉（run #81 实测 39.9 分钟仍在跑）。余量给足。
+    timeout-minutes: 60
     needs: [static, coverage, integration, performance]
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +118,10 @@ jobs:
         # 额外只是把失败暴露到匿名可读的地方：日志与 playwright-report 都要登录才能看，
         # 只有 check-run 的 annotation 匿名可读，所以失败时用 --last-failed 取回失败用例的
         # 标题与文件，并把第一个失败的 spec 编码进退出码（41=02 42=03 43=13 44=17）。
-        # 整套全绿时 --last-failed 无可运行用例，直接跳过。
+        #
+        # 约束：--last-failed 只在「确实记录了失败」时才跑。整套全绿时它没有可跑用例，
+        # 但在某些情况下会退化成再跑一遍全量（还带 3 轮重复），把 60 分钟预算顶满——
+        # 那会让本来红得起的门禁变成 cancelled。所以先看日志里有没有失败块。
         run: |
           set +e
           npm run test:e2e:stable 2>&1 | tee e2e-stable.log
@@ -123,15 +129,19 @@ jobs:
           if [ "$status" != 0 ]; then
             echo "E2E-FAIL exit=$status"
             grep -E -m 8 -A 10 '^\s+[0-9]+\) ' e2e-stable.log || true
-            npm run test:e2e -- --last-failed --reporter=line 2>&1 | tee e2e-last-failed.log || true
-            for entry in "02-workbench-journey:41" "03-upload-edge:42" "13-optional-recrop:43" "17-visual-refinement:44"; do
-              spec="${entry%%:*}"
-              if grep -qE "tests[\\/]e2e[\\/]${spec}\.spec\.ts" e2e-last-failed.log; then
-                echo "E2E-FAILED-SPEC ${spec} -> code ${entry##*:}"
-                echo "${entry##*:}" >> e2e-failed-codes.txt
-              fi
-            done
-            cat e2e-failed-codes.txt 2>/dev/null || true
+            if grep -qE '^\s+[0-9]+\) ' e2e-stable.log; then
+              npm run test:e2e -- --last-failed --reporter=line 2>&1 | tee e2e-last-failed.log || true
+              for entry in "02-workbench-journey:41" "03-upload-edge:42" "13-optional-recrop:43" "17-visual-refinement:44"; do
+                spec="${entry%%:*}"
+                if grep -qE "tests[\\/]e2e[\\/]${spec}\.spec\.ts" e2e-last-failed.log; then
+                  echo "E2E-FAILED-SPEC ${spec} -> code ${entry##*:}"
+                  echo "${entry##*:}" >> e2e-failed-codes.txt
+                fi
+              done
+              cat e2e-failed-codes.txt 2>/dev/null || true
+            else
+              echo "E2E-DIAGNOSTIC-SKIPPED 日志里没有可解析的失败块，跳过 --last-failed 以免再跑一遍全量"
+            fi
           fi
           set -e
           if [ -s e2e-failed-codes.txt ]; then
