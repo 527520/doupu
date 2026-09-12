@@ -111,7 +111,20 @@ jobs:
       - name: Verify Playwright browsers
         run: npm run test:e2e:check
       - name: Run E2E without retries（连续 3 次）
-        run: npm run test:e2e:stable
+        # 与 release-safety 同理：这一步的日志要仓库 admin 才能看，playwright-report
+        # artifact 也要登录才能下载，所以失败时把关键输出打进步骤输出（公开 annotation 可读）。
+        run: |
+          set +e
+          npm run test:e2e:stable 2>&1 | tee e2e-stable.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" != 0 ]; then
+            echo "E2E-FAIL exit=$status"
+            grep -E -m 6 -A 12 '^\s+[0-9]+\) ' e2e-stable.log || true
+            echo "----- 末尾 40 行 -----"
+            tail -n 40 e2e-stable.log
+          fi
+          exit "$status"
       - name: Upload E2E report
         if: failure()
         uses: actions/upload-artifact@v4
