@@ -70,14 +70,25 @@ test('照片 → 生成 → 编辑 → 导出三格式 → 本地保存与恢复
       };
       const cancelledAt = performance.now();
       cancel.click();
-      const waitForSettledUi = (): void => {
-        if (!document.body.contains(cancel)) {
-          finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
-          return;
-        }
-        requestAnimationFrame(waitForSettledUi);
-      };
-      requestAnimationFrame(waitForSettledUi);
+      // 用 MutationObserver 而不是 rAF 轮询来测「按钮离开 DOM 的时刻」：
+      // 点击处理器里还会同步终止 Worker，之后主线程可能忙着提交整棵树，
+      // 下一帧要等多久取决于机器忙不忙——用 rAF 测到的是帧调度延迟，
+      // 会把「同步卸载」误判成超时（CI 实测 chromium 256ms / webkit 422ms）。
+      const removal = new MutationObserver(() => {
+        if (document.body.contains(cancel)) return;
+        removal.disconnect();
+        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
+      });
+      removal.observe(document.body, { childList: true, subtree: true });
+      if (!document.body.contains(cancel)) {
+        removal.disconnect();
+        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
+        return;
+      }
+      setTimeout(() => {
+        removal.disconnect();
+        finish({ ...observed, cancelUiMs: performance.now() - cancelledAt });
+      }, 5_000);
     };
     observer.observe(document.body, { childList: true, subtree: true, attributes: true });
     inspect();

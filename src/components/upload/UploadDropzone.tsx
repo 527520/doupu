@@ -12,6 +12,7 @@ import type { ImageType } from '@/lib/image/sniff';
 import Icon from '@/components/ui/Icon';
 import { track } from '@/lib/analytics/client';
 import { fileSizeBucket } from '@/lib/analytics/buckets';
+import { perfMark } from '@/lib/perf/mark';
 
 export interface ValidImageFile {
   bytes: Uint8Array;
@@ -46,8 +47,11 @@ export function UploadDropzone({ onValid, disabled = false, prominent = false }:
       setError(null);
       setReading(true);
       try {
+        perfMark('upload-read-start');
         const bytes = await readFileBytes(file);
+        perfMark('upload-read-end');
         const result = validateImageFile({ bytes, name: file.name });
+        perfMark('upload-validate-end');
         if (!result.ok) {
           setError(errorMessage(result.code));
           return;

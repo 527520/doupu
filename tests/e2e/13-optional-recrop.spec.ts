@@ -135,7 +135,11 @@ for (const width of [350, 390]) {
       await page.setViewportSize({ width, height: 700 });
       await expect.poll(async () => Math.round((await cropDialog(page).boundingBox())?.height ?? Number.NaN)).toBe(700);
       if (browserName === 'chromium' && width === 350) {
-        // 浏览器协议的原生触控输入（不是 DOM dispatchEvent）；仍非真机证据。
+        // 浏览器协议的原生指针输入（不是 DOM dispatchEvent）；仍非真机证据。
+        // 这里用 Mouse 而不是 Touch：注入的 touch 拖拽会让 Chrome 之后不再为
+        // tap 合成 click（实测取消/确认都点不动，弹窗与 inert 背景一起卡住），
+        // 属于注入输入的怪癖而非产品缺陷——鼠标指针同样走 ImageCropper 的
+        // pointer 协议，选区结果一致（224 × 140 × 320 × 200 两步都断言）。
         const client = await context.newCDPSession(page);
         const canvas = page.getByLabel('裁剪选区画布');
         const box = await canvas.evaluate(async (element) => {
@@ -144,13 +148,16 @@ for (const width of [350, 390]) {
           return element.getBoundingClientRect().toJSON() as { x: number; y: number; width: number; height: number };
         });
         const point = (x: number, y: number, id = 1) => ({ x: box.x + box.width * x, y: box.y + box.height * y, id });
-        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(.99, .99)] });
-        await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(.7, .7)] });
-        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const dragWithPointer = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+          await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1 });
+          await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: to.x, y: to.y, button: 'left' });
+          await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', clickCount: 1 });
+        };
+        await dragWithPointer(point(.99, .99), point(.7, .7));
         await expect(cropDialog(page)).toContainText('当前选区：224 × 140 像素');
         await cropDialog(page).getByRole('button', { name: '取消', exact: true }).tap();
         await expect(beads(page, 6300)).toBeVisible();
-        await cropButton(page).tap();
+        await cropButton(page).tap({ timeout: 15000 });
         await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(.99, .99)] });
         await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(.8, .8)] });
         await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(.8, .8), point(.2, .2, 2)] });

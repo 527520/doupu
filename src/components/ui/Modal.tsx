@@ -36,20 +36,26 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
 
   // Portal 使弹窗与应用根节点成为兄弟节点，因而可以真实地将背景
   // inert，而不会连弹窗自身一并禁用。清理时逐项恢复调用方原状态。
+  //
+  // 恢复按「属性」而不是按挂载时抓到的节点快照做：原生触控拖拽（CDP
+  // dispatchTouchEvent）后关闭弹窗时，实测会留下 aria-hidden/inert 未清掉，背景永久
+  // 不可交互（13-optional-recrop 手机用例因此卡死：弹窗已关但 main[inert]）。这里对
+  // 清理时仍在文档里的兄弟节点一律还原，同时删掉本组件自己的 portal root，避免残留。
   useLayoutEffect(() => {
     if (!portalRoot) return;
+    document.body.append(portalRoot);
+    const siblings = () => Array.from(document.body.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement && element !== portalRoot,
+    );
     // 先记录入口再设 inert：并发渲染允许浏览器在被动 effect 前绘制，
     // 此时背景焦点可能已变成 body，不能等自动聚焦 effect 才读取。
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const background = Array.from(document.body.children).filter(
-      (element): element is HTMLElement => element instanceof HTMLElement && element !== portalRoot,
-    );
-    const snapshots = background.map((element) => ({
+    const snapshots = siblings().map((element) => ({
       element,
       inert: element.hasAttribute('inert'),
       ariaHidden: element.getAttribute('aria-hidden'),
     }));
-    for (const element of background) {
+    for (const element of siblings()) {
       element.setAttribute('inert', '');
       element.setAttribute('aria-hidden', 'true');
     }
@@ -57,10 +63,18 @@ export default function Modal({ label, onClose, children, panelClassName = '', p
     document.body.style.overflow = 'hidden';
     return () => {
       for (const snapshot of snapshots) {
+        if (!snapshot.element.isConnected) continue;
         if (!snapshot.inert) snapshot.element.removeAttribute('inert');
         if (snapshot.ariaHidden === null) snapshot.element.removeAttribute('aria-hidden');
         else snapshot.element.setAttribute('aria-hidden', snapshot.ariaHidden);
       }
+      // 挂载后才出现、清理时仍在的兄弟节点（例如另一个 portal）也要摘掉本组件加的标记。
+      for (const element of siblings()) {
+        if (snapshots.some((snapshot) => snapshot.element === element)) continue;
+        element.removeAttribute('inert');
+        element.removeAttribute('aria-hidden');
+      }
+      portalRoot.remove();
       document.body.style.overflow = previousOverflow;
     };
   }, [portalRoot]);

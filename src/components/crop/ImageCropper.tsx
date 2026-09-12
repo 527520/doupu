@@ -23,6 +23,7 @@ import {
   type ResizeEdge,
 } from '@/lib/crop/layout';
 import type { DecodedImage } from '@/lib/image/decode';
+import { perfMark } from '@/lib/perf/mark';
 
 export interface ImageCropperProps {
   image: DecodedImage;
@@ -129,14 +130,18 @@ async function blitDecodedPreview(
   if (!ctx) return null;
   const imageData = previewImageData(image);
   if (image.width * image.height < BLIT_STRIPE_ROWS * 256) {
+    perfMark('crop-blit-start');
     ctx.putImageData(imageData, 0, 0);
+    perfMark('crop-blit-end');
     return canvas;
   }
   for (let y = 0; y < image.height; y += BLIT_STRIPE_ROWS) {
     if (signal.cancelled) return null;
     if (y > 0) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     if (signal.cancelled) return null;
+    perfMark(`crop-blit-stripe-${y}`);
     ctx.putImageData(imageData, 0, 0, 0, y, image.width, Math.min(BLIT_STRIPE_ROWS, image.height - y));
+    perfMark(`crop-blit-stripe-${y}-end`);
   }
   return canvas;
 }
