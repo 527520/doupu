@@ -90,18 +90,18 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
     }, name);
   };
   await mark('square-upload-start');
-  // 长任务口径：只考核「上传 → 预览 → 生成」这段流程，所以从这里开始记（并把此前
-  // 已入队但还没派发的记录丢掉）。此前整段测试会话都在观察，会把夹具解码、GC 等
-  // 与本流程无关的页面级工作也记进来——CI 上稳定红的那一条恰好落在流程开始之前
-  // （~1000ms vs square-upload-start@1105ms）。用例标题本来就写着它考核的是这段输入流程。
-  await page.evaluate(() => {
-    const measuredWindow = window as Window & {
-      __doupuLongTasks?: unknown[];
-      __doupuLongTaskObserver?: PerformanceObserver;
-    };
-    measuredWindow.__doupuLongTasks = [];
-    measuredWindow.__doupuLongTaskObserver?.takeRecords();
-  });
+  // 长任务口径：只考核「上传 → 预览 → 生成」这段流程。
+  //
+  // 做法是段末按时间过滤（task.startTime >= 流程起点），而不是中途清空缓冲区：
+  // `__doupuLongTasks = []` 只是给 window 换了个新数组，PerformanceObserver 的回调
+  // 仍往它闭包里的旧数组 push，能生效全靠 takeRecords() 的微任务时序，不可靠。
+  // 用同一个时钟（marks 里的 at 与任务的 startTime 都是 performance.now()）比较即可。
+  const longTaskFloor = testInfo.project.name === 'chromium'
+    ? await page.evaluate(() => {
+      const marks = (window as Window & { __doupuPerfMarks?: Array<{ name: string; at: number }> }).__doupuPerfMarks ?? [];
+      return marks.filter((entry) => entry.name === 'square-upload-start').at(-1)?.at ?? 0;
+    })
+    : 0;
   await uploadFile(page, fixture('max-8000-square.png'));
   await page.getByRole('button', { name: '裁剪图片', exact: true }).click();
   await expect(page.getByRole('heading', { name: '裁剪图片' })).toBeVisible({ timeout: 30_000 });
@@ -159,8 +159,7 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
         marks: measuredWindow.__doupuPerfMarks ?? [],
       };
     });
-    // 门禁口径：不允许出现 ≥100ms 的主线程阻塞（此前是「>50ms 一个都不许有」，
-    // 观察器已按 ≥100ms 过滤，这里再确认一次）。
+    // 门禁口径：**本次流程内**不允许出现 ≥100ms 的主线程阻塞（此前是「>50ms 一个都不许有」）。
     //
     // 为什么留这个余量：归因（生产构建 + 渲染侧限速复现，方法见下）显示 50~90ms 的任务都落在
     // 「应用没有代码在跑」的窗口里——workbench-generation-settled → 点击裁剪、
@@ -168,13 +167,22 @@ test('最大合法 8000×8000 与极端 100×8000 输入使用有界预览并可
     // （read+validate ≈ 2ms、解码在 Worker、预览按 16 行分条让帧），真正卡顿的操作
     // （此前解码单条 112ms）仍会被 100ms 拦住，但共享 runner 的噪声不再误报。
     //
+    // 只算 startTime >= 流程起点的任务：整段测试会话的观察会把夹具解码、GC 等与本流程
+    // 无关的页面级工作也记进来——CI 上稳定红的那一条恰好落在流程开始之前
+    // （~1000ms vs square-upload-start@1105ms）。用例标题本来就写着它考核的是这段输入流程。
+    //
     // 归因方法（本地复现用）：起生产构建（node .next/standalone/server.js），
     // CDP Emulation.setCPUThrottlingRate = 4，再重放本用例的步骤，看 E2E-LONGTASK 输出。
     const budgetMs = 100;
-    const overBudget = performanceLog.longTasks.filter((task) => task.duration >= budgetMs);
-    if (performanceLog.longTasks.length > 0) {
-      console.log(`E2E-LONGTASK ${performanceLog.longTasks.length} 个超预算任务（≥${budgetMs}ms）:\n`
-        + performanceLog.longTasks.map((task) => `${task.duration}ms at ${Math.round(task.startTime)}ms`).join('\n'));
+    const flowStartedAt = performanceLog.marks
+      .filter((entry) => entry.name === 'square-upload-start')
+      .at(-1)?.at ?? longTaskFloor;
+    // 预算与流程范围都在这里显式表达，不依赖观察器里的预过滤。
+    const overBudget = performanceLog.longTasks
+      .filter((task) => task.startTime >= flowStartedAt && task.duration >= budgetMs);
+    if (overBudget.length > 0) {
+      console.log(`E2E-LONGTASK ${overBudget.length} 个超预算任务（≥${budgetMs}ms，流程起点 ${Math.round(flowStartedAt)}ms）:\n`
+        + overBudget.map((task) => `${task.duration}ms at ${Math.round(task.startTime)}ms`).join('\n'));
     }
     expect(overBudget, `main-thread performance: ${JSON.stringify(performanceLog)}`).toEqual([]);
   }

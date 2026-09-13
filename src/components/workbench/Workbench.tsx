@@ -629,10 +629,10 @@ export default function Workbench({ storage, decodeFn, decodeRegionFn, imageDeco
 
   /** 取消在途生成任务：作废令牌、终止 Worker，并回滚到生成前的稳定提交态。 */
   const handleCancelGenerate = useCallback((): void => {
-    // 先把「取消」按钮移出 DOM，再停 Worker：点击处理器里 abortGeneration() 会同步终止
-    // Worker，同一任务里完成卸载才能满足 E2E 02 的 <100ms 门禁（firefox 129.9ms /
-    // webkit 398.2ms 实测：等下一轮的 commitCancel 再卸载就超了）。
-    // cancelDismissed 只在生成期间表示「用户已点取消」，新一轮生成开始时清掉。
+    // 先把「取消」按钮移出 DOM（E2E 02 要求 <100ms），再停 Worker。
+    // 被测窗口只包含「按钮消失」这件 UI 工作：abortGeneration() 会同步终止 Worker，
+    // 把它留在两个标记之间会把 Worker 拆除的时间也算成「取消 UI 消失耗时」。
+    // 顺序与语义不变：按钮先卸载、Worker 随后在同一任务里停掉。
     perfMark('workbench-cancel-handler');
     flushSync(() => setCancelDismissed(true));
     perfMark('workbench-cancel-unmounted');
